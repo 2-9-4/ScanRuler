@@ -359,6 +359,47 @@ for (const [x, y] of target.spots) {
 }
 check(picked, 'a click still picks after navigating')
 
+// ---- framing a place keeps the whole part drawn ----
+// view.set and view.render frame a corner or a fillet through fitBox. That is
+// a zoom, not a new scene: the clip planes still have to take in the whole
+// part, or the view turned or zoomed back out shows it cut to a slab round the
+// place. Read off the camera through the development hook: every corner of
+// the scan's box has to lie between the near and far planes.
+const depthSpan = () =>
+  page.evaluate(() => {
+    const scene = window.__scanruler.scene()
+    const cam = scene.viewport.camera
+    const dir = cam.getWorldDirection(cam.position.clone())
+    const box = scene.movedScanBox()
+    let lo = Infinity
+    let hi = -Infinity
+    for (let i = 0; i < 8; i++) {
+      const c = [i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z]
+      const d = (c[0] - cam.position.x) * dir.x + (c[1] - cam.position.y) * dir.y + (c[2] - cam.position.z) * dir.z
+      lo = Math.min(lo, d)
+      hi = Math.max(hi, d)
+    }
+    return { near: cam.near, far: cam.far, lo, hi }
+  })
+const spanned = (s) => s.near <= s.lo && s.hi <= s.far
+const spanText = (s) => `near ${s.near.toFixed(1)}, far ${s.far.toFixed(1)}; the part from ${s.lo.toFixed(1)} to ${s.hi.toFixed(1)}`
+
+// A place at one end of the part, a twentieth of it across.
+await page.evaluate(() => {
+  const scene = window.__scanruler.scene()
+  const box = scene.movedScanBox()
+  const size = box.min.distanceTo(box.max) / 20
+  const at = box.min.clone().lerp(box.max, 0.1)
+  scene.fitBox(at.clone().subScalar(size / 2).toArray(), at.clone().addScalar(size / 2).toArray())
+})
+await sleep(250)
+const atPlace = await depthSpan()
+check(spanned(atPlace), `a framed place keeps the whole part between the clip planes (${spanText(atPlace)})`)
+await page.keyboard.press('3')
+await sleep(250)
+const turned = await depthSpan()
+check(spanned(turned), `and so does the view turned from there (${spanText(turned)})`)
+
 await page.screenshot({ path: shotPath('e2e-nav.png') })
 
 await finish(browser, consoleErrors)

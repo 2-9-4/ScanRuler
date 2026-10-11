@@ -52,9 +52,12 @@ const tidy = (v) => {
 /** An answer as the agent reads it: JSON, every number that is not whole
  *  kept to DIGITS significant digits and no finer than a millionth — 1e-17,
  *  a zero's rounding error, is 0. Whole numbers — ids, indices, counts —
- *  are as they were. */
-export const agentJson = (value) =>
-  JSON.stringify(value, (_key, v) => (typeof v === 'number' && Number.isFinite(v) && !Number.isInteger(v) ? tidy(v) : v))
+ *  are as they were. An `exact` answer is one whose numbers are handed
+ *  back as inputs — a sketch's coordinates, a plane's frame — and keeps
+ *  every digit: shortened, a face drawn on them is a hair off the face it
+ *  was meant to share. */
+export const agentJson = (value, exact = false) =>
+  exact ? JSON.stringify(value) : JSON.stringify(value, (_key, v) => (typeof v === 'number' && Number.isFinite(v) && !Number.isInteger(v) ? tidy(v) : v))
 
 /** A command as the MCP tool an agent sees. */
 export function toolFor(command, { outDir }) {

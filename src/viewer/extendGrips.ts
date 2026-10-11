@@ -32,6 +32,9 @@ export interface PluginGrip {
   dir: Vec3
   /** An arrow's length, or a ring's radius. */
   size: number
+  /** Its own colour, where it is not the one all the grips wear — the axes
+   *  of a gizmo told apart. */
+  color?: string
 }
 
 const ELEMENT_SIDES: readonly string[] = [...CYLINDER_SIDES, ...PLANE_SIDES]
@@ -60,6 +63,10 @@ interface ExtendGrip {
   dir: THREE.Vector3
   mesh: THREE.Mesh
   material: THREE.MeshBasicMaterial
+  /** A ring, turned about `dir`, as against an arrow or a bar pulled along it. */
+  ring: boolean
+  /** The colour it wears when it is not lit. */
+  color: string
 }
 
 /** Everything the grips are allowed to touch outside themselves. */
@@ -286,10 +293,10 @@ export class ExtendGrips {
     for (const g of this.feature) {
       const position = new THREE.Vector3(...g.position)
       const dir = new THREE.Vector3(...g.dir).normalize()
-      if (g.shape === 'ring') this.addRing(g.side, position, dir, Math.max(g.size, 1e-5))
+      if (g.shape === 'ring') this.addRing(g.side, position, dir, Math.max(g.size, 1e-5), g.color)
       // Sized to the profiles the arrow stands on, never smaller than a grip
       // on the part would be — a hairline profile still needs a handle.
-      else this.addGrip(g.side, position, dir, Math.max(g.size, this.ctx.modelRadius() * 0.05, 1e-5), undefined, true)
+      else this.addGrip(g.side, position, dir, Math.max(g.size, this.ctx.modelRadius() * 0.05, 1e-5), undefined, true, g.color)
     }
 
     if (this.plane) {
@@ -359,10 +366,11 @@ export class ExtendGrips {
     size: number,
     edge?: { along: THREE.Vector3; span: number },
     slim = false,
+    color = this.handleColor,
   ): void {
     const material = new THREE.MeshBasicMaterial({
       // A rebuild in the middle of a drag must not put the lit grip out.
-      color: side === this.hoveredHandle ? 0xffffff : this.handleColor,
+      color: side === this.hoveredHandle ? 0xffffff : color,
       transparent: true,
       opacity: 0.95,
       depthTest: false,
@@ -387,16 +395,16 @@ export class ExtendGrips {
     mesh.renderOrder = 6
     mesh.userData.extendSide = side
     this.handleGroup.add(mesh)
-    this.handles.push({ side, position: position.clone(), dir: dir.clone(), mesh, material })
+    this.handles.push({ side, position: position.clone(), dir: dir.clone(), mesh, material, ring: false, color })
     this.handleMeshes.push(mesh)
     this.handleCleanup.push(() => material.dispose())
   }
 
   /** One ring: a torus about `about` through `centre`, whose drag turns the
    *  plane about that axis — which is what its `dir` records. */
-  private addRing(side: GripSide, centre: THREE.Vector3, about: THREE.Vector3, radius: number): void {
+  private addRing(side: GripSide, centre: THREE.Vector3, about: THREE.Vector3, radius: number, color = this.handleColor): void {
     const material = new THREE.MeshBasicMaterial({
-      color: side === this.hoveredHandle ? 0xffffff : this.handleColor,
+      color: side === this.hoveredHandle ? 0xffffff : color,
       transparent: true,
       opacity: 0.85,
       depthTest: false,
@@ -409,7 +417,7 @@ export class ExtendGrips {
     mesh.renderOrder = 6
     mesh.userData.extendSide = side
     this.handleGroup.add(mesh)
-    this.handles.push({ side, position: centre.clone(), dir: about.clone(), mesh, material })
+    this.handles.push({ side, position: centre.clone(), dir: about.clone(), mesh, material, ring: true, color })
     this.handleMeshes.push(mesh)
     this.handleCleanup.push(() => material.dispose())
   }
@@ -447,7 +455,7 @@ export class ExtendGrips {
     if (this.hoveredHandle === side) return
     this.hoveredHandle = side
     this.ctx.invalidate()
-    for (const h of this.handles) h.material.color.set(h.side === side ? 0xffffff : this.handleColor)
+    for (const h of this.handles) h.material.color.set(h.side === side ? 0xffffff : h.color)
     this.ctx.claimDrag(side !== null)
     this.ctx.canvas.style.cursor = side !== null ? 'grab' : ''
     this.syncActiveSide()
@@ -482,7 +490,7 @@ export class ExtendGrips {
 
   private beginHandleDrag(grip: ExtendGrip, clientX: number, clientY: number): void {
     const world = this.gripLine(grip)
-    if (grip.side === 'tiltU' || grip.side === 'tiltV' || grip.side === 'turn') {
+    if (grip.ring) {
       // Any two perpendiculars of the axis do for reading angles — only
       // differences are reported — as long as (b1, b2, axis) is right-handed,
       // so the angle grows with the turn it is asking for.

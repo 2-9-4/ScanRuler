@@ -29,6 +29,10 @@ test('an answer keeps six significant digits, no finer than a millionth, and who
   )
 })
 
+test('an exact answer keeps every digit', () => {
+  assert.equal(agentJson({ a: 0.9483828176573491, h: 123.456789 }, true), '{"a":0.9483828176573491,"h":123.456789}')
+})
+
 test('a schema passes through as it is, but for files', () => {
   const fit = command('element.fit')
   assert.deepEqual(toolFor(fit, { outDir: '/out' }).inputSchema, fit.input)

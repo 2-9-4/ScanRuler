@@ -22,17 +22,25 @@ export function useDragDrop({
   const [dragging, setDragging] = useState(false)
   useEffect(() => {
     let depth = 0
+    // Only a drag that carries files is a file being brought in — text or a
+    // list row dragged within the page is the page's own business.
+    const carriesFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes('Files')
     const onDragEnter = (e: DragEvent) => {
+      if (!carriesFiles(e)) return
       e.preventDefault()
       depth++
       setDragging(true)
     }
-    const onDragOver = (e: DragEvent) => e.preventDefault()
-    const onDragLeave = () => {
+    const onDragOver = (e: DragEvent) => {
+      if (carriesFiles(e)) e.preventDefault()
+    }
+    const onDragLeave = (e: DragEvent) => {
+      if (!carriesFiles(e)) return
       depth = Math.max(0, depth - 1)
       if (depth === 0) setDragging(false)
     }
     const onDrop = (e: DragEvent) => {
+      if (!carriesFiles(e)) return
       e.preventDefault()
       depth = 0
       setDragging(false)

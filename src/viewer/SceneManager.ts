@@ -2177,13 +2177,24 @@ export class SceneManager {
   }
 
   /** Frame a box, in the frame the part is measured in now — a place on the
-   *  part looked at closely, as fitToView frames the whole of it. */
+   *  part looked at closely, as fitToView frames the whole of it.
+   *
+   *  A zoom, not a new scene: the camera closes in on the box, but the clip
+   *  planes go on taking in everything they did, the box added should it
+   *  reach further. Planes bracketing the box alone slice away all in front
+   *  of it and behind it, and the view turned or zoomed back out shows the
+   *  part cut to a slab round the place. */
   fitBox(min: Vec3, max: Vec3): void {
     const box = new THREE.Box3(new THREE.Vector3(...min), new THREE.Vector3(...max))
     if (box.isEmpty()) return
+    const place = box.getBoundingSphere(new THREE.Sphere())
+    const clip = new THREE.Sphere(this.clipSphere.center.clone(), this.clipSphere.radius).union(place)
+    const framed = new THREE.Sphere(this.framedClip.center.clone(), this.framedClip.radius).union(place)
     this.viewport.fitCamera(box)
-    this.framedClip.center.copy(this.clipSphere.center)
-    this.framedClip.radius = this.clipSphere.radius
+    this.clipSphere.center.copy(clip.center)
+    this.clipSphere.radius = clip.radius
+    this.framedClip.center.copy(framed.center)
+    this.framedClip.radius = framed.radius
     this.invalidate()
   }
 

@@ -4,6 +4,7 @@
 
 import type { MeshUnits } from '../../core/meshUnits'
 import { isDeviationTarget } from '../../core/deviation/elementField'
+import type { Hotspot } from '../../core/deviation/hotspots'
 import { rigidApply } from '../../core/deviation/rigid'
 import type { Vec3 } from '../../core/types'
 import { useDeviation } from '../../state/deviationStore'
@@ -199,7 +200,7 @@ const hotspotsCommand: Command<{ tolerance?: number; patches?: number; grain?: n
   name: 'hotspots',
   title: 'Where the deviation lies over tolerance',
   description:
-    'The deviation map read as patches: the scan vertices whose deviation lies past the tolerance (the map’s own, under deviation.settings, unless tolerance says otherwise) gathered into connected regions, the largest and farthest first — where the part is off, how large each place is and by how much, instead of one number over the whole part. Each patch: its centre and box in mm (in the frame the scan is measured in — what scan.query { box } and element.fit take), its area, how many vertices, the mean and the extreme deviation and which side (outside the reference or inside), the point of the extreme and the scan vertex there, and a few of its vertices (what element.fit_marked takes). With a map against the reference part the patch’s centre and extreme are given on the reference too (onReference — what the Deviation workspace shows and view.render { frame } takes there). grain is how close two vertices over tolerance have to be to be one patch, three point spacings by default. found and over say how many patches and vertices over tolerance there were in all. Needs a deviation map (deviation.align, or deviation.set_target). Changes nothing.',
+    'The deviation map read as patches: the scan vertices whose deviation lies past the tolerance (the map’s own, under deviation.settings, unless tolerance says otherwise) gathered into connected regions, the largest and farthest first — where the part is off, how large each place is and by how much, instead of one number over the whole part. Each patch: its centre and box in mm (in the frame the scan is measured in — what scan.query { box } and element.fit take), its area, how many vertices, the mean and the extreme deviation and which side (outside the reference or inside), the point of the extreme and the scan vertex there, and a few of its vertices (what element.fit_marked takes). With a map against the reference part the patch’s centre and extreme are given on the reference too (onReference — what the Deviation workspace shows and view.render { frame } takes there). grain is how close two vertices over tolerance have to be to be one patch, three point spacings by default. found and over say how many patches and vertices over tolerance there were in all — within the search distance, the vertices the map draws as a measurement. Then far, the vertices past the search distance, which the map draws bare: read it every time — far.inside is the scan deeper inside the reference than the search distance, where the reference has material the part has not (a hole, a pocket or a slot the model lacks), far.outside the scan further off it, where the part has what the model has not, or scan spray; each with its count and its patches, the largest first, and far.count both together; unmeasured says how many vertices the facing limit left without a reading. Needs a deviation map (deviation.align, or deviation.set_target). Changes nothing.',
   input: obj({
     tolerance: num('± mm; the map’s tolerance by default.', { exclusiveMinimum: 0 }),
     patches: int(`How many patches to name; ${HOTSPOT_PATCHES} by default, 50 at most.`, { minimum: 1, maximum: 50 }),
@@ -222,12 +223,50 @@ const hotspotsCommand: Command<{ tolerance?: number; patches?: number; grain?: n
     // Loaded when first asked for: the gathering is no part of the page
     // that every session loads.
     const { hotspots } = await import('../../core/deviation/hotspots')
-    const report = hotspots(all.positions, values, tol, { limit: patches, ...(grain !== undefined ? { grain } : {}) })
     const m = d.source === 'reference' && d.align ? d.align.transform : null
     const out = new Float64Array(3)
     const onReference = (p: Vec3): Vec3 => {
       rigidApply(m!, p[0], p[1], p[2], out)
       return [round3(out[0]), round3(out[1]), round3(out[2])]
+    }
+    const patchOut = (p: Hotspot) => {
+      const stride = Math.max(1, Math.floor(p.members.length / HOTSPOT_VERTICES))
+      const vertices: number[] = []
+      for (let k = 0; k < p.members.length && vertices.length < HOTSPOT_VERTICES; k += stride) vertices.push(p.members[k])
+      return {
+        centroid: p.centroid.map(round3),
+        box: { min: p.min.map(round3), max: p.max.map(round3) },
+        area: round3(p.area),
+        count: p.count,
+        mean: round3(p.mean),
+        extreme: round3(p.extreme),
+        side: p.extreme > 0 ? 'outside' : 'inside',
+        at: p.at.map(round3),
+        vertex: p.index,
+        vertices,
+        ...(m ? { onReference: { centroid: onReference(p.centroid), at: onReference(p.at) } } : {}),
+      }
+    }
+    // The map's search distance parts the measured from the bare: the
+    // patches are of the measured, and the bare are told on their own, by
+    // side — a vertex deep inside the reference is a hole the model lacks,
+    // which no patch over tolerance would show.
+    const search = d.maxDistance
+    const measured = (i: number) => Math.abs(values[i]) <= search
+    const report = hotspots(all.positions, values, tol, { limit: patches, ...(grain !== undefined ? { grain } : {}), only: measured })
+    let unmeasured = 0
+    let farInside = 0
+    let farOutside = 0
+    for (let i = 0; i < values.length; i++) {
+      const v = values[i]
+      if (!Number.isFinite(v)) unmeasured++
+      else if (v < -search) farInside++
+      else if (v > search) farOutside++
+    }
+    const farSide = (inside: boolean, count: number) => {
+      if (count === 0) return { count, found: 0, patches: [] }
+      const r = hotspots(all.positions, values, search, { limit: patches, ...(grain !== undefined ? { grain } : {}), only: (i) => (values[i] < 0) === inside })
+      return { count, found: r.found, patches: r.patches.map(patchOut) }
     }
     return {
       source: d.source,
@@ -236,24 +275,9 @@ const hotspotsCommand: Command<{ tolerance?: number; patches?: number; grain?: n
       found: report.found,
       spacing: round3(report.spacing),
       grain: round3(report.grain),
-      patches: report.patches.map((p) => {
-        const stride = Math.max(1, Math.floor(p.members.length / HOTSPOT_VERTICES))
-        const vertices: number[] = []
-        for (let k = 0; k < p.members.length && vertices.length < HOTSPOT_VERTICES; k += stride) vertices.push(p.members[k])
-        return {
-          centroid: p.centroid.map(round3),
-          box: { min: p.min.map(round3), max: p.max.map(round3) },
-          area: round3(p.area),
-          count: p.count,
-          mean: round3(p.mean),
-          extreme: round3(p.extreme),
-          side: p.extreme > 0 ? 'outside' : 'inside',
-          at: p.at.map(round3),
-          vertex: p.index,
-          vertices,
-          ...(m ? { onReference: { centroid: onReference(p.centroid), at: onReference(p.at) } } : {}),
-        }
-      }),
+      patches: report.patches.map(patchOut),
+      far: { searchDistance: search, count: farInside + farOutside, inside: farSide(true, farInside), outside: farSide(false, farOutside) },
+      unmeasured,
     }
   },
 }

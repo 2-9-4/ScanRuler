@@ -11,6 +11,7 @@ export function ElementRow({
   name,
   color,
   icon,
+  picture,
   title,
   visible,
   reading,
@@ -28,6 +29,8 @@ export function ElementRow({
   /** An icon in place of the colour dot, drawn in the colour — a feature
    *  row's kind, as a CAD tree shows it. */
   icon?: IconName
+  /** A picture of the caller's own in the icon's place, drawn the same way. */
+  picture?: ReactNode
   /** What the row says on hover: the reading in words. */
   title?: string
   visible: boolean
@@ -62,9 +65,9 @@ export function ElementRow({
       title={title}
       onDoubleClick={canEdit ? onEdit : undefined}
     >
-      {icon ? (
+      {icon || picture ? (
         <span className="kind" style={{ color }}>
-          <Icon name={icon} size={15} />
+          {picture ?? <Icon name={icon!} size={15} />}
         </span>
       ) : (
         <span className="dot" style={{ background: color }} />

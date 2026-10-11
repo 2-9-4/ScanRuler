@@ -5,6 +5,42 @@ bar and the imprint is the entry it belongs to; the `.scanruler` projects it
 saves carry the same number as `appVersion`. How a release is cut is in the
 README under "Releases".
 
+## 0.5.2 — 2026-10-11
+
+- **A drag within the page no longer brings up the drop-a-file overlay**
+  (2026-10-11). The overlay answered every drag over the window — a
+  selection of text, a row dragged in a list — and, dropped on something
+  that took the drop itself, stayed up until the next drag. It now answers
+  only a drag that carries files (`useDragDrop`).
+- **A place framed up close leaves the rest of the part in the picture**
+  (2026-10-11). `view.set` and `view.render` with `frame` closed the
+  clip planes in on the place along with the camera, so the view turned
+  or zoomed back out showed the part cut to a slab round that place until
+  the next fit. Framing a place is now a zoom: the clip planes go on
+  taking in the whole part (`SceneManager.fitBox`). Tests: `e2e:nav`
+  frames a place at one end of the part and turns the view, and every
+  corner of the part stays between the clip planes.
+- **`deviation.hotspots` tells the map past the search distance apart**
+  (2026-10-11). The patches were gathered from every finite reading, the
+  ones past the search distance — drawn bare on the map — among them,
+  and nothing said which. The patches are now of the measured map alone,
+  and `far` carries the rest by side: `inside`, the scan deeper inside
+  the reference than the search distance, where the reference has
+  material the part has not (a hole or a pocket the model lacks);
+  `outside`, the scan further off it, where the part has what the model
+  has not, or spray — each with its count and its patches, the largest
+  first; `unmeasured` counts the vertices the facing limit left without a
+  reading. Test: the search distance pulled under the 2 mm the slab's top
+  and bottom lie inside, they leave the patches and are told as
+  `far.inside`, two patches of about 2 mm.
+- **Answers handed back keep every digit** (2026-10-11). A command may be
+  `exact` (`Command.exact`, listed only when true): its numbers are inputs
+  — a sketch's coordinates, a plane's frame — and scanruler-mcp leaves
+  them unrounded, where every other answer is shortened to six
+  significant digits; a batch holding an exact answer is sent exact as a
+  whole. Rounded coordinates handed back had left faces a hair off the
+  faces they were meant to share.
+
 ## 0.5.1 — 2026-10-10
 
 - **Nothing lights under the cursor while the view moves** (2026-10-10).

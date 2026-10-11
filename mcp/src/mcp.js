@@ -28,7 +28,7 @@ export const INSTRUCTIONS = [
   'scanruler_batch runs several tools in one call, in order — many scan_nearest or element_fit calls, say — and stops at the first that is refused unless told to go on.',
 ].join(' ')
 
-const text = (value) => ({ content: [{ type: 'text', text: typeof value === 'string' ? value : agentJson(value) }] })
+const text = (value, exact = false) => ({ content: [{ type: 'text', text: typeof value === 'string' ? value : agentJson(value, exact) }] })
 const failure = (e) => {
   const code = e?.code ?? 'failed'
   const message = e?.message ?? String(e)
@@ -193,7 +193,7 @@ export function createMcpServer({
       const result = await link.run(command.name, input, binaryKey, onProgress)
       const image = command.returnsImage ? await imageContent(result, args, { cwd, outDir }) : null
       if (image) return { content: image }
-      return text(await saveFileResult(result, args, { cwd, outDir }))
+      return text(await saveFileResult(result, args, { cwd, outDir }), Boolean(command.exact))
     } catch (e) {
       return failure(e)
     }
@@ -238,12 +238,17 @@ export function createMcpServer({
       const stopOnError = args?.stopOnError !== false
       const results = []
       let stopped
+      // A batch holding an exact answer (a feature listed, a plane
+      // described) keeps every answer exact: the rounding is one pass over
+      // the whole.
+      let exact = false
       for (let i = 0; i < calls.length; i++) {
         const c = calls[i] ?? {}
         const tool = String(c.tool ?? '')
         const one = own.some((t) => t.name === tool)
           ? failure({ code: 'invalid_input', message: `${tool} is the server’s own and is not batched — call it on its own.` })
           : await runPageTool(tool, c.arguments ?? {}, undefined)
+        if (!one.isError && commands().find((x) => toolName(x) === tool)?.exact) exact = true
         const body = one.content.find((x) => x.type === 'text')?.text ?? ''
         if (one.isError) {
           const m = /^([a-z_]+): ([\s\S]*)$/.exec(body)
@@ -262,7 +267,7 @@ export function createMcpServer({
           results.push({ tool, ok: true, result: parsed })
         }
       }
-      return text({ results, ran: results.length, of: calls.length, ...(stopped !== undefined ? { stopped } : {}) })
+      return text({ results, ran: results.length, of: calls.length, ...(stopped !== undefined ? { stopped } : {}) }, exact)
     },
   })
 

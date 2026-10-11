@@ -94,9 +94,13 @@ describe('deviation', () => {
     const slab = boxMesh(40, 40).map((v, i) => (i % 3 === 2 ? v * 1.1 : v))
     await run('deviation.open_reference', { bytes: stlBytes(slab), name: 'slab.stl' })
     await run('deviation.align')
+    // The patches are of the measured map — what lies within the search
+    // distance — so the distance is set past the 2 mm first (the automatic
+    // one, a share of the part's size, lands about there).
+    await run('deviation.settings', { maxDistance: 3 })
     type V3 = [number, number, number]
     type H = { source: string; tolerance: number; over: number; found: number; spacing: number; patches: { centroid: V3; box: { min: V3; max: V3 }; area: number; count: number; mean: number; extreme: number; side: string; at: V3; vertex: number; vertices: number[]; onReference?: { centroid: V3; at: V3 } }[] }
-    const h = await run<H>('deviation.hotspots', { tolerance: 0.5 })
+    const h = await run<H & { far: { count: number } }>('deviation.hotspots', { tolerance: 0.5 })
     expect(h.source).toBe('reference')
     expect(h.tolerance).toBe(0.5)
     expect(h.found).toBe(2)
@@ -120,6 +124,32 @@ describe('deviation', () => {
     expect(none.patches).toEqual([])
     expect(none.over).toBe(0)
     expect((await refused('deviation.hotspots', { patches: 0 })).code).toBe('invalid_input')
+    // Within the search distance the far reading holds nothing. The search
+    // distance pulled in under the 2 mm the top and bottom lie inside: they
+    // leave the measured map — no patch over tolerance any more — and are
+    // told as far.inside instead, where the reference has material the part
+    // has not.
+    type Side = { count: number; found: number; patches: H['patches'] }
+    type F = H & { far: { searchDistance: number; count: number; inside: Side; outside: Side }; unmeasured: number }
+    expect(h.far.count).toBe(0)
+    await run('deviation.settings', { maxDistance: 1 })
+    const far = await run<F>('deviation.hotspots', { tolerance: 0.5 })
+    expect(far.far.searchDistance).toBe(1)
+    expect(far.patches).toEqual([])
+    expect(far.over).toBe(0)
+    expect(far.far.inside.count).toBeGreaterThan(600)
+    expect(far.far.outside.count).toBe(0)
+    expect(far.far.count).toBe(far.far.inside.count)
+    expect(far.far.inside.found).toBe(2)
+    expect(far.far.inside.patches).toHaveLength(2)
+    for (const p of far.far.inside.patches) {
+      expect(p.side).toBe('inside')
+      expect(Math.abs(p.extreme)).toBeCloseTo(2, 1)
+      expect(Math.abs(p.centroid[2])).toBeCloseTo(20, 0)
+    }
+    expect(far.unmeasured).toBe(0)
+    await undo()
+    await undo()
   })
 
   it('deviation.set_target needs the viewport the element map is measured on', async () => {

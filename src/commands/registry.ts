@@ -59,6 +59,7 @@ export function listCommands(): CommandInfo[] {
       readOnly: Boolean(c.readOnly),
       returnsFile: Boolean(c.returnsFile),
       returnsImage: Boolean(c.returnsImage),
+      ...(c.exact ? { exact: true } : {}),
     }))
 }
 

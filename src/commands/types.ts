@@ -88,6 +88,10 @@ export interface Command<I = Record<string, unknown>> {
    *  command that is not read-only. False for those that walk the history
    *  themselves or start it afresh. */
   history?: boolean
+  /** The answer's numbers are handed back as inputs — a sketch's
+   *  coordinates, a plane's frame — and must come through to the last
+   *  digit: a caller that shortens numbers for reading leaves these alone. */
+  exact?: boolean
   /** The undo step's name for this input; the title otherwise. */
   label?(input: I): string
   run(input: I, ctx: CommandContext): Promise<unknown>
@@ -102,4 +106,6 @@ export interface CommandInfo {
   readOnly: boolean
   returnsFile: boolean
   returnsImage: boolean
+  /** Only when true — see Command.exact. */
+  exact?: boolean
 }
