@@ -1,9 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// A plane from a click or from a painted selection, ready to be an element.
+// A bare plane has no side and no size, so both are added: the normal is
+// turned by a vote of the surface normals to point out of the part, and the
+// element is drawn as the smallest-area rectangle round the region in the
+// plane — the principal axes would box a square patch in diagonally, well
+// past its edges.
+
 import type { FitSettings, MeshGraph, Plane, PlaneFit, Vec3 } from '../types'
 import { FitError } from './errors'
 import { orthoBasis } from './linalg'
 import { fitPlaneClipped, ransacPlane } from './plane'
-import { collectPatch, growPlaneRegion } from './regionGrow'
+import { growPlaneRegion, seededFit } from './regionGrow'
 import { requireSelection } from './selection'
 
 /** In-plane rotations tried when boxing the patch in, over a quarter turn —
@@ -150,42 +157,37 @@ export function fitPlaneFromSeed(
   seeds: number[],
   settings: FitSettings,
 ): PlaneFit & { region: Uint32Array } {
-  for (const patchSize of [1500, 6000, 24000]) {
-    const patch = collectPatch(g, seeds, patchSize)
-    if (patch.length < 30) break
+  const fit = seededFit(g, seeds, {
+    estimate: (patch, seed) => ransacPlane(g.positions, patch, { seed }),
+    grow: (cand) => growPlaneRegion(g, seeds, cand.plane, cand.sigma, cand.inliers.length),
+    finish: (grown): (PlaneFit & { region: Uint32Array }) | null => {
+      const fin = fitPlaneClipped(g.positions, grown.region, settings.sigma)
+      if (!fin) return null
+      const plane = orientToSurface(fin.plane, g.normals, grown.region)
+      const ext = patchExtents(g.positions, grown.region, plane)
+      if (!ext) return null
+      // A "plane" rougher than a tenth of its own size is a curved or broken
+      // surface, not a flat one.
+      if (!(fin.sigma < 0.1 * Math.max(ext.extentU, ext.extentV))) return null
 
-    const cand = ransacPlane(g.positions, patch, { seed: (seeds[0] ?? 1) + patchSize })
-    if (!cand) continue
-
-    const grown = growPlaneRegion(g, seeds, cand.plane, cand.sigma, cand.inliers.length)
-    if (!grown) continue
-    if (grown.region.length < 60) continue
-
-    const fin = fitPlaneClipped(g.positions, grown.region, settings.sigma)
-    if (!fin) continue
-    const plane = orientToSurface(fin.plane, g.normals, grown.region)
-    const ext = patchExtents(g.positions, grown.region, plane)
-    if (!ext) continue
-    // A "plane" rougher than a tenth of its own size is a curved or broken
-    // surface, not a flat one.
-    if (!(fin.sigma < 0.1 * Math.max(ext.extentU, ext.extentV))) continue
-
-    return {
-      kind: 'plane',
-      center: ext.center,
-      normal: [plane.nx, plane.ny, plane.nz],
-      basisU: ext.basisU,
-      basisV: ext.basisV,
-      extentU: ext.extentU,
-      extentV: ext.extentV,
-      sigma: fin.sigma,
-      usedPoints: fin.used.length,
-      regionSize: grown.region.length,
-      formError: fin.span,
-      ...orientedExtremes(fin, plane),
-      region: grown.region,
-    }
-  }
+      return {
+        kind: 'plane',
+        center: ext.center,
+        normal: [plane.nx, plane.ny, plane.nz],
+        basisU: ext.basisU,
+        basisV: ext.basisV,
+        extentU: ext.extentU,
+        extentV: ext.extentV,
+        sigma: fin.sigma,
+        usedPoints: fin.used.length,
+        regionSize: grown.region.length,
+        formError: fin.span,
+        ...orientedExtremes(fin, plane),
+        region: grown.region,
+      }
+    },
+  })
+  if (fit) return fit
   throw new FitError(
     "Couldn't fit a plane at this point — try clicking in the middle of a flat surface, away from edges.",
   )

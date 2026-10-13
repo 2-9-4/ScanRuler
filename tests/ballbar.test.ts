@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { readFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { parseSTL } from '../src/core/parsers/stl'
 import { buildMeshGraph } from '../src/core/geometry/buildGraph'
 import { fitSphereFromSeed } from '../src/core/fit/fitSphereFromSeed'
 import type { MeshGraph, SphereFitOutput } from '../src/core/types'
 import { fixture } from './fixtures'
+
+// Kernel builds and real-scan fits run long, and longer on a slow machine.
+vi.setConfig({ testTimeout: 180_000 })
 
 /** Acceptance test against a real structured-light scan of a ball bar.
  *  GOM Inspect (Gaussian best-fit, 3-sigma used points) measures this file

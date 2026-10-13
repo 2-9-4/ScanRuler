@@ -4,13 +4,16 @@
 // where it starts a new history or changes nothing the history keeps. In the
 // in-process worker, with no viewport and no browser (see commandKit.ts):
 // what needs either says so.
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useDeviation } from '../src/state/deviationStore'
 import { useFlat } from '../src/state/flatStore'
 import { useThickness } from '../src/state/thicknessStore'
 import { useShell } from '../src/state/shellStore'
 import { boxMesh } from './helpers'
 import { refused, run, startHeadless, stlBytes, undoLabels, type Headless } from './commandKit'
+
+// Kernel builds and real-scan fits run long, and longer on a slow machine.
+vi.setConfig({ testTimeout: 180_000 })
 
 type Vec2 = [number, number]
 const BOX = stlBytes(boxMesh(40, 40))
@@ -72,11 +75,13 @@ describe('deviation', () => {
     await run('deviation.open_reference', { bytes: BOX, name: 'nominal.stl' })
     expect((await refused('deviation.measure')).code).toBe('invalid_state')
     await run('deviation.align')
-    type M = { deviation: { stats: { measured: number; tolerance: number }; settings: { tolerance: number; facingDeg: number | null } } }
+    type M = { deviation: { stats: { measured: number; tolerance: number }; settings: { range: number; tolerance: number; facingDeg: number | null; colormap: { id: string; low: { mm: number }; zero: { rgb: number[] }; high: { rgb: number[] } } } } }
     const m = await run<M>('deviation.measure')
     expect(m.deviation.stats.measured).toBeGreaterThan(1000)
-    const s = await run<M>('deviation.settings', { tolerance: 0.05, facingDeg: 45 })
-    expect(s.deviation.settings).toMatchObject({ tolerance: 0.05, facingDeg: 45 })
+    const s = await run<M>('deviation.settings', { tolerance: 0.05, facingDeg: 45, colormap: 'viridis' })
+    expect(s.deviation.settings).toMatchObject({ tolerance: 0.05, facingDeg: 45, colormap: { id: 'viridis' } })
+    expect(s.deviation.settings.colormap.low.mm).toBe(-s.deviation.settings.range)
+    expect(s.deviation.settings.colormap.zero.rgb).not.toEqual(s.deviation.settings.colormap.high.rgb)
     expect(s.deviation.stats.tolerance).toBe(0.05)
     expect((await refused('deviation.settings', { tolerance: -1 })).code).toBe('invalid_input')
     expect(undoLabels().slice(-1)).toEqual(['Agent: deviation settings'])

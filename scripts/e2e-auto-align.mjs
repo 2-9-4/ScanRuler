@@ -13,45 +13,10 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { check, click, finish, launchApp, loadScan, sleep } from './e2e-lib.mjs'
+import { turnedBlockScan } from './e2e-fixtures.mjs'
 
 // ---- the scan: a gridded block, turned and moved -----------------------------
-const SIZE = [60, 40, 10]
-const GRID = 24
-const tris = []
-for (let axis = 0; axis < 3; axis++) {
-  for (const side of [-1, 1]) {
-    const u = (axis + 1) % 3, v = (axis + 2) % 3
-    const at = (i, j) => {
-      const q = [0, 0, 0]
-      q[axis] = (side * SIZE[axis]) / 2
-      q[u] = (i / GRID - 0.5) * SIZE[u]
-      q[v] = (j / GRID - 0.5) * SIZE[v]
-      return q
-    }
-    for (let i = 0; i < GRID; i++)
-      for (let j = 0; j < GRID; j++) {
-        const quad = [at(i, j), at(i + 1, j), at(i + 1, j + 1), at(i, j + 1)]
-        // Wound so the normal points out of the block on either side.
-        if (side > 0) tris.push(quad[0], quad[1], quad[2], quad[0], quad[2], quad[3])
-        else tris.push(quad[0], quad[2], quad[1], quad[0], quad[3], quad[2])
-      }
-  }
-}
-// Rotation about (0.3, −0.5, 0.81) by 0.9 rad, then a move.
-const k = [0.3, -0.5, 0.81].map((c) => c / Math.hypot(0.3, 0.5, 0.81))
-const [c, s] = [Math.cos(0.9), Math.sin(0.9)]
-const pose = (q) => {
-  const d = k[0] * q[0] + k[1] * q[1] + k[2] * q[2]
-  const x = [k[1] * q[2] - k[2] * q[1], k[2] * q[0] - k[0] * q[2], k[0] * q[1] - k[1] * q[0]]
-  return [0, 1, 2].map((i) => q[i] * c + x[i] * s + k[i] * d * (1 - c) + [12, -7, 30][i])
-}
-const stl = Buffer.alloc(84 + (tris.length / 3) * 50)
-stl.writeUInt32LE(tris.length / 3, 80)
-for (let t = 0; t < tris.length / 3; t++)
-  for (let corner = 0; corner < 3; corner++) {
-    const q = pose(tris[t * 3 + corner])
-    for (let i = 0; i < 3; i++) stl.writeFloatLE(q[i], 84 + t * 50 + 12 + corner * 12 + i * 4)
-  }
+const { bytes: stl } = turnedBlockScan()
 const scanPath = join(mkdtempSync(join(tmpdir(), 'scanruler-auto-align-')), 'block.stl')
 writeFileSync(scanPath, stl)
 

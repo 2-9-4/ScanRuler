@@ -5,8 +5,8 @@
 // the calibration: honest enough to measure with immediately, and labelled as
 // nominal until it has been verified against a reference on the glass.
 //
-// Parsing by hand rather than through an image library because this is all we
-// ask of the container — the pixels themselves come from createImageBitmap.
+// Parsing by hand rather than through an image library because this is all
+// that is asked of the container — the pixels themselves come from createImageBitmap.
 
 export interface PixelsPerMm {
   x: number

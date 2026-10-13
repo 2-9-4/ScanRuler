@@ -42,7 +42,7 @@ export interface FlatDxfInput extends FlatDrawingInput {
   edgeTolerance: number
 }
 
-export const DXF_LAYERS = { edges: 'edges', elements: 'elements', labels: 'labels' } as const
+const DXF_LAYERS = { edges: 'edges', elements: 'elements', labels: 'labels' } as const
 
 /** The block record the model space's entities belong to, in the skeleton
  *  below. */

@@ -1,4 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// The 3D viewport the app talks to: the scan, the reference and everything
+// measured on them, in one scene. The scan and its elements hang in a group
+// that carries the alignment, while the reference stays put as the datum.
+// The work lives in neighbouring modules — the viewport chassis, the colour
+// compositor, the marking, the grips, the overlays — and is wired together
+// here; plugins draw and pick through layers (addLayer, see sceneLayers.ts).
+// Importing it installs three-mesh-bvh on three.js's prototypes, for the
+// whole app: a mesh whose geometry has a bounds tree is raycast through it.
+
 import * as THREE from 'three'
 import type { LinkedView } from './cameraLink'
 import { OrthoViewport, STANDARD_VIEWS, type StandardView } from './orthoViewport'
@@ -24,34 +33,22 @@ import type { ControlScheme } from './navSchemes'
 import type { PickMarker } from './PickScene'
 import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from 'three-mesh-bvh'
 import type { FitData, Vec3 } from '../core/types'
-import { rigidApplyToPoints, rigidRotateVectors, type Rigid } from '../core/deviation/rigid'
+import { rigidApplyToPoints, rigidRotate, rigidRotateVectors, type Rigid } from '../core/deviation/rigid'
 import { deflectionFactor, deflectionStartPhase } from '../core/deviation/deflection'
 import { applyFinish, DEFAULT_THEME, setSurfaceColor, type ViewTheme } from './viewThemes'
 import {
   backfaceUniforms,
-  BACKFACE_GLSL_FRAGMENT,
-  BACKFACE_GLSL_PREAMBLE,
 } from './backfaceTint'
 import {
   surfaceUniform,
-  TINT_GLSL_FRAGMENT,
-  TINT_GLSL_PREAMBLE,
-  TINT_GLSL_VERTEX,
-  TINT_GLSL_VERTEX_BODY,
   type SurfaceUniform,
 } from './regionTint'
 import {
   paintUniform,
   setPaintUniform,
-  PAINT_GLSL_FRAGMENT,
-  PAINT_GLSL_PREAMBLE,
-  PAINT_GLSL_VERTEX,
-  PAINT_GLSL_VERTEX_BODY,
   type PaintUniform,
 } from './paintTint'
 import {
-  DEFLECT_GLSL_VERTEX,
-  DEFLECT_GLSL_VERTEX_BODY,
   DEFLECTION_PERIOD_MS,
   type DeflectionUniform,
 } from './deflection'
@@ -59,9 +56,11 @@ import {
   patchWireframe,
   SEE_THROUGH_OPACITY,
   setSurfaceOpacity,
-  spliceWireframe,
   wireUniforms,
 } from './surfaceModes'
+import { principalAxis } from './scanLayout'
+import { patchScanShader } from './scanShader'
+import { buildSliceCap, type SliceCap } from './sliceCap'
 
 declare module 'three' {
   interface BufferGeometry {
@@ -73,41 +72,6 @@ declare module 'three' {
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree
 THREE.Mesh.prototype.raycast = acceleratedRaycast
-
-/** Dominant direction of the vertex cloud (power iteration on the
- *  covariance of a subsample) — used to frame elongated parts broadside. */
-function principalAxis(positions: Float32Array): THREE.Vector3 {
-  const n = positions.length / 3
-  const step = Math.max(1, Math.floor(n / 50_000))
-  let mx = 0, my = 0, mz = 0, m = 0
-  for (let v = 0; v < n; v += step) {
-    mx += positions[v * 3]
-    my += positions[v * 3 + 1]
-    mz += positions[v * 3 + 2]
-    m++
-  }
-  mx /= m; my /= m; mz /= m
-  let cxx = 0, cxy = 0, cxz = 0, cyy = 0, cyz = 0, czz = 0
-  for (let v = 0; v < n; v += step) {
-    const x = positions[v * 3] - mx
-    const y = positions[v * 3 + 1] - my
-    const z = positions[v * 3 + 2] - mz
-    cxx += x * x; cxy += x * y; cxz += x * z
-    cyy += y * y; cyz += y * z; czz += z * z
-  }
-  const a = new THREE.Vector3(1, 1, 1).normalize()
-  for (let i = 0; i < 50; i++) {
-    a.set(
-      cxx * a.x + cxy * a.y + cxz * a.z,
-      cxy * a.x + cyy * a.y + cyz * a.z,
-      cxz * a.x + cyz * a.y + czz * a.z,
-    )
-    const len = a.length()
-    if (len < 1e-20) return new THREE.Vector3(1, 0, 0)
-    a.divideScalar(len)
-  }
-  return a
-}
 
 /** The overlay data and the marking brush are defined beside the modules that
  *  draw them; consumers keep importing everything from here. */
@@ -178,6 +142,33 @@ interface SlotLayout {
   regions: RegionColors
   modelRadius: number
   axis: THREE.Vector3
+}
+
+/** A mesh made ready beside the one on show: `commit` puts it in place, once;
+ *  `dispose` lets it go if it never was. */
+function preparedHandle(geometry: THREE.BufferGeometry, material: THREE.Material, what: string, onCommit: () => void): { commit(): void; dispose(): void } {
+  let owned = true
+  return {
+    dispose: () => {
+      if (!owned) return
+      owned = false
+      geometry.disposeBoundsTree?.()
+      geometry.dispose()
+      material.dispose()
+    },
+    commit: () => {
+      if (!owned) throw new Error(`The prepared ${what} has already been used.`)
+      owned = false
+      onCommit()
+    },
+  }
+}
+
+/** A direction the rigid motion turns, kept a unit vector. */
+function rotatedDirection(m: Rigid, a: THREE.Vector3): THREE.Vector3 {
+  const out = new Float64Array(3)
+  rigidRotate(m, a.x, a.y, a.z, out)
+  return new THREE.Vector3(out[0], out[1], out[2]).normalize()
 }
 
 export class SceneManager {
@@ -258,7 +249,7 @@ export class SceneManager {
   private sheetFollow: { frame: SectionFrame; centre: readonly [number, number]; unitsPerPx: number } | null = null
   private followedSize = { w: 0, h: 0 }
   /** The cap that closes the part where it is cut open — see applySlice. */
-  private cap: { back: THREE.Mesh; front: THREE.Mesh; sheet: THREE.Mesh; dispose: () => void } | null = null
+  private cap: SliceCap | null = null
   private capGeometry = new THREE.PlaneGeometry(1, 1)
   /** Elements lit because something being built refers to them, and
    *  elements lit because a picker's option is hovered — two reasons, one
@@ -839,41 +830,29 @@ export class SceneManager {
       side: THREE.DoubleSide,
     })
     applyFinish(material, this.theme)
-    this.patchScanShader(material)
+    patchScanShader(material, { backface: this.backface, paintColor: this.uPaintColor, surfaceColor: this.uSurfaceColor, deflect: this.uDeflect, wire: this.wire })
     setSurfaceOpacity(material, this.scanOpacity())
     const mesh = new THREE.Mesh(geometry, material)
-    let owned = true
-    return {
-      dispose: () => {
-        if (!owned) return
-        owned = false
-        geometry.disposeBoundsTree?.()
-        geometry.dispose()
-        material.dispose()
-      },
-      commit: () => {
-        if (!owned) throw new Error('The prepared scan has already been used.')
-        owned = false
-        this.disposeMesh()
-        this.setPreview(null)
-        this.mesh = mesh
-        this.adoptScanLayout(geometry, copyOf)
-        this.partGroup.add(this.mesh)
-        this.applySlice()
-        // A new scan is not aligned to anything yet, and nothing is being
-        // previewed on it.
-        this.previewMatrix.identity()
-        this.setAlignment(null)
-        this.regions.attach(colors, paint, tint, this.scanVertices)
+    return preparedHandle(geometry, material, 'scan', () => {
+      this.disposeMesh()
+      this.setPreview(null)
+      this.mesh = mesh
+      this.adoptScanLayout(geometry, copyOf)
+      this.partGroup.add(this.mesh)
+      this.applySlice()
+      // A new scan is not aligned to anything yet, and nothing is being
+      // previewed on it.
+      this.previewMatrix.identity()
+      this.setAlignment(null)
+      this.regions.attach(colors, paint, tint, this.scanVertices)
 
-        this.modelRadius = Math.max(
-          geometry.boundingBox!.min.distanceTo(geometry.boundingBox!.max) / 2,
-          1e-4,
-        )
-        this.scanAxis = axis
-        this.frameCamera(geometry.boundingBox!, this.scanAxis)
-      },
-    }
+      this.modelRadius = Math.max(
+        geometry.boundingBox!.min.distanceTo(geometry.boundingBox!.max) / 2,
+        1e-4,
+      )
+      this.scanAxis = axis
+      this.frameCamera(geometry.boundingBox!, this.scanAxis)
+    })
   }
 
   /**
@@ -1059,59 +1038,6 @@ export class SceneManager {
     level(this.paintAttr, 'paint', 1)
   }
 
-  /**
-   * The scan material's shader amendments: the sharp border of the element
-   * tints (see regionTint.ts), the hand-marking's tint (see paintTint.ts),
-   * back-face flagging (see backfaceTint.ts), the mesh mode's edges (see
-   * surfaceModes.ts) and the map played as motion (see deflection.ts).
-   * Folded into one patch here because a material has a single
-   * onBeforeCompile.
-   *
-   * Back faces are flagged in the shader rather than by drawing the mesh a
-   * second time with the faces flipped, because the second pass would have to
-   * be the same million triangles again — and because a front-face-only main
-   * pass would take the inside of the part out of reach of the raycaster,
-   * which is what picking, hovering and the brush all run on. The order the
-   * lines run in is the order the layers stack: the region border is cut
-   * first, the flag goes over it — a tinted back face is a warning, not a
-   * surface — and the marking has the last word. A gesture that reaches
-   * through the part marks the far side of the wall as well, and marking
-   * that hid under the flag would be marking the user cannot see.
-   */
-  private patchScanShader(material: THREE.Material): void {
-    material.onBeforeCompile = (shader) => {
-      shader.uniforms.uBackfaceTint = this.backface.uBackfaceTint
-      shader.uniforms.uBackfaceColor = this.backface.uBackfaceColor
-      shader.uniforms.uPaintColor = this.uPaintColor
-      shader.uniforms.uSurfaceColor = this.uSurfaceColor
-      shader.uniforms.uDeflect = this.uDeflect
-      shader.vertexShader =
-        TINT_GLSL_VERTEX +
-        PAINT_GLSL_VERTEX +
-        DEFLECT_GLSL_VERTEX +
-        shader.vertexShader
-          .replace(
-            '#include <color_vertex>',
-            `#include <color_vertex>
-          ${TINT_GLSL_VERTEX_BODY}
-          ${PAINT_GLSL_VERTEX_BODY}`,
-          )
-          .replace('#include <begin_vertex>', `#include <begin_vertex>\n\t${DEFLECT_GLSL_VERTEX_BODY}`)
-      shader.fragmentShader =
-        BACKFACE_GLSL_PREAMBLE +
-        PAINT_GLSL_PREAMBLE +
-        TINT_GLSL_PREAMBLE +
-        shader.fragmentShader.replace(
-          '#include <color_fragment>',
-          `#include <color_fragment>
-          ${TINT_GLSL_FRAGMENT}
-          ${BACKFACE_GLSL_FRAGMENT}
-          ${PAINT_GLSL_FRAGMENT}`,
-        )
-      spliceWireframe(shader, this.wire)
-    }
-  }
-
   /** The compositor moved colours: the colour buffer and the tint mask that
    *  goes with it both need uploading — see regionColors. */
   private surfaceRepainted(): void {
@@ -1196,7 +1122,7 @@ export class SceneManager {
    *
    * Only what is actually being shown counts: with the scan switched off it is
    * the reference that has to be fitted, and fitting the pair of them would
-   * leave the one you are looking at small and off to one side. The datum
+   * leave the one being looked at small and off to one side. The datum
    * stage counts too while it is out, because an alignment being set up is read
    * against it.
    */
@@ -1363,75 +1289,19 @@ export class SceneManager {
     dress(this.mesh)
     for (const layer of this.layers) layer.clippingChanged?.(planes)
     this.clearCap()
-    if (planes && this.mesh && this.sliceCapped) this.buildCap(planes[0])
+    if (planes && this.mesh && this.sliceCapped) {
+      this.cap = buildSliceCap(planes[0], this.mesh.geometry, {
+        partGroup: this.partGroup,
+        scene: this.scene,
+        sheetGeometry: this.capGeometry,
+        color: this.sliceCapColor,
+        theme: this.theme,
+        modelCenter: () => this.modelCenter(),
+        modelRadius: () => this.modelRadius,
+        clearStencil: () => this.viewport.renderer.clearStencil(),
+      })
+    }
     this.invalidate()
-  }
-
-  /**
-   * Close the part where the slice cut it open, so the section reads as a
-   * solid and not as a shell looked into: the standard stencil cap. The
-   * scan's back faces on the kept side count the stencil up and its front
-   * faces count it down, so inside the solid — where the eye has passed
-   * through one more back face than front — the count is not zero; a
-   * sheet on the cut plane is drawn where it is not, in the surface's
-   * colour, and writes depth, so the shell's inside behind it stays hidden.
-   */
-  private buildCap(plane: THREE.Plane): void {
-    const geometry = this.mesh!.geometry
-    const stencilMaterial = (side: THREE.Side, op: THREE.StencilOp) => {
-      const m = new THREE.MeshBasicMaterial({ side, depthWrite: false, depthTest: false, colorWrite: false })
-      m.stencilWrite = true
-      m.stencilFunc = THREE.AlwaysStencilFunc
-      m.stencilFail = op
-      m.stencilZFail = op
-      m.stencilZPass = op
-      m.clippingPlanes = [plane]
-      return m
-    }
-    const back = new THREE.Mesh(geometry, stencilMaterial(THREE.BackSide, THREE.IncrementWrapStencilOp))
-    const front = new THREE.Mesh(geometry, stencilMaterial(THREE.FrontSide, THREE.DecrementWrapStencilOp))
-    back.renderOrder = -3
-    front.renderOrder = -3
-    this.partGroup.add(back, front)
-
-    let material: THREE.MeshStandardMaterial | THREE.MeshBasicMaterial
-    if (this.sliceCapColor !== null) material = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, color: this.sliceCapColor })
-    else {
-      material = new THREE.MeshStandardMaterial({ side: THREE.DoubleSide })
-      setSurfaceColor(material.color, this.theme)
-      // A shade under the surface: a cut face is not the skin of the part.
-      material.color.multiplyScalar(0.82)
-      applyFinish(material, this.theme)
-    }
-    material.stencilWrite = true
-    material.stencilRef = 0
-    material.stencilFunc = THREE.NotEqualStencilFunc
-    material.stencilFail = THREE.ReplaceStencilOp
-    material.stencilZFail = THREE.ReplaceStencilOp
-    material.stencilZPass = THREE.ReplaceStencilOp
-    const sheet = new THREE.Mesh(this.capGeometry, material)
-    // On the cut plane, centred where the part's centre falls on it, wide
-    // enough to cross the whole part — the same sheet a plane hint draws.
-    this.partGroup.updateMatrixWorld(true)
-    const m = this.partGroup.matrixWorld
-    const centre = plane.projectPoint(new THREE.Vector3(...this.modelCenter()).applyMatrix4(m), new THREE.Vector3())
-    const half = this.modelRadius * 1.3
-    sheet.position.copy(centre)
-    sheet.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), plane.normal)
-    sheet.scale.set(2 * half, 2 * half, 1)
-    sheet.renderOrder = -2
-    sheet.onAfterRender = () => this.viewport.renderer.clearStencil()
-    this.scene.add(sheet)
-    this.cap = {
-      back,
-      front,
-      sheet,
-      dispose: () => {
-        back.material.dispose()
-        front.material.dispose()
-        material.dispose()
-      },
-    }
   }
 
   private clearCap(): void {
@@ -1976,26 +1846,14 @@ export class SceneManager {
     patchWireframe(material, this.wire)
     setSurfaceOpacity(material, this.nominalOpacity())
     const mesh = new THREE.Mesh(geometry, material)
-    let owned = true
-    return {
-      dispose: () => {
-        if (!owned) return
-        owned = false
-        geometry.disposeBoundsTree?.()
-        geometry.dispose()
-        material.dispose()
-      },
-      commit: () => {
-        if (!owned) throw new Error('The prepared reference has already been used.')
-        owned = false
-        this.disposeNominal()
-        this.nominalMesh = mesh
-        this.nominalMesh.visible = false
-        this.nominalMesh.renderOrder = 1
-        this.scene.add(this.nominalMesh)
-        this.invalidate()
-      },
-    }
+    return preparedHandle(geometry, material, 'reference', () => {
+      this.disposeNominal()
+      this.nominalMesh = mesh
+      this.nominalMesh.visible = false
+      this.nominalMesh.renderOrder = 1
+      this.scene.add(this.nominalMesh)
+      this.invalidate()
+    })
   }
 
   clearScan(): void {
@@ -2039,24 +1897,12 @@ export class SceneManager {
       g.computeBoundingSphere()
       g.disposeBoundsTree?.()
       g.computeBoundsTree()
-      const a = this.other.axis
-      const r = m.r
-      this.other.axis = new THREE.Vector3(
-        r[0] * a.x + r[1] * a.y + r[2] * a.z,
-        r[3] * a.x + r[4] * a.y + r[5] * a.z,
-        r[6] * a.x + r[7] * a.y + r[8] * a.z,
-      ).normalize()
+      this.other.axis = rotatedDirection(m, this.other.axis)
     }
     // So does whatever the layers keep in the scan's frame.
     for (const layer of this.layers) layer.partMoved?.(m)
     // Keep framing the part broadside: its long axis moved with it.
-    const a = this.scanAxis
-    const r = m.r
-    this.scanAxis = new THREE.Vector3(
-      r[0] * a.x + r[1] * a.y + r[2] * a.z,
-      r[3] * a.x + r[4] * a.y + r[5] * a.z,
-      r[6] * a.x + r[7] * a.y + r[8] * a.z,
-    ).normalize()
+    this.scanAxis = rotatedDirection(m, this.scanAxis)
     this.frameCamera(geometry.boundingBox!, this.scanAxis)
   }
 
@@ -2368,8 +2214,8 @@ export class SceneManager {
    * readable through it. It is useless for confirming that the right file was
    * loaded, though: once aligned it lies inside a scan of nearly the same
    * shape, fails the depth test almost everywhere, and simply cannot be seen.
-   * Solid — writing depth, fully opaque — is what makes it a part you can look
-   * at.
+   * Solid — writing depth, fully opaque — is what makes it a part that can be
+   * looked at.
    */
   setNominalGhost(ghost: boolean): void {
     this.nominalGhost = ghost

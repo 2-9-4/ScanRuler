@@ -34,7 +34,7 @@ Notes:
   [public/fonts/](public/fonts/)) are third-party and stay under **SIL OFL
   1.1** — that license permits bundling with commercial software, but it does
   not convert them to AGPL or to any commercial exception granted here.
-- The sample scan and reference meshes in the repository root (`ballbar.stl`,
-  `block-marius.stl`, `side bracket left.stl`) are test fixtures, not part of
-  the software. They are not covered by a commercial exception unless
+- The sample scan and reference meshes the tests look for (`ballbar.stl`,
+  `block-marius.stl`, `side bracket left.stl`) are local fixtures, not
+  committed and not part of the software. They are not covered by a commercial exception unless
   explicitly agreed.

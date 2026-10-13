@@ -1,4 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// How much of a surface of revolution a fit rests on: the arc it covers round
+// the axis and how far it reaches along it. A scan only ever sees part of a
+// bore or a shaft, so the cylinder and the cone report both — the arc says
+// how well the radius is pinned down, the axial reach where the element
+// starts and ends.
+
 import { orthoBasis } from './linalg'
 
 /** Angles beyond which the coverage estimate stops sampling — plenty to

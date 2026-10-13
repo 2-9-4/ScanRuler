@@ -1,4 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// What an element stands for when something is measured from it: a point, an
+// axis or a plane — the standard metrology reduction, in which a sphere is
+// its centre and a cylinder its axis. Dimensions, tolerances and
+// constructions take their references by role rather than by kind, so which
+// kinds play which role is settled here, once, along with the margin past
+// which a reading is said to have left the measured surface.
+
 import type { ElementKind, FitData, PlaneFit, Vec3 } from '../types'
 
 /** The proxy geometry an element contributes to a measurement — the standard
@@ -8,7 +15,7 @@ import type { ElementKind, FitData, PlaneFit, Vec3 } from '../types'
  *  axis for whoever asks for one in a dropdown. */
 export type RefRole = 'point' | 'axis' | 'plane'
 
-export const ROLE_PROVIDERS: Record<RefRole, readonly ElementKind[]> = {
+const ROLE_PROVIDERS: Record<RefRole, readonly ElementKind[]> = {
   point: ['point', 'sphere', 'circle'],
   axis: ['line', 'cylinder', 'cone', 'circle', 'torus'],
   plane: ['plane'],

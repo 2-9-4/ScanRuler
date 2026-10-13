@@ -31,7 +31,7 @@ const TYPES = {
 }
 
 /** The file a URL path names under `root`, or null for one outside it. */
-export function fileFor(root, urlPath) {
+function fileFor(root, urlPath) {
   const path = decodeURIComponent(urlPath.split('?')[0].split('#')[0])
   const file = resolve(root, normalize('.' + (path.endsWith('/') ? `${path}index.html` : path)))
   return file === root || file.startsWith(root + sep) ? file : null

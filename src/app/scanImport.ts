@@ -50,8 +50,6 @@ export interface ScanImportDeps {
   clearPreview: () => void
 }
 
-export type ScanImport = ReturnType<typeof scanImport>
-
 export function scanImport({ clientRef, sceneRef, sources, imports, maps, clearPreview }: ScanImportDeps) {
   /** Put a prepared scan in place of the one there was — or none, for a
    *  project without one. */

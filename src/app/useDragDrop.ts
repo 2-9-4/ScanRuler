@@ -1,24 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Drag & drop anywhere. Owns the "drop it here" flag so the overlay can be
-// shown without the rest of the app caring about drag state.
+// shown without the rest of the app caring about drag state; where the file
+// goes is openAny's call.
 import { useEffect, useState } from 'react'
-import { isImageFile, isStepFile } from '../core/formats'
-import { useStore } from '../state/store'
-import { useDeviation } from '../state/deviationStore'
-import { useShell } from '../state/shellStore'
-import { isProjectFile } from './useProject'
+import { openAnyFile, type OpenHandlers } from './openAny'
 
-export function useDragDrop({
-  openFile,
-  openNominal,
-  openImage,
-  openProject,
-}: {
-  openFile: (file: File) => Promise<void>
-  openNominal: (file: File) => Promise<void>
-  openImage: (file: File) => Promise<void>
-  openProject: (file: File) => Promise<void>
-}): boolean {
+export function useDragDrop(handlers: OpenHandlers): boolean {
   const [dragging, setDragging] = useState(false)
   useEffect(() => {
     let depth = 0
@@ -46,33 +33,7 @@ export function useDragDrop({
       setDragging(false)
       const file = e.dataTransfer?.files?.[0]
       if (!file) return
-      // A project says for itself what it holds and where it goes.
-      if (isProjectFile(file.name)) {
-        void openProject(file)
-        return
-      }
-      // While the deviation workspace is measuring against a reference part a
-      // drop fills whichever slot is still empty, so the two files can simply be
-      // dropped one after the other; only once both are there does a drop mean
-      // "replace the scan". A STEP file is the exception: it can only ever be
-      // the reference, so it goes there however full the slots are.
-      //
-      // Measuring against an element wants no second model at all, so there a
-      // drop is always the scan.
-      // An image can only ever be a flatbed scan, so it opens the 2D Measure
-      // workspace with itself — dropped from anywhere.
-      if (isImageFile(file.name)) {
-        void openImage(file)
-        return
-      }
-      const dev = useDeviation.getState()
-      if (useShell.getState().workspace === 'deviation' && dev.source === 'reference') {
-        if (isStepFile(file.name) || (useStore.getState().fileName && !dev.nominalName)) {
-          void openNominal(file)
-          return
-        }
-      }
-      void openFile(file)
+      void openAnyFile(file, handlers)
     }
     window.addEventListener('dragenter', onDragEnter)
     window.addEventListener('dragover', onDragOver)
@@ -84,7 +45,7 @@ export function useDragDrop({
       window.removeEventListener('dragleave', onDragLeave)
       window.removeEventListener('drop', onDrop)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Runs on the listed dependencies only, not on everything it reads.
   }, [])
   return dragging
 }

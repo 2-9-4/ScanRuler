@@ -2,7 +2,7 @@
 // The wall thickness faceplate. One model, then the two halves of the job kept
 // apart: what the search is allowed to look for, which only takes effect when
 // the part is measured again, and how the result is read, which takes effect
-// as you turn it. Laid out like the deviation panel next door, because it is
+// as it is turned. Laid out like the deviation panel next door, because it is
 // the same instrument pointed at a different question.
 
 import { CONE_CHOICES, useThickness } from '../state/thicknessStore'

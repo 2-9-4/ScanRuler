@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { describe, expect, it } from 'vitest'
 import {
-  coneResidual,
   fitConeClipped,
   fitConeOnAxis,
   ransacCone,
 } from '../src/core/fit/cone'
 import { mulberry32 } from '../src/core/fit/ransac'
 import type { Cone, Vec3 } from '../src/core/types'
-import { allIndices, sampleCone } from './helpers'
+import { allIndices, sampleCone, unit } from './helpers'
 
 const POINT: [number, number, number] = [4, -3, 2]
 // Off-axis on purpose, so an axis-aligned bug cannot pass by accident.
@@ -16,11 +15,6 @@ const AXIS: Vec3 = [0.4, 0.6, 0.6928]
 const R = 6.35
 const PHI = (15 * Math.PI) / 180
 const LENGTH = 30
-
-function unit(v: Vec3): Vec3 {
-  const l = Math.hypot(v[0], v[1], v[2])
-  return [v[0] / l, v[1] / l, v[2] / l]
-}
 
 /** Exact outward normals for points sampled on the cone wall. */
 function wallNormals(points: Float32Array, point: Vec3, axis: Vec3, phi: number): Float32Array {
@@ -172,6 +166,6 @@ describe('RANSAC cone estimate', () => {
     const sliver = sampleCone(2_000, POINT, AXIS, 500, PHI, 20, 0.02, 8, (4 * Math.PI) / 180)
     const normals = wallNormals(sliver, POINT, AXIS, PHI)
     const res = ransacCone(sliver, normals, allIndices(2_000), { seed: 2 })
-    if (res) expect(coneResidual(res.cone, sliver[0], sliver[1], sliver[2])).toBeLessThan(1)
+    expect(res).toBeNull()
   })
 })

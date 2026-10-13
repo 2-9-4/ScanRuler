@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import type { MeshUnits } from '../meshUnits'
 // What a saved project carries, and how the pieces of live state that are not
 // JSON (typed arrays inside elements and rigid transforms) are written and
 // read back. Only user intent is saved: every map, field, edge chain and
@@ -9,6 +8,7 @@ import type { MeshUnits } from '../meshUnits'
 // The manifest is deliberately a plain data description of the stores, not
 // the stores themselves — drafts, busy flags and readouts never enter it.
 
+import type { MeshUnits } from '../meshUnits'
 import type { Element, Section, SelectMode } from '../../state/store'
 import type { Dimension } from '../dimensions'
 import type { AlignResult, PointPair } from '../deviation/align'

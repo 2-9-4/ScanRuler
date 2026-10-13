@@ -19,6 +19,31 @@ import { InfoDot } from './InfoDot'
 import { NameField, providersFor } from './RefSelect'
 import { tintStyle } from './tint'
 
+/** What a section or a cut can go along, as a select's options: the
+ *  coordinate planes, then the elements on offer. */
+export function PlaneRefOptions({ options }: { options: readonly { id: number; name: string }[] }) {
+  return (
+    <>
+      <optgroup label="Coordinate planes">
+        {WORLD_AXES.map((a) => (
+          <option key={a} value={a}>
+            {worldPlaneName(a)}
+          </option>
+        ))}
+      </optgroup>
+      {options.length > 0 && (
+        <optgroup label="Elements">
+          {options.map((el) => (
+            <option key={el.id} value={el.id}>
+              {el.name}
+            </option>
+          ))}
+        </optgroup>
+      )}
+    </>
+  )
+}
+
 export function SectionEditor({
   onCancel,
   onConfirm,
@@ -97,22 +122,7 @@ export function SectionEditor({
           onChange={(e) => setRef(parseRef(e.target.value))}
         >
           <option value="">{orphan ? '(deleted element)' : 'Select…'}</option>
-          <optgroup label="Coordinate planes">
-            {WORLD_AXES.map((a) => (
-              <option key={a} value={a}>
-                {worldPlaneName(a)}
-              </option>
-            ))}
-          </optgroup>
-          {options.length > 0 && (
-            <optgroup label="Elements">
-              {options.map((el) => (
-                <option key={el.id} value={el.id}>
-                  {el.name}
-                </option>
-              ))}
-            </optgroup>
-          )}
+          <PlaneRefOptions options={options} />
         </select>
       </label>
 

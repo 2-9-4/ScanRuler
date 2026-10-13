@@ -21,7 +21,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { importStep, writeBinarySTL } from 'meshstep'
 import { cubeStep } from '../tests/stepFixtures.ts'
-import { fail, finish, launchApp, shotPath, sleep } from './e2e-lib.mjs'
+import { fail, finish, launchApp, loadScan, shotPath, sleep } from './e2e-lib.mjs'
 
 const SIZE = 20
 const RAISE = 0.2 // top face, z = SIZE, pushed outward
@@ -75,11 +75,7 @@ const refusal = await page.$eval('.toast', (el) => el.textContent)
 console.log('scan slot refusal:', refusal)
 if (!/reference/i.test(refusal)) fail(`refusal does not say where a STEP file belongs: ${refusal}`)
 
-await (await page.$('[data-test=start-scan] input[type=file]')).uploadFile(scanPath)
-await page.waitForFunction(
-  () => /[1-9][\d,]* triangles/.test(document.querySelector('.file-info')?.textContent ?? ''),
-  { timeout: 300_000 },
-)
+await loadScan(page, scanPath, { inputSelector: '[data-test=start-scan] input[type=file]', timeout: 300_000, settle: 0 })
 console.log('scan:', await page.$eval('.file-info', (el) => el.textContent.replace(/\s+/g, ' ')))
 
 // ---- the STEP reference ----------------------------------------------------

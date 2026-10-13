@@ -15,8 +15,8 @@ import { createMcpServer } from './mcp.js'
 import { SharedLink } from './relay.js'
 import { httpServer } from './serve.js'
 
-export const DEFAULT_PORT = 7317
-export const HOSTED_APP = 'https://scanruler.com/'
+const DEFAULT_PORT = 7317
+const HOSTED_APP = 'https://scanruler.com/'
 
 const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
 
@@ -71,7 +71,7 @@ export async function main(argv = process.argv.slice(2)) {
   const app = values.app ?? (values.serve ? `http://127.0.0.1:${port}/` : HOSTED_APP)
   const pairing = `${app.replace(/#.*$/, '')}#agent=${port}:${token}`
   const connectHelp = () =>
-    `Open ScanRuler — ${app} — in Chrome or Edge and either open this pairing link once: ${pairing} — or in ScanRuler go to Settings → Agents, switch on "Local agent connection", and enter port ${port} and token ${token}.`
+    `Open ScanRuler — ${app} — in Chrome, Edge or Firefox and either open this pairing link once: ${pairing} — or in ScanRuler go to Settings → Agents, switch on "Local agent connection", and enter port ${port} and token ${token}.`
   if (values.pair) {
     process.stdout.write(`Port:  ${port}\nToken: ${token}\nLink:  ${pairing}\n`)
     return

@@ -30,8 +30,6 @@ export interface PartAlignmentDeps {
   clearPreview: () => void
 }
 
-export type PartAlignment = ReturnType<typeof partAlignment>
-
 export function partAlignment({ clientRef, sceneRef, imports, maps, clearPreview }: PartAlignmentDeps) {
   /** Bake a datum alignment (or its inverse, on reset) into everything that
    *  carries scan coordinates: the worker's copy of the mesh, the displayed

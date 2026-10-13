@@ -24,17 +24,12 @@ function writeHeader(view: DataView, text: string): void {
   for (let i = 0; i < ascii.length; i++) view.setUint8(i, ascii.charCodeAt(i))
 }
 
-/**
- * Build a binary STL from an indexed (or flat) triangle mesh.
- *
- * @param positions xyz per vertex.
- * @param indices   Three per triangle, or null when `positions` is already
- *                  laid out one triangle after another.
- * @param transform Applied to every vertex on the way out — the pose the scan
- *                  is being shown in but does not yet carry in its own
- *                  coordinates. Null exports the vertices as they stand.
- * @param header    Free text for the 80-byte header.
- */
+/** A binary STL of a triangle mesh: `positions` xyz per vertex, and
+ *  `indices` three per triangle — or null when `positions` is already laid
+ *  out one triangle after another. `transform` is applied to every vertex
+ *  on the way out: the pose the scan is being shown in but does not yet
+ *  carry in its own coordinates; null exports the vertices as they stand.
+ *  `header` is free text for the 80-byte header. */
 export function buildBinaryStl(
   positions: Float32Array,
   indices: Uint32Array | Uint16Array | null,

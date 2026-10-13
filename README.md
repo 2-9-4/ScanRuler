@@ -7,7 +7,7 @@ Check a 3D scan against what it should have been — entirely in your browser.
 The workspaces share the loaded scan:
 
 - **3D Measure** — pick features and get automatically fitted **spheres,
-  cylinders and planes**, construct **points, lines and planes** from them,
+  cylinders, cones, tori and planes**, construct **points, lines and planes** from them,
   and create the **distance and angle dimensions** you actually need between
   them, the way metrology software like GOM Inspect does it — and check
   **GD&T tolerances** on them: flatness, parallelism, coaxiality and the rest,
@@ -25,6 +25,10 @@ The workspaces share the loaded scan:
   deformed-shape animation, to see which way the part has gone.
 - **Thickness** — paint the **wall thickness of the part itself** over it, with
   no reference model and no alignment: load one file and measure.
+- **2D Measure** — measure a **flatbed scan** of a flat part the way a
+  measuring microscope would: points, lines, circles, arcs and splines fitted
+  to its edges, dimensions between them, the scale calibrated or read from
+  the file, and the sheet exported as **SVG, DXF or CSV**.
 
 **Everything runs locally.** Your scan files are processed in your browser and
 never leave your computer.
@@ -301,6 +305,9 @@ remembered per browser and none of it saved with a project:
   3D, the callouts and pin marks over a flatbed scan in 2D. The edges are the
   chains the curves are fitted to, found in the scan or cut by a section.
 - **Guided hints** — the amber ring around the control to press next.
+- **Agents** — **Local agent connection** lets an AI agent on this computer
+  drive the tab through the scanruler-mcp server, with the **Port** and
+  **Token** it connects on — see [Agents](#agents).
 - **Support card** — whether the thank-you card comes up in the corner of the
   stage on each visit. Its × closes it until the page is reloaded; switched
   off here it stays away.
@@ -323,7 +330,7 @@ choice of creation methods:
 | **Point** | pick on the scan surface · typed-in coordinates · **centroid of the scan** · midpoint of two points · intersection of a line/axis with a plane |
 | **Line** | through two points · a cylinder's axis · intersection of two planes |
 | **Plane** | fit to the scan · through three points · offset from a plane · midplane of two planes · typed-in normal + point · **symmetry plane of the scan** |
-| **Sphere, Cylinder** | fit to the scan |
+| **Sphere, Cylinder, Cone** | fit to the scan |
 | **Torus** | fit to the scan — one click on a round: a fillet, a bend, an O-ring seat. Reads the tube radius (the fillet's R) and the ring's; its axis is an axis wherever one is asked for |
 | **Circle** | through **3 or more picked points** (three give the exact circle, more refine a best fit — a hole rim, a boss edge) · intersection of a plane with a cylinder or a sphere · typed-in diameter + normal + center |
 
@@ -811,6 +818,37 @@ other drafts before leaving: drafts are warned about but are not included in
 checkpoints or project files. Browser storage can be cleared or run out of
 space, so use **Save Project** for a portable copy. Old session checkpoints
 remain available until discarded; nothing is uploaded to a server.
+
+### Opening a file from a link
+
+A file named in the page's address opens when the app starts, exactly as if
+it had been dropped: a `.scanruler` project replaces the session and lands in
+the workspace it was saved from, a mesh becomes the scan, an image opens the
+2D workspace. Two forms:
+
+- `https://scanruler.com/?open=https://host.example/parts/hinge.scanruler`
+  fetches any file on the web. The server the file is on has to let the app
+  read it — it has to answer with a CORS header naming the app's origin (or
+  `*`); GitHub's raw file addresses do, most file-sharing sites do not. The
+  status strip says what went wrong when the file does not come: the status
+  the server answered with, or that it could not be fetched at all, which
+  is nearly always that header missing.
+- `https://scanruler.com/s/hinge` is the short form for a file in the
+  deployment's own file store: the name is looked up under the store's
+  address, as `hinge.scanruler` unless the name ends in a format the app
+  opens (`/s/scans/ballbar.stl`). Names may have folders in them. Which store
+  is a build setting (see "Deploying to Cloudflare"); a build without one
+  says so.
+
+`workspace=<name>` on either form says where to land once the file is open:
+`measure`, `deviation`, `thickness`, `flat`, or a plugin workspace by its id
+(`.../s/hinge?workspace=deviation`). It wins over the workspace a project
+was saved in, and works on its own, without a file. An unknown name is
+reported with the names this build has.
+
+A link opens a file into the browser only: nothing is sent anywhere, and the
+file is as untrusted as a dropped one. The recovery bar still offers the
+previous session underneath.
 
 ### STEP export
 
@@ -1631,7 +1669,7 @@ on the undo keys under *Agent: …*, so anything it did can be taken back.
 
 ### Connecting your agent
 
-You need [Node.js](https://nodejs.org/) 20 or newer (`node --version` in a
+You need [Node.js](https://nodejs.org/) 22 or newer (`node --version` in a
 terminal says which you have) and Chrome, Edge or Firefox. Then two steps,
 once.
 
@@ -1741,8 +1779,9 @@ thickness; calibrate and measure a flatbed image; export STEP, STL, a point
 cloud, SVG, DXF and CSV; save and open projects; undo and redo; and look:
 it turns the 3D view to a standard view and gets a picture of it. It names a
 place on the scan by a point in millimetres or a vertex number; it reads the
-whole session as JSON — the bounding box of the scan, every element at full
-precision, every dimension with its verdict — and gets the report either as
+whole session as JSON — the bounding box of the scan, every element, every
+dimension with its verdict, numbers to six significant digits (an answer
+whose numbers are handed back as inputs keeps every digit) — and gets the report either as
 the text the **Copy report** buttons give or structured as JSON, to write
 Markdown, HTML or a PDF of its own from. Files are paths on your computer: the
 agent names one to open, and exports land where it says.
@@ -1846,7 +1885,7 @@ Workspaces can be added by plugins: `plugins/<id>/plugin.ts` beside `src/`,
 found at build time and read through the interfaces in
 [src/plugins/api.ts](src/plugins/api.ts) — a workspace's tab, panel and stage,
 its part of the project file, of the undo history, of the mesh worker and of
-the 3D viewport, and its notices in the imprint. This repository has no `plugins/` folder, and nothing in
+the 3D viewport, and its notices in the imprint. The open-source repository has no `plugins/` folder, and nothing in
 `src/` imports from one; `node scripts/check-plugin-boundary.mjs` checks
 that. `?plugins=none` in the address runs a build with plugins as if it had
 none.
@@ -1891,14 +1930,28 @@ it:
 
 Either way the site lands on a `*.workers.dev` URL — the live deployment is at
 <https://scanruler.com/> via a custom domain attached in the Worker's
-settings. The GitHub Actions workflow
+settings.
+
+**The file store** behind the short links (`/s/<name>`, see "Opening a file
+from a link") is any web address the app may read from — for the live site a
+Cloudflare R2 bucket with public access on a custom domain, and a CORS rule
+on the bucket allowing `GET` from the site's origin (and from
+`http://localhost:5173` for development). The build is told where it is
+through `VITE_FILES_URL` in `.env` next to `package.json`, which names the
+live site's store; a `.env.local` beside it (not committed) or a build
+variable in Workers Builds overrides it for another deployment. Without one
+the app still opens `?open=` links; only the short form answers that the
+build has no store. Files go into the bucket through the R2 page of
+the Cloudflare dashboard, `wrangler r2 object put`, or any S3 client with an
+R2 token; `node scripts/e2e-open-link.mjs` tries both forms against a dev
+server (its header says how). The GitHub Actions workflow
 (`.github/workflows/ci.yml`) still runs tests and a build on every push and
 pull request, so a red suite is visible before Cloudflare ships it.
 
 ## Roadmap
 
 - More fit methods: Chebyshev (min-zone), min-circumscribed, max-inscribed
-- More element types: cones, slots
+- More element types: slots
 - Circles fitted to a marked surface
 - GD&T position and runout — the form, orientation and coaxiality
   characteristics are in; runout reads the same surface points parallelism
@@ -1907,7 +1960,7 @@ pull request, so a red suite is visible before Cloudflare ships it.
 - Export the coloured scan, and sections through the deviation map — a
   section already lands its outline on the 2D Measure sheet; carrying the
   colour along is what is missing
-- 2D Measure: slot and rectangle features, DXF export of the fitted geometry
+- 2D Measure: slot and rectangle features
 
 ## License
 

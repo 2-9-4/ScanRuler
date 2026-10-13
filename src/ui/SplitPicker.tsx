@@ -23,6 +23,7 @@ import { absoluteOrientation } from '../core/deviation/absoluteOrientation'
 import { MIN_LOCAL_POINTS } from '../core/deviation/align'
 import type { Vec3 } from '../core/types'
 import { FitButton } from './FitButton'
+import { BrushNumber, BrushSlider } from './MarkTools'
 
 /** Below this the picked points are effectively on one line. */
 const MIN_CONDITIONING = 0.02
@@ -103,7 +104,6 @@ function Half({
     }
     // The channel is the scan's for as long as the scan is loaded, and this
     // view only exists while one is.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [geometry])
 
   useEffect(() => {
@@ -187,24 +187,8 @@ function PickTools({ onClear }: { onClear: () => void }) {
       {m.gesture === 'brush' && (
         <label className="picksize">
           <span>Ø</span>
-          <input
-            type="number"
-            step="any"
-            min={0}
-            data-test="pick-brush-diameter"
-            value={Number(m.diameter.toFixed(3))}
-            onChange={(e) => e.target.value !== '' && m.setDiameter(Number(e.target.value))}
-          />
-          <input
-            className="slider"
-            type="range"
-            min={brush.min}
-            max={brush.max}
-            step={(brush.max - brush.min) / 200}
-            value={Math.min(Math.max(m.diameter, brush.min), brush.max)}
-            aria-label="Brush diameter"
-            onChange={(e) => m.setDiameter(Number(e.target.value))}
-          />
+          <BrushNumber diameter={m.diameter} setDiameter={m.setDiameter} testId="pick-brush-diameter" />
+          <BrushSlider diameter={m.diameter} setDiameter={m.setDiameter} brush={brush} />
         </label>
       )}
       {m.gesture !== null && (

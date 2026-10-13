@@ -1,4 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// Measurements made between elements. The types follow the standard
+// metrology reduction (see elements/refs.ts): every element acts as a point,
+// an axis or a plane, and each dimension type says which of those roles its
+// slots take. A dimension stores only element ids, so its value is worked out
+// again from the elements' current geometry, and a reference gone degenerate
+// reads as invalid instead of vanishing.
+//
+// Two families share the machinery. A *dimension* reads a number off the
+// part — a distance, an angle, a diameter. A *tolerance* checks a GD&T
+// characteristic — how flat a face is, how parallel it lies to a datum — and
+// is evaluated in core/tolerances. Both are drafted, listed, drawn, saved and
+// reported the same way; the family only decides which editor a type is
+// offered in, and keeps a viewport click from carrying a draft across.
+
 import type { ElementKind, FitBase, FitData, PlaneFit, Vec3 } from './types'
 import {
   EXTENT_MARGIN,
@@ -27,20 +41,6 @@ import {
   scale,
   sub,
 } from './vec'
-
-/**
- * User-created measurements between elements, replacing the old "measure
- * everything against everything" list. The type system follows the standard
- * metrology reduction (see refs.ts): every element acts as a point, an axis
- * or a plane, and each dimension type picks two of those roles.
- *
- * Two families share the machinery. A *dimension* reads a number off the
- * part — a distance, an angle, a diameter. A *tolerance* checks a GD&T
- * characteristic — how flat a face is, how parallel it lies to a datum — and
- * is evaluated in core/tolerances. Both are drafted, listed, drawn, saved and
- * reported the same way; the family only decides which editor a type is
- * offered in, and keeps a viewport click from carrying a draft across.
- */
 
 export type DimensionFamily = 'dimension' | 'tolerance'
 
@@ -451,9 +451,9 @@ function toSurfaceRange(d: number, plane: PlaneFit): [number, number] | null {
 }
 
 /** Beyond this fold angle, "parallel" distances stop being reported. */
-export const PARALLEL_MAX_DEG = 3
+const PARALLEL_MAX_DEG = 3
 /** Beyond this fold angle, a parallel distance carries a warning. */
-export const PARALLEL_WARN_DEG = 0.5
+const PARALLEL_WARN_DEG = 0.5
 
 const mm = (v: number): string => `${v.toFixed(3)} mm`
 const signedMm = (v: number): string => `${v >= 0 ? '+' : ''}${v.toFixed(3)} mm`

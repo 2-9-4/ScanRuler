@@ -8,13 +8,13 @@
 // or renamed) has to be refused there too.
 
 /** Scan formats: what a scanner or a mesh tool writes. */
-export const MESH_EXTENSIONS = ['stl', 'ply', 'obj'] as const
+const MESH_EXTENSIONS = ['stl', 'ply', 'obj'] as const
 
 /** Reference formats: the mesh ones plus CAD. */
-export const REFERENCE_EXTENSIONS = [...MESH_EXTENSIONS, 'step', 'stp'] as const
+const REFERENCE_EXTENSIONS = [...MESH_EXTENSIONS, 'step', 'stp'] as const
 
 /** Flat-scan formats: what a flatbed scanner writes and a browser decodes. */
-export const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg'] as const
+const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg'] as const
 
 const accept = (exts: readonly string[]) => exts.map((e) => `.${e}`).join(',')
 

@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import type { Vec3 } from './types'
+// Vector arithmetic on plain [x, y, z] tuples — the core's own Vec3, not
+// three.js's — shared by the constructions, the dimensions, the alignment,
+// the sections and the fitting. The line helpers take a line as a point and
+// a unit direction, and treat it as infinite.
 
-/** Small Vec3 toolkit shared by the construction and dimension math. Plain
- *  tuples in, plain tuples out — nothing here allocates beyond its result. */
+import type { Vec3 } from './types'
 
 export const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 export const add = (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]]

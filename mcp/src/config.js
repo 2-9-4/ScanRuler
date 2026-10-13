@@ -20,7 +20,7 @@ export function configDir(env = process.env, platform = process.platform) {
 }
 
 /** A new token: 24 random bytes, URL-safe — it travels in a link. */
-export const newToken = () => randomBytes(24).toString('base64url')
+const newToken = () => randomBytes(24).toString('base64url')
 
 /** The command list the last connected page sent, or null. */
 export function loadRemembered(dir = configDir()) {

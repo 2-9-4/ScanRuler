@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 /** Keep the viewport pins legible when their anchors land on top of each
  *  other on screen — concentric cylinders, say, whose labels all sit at the
  *  same "up" offset from a shared axis. The CSS2D renderer only owns each
@@ -37,7 +38,7 @@ export function spreadLabels(labelDom: HTMLElement, gap = 2): void {
         if (overlapX && overlapY) {
           const nextDy = p.y0 + p.dy - gap - b.y1
           // Rounding can leave the overlap test true after this exact offset
-          // was applied. Retry only when we actually move upward. Each placed
+          // was applied. Retry only when the box actually moves upward. Each placed
           // box supplies one fixed offset, so strict progress bounds retries.
           if (nextDy < b.dy) {
             b.dy = nextDy

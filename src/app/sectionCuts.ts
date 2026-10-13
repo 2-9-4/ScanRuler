@@ -33,8 +33,6 @@ const wantingOf = (s: State) =>
     .map((sec) => sec.id)
     .join(',')
 
-export type SectionCuts = ReturnType<typeof sectionCuts>
-
 export function sectionCuts(clientRef: RefObject<MeshWorkerClient | null>) {
   // ---- the draft -------------------------------------------------------------
   let draftJob: Promise<void> | null = null

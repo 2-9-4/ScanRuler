@@ -3,8 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { meshUnitsOf, mmPerUnit, unitsLabel } from '../src/core/meshUnits'
 import { usePrefs } from '../src/state/prefsStore'
 import { askMeshUnits, meshUnitsFor, useUnitsPrompt } from '../src/state/unitsPromptStore'
-
-const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
+import { tick } from './helpers'
 
 describe('mesh units', () => {
   it('know their millimetres and refuse anything else', () => {

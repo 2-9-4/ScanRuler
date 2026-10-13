@@ -1,4 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// Whether there is unsaved work, and a checkpoint of it kept in this browser
+// (recoveryStorage.ts) for a page closed or crashed before Save Project.
+// Only the fields a project saves are watched: picking, progress and
+// pointer motion must not serialise a large measurement set. A draft with
+// work in it is not in a project, but it still earns the leave-page
+// warning. A checkpoint comes back packed into a project file and opened
+// the way any project is.
+
 import { useEffect, useRef, useState } from 'react'
 import { draftHolds, useStore } from '../state/store'
 import { flatDraftHolds, useFlat } from '../state/flatStore'
@@ -70,7 +78,7 @@ export function useRecovery(capture: () => Snapshot, blocked: () => boolean, ope
         pending = false
         const snapshot = cache.forWrite()
         if (current.signature === checkpointKey) { cache.release(snapshot); return }
-        // Deleting the last CAD feature is a change worth saving too.
+        // Deleting the last piece of work is a change worth saving too.
         if (!hadContent.current) { cache.release(snapshot); return }
         writing = true
         update({ status: 'Saving local checkpoint…' })

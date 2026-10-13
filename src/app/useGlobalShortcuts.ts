@@ -271,6 +271,6 @@ export function useGlobalShortcuts({
       window.removeEventListener('pointerdown', onPointerDown)
       window.removeEventListener('pointerup', onPointerUp)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Runs on the listed dependencies only, not on everything it reads.
   }, [])
 }

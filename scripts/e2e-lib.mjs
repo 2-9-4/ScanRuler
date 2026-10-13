@@ -7,7 +7,9 @@
 //
 // Env, honoured by every script: APP_URL, CHROME (chrome.exe path),
 // SHOT_DIR / OUT_DIR (screenshots, default <repo>/e2e-out).
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs'
+import { createServer } from 'node:net'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import puppeteer from 'puppeteer-core'
@@ -39,7 +41,6 @@ export const fail = (what) => {
   failed = true
 }
 export const check = (ok, what) => (ok ? console.log(`PASS: ${what}`) : fail(what))
-export const hasFailed = () => failed
 
 // Console noise that is not the app's fault: the missing favicon and the React
 // DevTools advert. (Union of the three filters the scripts used to carry.)
@@ -139,6 +140,28 @@ export const canvasRect = (page, sel = '.viewport canvas') =>
     const r = el.getBoundingClientRect()
     return { x: r.x, y: r.y, w: r.width, h: r.height }
   })
+
+/** The middle of the viewport, where the part is to be found: the corner
+ *  gizmo and the banner are painted on the same canvas and would otherwise
+ *  dominate any reading of where the part is. */
+export const stageCrop = (rect) => ({
+  x: rect.x + rect.w * 0.05,
+  y: rect.y + rect.h * 0.04,
+  width: rect.w * 0.86,
+  height: rect.h * 0.78,
+})
+
+/** Where a point of a sheet `w` × `h` (document units, y up) lands on the
+ *  screen while the 2D viewport frames the sheet as it does on opening —
+ *  `rect` the viewport canvas's. */
+export function sheetToScreen(rect, w, h) {
+  const aspect = rect.w / rect.h
+  const frustH = Math.max((h / 2) * 1.08, ((w / 2) * 1.08) / aspect)
+  return (mx, my) => [
+    rect.x + (rect.w * ((mx - w / 2) / (frustH * aspect) + 1)) / 2,
+    rect.y + (rect.h * (1 - (my - h / 2) / frustH)) / 2,
+  ]
+}
 
 // ---- DOM helpers ------------------------------------------------------------
 
@@ -282,6 +305,81 @@ export async function fitBall(page, rect, farEnd, want, { ready } = {}) {
     await click(page, '[data-test="cancel-draft"]').catch(() => {})
   }
   return null
+}
+
+/** A number field set the way a person sets one: clicked, its text selected
+ *  and cleared — a number input ignores select() and triple-click — typed,
+ *  and left; then `settle` ms for the app to take it. */
+export const fieldSetter = (page, { settle = 300 } = {}) => async (sel, value) => {
+  await page.click(sel)
+  await page.keyboard.down('Control')
+  await page.keyboard.press('KeyA')
+  await page.keyboard.up('Control')
+  await page.keyboard.press('Backspace')
+  await page.type(sel, String(value))
+  await page.$eval(sel, (el) => el.blur())
+  await sleep(settle)
+}
+
+/** A field typed into from empty and committed with Enter, as a box's or a
+ *  grip's number takes it. */
+export const enterTyper = (page) => async (sel, value) => {
+  await page.focus(sel)
+  await page.$eval(sel, (el) => (el.value = ''))
+  await page.type(sel, String(value))
+  await page.keyboard.press('Enter')
+  await sleep(150)
+}
+
+// ---- downloads --------------------------------------------------------------
+
+/** Let the page download into `dir`. The CDP session, for whatever else the
+ *  script asks of it. */
+export async function downloadsTo(page, dir) {
+  const cdp = await page.createCDPSession()
+  await cdp.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: dir })
+  return cdp
+}
+
+/** The name of the first file in `dir` ending in `ext`, looked for every
+ *  200 ms for up to 20 s; null when none came. A download still being written
+ *  ends in .crdownload, so it is not taken half done. */
+export async function awaitDownload(dir, ext) {
+  for (let i = 0; i < 100; i++) {
+    await sleep(200)
+    const f = readdirSync(dir).find((n) => n.endsWith(ext))
+    if (f) return f
+  }
+  return null
+}
+
+// ---- the agent server -------------------------------------------------------
+
+/** A port nothing listens on. */
+export const freePort = () =>
+  new Promise((resolve, reject) => {
+    const probe = createServer()
+    probe.once('error', reject)
+    probe.listen(0, '127.0.0.1', () => {
+      const { port } = probe.address()
+      probe.close(() => resolve(port))
+    })
+  })
+
+/** scanruler-mcp started the way an agent's client starts it — `startAgent`
+ *  is mcp/tests/client.js's, imported by the script once it has checked the
+ *  server's dependencies are there — on a free port, with a token and a
+ *  config folder of its own, writing files to OUT_DIR and pairing with the
+ *  app at APP_URL. The options, for a second copy on the same port. */
+export async function launchAgent(startAgent) {
+  const port = await freePort()
+  const token = `e2e-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`
+  const options = {
+    args: ['--port', String(port), '--out', OUT_DIR, '--app', APP_URL],
+    env: { SCANRULER_MCP_TOKEN: token, SCANRULER_MCP_CONFIG_DIR: mkdtempSync(join(tmpdir(), 'scanruler-mcp-')) },
+  }
+  const agent = await startAgent(options)
+  return { agent, port, token, options }
 }
 
 // ---- pixel measurements -----------------------------------------------------

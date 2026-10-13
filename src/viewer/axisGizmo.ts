@@ -24,7 +24,7 @@ const TIP_AT = 1.1
 const TIP_RADIUS = 0.45
 
 /** Gap between the gizmo and the two edges it sits in. */
-export const GIZMO_PAD = 14
+const GIZMO_PAD = 14
 
 /** How big the corner it occupies is, for a canvas of this size. Exported
  *  because the fit-to-view button parks directly above it, and a button that

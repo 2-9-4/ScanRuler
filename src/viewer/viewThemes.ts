@@ -56,8 +56,8 @@ export interface ViewTheme {
     hemisphere: number
     /** Flat fill. Keeping this low is what leaves the shading its contrast. */
     ambient: number
-    /** The key, which rides on the camera — so the highlight sits where you
-     *  are looking from, and turning the part sweeps it across the surface. */
+    /** The key, which rides on the camera — so the highlight sits where the
+     *  part is looked at from, and turning the part sweeps it across the surface. */
     key: number
   }
   /** The working marks drawn over the part that are gestures and guides
@@ -148,8 +148,8 @@ export const VIEW_THEMES: readonly ViewTheme[] = [
     stage: STAGE,
     // Deeper and duller than the first of the element colours (a saturated
     // #1877c0), which is painted straight onto this surface and has to read as
-    // a patch on it. The hard key lifts it back to the scanner blue you know —
-    // this is the albedo, not what you see.
+    // a patch on it. The hard key lifts it back to the familiar scanner blue —
+    // this is the albedo, not what is seen.
     surface: [20, 92, 141],
     // Amber, not the studio's blue: here the scan itself is blue, and the point
     // of the reference's colour is that it is not the scan's.

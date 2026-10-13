@@ -4,10 +4,10 @@
 // Imprint (Impressum) + privacy policy — German legal requirement
 // (§ 5 DDG / Art. 13 DSGVO). Opened from the status strip.
 
-import { useEffect } from 'react'
 import { plugins } from '../plugins/registry'
 import { useStore } from '../state/store'
 import { APP_VERSION } from '../version'
+import { useDismiss } from './useDismiss'
 
 export function ImprintModal() {
   const open = useStore((s) => s.imprintOpen)
@@ -15,16 +15,7 @@ export function ImprintModal() {
 
   // Escape closes it. Captured, so the workspace's own Escape handling — which
   // would discard the draft behind the dialog — never sees the key.
-  useEffect(() => {
-    if (!open) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return
-      e.stopPropagation()
-      close(false)
-    }
-    window.addEventListener('keydown', onKey, true)
-    return () => window.removeEventListener('keydown', onKey, true)
-  }, [open, close])
+  useDismiss(open, () => close(false))
 
   if (!open) return null
   // The plugins' notices on the third-party software they ship.

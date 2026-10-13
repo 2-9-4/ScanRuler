@@ -1,4 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// The pose a few hand-picked point pairs imply, solved in closed form by
+// Horn's quaternion method, which unlike the SVD route can never answer with
+// a mirror image. It gives a picked-point alignment its starting pose, and
+// the picker its warning, while points are still being placed, that pairs
+// strung along one line leave the rotation about it free.
+
 import { symmetricEigen3, symmetricEigenN } from '../fit/linalg'
 import type { Vec3 } from '../types'
 import { rigidApply, rigidFromQuaternion, type Rigid } from './rigid'

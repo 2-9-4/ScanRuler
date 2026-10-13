@@ -5,6 +5,7 @@
 // measured alongside rather than assumed, and the surface's own centroid
 // (area-weighted) is there for the scan that does not.
 import type { Vec3 } from '../types'
+import { extentOfIndexed } from './bounds'
 
 export interface MeshCentroid {
   /** The centroid of the enclosed volume — null when the mesh is too open
@@ -25,10 +26,21 @@ export interface MeshCentroid {
  *  the shift, so a pinhole passes and an open bottom does not. */
 const CLOSED_TOLERANCE = 0.01
 
+/** The area of a mesh's surface: every triangle's, summed. */
+export function triangleAreaSum(positions: Float32Array, indices: Uint32Array): number {
+  let area = 0
+  for (let t = 0; t < indices.length; t += 3) {
+    const a = indices[t] * 3, b = indices[t + 1] * 3, c = indices[t + 2] * 3
+    const ux = positions[b] - positions[a], uy = positions[b + 1] - positions[a + 1], uz = positions[b + 2] - positions[a + 2]
+    const vx = positions[c] - positions[a], vy = positions[c + 1] - positions[a + 1], vz = positions[c + 2] - positions[a + 2]
+    area += Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx) / 2
+  }
+  return area
+}
+
 export function meshCentroid(positions: Float32Array, indices: Uint32Array): MeshCentroid {
   const triangleCount = Math.floor(indices.length / 3)
-  let minX = Infinity, minY = Infinity, minZ = Infinity
-  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity
+  const { min: [minX, minY, minZ], max: [maxX, maxY, maxZ] } = extentOfIndexed(positions, indices.subarray(0, triangleCount * 3))
   let ax = 0, ay = 0, az = 0, areaSum = 0
 
   for (let t = 0; t < triangleCount; t++) {
@@ -48,15 +60,6 @@ export function meshCentroid(positions: Float32Array, indices: Uint32Array): Mes
     ay += ((ay0 + by + cy) / 3) * area
     az += ((az0 + bz + cz) / 3) * area
     areaSum += area
-    for (const j of [a, b, c]) {
-      const x = positions[j], y = positions[j + 1], z = positions[j + 2]
-      if (x < minX) minX = x
-      if (x > maxX) maxX = x
-      if (y < minY) minY = y
-      if (y > maxY) maxY = y
-      if (z < minZ) minZ = z
-      if (z > maxZ) maxZ = z
-    }
   }
   if (!(areaSum > 0)) {
     const mid: Vec3 = Number.isFinite(minX)
@@ -94,8 +97,18 @@ export function meshCentroid(positions: Float32Array, indices: Uint32Array): Mes
 
 /** Signed volume of the tetrahedron the triangle spans with the origin. */
 function tetraVolume(p: Float32Array, a: number, b: number, c: number, o: Vec3): number {
+  return tetraVolume6(p, a, b, c, o) / 6
+}
+
+const ORIGIN: Vec3 = [0, 0, 0]
+
+/** Six times the signed volume of the tetrahedron the triangle at offsets
+ *  a, b and c spans with `o` — summed over a closed mesh, six times what it
+ *  encloses (the divergence theorem), positive when its triangles wind
+ *  outward. The sixth left for the caller to take, where it likes. */
+export function tetraVolume6(p: Float32Array, a: number, b: number, c: number, o: Vec3 = ORIGIN): number {
   const ax = p[a] - o[0], ay = p[a + 1] - o[1], az = p[a + 2] - o[2]
   const bx = p[b] - o[0], by = p[b + 1] - o[1], bz = p[b + 2] - o[2]
   const cx = p[c] - o[0], cy = p[c + 1] - o[1], cz = p[c + 2] - o[2]
-  return (ax * (by * cz - bz * cy) + ay * (bz * cx - bx * cz) + az * (bx * cy - by * cx)) / 6
+  return ax * (by * cz - bz * cy) + ay * (bz * cx - bx * cz) + az * (bx * cy - by * cx)
 }

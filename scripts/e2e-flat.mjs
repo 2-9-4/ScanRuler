@@ -14,13 +14,14 @@ import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { join } from 'node:path'
 import {
   APP_URL,
-  OUT_DIR,
-  launchApp,
-  click,
   check,
+  click,
   drag,
   finish,
+  launchApp,
+  OUT_DIR,
   repoFile,
+  sheetToScreen,
   shotPath,
   sleep,
 } from './e2e-lib.mjs'
@@ -83,10 +84,7 @@ const rect = await page.$eval('.viewslot:not([hidden]) .viewport canvas:not(.lou
 })
 const aspect = rect.w / rect.h
 const frustH = Math.max((SHEET_H / 2) * 1.08, ((SHEET_W / 2) * 1.08) / aspect)
-const toScreen = (mx, my) => [
-  rect.x + (rect.w * ((mx - SHEET_W / 2) / (frustH * aspect) + 1)) / 2,
-  rect.y + (rect.h * (1 - (my - SHEET_H / 2) / frustH)) / 2,
-]
+const toScreen = sheetToScreen(rect, SHEET_W, SHEET_H)
 
 const rowTexts = () =>
   page.$$eval('[data-test=element-row]', (els) =>

@@ -41,7 +41,7 @@ export const FLAT_KIND_LABELS: Record<FlatElementKind, string> = {
 }
 
 /** px → document units. With no scale in force the document IS pixels. */
-export function picksToDocument(picks: readonly Vec2[], pxPerMm: PixelsPerMm | null): Vec2[] {
+function picksToDocument(picks: readonly Vec2[], pxPerMm: PixelsPerMm | null): Vec2[] {
   if (!pxPerMm) return picks.map((p) => [p[0], p[1]])
   return picks.map((p) => [p[0] / pxPerMm.x, p[1] / pxPerMm.y])
 }

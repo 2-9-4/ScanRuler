@@ -1,4 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// The 3D viewport: a thin React wrapper that builds the SceneManager once on
+// mount and wires its callbacks through refs, so a new handler on every
+// render never builds the scene — and the mesh and BVH in it — again. A
+// browser that refuses WebGL gets an explanation and what to try, instead
+// of a bare grey page indistinguishable from a hung app.
+
 import { useEffect, useRef, useState } from 'react'
 import type { WorldAxis } from '../core/section/frame'
 import { SceneManager, type GripSide, type PickHit } from '../viewer/SceneManager'

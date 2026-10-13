@@ -1,8 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// What a parsed file becomes before anything is measured on it, scan and
+// reference alike: one indexed mesh, welded and rid of degenerate triangles,
+// with vertex adjacency for region growing, and normals turned the right way
+// out where that can be told. A broken file is refused here with a message,
+// rather than read past the end of a buffer further on.
+
 import type { MeshGraph, ParsedMesh } from '../types'
 import { weldTriangleSoup, filterDegenerateTriangles } from './weld'
 import { buildAdjacency } from './adjacency'
 import { computeVertexNormals, orientNormalsOutward } from './normals'
+import { extentOf } from './bounds'
 
 export function buildMeshGraph(parsed: ParsedMesh, onProgress?: (text: string) => void): MeshGraph {
   if (parsed.positions.length === 0 || parsed.positions.length % 3 !== 0 ||
@@ -45,17 +52,7 @@ export function buildMeshGraph(parsed: ParsedMesh, onProgress?: (text: string) =
   const normals = computeVertexNormals(positions, indices)
   if (!parsed.keepWinding) orientNormalsOutward(positions, indices, normals)
 
-  let minX = Infinity, minY = Infinity, minZ = Infinity
-  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity
-  for (let v = 0; v < positions.length; v += 3) {
-    const x = positions[v], y = positions[v + 1], z = positions[v + 2]
-    if (x < minX) minX = x
-    if (x > maxX) maxX = x
-    if (y < minY) minY = y
-    if (y > maxY) maxY = y
-    if (z < minZ) minZ = z
-    if (z > maxZ) maxZ = z
-  }
+  const { min: [minX, minY, minZ], max: [maxX, maxY, maxZ] } = extentOf(positions)
   const bboxDiag = Math.sqrt((maxX - minX) ** 2 + (maxY - minY) ** 2 + (maxZ - minZ) ** 2)
 
   return {

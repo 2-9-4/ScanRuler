@@ -28,8 +28,6 @@ import type { SourceFiles } from './project'
 export const PICK_MARK_TOOL_STATUS =
   'Pick a marking tool in the panel — Window, Brush or Lasso — then drag on the scan.'
 
-export type DeviationWorkspace = ReturnType<typeof deviationWorkspace>
-
 export function deviationWorkspace({
   clientRef,
   sceneRef,

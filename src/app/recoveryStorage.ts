@@ -1,4 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// The local checkpoints, in this browser's IndexedDB — a slot per page, so
+// two tabs never overwrite each other. The source files are the bulk of a
+// checkpoint, so they are written again only when they have changed, and
+// listing the checkpoints never reads them: the list, the manifests and the
+// files are kept in object stores of their own.
+
 import type { ProjectManifest } from '../core/project/manifest'
 import type { ArchiveMember } from '../core/project/archive'
 
@@ -6,7 +12,7 @@ export interface CheckpointInfo { id: string; name: string; savedAt: number }
 interface Checkpoint extends CheckpointInfo { manifest: ProjectManifest }
 
 /** Each page owns a separate slot. A tab can never overwrite another tab's
- * checkpoint. Metadata reads deliberately do not load the large source files. */
+ *  checkpoint. Metadata reads deliberately do not load the large source files. */
 export class RecoveryStorage {
   private db: Promise<IDBDatabase> | null = null
   private members: ArchiveMember[] | null = null
@@ -69,7 +75,7 @@ export class RecoveryStorage {
       tx.objectStore('checkpoints').put({ ...info, manifest }, this.id)
       if (changed) tx.objectStore('sources').put(members, this.id)
       else {
-        // Another tab may have explicitly discarded this slot since our last write.
+        // Another tab may have explicitly discarded this slot since this tab last wrote it.
         const exists = tx.objectStore('sources').getKey(this.id)
         exists.onsuccess = () => { if (exists.result === undefined) tx.objectStore('sources').put(members, this.id) }
       }

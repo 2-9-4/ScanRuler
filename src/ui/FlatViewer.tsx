@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { useEffect, useRef, useState } from 'react'
+// The 2D Measure viewport and what it is wired to: the settings the sheet
+// view follows as the main view does, and the loupe over the cursor, which
+// shows the image's own pixels, turned and mirrored as the sheet is,
+// because at that magnification the pixels are the measurement.
+
+import { useEffect, useRef, useState, type RefObject } from 'react'
 import type { SheetPose } from '../core/flat/datum'
 import type { Vec2 } from '../core/flat/types'
 import type { HandleEnd } from '../state/flatStore'
@@ -14,6 +19,29 @@ import { useStore } from '../state/store'
  *  about the pixels, which at this magnification are the measurement. */
 const LOUPE_SRC = 30
 const LOUPE_SIZE = 120
+
+/** A sheet view following the settings dialog as the main view does: the
+ *  navigation scheme, the theme with the dark mode, and the two line
+ *  widths. */
+export function useFlatSceneSettings(sceneRef: RefObject<FlatScene | null>): void {
+  const navScheme = useStore((s) => s.navScheme)
+  const viewTheme = useStore((s) => s.viewTheme)
+  useEffect(() => {
+    sceneRef.current?.setNavScheme(schemeById(navScheme))
+  }, [navScheme])
+  const dark = usePrefs((s) => s.dark)
+  useEffect(() => {
+    sceneRef.current?.setViewTheme(sceneTheme(viewTheme, dark))
+  }, [viewTheme, dark])
+  const sheetLines = usePrefs((s) => s.sheetLines)
+  useEffect(() => {
+    sceneRef.current?.setLineWidth(sheetLines)
+  }, [sheetLines])
+  const edgeLines = usePrefs((s) => s.edgeLines)
+  useEffect(() => {
+    sceneRef.current?.setEdgeWidth(edgeLines)
+  }, [edgeLines])
+}
 
 /** The 2D Measure viewport, in the same thin-wrapper shape as Viewer:
  *  construct once, wire callbacks through refs so prop changes never
@@ -184,23 +212,7 @@ export function FlatViewer({
 
   // The scheme and theme settings live in the settings dialog and serve every
   // viewport; this one follows them the same way the main view does.
-  const navScheme = useStore((s) => s.navScheme)
-  const viewTheme = useStore((s) => s.viewTheme)
-  useEffect(() => {
-    sceneRef.current?.setNavScheme(schemeById(navScheme))
-  }, [navScheme])
-  const dark = usePrefs((s) => s.dark)
-  useEffect(() => {
-    sceneRef.current?.setViewTheme(sceneTheme(viewTheme, dark))
-  }, [viewTheme, dark])
-  const sheetLines = usePrefs((s) => s.sheetLines)
-  useEffect(() => {
-    sceneRef.current?.setLineWidth(sheetLines)
-  }, [sheetLines])
-  const edgeLines = usePrefs((s) => s.edgeLines)
-  useEffect(() => {
-    sceneRef.current?.setEdgeWidth(edgeLines)
-  }, [edgeLines])
+  useFlatSceneSettings(sceneRef)
   // A tool going away must take the loupe with it, not wait for a mouse move.
   useEffect(() => {
     if (!loupe.active && loupeRef.current) loupeRef.current.style.display = 'none'

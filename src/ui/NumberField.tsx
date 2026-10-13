@@ -19,7 +19,7 @@ export function NumberField({
 }: {
   label: string
   value: number
-  step: number
+  step: number | 'any'
   min: number
   unit: string
   disabled?: boolean

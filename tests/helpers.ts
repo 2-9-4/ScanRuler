@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { mulberry32 } from '../src/core/fit/ransac'
+import { rigidApply, type Rigid } from '../src/core/deviation/rigid'
+import type { Vec3 } from '../src/core/types'
 
 export function gaussian(rand: () => number): number {
   // Box-Muller
@@ -378,4 +380,59 @@ function cross(a: number[], b: number[]): [number, number, number] {
     a[2] * b[0] - a[0] * b[2],
     a[0] * b[1] - a[1] * b[0],
   ]
+}
+
+/** One turn of the event loop. */
+export const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+/** Edges bounding exactly two triangles, counted on the welded index buffer —
+ *  a hole or a crack shows up as a count of one. */
+/** How many edges of a triangle mesh do not have exactly two triangles. */
+export function openEdgeCount(indices: Uint32Array): number {
+  const seen = new Map<string, number>()
+  for (let t = 0; t < indices.length; t += 3) {
+    for (let e = 0; e < 3; e++) {
+      const a = indices[t + e]
+      const b = indices[t + ((e + 1) % 3)]
+      const key = a < b ? `${a}_${b}` : `${b}_${a}`
+      seen.set(key, (seen.get(key) ?? 0) + 1)
+    }
+  }
+  let open = 0
+  for (const n of seen.values()) if (n !== 2) open++
+  return open
+}
+
+/** Directions turned by a pose's rotation, into a new array. */
+export function rotated(normals: Float32Array, pose: Rigid): Float32Array {
+  const out = new Float32Array(normals.length)
+  const r = pose.r
+  for (let v = 0; v < normals.length; v += 3) {
+    const x = normals[v], y = normals[v + 1], z = normals[v + 2]
+    out[v] = r[0] * x + r[1] * y + r[2] * z
+    out[v + 1] = r[3] * x + r[4] * y + r[5] * z
+    out[v + 2] = r[6] * x + r[7] * y + r[8] * z
+  }
+  return out
+}
+
+/** The furthest any point of the part ends up from where the other transform
+ *  would have put it, in mm. */
+/** How far apart two poses put any of the points, at the worst. */
+export function poseError(a: Rigid, b: Rigid, positions: Float32Array): number {
+  const pa = new Float64Array(3)
+  const pb = new Float64Array(3)
+  let worst = 0
+  for (let v = 0; v < positions.length; v += 3) {
+    rigidApply(a, positions[v], positions[v + 1], positions[v + 2], pa)
+    rigidApply(b, positions[v], positions[v + 1], positions[v + 2], pb)
+    worst = Math.max(worst, Math.hypot(pa[0] - pb[0], pa[1] - pb[1], pa[2] - pb[2]))
+  }
+  return worst
+}
+
+/** A vector scaled to unit length. */
+export function unit(v: Vec3): Vec3 {
+  const l = Math.hypot(v[0], v[1], v[2])
+  return [v[0] / l, v[1] / l, v[2] / l]
 }

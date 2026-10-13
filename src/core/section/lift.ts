@@ -112,7 +112,7 @@ export function liftFlatFit(frame: SectionFrame, fit: FlatFit): SectionGeometry 
 
 /** An arc that has come all the way round is a circle — what the export
  *  writes it as, and what the sheet would have called it. */
-export const FULL_TURN = 2 * Math.PI
+const FULL_TURN = 2 * Math.PI
 export function isFullTurn(sweep: number): boolean {
   return sweep >= FULL_TURN - 1e-6
 }

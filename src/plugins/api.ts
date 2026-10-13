@@ -32,7 +32,9 @@ import type { GripSide, PickHit, SceneManager } from '../viewer/SceneManager'
 // code path as the plugin's panel, one step of the undo history, and returns
 // what the stores hold afterwards; see commands/types.ts. registerBusy(
 // plugin.id, check) says what the plugin's own machinery is busy with, so no
-// command runs over it and the readout's `busy` says so.
+// command runs over it and the readout's `busy` says so; registerViewToggles(
+// plugin.id, toggles) adds the keys view.set and view.render take to show or
+// put away what the plugin draws.
 
 export { registerCommands } from '../commands/registry'
 export { registerStateSection } from '../commands/stateSections'

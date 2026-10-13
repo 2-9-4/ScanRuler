@@ -1,4 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// The main thread's handle on the mesh worker: one typed, promise-returning
+// method per request in workerProtocol.ts. A worker that dies does not end
+// the session — the next request starts a new one, loads the scan and the
+// reference back into it from the bytes the app still holds, and lets each
+// plugin put back what it kept there (onRestore). A reply can land after an
+// import has replaced the models it was about; scanVersion and
+// nominalVersion are there for callers to tell.
+
 import { WorkerRpc } from './workerRpc'
 import type { MeshCentroid } from './geometry/centroid'
 import type { CreaseSetting, CreaseReport } from './geometry/crease'

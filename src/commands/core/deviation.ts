@@ -8,6 +8,8 @@ import type { Hotspot } from '../../core/deviation/hotspots'
 import { rigidApply } from '../../core/deviation/rigid'
 import type { Vec3 } from '../../core/types'
 import { useDeviation } from '../../state/deviationStore'
+import { usePrefs } from '../../state/prefsStore'
+import { COLORMAPS, type ColormapId } from '../../core/field/colormap'
 import { useMark } from '../../state/markStore'
 import { useStore } from '../../state/store'
 import { commandHost, requireScene } from '../host'
@@ -17,6 +19,7 @@ import { describeDeviation } from '../state'
 import { CommandError, type Command } from '../types'
 import { fileNameSchema, fileOf, lastError, showWorkspace, waitFor } from './common'
 import { unitsSchema } from './scan'
+import { round3 } from '../../core/round'
 
 const nullable = (schema: JsonSchema, description: string): JsonSchema =>
   oneOf([schema, { type: 'null', description: 'Off.' }], description)
@@ -53,7 +56,7 @@ const openReference: Command<{ bytes: Uint8Array; name: string; units?: MeshUnit
   },
 }
 
-type Pair = { scan: [number, number, number]; reference: [number, number, number] }
+interface Pair { scan: [number, number, number]; reference: [number, number, number] }
 
 const align: Command<{ mode?: 'auto' | 'points' | 'local'; pairs?: Pair[]; vertices?: number[]; searchDistance?: number }> = {
   name: 'align',
@@ -161,22 +164,27 @@ const setTarget: Command<{ element: ElementRef | null; side?: 'outward' | 'inwar
   },
 }
 
-const settings: Command<{ range?: number; maxDistance?: number; bands?: number | null; tolerance?: number; facingDeg?: number | null }> = {
+const settings: Command<{ range?: number; maxDistance?: number; bands?: number | null; tolerance?: number; facingDeg?: number | null; colormap?: ColormapId }> = {
   name: 'settings',
   title: 'Set how the deviation is read',
   description:
-    'The deviation map’s reading: range, the colour scale ± mm; maxDistance, how far from the reference a point may be to count, mm; bands, a stepped scale of that many colours or null for smooth; tolerance, ± mm, the share within which the statistics give; facingDeg, how far the reference surface a point is measured against may turn from facing it, degrees, or null for the nearest surface whatever it faces — a change of it measures the map again. Returns the deviation state. One undo step.',
+    'The deviation map’s reading: range, the colour scale ± mm; maxDistance, how far from the reference a point may be to count, mm; bands, a stepped scale of that many colours or null for smooth; tolerance, ± mm, the share within which the statistics give; facingDeg, how far the reference surface a point is measured against may turn from facing it, degrees, or null for the nearest surface whatever it faces — a change of it measures the map again; colormap, the colour map every deviation map and the live map of the bodies are drawn in — the person’s own choice, kept in the browser and outside the undo, so set it only to read a render by its colours and read settings.colormap for what the ramp shows at −range, 0 and +range and the caps past either end before judging a picture. Returns the deviation state. One undo step.',
   input: obj({
     range: num('Colour scale, ± mm.', { exclusiveMinimum: 0 }),
     maxDistance: num('Search distance, mm.', { exclusiveMinimum: 0 }),
     bands: nullable(int(undefined, { minimum: 2 }), 'Stepped colours, or null for smooth.'),
     tolerance: num('Tolerance, ± mm.', { exclusiveMinimum: 0 }),
     facingDeg: nullable(num(undefined, { minimum: 1, maximum: 90 }), 'Facing limit, degrees, or null.'),
+    colormap: enumOf(
+      COLORMAPS.map((m) => m.id),
+      'The colour map: jet (blue inside, green on the surface, red outside) or one of the perceptual ramps.',
+    ),
   }),
   label: () => 'deviation settings',
-  run: async ({ range, maxDistance, bands, tolerance, facingDeg }) => {
+  run: async ({ range, maxDistance, bands, tolerance, facingDeg, colormap }) => {
     const { session } = commandHost()
     const d = useDeviation.getState()
+    if (colormap !== undefined) usePrefs.getState().setColormap(colormap)
     if (range !== undefined) d.setRange(range)
     if (maxDistance !== undefined) d.setMaxDistance(maxDistance)
     if (bands !== undefined) d.setBands(bands)
@@ -194,7 +202,18 @@ const settings: Command<{ range?: number; maxDistance?: number; bands?: number |
 const HOTSPOT_PATCHES = 8
 const HOTSPOT_VERTICES = 12
 
-const round3 = (v: number) => Math.round(v * 1000) / 1000
+/** The figures every answer about a patch gives first, in this order:
+ *  where it is, how big, and how far off. */
+export function patchFigures(p: { centroid: readonly number[]; min: readonly number[]; max: readonly number[]; area: number; count: number; mean: number; extreme: number }) {
+  return {
+    centroid: p.centroid.map(round3),
+    box: { min: p.min.map(round3), max: p.max.map(round3) },
+    area: round3(p.area),
+    count: p.count,
+    mean: round3(p.mean),
+    extreme: round3(p.extreme),
+  }
+}
 
 const hotspotsCommand: Command<{ tolerance?: number; patches?: number; grain?: number }> = {
   name: 'hotspots',
@@ -234,12 +253,7 @@ const hotspotsCommand: Command<{ tolerance?: number; patches?: number; grain?: n
       const vertices: number[] = []
       for (let k = 0; k < p.members.length && vertices.length < HOTSPOT_VERTICES; k += stride) vertices.push(p.members[k])
       return {
-        centroid: p.centroid.map(round3),
-        box: { min: p.min.map(round3), max: p.max.map(round3) },
-        area: round3(p.area),
-        count: p.count,
-        mean: round3(p.mean),
-        extreme: round3(p.extreme),
+        ...patchFigures(p),
         side: p.extreme > 0 ? 'outside' : 'inside',
         at: p.at.map(round3),
         vertex: p.index,

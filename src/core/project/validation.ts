@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { meshUnitsOf } from '../meshUnits'
 // Runtime checks at the archive boundary. TypeScript types alone do not make
 // JSON safe to hand to stores, geometry code or React renderers.
 // The checks are exported for the plugins' parts, which a plugin checks
 // itself when a project is opened (see app/projectSections.ts).
+
+import { meshUnitsOf } from '../meshUnits'
+
 export type RecordValue = Record<string, unknown>
 export function invalid(path: string): never { throw new Error(`Malformed project: ${path}.`) }
 export function object(value: unknown, path: string): RecordValue {

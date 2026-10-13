@@ -1,25 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { describe, expect, it } from 'vitest'
 import {
-  cylinderResidual,
   fitCylinderClipped,
   fitCylinderOnAxis,
   ransacCylinder,
 } from '../src/core/fit/cylinder'
 import { mulberry32 } from '../src/core/fit/ransac'
 import type { Cylinder, Vec3 } from '../src/core/types'
-import { allIndices, sampleCylinder } from './helpers'
+import { allIndices, gaussian, sampleCylinder, samplePlane, unit } from './helpers'
 
 const POINT: [number, number, number] = [4, -3, 2]
 // Off-axis on purpose, so an axis-aligned bug cannot pass by accident.
 const AXIS: Vec3 = [0.4, 0.6, 0.6928]
 const R = 6.35
 const LENGTH = 30
-
-function unit(v: Vec3): Vec3 {
-  const l = Math.hypot(v[0], v[1], v[2])
-  return [v[0] / l, v[1] / l, v[2] / l]
-}
 
 /** Exact outward normals for points sampled on the cylinder wall. */
 function wallNormals(points: Float32Array, point: Vec3, axis: Vec3): Float32Array {
@@ -137,14 +131,42 @@ describe('RANSAC cylinder estimate', () => {
     expect(fromDisc).toBeLessThan(0.03 * res.inliers.length)
   })
 
-  it('rejects a patch with no curvature to work with', () => {
-    // A 4-degree sliver of a huge cylinder is indistinguishable from a plane.
+  it('finds a large cylinder from a few degrees of it, where the arc rises clear of the noise', () => {
+    // 4° of a 500 mm radius: the arc rises 0.3 mm off its chord, fifteen
+    // times the noise — curved, however little of the turn it is.
     const sliver = sampleCylinder(2_000, POINT, AXIS, 500, 20, 0.02, 8, (4 * Math.PI) / 180)
-    const normals = wallNormals(sliver, POINT, AXIS)
-    const res = ransacCylinder(sliver, normals, allIndices(2_000), { seed: 2 })
-    if (res) expect(cylinderResidual(res.cylinder, sliver[0], sliver[1], sliver[2])).toBeLessThan(1)
+    const res = ransacCylinder(sliver, wallNormals(sliver, POINT, AXIS), allIndices(2_000), { seed: 2 })!
+    expect(res).toBeTruthy()
+    expect(Math.abs(res.cylinder.r - 500)).toBeLessThan(5)
+    expect(tilt(res.cylinder)).toBeLessThan(0.5)
+  })
+
+  it('rejects a patch with no curvature to work with', () => {
+    // A flat patch whose normals scatter by a few degrees, as a scan's do:
+    // pairs of them still cross, and without a check every candidate is a
+    // cylinder as large as the radius cap lets it be.
+    const normal = unit([0.3, -0.5, 0.8])
+    const flat = samplePlane(2_000, POINT, normal, 30, 0.02, 11)
+    const flatNormals = new Float32Array(flat.length)
+    for (let i = 0; i < flat.length; i += 3) flatNormals.set(normal, i)
+    expect(ransacCylinder(flat, scattered(flatNormals, 3), allIndices(2_000), { seed: 2 })).toBeNull()
+    // 2° of a 500 mm radius rises 76 µm off its chord, under noise of 0.3 mm.
+    const sliver = sampleCylinder(2_000, POINT, AXIS, 500, 20, 0.3, 8, (2 * Math.PI) / 180)
+    expect(ransacCylinder(sliver, wallNormals(sliver, POINT, AXIS), allIndices(2_000), { seed: 2 })).toBeNull()
   })
 })
+
+/** Unit normals each turned off its own by a random few degrees. */
+function scattered(normals: Float32Array, degrees: number): Float32Array {
+  const rand = mulberry32(5)
+  const s = (degrees * Math.PI) / 180
+  const out = new Float32Array(normals.length)
+  for (let i = 0; i < normals.length; i += 3) {
+    const n = unit([normals[i] + gaussian(rand) * s, normals[i + 1] + gaussian(rand) * s, normals[i + 2] + gaussian(rand) * s])
+    out.set(n, i)
+  }
+  return out
+}
 
 /** Points on a lobed wall about the test axis: r(θ) = R + amp·cos(lobes·θ),
  *  no noise — a surface that reaches exactly `amp` inside and outside the

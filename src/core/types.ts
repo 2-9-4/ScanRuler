@@ -1,4 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// The measuring core's vocabulary: a parsed file and the mesh graph built
+// from it, the fit settings, and every element kind — its geometry as fitted,
+// picked or constructed, and the recipe it is rebuilt from. Plain data
+// throughout, tuples and typed arrays, so a fit made in the worker crosses
+// to the main thread as it is.
+
 export type Vec3 = [number, number, number]
 
 /** Output of a file parser. STL produces a triangle soup (9 floats per

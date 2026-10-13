@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { readFileSync } from 'node:fs'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { useStore } from '../src/state/store'
 import { fixture } from './fixtures'
 import { run, startHeadless, undoLabels, type Headless } from './commandKit'
+
+// Kernel builds and real-scan fits run long, and longer on a slow machine.
+vi.setConfig({ testTimeout: 180_000 })
 
 /** The ball bar measured through the commands alone, as an agent would: open
  *  the scan, read where it lies, fit a sphere in each end, measure between

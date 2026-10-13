@@ -7,6 +7,7 @@
 import { describe, expect, it } from 'vitest'
 import { parseSTEP } from '../src/core/parsers/step'
 import { cubeStep, cylinderStep, stepBuffer } from './stepFixtures'
+import { openEdgeCount } from './helpers'
 
 function bounds(positions: Float32Array) {
   const min = [Infinity, Infinity, Infinity]
@@ -18,23 +19,6 @@ function bounds(positions: Float32Array) {
     }
   }
   return { min, max }
-}
-
-/** Edges bounding exactly two triangles, counted on the welded index buffer —
- *  a hole or a crack shows up as a count of one. */
-function openEdgeCount(indices: Uint32Array): number {
-  const seen = new Map<string, number>()
-  for (let t = 0; t < indices.length; t += 3) {
-    for (let e = 0; e < 3; e++) {
-      const a = indices[t + e]
-      const b = indices[t + ((e + 1) % 3)]
-      const key = a < b ? `${a}_${b}` : `${b}_${a}`
-      seen.set(key, (seen.get(key) ?? 0) + 1)
-    }
-  }
-  let open = 0
-  for (const n of seen.values()) if (n !== 2) open++
-  return open
 }
 
 describe('STEP reference import', () => {

@@ -18,7 +18,7 @@
 import type { Torus, Vec3 } from '../types'
 import { fitCircle2d } from './circle2d'
 import { clippedRefit, type ClippedRefit } from './clip'
-import { orthoBasis, solveLinear, symmetricEigen3 } from './linalg'
+import { orthoBasis, rmsOver, solveLinear, symmetricEigen3 } from './linalg'
 import { ransacConsensus } from './ransac'
 
 /** The signed distance from the torus surface: positive outside the tube. */
@@ -51,16 +51,7 @@ export function torusNormalAlign(t: Torus, x: number, y: number, z: number, nx: 
 }
 
 function rms(positions: Float32Array, idx: ArrayLike<number>, t: Torus): number {
-  let s = 0
-  let m = 0
-  for (let i = 0; i < idx.length; i++) {
-    const j = idx[i] * 3
-    const e = torusResidual(t, positions[j], positions[j + 1], positions[j + 2])
-    if (!Number.isFinite(e)) continue
-    s += e * e
-    m++
-  }
-  return m ? Math.sqrt(s / m) : Infinity
+  return rmsOver(positions, idx, (x, y, z) => torusResidual(t, x, y, z))
 }
 
 /** The torus whose spine passes through the points moved `shift` along

@@ -13,7 +13,7 @@ import { buildFlatReport } from '../../core/flat/report'
 import { flatReportInput } from '../../app/flatReport'
 import { useFlat, type CalMode } from '../../state/flatStore'
 import { commandHost } from '../host'
-import { arr, bytes, enumOf, int, num, obj, oneOf, str, type JsonSchema } from '../schema'
+import { arr, bool, bytes, enumOf, int, num, obj, oneOf, str, type JsonSchema } from '../schema'
 import { describeFlat } from '../state'
 import { CommandError, type Command } from '../types'
 import { fileNameSchema, fileOf, lastError, requireFlatFree, showWorkspace } from './common'
@@ -116,7 +116,7 @@ const setAlignment: Command<{ origin?: Vec2; xAxis?: Vec2; clear?: boolean }> = 
   input: obj({
     origin: spotSchema('The zero point, in the sheet’s units.'),
     xAxis: spotSchema('A place on the +X axis.'),
-    clear: { type: 'boolean', description: 'Take the alignment off instead.' },
+    clear: bool('Take the alignment off instead.'),
   }),
   label: () => 'align sheet',
   run: async ({ origin, xAxis, clear }) => {

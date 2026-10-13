@@ -93,7 +93,7 @@ export function sheetScale(s: Pick<SheetSource, 'pxPerMm'>): PixelsPerMm {
 }
 
 /** An image pixel as a spot on the sheet. */
-export function pxToDoc(s: Pick<SheetSource, 'pxPerMm'>, px: Vec2): Vec2 {
+function pxToDoc(s: Pick<SheetSource, 'pxPerMm'>, px: Vec2): Vec2 {
   const mm = sheetScale(s)
   return [px[0] * mm.x, px[1] * mm.y]
 }

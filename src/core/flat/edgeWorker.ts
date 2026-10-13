@@ -5,6 +5,7 @@
 // buffers travel by transfer in both directions.
 
 import { detectEdges, type EdgeOptions } from './edges'
+import { reply } from '../workerRpc'
 
 export interface EdgeWorkerRequest {
   requestId: number
@@ -28,13 +29,13 @@ self.onmessage = (ev: MessageEvent<EdgeWorkerRequest>) => {
       points: chains.points,
       offsets: chains.offsets,
     }
-    self.postMessage(msg, { transfer: [chains.points.buffer, chains.offsets.buffer] })
+    reply(msg, [chains.points.buffer, chains.offsets.buffer])
   } catch (e) {
     const msg: EdgeWorkerResponse = {
       type: 'error',
       requestId,
       message: e instanceof Error ? e.message : String(e),
     }
-    self.postMessage(msg)
+    reply(msg)
   }
 }

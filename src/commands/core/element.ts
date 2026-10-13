@@ -25,7 +25,7 @@ import {
   type ElementRef,
   type Location,
 } from '../refs'
-import { arr, bool, enumOf, int, num, obj, oneOf, str, type JsonSchema } from '../schema'
+import { anyObject, arr, bool, enumOf, int, num, obj, oneOf, str } from '../schema'
 import { describeElement } from '../state'
 import { CommandError, type Command } from '../types'
 import { requireMeasureFree, showWorkspace, waitFor } from './common'
@@ -244,7 +244,7 @@ const construct: Command<{
       params: oneOf(
         [
           arr(num(), 'The numbers in the method’s order.'),
-          { type: 'object', description: 'The numbers by key.', additionalProperties: true } as JsonSchema,
+          anyObject('The numbers by key.', { additionalProperties: true }),
         ],
         'The method’s typed-in numbers, in millimetres.',
       ),

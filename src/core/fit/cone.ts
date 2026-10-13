@@ -1,8 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// The cone: a surface of revolution whose radius changes steadily along the
+// axis. It is described by a point on the axis and the radius there, not by
+// the apex, so nothing blows up as the half-angle goes to zero and the cone
+// becomes a cylinder. The fit follows the cylinder's — an axis from the
+// normals (a cone's all meet the axis at one angle, so their tips lie in a
+// plane), a circle across it, the taper read off a line of radius against
+// axial position — with three-point-and-normal candidates scored by median
+// residual (LMedS) and damped Gauss–Newton over all six parameters to finish.
+
 import type { Cone, Vec3 } from '../types'
 import { fitCircle2d } from './circle2d'
 import { clippedRefit } from './clip'
-import { cross, normalize, orthoBasis, solveLinear, symmetricEigen3 } from './linalg'
+import { centroidOf, cross, normalizeOrZ, orthoBasis, projectOntoPlane, rmsOver, solveLinear, symmetricEigen3 } from './linalg'
 import { ransacConsensus } from './ransac'
 
 /** Orthogonal distance of a point from the cone surface (positive outside),
@@ -59,16 +68,7 @@ export function coneNormalAlign(
 }
 
 function rms(positions: Float32Array, idx: ArrayLike<number>, c: Cone): number {
-  let sumSq = 0
-  let m = 0
-  for (let i = 0; i < idx.length; i++) {
-    const j = idx[i] * 3
-    const e = slant(c, positions[j], positions[j + 1], positions[j + 2]).e
-    if (!Number.isFinite(e)) continue
-    sumSq += e * e
-    m++
-  }
-  return m === 0 ? Infinity : Math.sqrt(sumSq / m)
+  return rmsOver(positions, idx, (x, y, z) => slant(c, x, y, z).e)
 }
 
 /** Radius grows along the +axis by convention; a fit that walked the
@@ -126,31 +126,14 @@ export function fitConeOnAxis(
 ): Cone | null {
   const n = idx.length
   if (n < 6) return null
-  const d = normalize(axis)
+  const d = normalizeOrZ(axis)
   const [u, v] = orthoBasis(d)
 
-  let mx = 0, my = 0, mz = 0
-  for (let i = 0; i < n; i++) {
-    const j = idx[i] * 3
-    mx += positions[j]
-    my += positions[j + 1]
-    mz += positions[j + 2]
-  }
-  mx /= n
-  my /= n
-  mz /= n
+  const centre = centroidOf(positions, idx)
+  const [mx, my, mz] = centre
 
   // Project onto the (u, v) plane through the centroid.
-  const pu = new Float64Array(n)
-  const pv = new Float64Array(n)
-  for (let i = 0; i < n; i++) {
-    const j = idx[i] * 3
-    const qx = positions[j] - mx
-    const qy = positions[j + 1] - my
-    const qz = positions[j + 2] - mz
-    pu[i] = qx * u[0] + qy * u[1] + qz * u[2]
-    pv[i] = qx * v[0] + qy * v[1] + qz * v[2]
-  }
+  const { pu, pv } = projectOntoPlane(positions, idx, centre, u, v)
   const fit2d = fitCircle2d(pu, pv)
   if (!fit2d) return null
   const { cu, cv } = fit2d
@@ -198,7 +181,7 @@ export function fitConeOnAxis(
  *  direction is perturbed by two angles in that same plane, exactly as for
  *  the cylinder, so the parametrisation never leaves the unit sphere and the
  *  slide-along-the-axis degeneracy is simply not present. */
-export function refineConeGeometric(
+function refineConeGeometric(
   positions: Float32Array,
   idx: ArrayLike<number>,
   init: Cone,
@@ -255,7 +238,7 @@ export function refineConeGeometric(
         lambda *= 10
         continue
       }
-      const axis = normalize([
+      const axis = normalizeOrZ([
         c.ax + step[2] * u[0] + step[3] * v[0],
         c.ay + step[2] * u[1] + step[3] * v[1],
         c.az + step[2] * u[2] + step[3] * v[2],
@@ -383,7 +366,7 @@ function coneFrom3(
   )
   // Directions too alike leave the circle through them — the axis — anywhere.
   if (!(Math.hypot(axisRaw[0], axisRaw[1], axisRaw[2]) > 0.02)) return null
-  let d = normalize(axisRaw)
+  let d = normalizeOrZ(axisRaw)
   let dotSum = dirs[0][0] * d[0] + dirs[0][1] * d[1] + dirs[0][2] * d[2]
   dotSum += dirs[1][0] * d[0] + dirs[1][1] * d[1] + dirs[1][2] * d[2]
   dotSum += dirs[2][0] * d[0] + dirs[2][1] * d[1] + dirs[2][2] * d[2]

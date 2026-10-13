@@ -1,4 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// Point-to-plane ICP: a thinned sample of the scan pulled onto a reference
+// surface a pass at a time, each pass pairing every sample with its closest
+// point and solving for the small rigid step that most reduces the distance
+// across the surface. Every best fit of a scan to a reference ends here, and
+// so does the mirror registration a symmetry plane is found by. Poses are
+// compared on a capped mean over every sample, not over the survivors of the
+// outlier cut, so a fit cannot score better by letting go of the part.
+
 import { solveLinear } from '../fit/linalg'
 import { mulberry32 } from '../fit/ransac'
 import {
@@ -309,7 +317,7 @@ export function* icpSteps(
     const rms = Math.sqrt(sumSq / matched)
     options.onIteration?.(iterations, meanDistance, transform)
 
-    // Score the pose we just measured, not the one we are about to make: this
+    // Score the pose just measured, not the one about to be made: this
     // is the only place a transform is evaluated, so keeping the best-scoring
     // one means a final bad step can never be what gets returned.
     if (score < bestScore) {

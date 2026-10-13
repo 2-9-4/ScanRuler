@@ -1,7 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// The robust first guess every fit from a click starts with. A patch round a
+// click can take in a neighbouring face, which would drag a least-squares fit
+// off the surface clicked, so candidates are scored by median residual (LMedS
+// — RANSAC's sampling with no threshold to tune) and only the winner's
+// consensus set goes on to the clipped best fit. Each shape brings its own
+// candidates; the sphere's live here, as does the seeded PRNG that makes fits
+// and core's other random sampling repeatable.
+
 import type { Sphere } from '../types'
 import { solveLinear } from './linalg'
 import { fitSphereClipped } from './sphere'
+import { extentOfIndexed } from '../geometry/bounds'
 
 /** Deterministic PRNG so fits are reproducible for identical input. */
 export function mulberry32(seed: number): () => number {
@@ -48,18 +57,7 @@ export function ransacConsensus<M>(
   const iterations = opts.iterations ?? 256
   const rand = mulberry32(opts.seed ?? 0x5eed)
 
-  let minX = Infinity, minY = Infinity, minZ = Infinity
-  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity
-  for (let i = 0; i < n; i++) {
-    const j = patch[i] * 3
-    const x = positions[j], y = positions[j + 1], z = positions[j + 2]
-    if (x < minX) minX = x
-    if (x > maxX) maxX = x
-    if (y < minY) minY = y
-    if (y > maxY) maxY = y
-    if (z < minZ) minZ = z
-    if (z > maxZ) maxZ = z
-  }
+  const { min: [minX, minY, minZ], max: [maxX, maxY, maxZ] } = extentOfIndexed(positions, patch)
   const diag = Math.sqrt((maxX - minX) ** 2 + (maxY - minY) ** 2 + (maxZ - minZ) ** 2)
   if (!(diag > 0)) return null
 

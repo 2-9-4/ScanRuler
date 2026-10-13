@@ -36,6 +36,41 @@ const GESTURES: { id: MarkGesture | null; icon: IconName; label: string; title: 
   { id: 'lasso', icon: 'markLasso', label: 'Lasso', title: 'Draw a free outline: everything inside it is marked' },
 ]
 
+interface BrushDiameter {
+  diameter: number
+  setDiameter: (mm: number) => void
+}
+
+/** The brush's diameter to type, in millimetres. */
+export function BrushNumber({ diameter, setDiameter, testId }: BrushDiameter & { testId: string }) {
+  return (
+    <input
+      type="number"
+      step="any"
+      min={0}
+      data-test={testId}
+      value={Number(diameter.toFixed(3))}
+      onChange={(e) => e.target.value !== '' && setDiameter(Number(e.target.value))}
+    />
+  )
+}
+
+/** The brush's diameter to drag, over the range the part's size gives. */
+export function BrushSlider({ diameter, setDiameter, brush }: BrushDiameter & { brush: { min: number; max: number } }) {
+  return (
+    <input
+      className="slider"
+      type="range"
+      min={brush.min}
+      max={brush.max}
+      step={(brush.max - brush.min) / 200}
+      value={Math.min(Math.max(diameter, brush.min), brush.max)}
+      aria-label="Brush diameter"
+      onChange={(e) => setDiameter(Number(e.target.value))}
+    />
+  )
+}
+
 export function MarkTools({
   escapeNote,
   showCount = true,
@@ -97,25 +132,9 @@ export function MarkTools({
         <>
           <label className="field">
             <span>Brush Ø (mm)</span>
-            <input
-              type="number"
-              step="any"
-              min={0}
-              data-test="mark-brush-diameter"
-              value={Number(m.diameter.toFixed(3))}
-              onChange={(e) => e.target.value !== '' && m.setDiameter(Number(e.target.value))}
-            />
+            <BrushNumber diameter={m.diameter} setDiameter={m.setDiameter} testId="mark-brush-diameter" />
           </label>
-          <input
-            className="slider"
-            type="range"
-            min={brush.min}
-            max={brush.max}
-            step={(brush.max - brush.min) / 200}
-            value={Math.min(Math.max(m.diameter, brush.min), brush.max)}
-            aria-label="Brush diameter"
-            onChange={(e) => m.setDiameter(Number(e.target.value))}
-          />
+          <BrushSlider diameter={m.diameter} setDiameter={m.setDiameter} brush={brush} />
         </>
       )}
 

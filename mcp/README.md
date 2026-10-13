@@ -14,7 +14,7 @@ provider, like everything else it reads.
 
 ## Setting up
 
-You need [Node.js](https://nodejs.org/) 20 or newer, and Chrome, Edge or
+You need [Node.js](https://nodejs.org/) 22 or newer, and Chrome, Edge or
 Firefox.
 
 ### 1. Add the server to your agent
@@ -111,7 +111,8 @@ switch on **Local agent connection**, and enter the port and the token. The
 token is made on the first run and kept in your config folder
 (`%APPDATA%\scanruler-mcp` on Windows,
 `~/Library/Application Support/scanruler-mcp` on macOS,
-`~/.config/scanruler-mcp` elsewhere). `scanruler_status` hands out the same
+`$XDG_CONFIG_HOME/scanruler-mcp` elsewhere, `~/.config/scanruler-mcp`
+without it). `scanruler_status` hands out the same
 link.
 
 A chip in ScanRuler's top bar says where the connection stands: **listening**
@@ -197,7 +198,9 @@ unless told to go on).
   own; a workspace adds keys of its own, which `view_set` lists), and
   `frame` looks at a box or a place closely.
 - **Results** are the session as the tab holds it afterwards, as JSON, in
-  millimetres and degrees. A refusal comes back as an error with a code —
+  millimetres and degrees, every number that is not whole kept to six
+  significant digits — except in an answer whose numbers are handed back
+  as inputs (a plane's frame, say), which keeps every digit. A refusal comes back as an error with a code —
   `no_scan`, `busy`, `invalid_input`, `invalid_state` (something open in a
   panel is in the way), `not_found`, `failed`, `unavailable`.
 

@@ -18,7 +18,7 @@ function base(over: Partial<HintInput> = {}): HintInput {
     referenceLoaded: false,
     aligned: false,
     mapReady: false,
-    hasTargetElement: false,
+    targetAvailable: false,
     targetChosen: false,
     thicknessReady: false,
     imageLoaded: false,
@@ -82,10 +82,10 @@ describe('hint ladder', () => {
     const dev = (over: Partial<HintInput>) =>
       target(base({ workspace: 'deviation', onElement: true, ...over }))
     expect(dev({})).toBe('target-goto-measure')
-    expect(dev({ hasTargetElement: true })).toBe('target-select')
+    expect(dev({ targetAvailable: true })).toBe('target-select')
     expect(
       nextHint(
-        base({ workspace: 'deviation', onElement: true, hasTargetElement: true, targetChosen: true }),
+        base({ workspace: 'deviation', onElement: true, targetAvailable: true, targetChosen: true }),
       ),
     ).toBe('done')
   })

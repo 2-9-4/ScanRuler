@@ -1,4 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// Undo and redo, across every workspace. A step is one thing the user did —
+// a store action named here or by a plugin, or a command wrapped whole —
+// and holds the part of each store it changed, as it was before and after:
+// one click can move several stores, and a step puts them all back
+// together, in the workspace it was taken in. Files and maps are not copied:
+// the scan is held by identity, and what was read off it is measured again
+// after a step (see useProjectHistory). Nothing steps while something runs
+// or an editor holds work, and a new scan, reference or image starts afresh.
+
 import { create } from 'zustand'
 import { draftHolds, useStore } from './store'
 import { flatDraftHolds, useFlat } from './flatStore'
@@ -87,7 +96,7 @@ export interface HistoryParticipant {
 
 const participants: HistoryParticipant[] = []
 
-export function captureHistory(): HistorySnapshot {
+function captureHistory(): HistorySnapshot {
   const snapshot: HistorySnapshot = captureCore()
   for (const p of participants) for (const s of p.sections ?? []) snapshot[s.key] = s.capture()
   return snapshot
@@ -250,7 +259,7 @@ export const undo = () => travel(false)
 export const redo = () => travel(true)
 
 /** Explicit action lists exclude worker results, pointer hover and camera
- * navigation. Immutable store data is shared; files and map buffers are absent. */
+ *  navigation. Immutable store data is shared; files and map buffers are absent. */
 let wrapActions: ((a: HistoryActions) => () => void) | null = null
 
 /** Take part in the history — see HistoryParticipant. The returned function

@@ -67,7 +67,7 @@ const WIRE_GLSL_VERTEX_BODY = `vWireA = step( abs( vec4( wireSlot ) - vec4( 0.0,
  * The same derivative gives the triangle's size on screen. Where it is down
  * to a couple of pixels the lines would cover the face, so they fade out
  * instead: from a distance a dense scan stays a shaded part, and the mesh
- * comes up as you zoom in.
+ * comes up as the view zooms in.
  */
 const WIRE_GLSL_PREAMBLE = `uniform float uWire;
 varying vec4 vWireA;

@@ -1,4 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// From a click to the whole surface. A patch round the seed gives the robust
+// estimate (see ransac.ts), retried on a larger patch when it is too small or
+// too flat; the region then grows from the seed, the model refitted every
+// round, and a vertex joins only inside the noise band and with a normal that
+// agrees with the model's — the normal test is what stops it at an edge
+// rather than leaking onto the next face. The rings of a scan's rounded edge
+// that still get in are peeled off the rim afterwards. A plain flood bounded
+// by the turn between neighbouring normals sits beside it, fitting nothing.
+
 import type { Cone, Cylinder, MeshGraph, Plane, Sphere, Torus } from '../types'
 import { acquireStamps } from '../geometry/scratch'
 import { coneNormalAlign, coneResidual, fitConeClipped } from './cone'
@@ -52,6 +61,39 @@ export function collectPatch(g: MeshGraph, seeds: ArrayLike<number>, limit: numb
     }
   }
   return Uint32Array.from(queue)
+}
+
+/** The patch sizes a fit from a click tries in turn — the next when the one
+ *  before was too small or too flat to pin the surface down. */
+const SEED_PATCHES = [1500, 6000, 24000]
+
+/**
+ * A fit from a click, the steps every kind shares: a patch round the seeds,
+ * a robust estimate on it, the region that estimate grows to — 60 points at
+ * least — and the kind's own best fit and checks. A step that comes back
+ * null moves on to the next patch size; null when none is left.
+ */
+export function seededFit<C, G extends { region: Uint32Array }, R>(
+  g: MeshGraph,
+  seeds: number[],
+  steps: {
+    /** The robust estimate on the patch; `seed` drives its sampling. */
+    estimate(patch: Uint32Array, seed: number): C | null
+    grow(estimate: C): G | null
+    finish(grown: G): R | null
+  },
+): R | null {
+  for (const patchSize of SEED_PATCHES) {
+    const patch = collectPatch(g, seeds, patchSize)
+    if (patch.length < 30) break
+    const cand = steps.estimate(patch, (seeds[0] ?? 1) + patchSize)
+    if (!cand) continue
+    const grown = steps.grow(cand)
+    if (!grown || grown.region.length < 60) continue
+    const fit = steps.finish(grown)
+    if (fit) return fit
+  }
+  return null
 }
 
 /** Flood from a seed over every edge whose two vertex normals turn by less

@@ -1,4 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// Wall thickness as plain text for the clipboard. The settings go with the
+// numbers: a thinnest wall pasted into a build log means little months later
+// without the method, the depth searched and the facing limit it was found
+// under.
+
 import type { ThicknessMethod, ThicknessStats } from './thickness'
 
 /** How the measurement was taken and how it is being read — the settings a

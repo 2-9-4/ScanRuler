@@ -1,4 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// The app on screen: the session (app/session.ts) made once and drawn — the
+// top bar, the panel of the workspace that is up, the 3D viewport, the 2D
+// sheet, the legends and the prompts on the stage. The workspaces' verbs are
+// the session's, and an agent's commands are handed the same session, so a
+// button and a command run the same code. What stays here needs the page:
+// clicks routed to whichever editor is open, the image on the 2D sheet and
+// its edges, project files, each plugin's hook (called in the same order
+// every render) and the agent connection.
+
 import { useEffect, useMemo, useRef } from 'react'
 import { useProjectHistory } from './app/useProjectHistory'
 import { clearHistory, historyAction } from './state/historyStore'
@@ -24,14 +33,12 @@ import { elementKindInfo } from './core/elements/kinds'
 import { creationMethod, takesSurface } from './core/elements/construct'
 import { extensionOf, fitWindow, isExtendable, sideValue } from './core/elements/extend'
 import { roleOf } from './core/elements/refs'
-import { dimensionTypeInfo, evaluateDimension, evaluateDimensions } from './core/dimensions'
+import { evaluateDimensions } from './core/dimensions'
 import { attachSurfaceScene, forgetSurface, surfaceSource } from './app/surfaces'
-import type { FitData, PointFit, SigmaPreset, Vec3 } from './core/types'
+import type { PointFit, SigmaPreset, Vec3 } from './core/types'
 import {
-  alignSlotPicks,
   blockedRefs,
   draftColorOf,
-  picksItsPoints,
   sectionDraftReady,
   useStore,
   type SelectMode,
@@ -62,7 +69,6 @@ import { CompareView } from './ui/CompareView'
 import { formatSigned } from './ui/format'
 import { HoverReadout, type HoverReading } from './ui/HoverReadout'
 import { SplitPicker } from './ui/SplitPicker'
-import { markChipText } from './ui/MarkTools'
 import { MARK_COLOR, useDeviation } from './state/deviationStore'
 import { usePrefs } from './state/prefsStore'
 import { useShell } from './state/shellStore'
@@ -73,7 +79,6 @@ import type { FieldScale } from './core/field/colormap'
 import { deviationScale } from './core/deviation/deviation'
 import { thicknessScale } from './core/thickness/thickness'
 import { rigidToColumnMajor } from './core/deviation/rigid'
-import { ALIGN_PICK_COUNT } from './core/alignment'
 import { exportElementsStep, exportScanPointCloud, exportScanStl, runExport, saveBuilt, textBytes, type BuiltFile } from './app/exports'
 import { PICK_MARK_TOOL_STATUS } from './app/deviationWorkspace'
 import { useElementField } from './app/useElementField'
@@ -84,15 +89,17 @@ import { commandRunning } from './commands/activity'
 import { takePairingLink } from './commands/agentLink'
 import { creaseNote } from './app/scanImport'
 import { useFlatSceneSync, type SheetView } from './app/useFlatSceneSync'
-import { buildFlatCsvFile, flatExportStem, flatReportInput } from './app/flatReport'
+import { buildFlatCsvFile, drawnSummary, flatExportStem, flatReportInput } from './app/flatReport'
 import { sheetAlignment, sheetElements, sheetFrame, sheetLoupeActive, sheetPoseOf, sheetScale } from './app/flatSheet'
 import { useHintChip } from './app/useHints'
 import { useGlobalShortcuts } from './app/useGlobalShortcuts'
 import { useDragDrop } from './app/useDragDrop'
+import { useOpenFromAddress } from './app/useOpenFromAddress'
 import { useProject } from './app/useProject'
 import { prepareImage, runImport, type PreparedImage } from './app/imports'
 import { plugins } from './plugins/registry'
 import type { PluginHost, PluginRuntime } from './plugins/api'
+import { markHintOf, openSlotHintOf, paintHintOf, stageHintOf } from './app/stageHints'
 
 /** What a plugin without a hook adds: nothing. */
 const NO_RUNTIME: PluginRuntime = {}
@@ -400,7 +407,7 @@ export default function App() {
     const chains = imageChainsRef.current
     if (chains) flat.resolveEdges(chainCount(chains))
     else if (flat.edgeStatus !== 'running') flat.failEdges()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Runs on the listed dependencies only, not on everything it reads.
   }, [flatSubject, activeCutKey])
 
   // A section deleted in the 3D workspace — or every one, with a new scan —
@@ -449,19 +456,6 @@ export default function App() {
       title: titleLine(report),
       scaleNote: scaleLine(report),
     }
-  }
-
-  /** "1,234 edge chains and 3 elements" — with a word on the edges when a
-   *  format did something to them, and a reason when there are none. */
-  const drawnSummary = (input: FlatDrawingInput, edgeNote = '', showEdges = useFlat.getState().showEdges): string => {
-    const chains = input.chains ? chainCount(input.chains) : 0
-    const edges = chains
-      ? `${chains.toLocaleString('en-US')} edge chain${chains === 1 ? '' : 's'}${edgeNote ? ` ${edgeNote}` : ''}`
-      : showEdges
-        ? 'no edges'
-        : 'the edges hidden'
-    const n = input.elements.length
-    return `${edges} and ${n} element${n === 1 ? '' : 's'}`
   }
 
   /** The sheet as an SVG at true scale — for a vector editor, a laser or a
@@ -1119,7 +1113,7 @@ export default function App() {
     seenWindow.current = windowKey
     if (extendDragging.current) refitAfterDrag.current = true
     else void refitDraftInWindow()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Runs on the listed dependencies only, not on everything it reads.
   }, [draftOpen, windowKey])
 
   // Everything the scene is told after a render lives in useSceneSync; the
@@ -1217,6 +1211,8 @@ export default function App() {
   })
 
   const dragging = useDragDrop({ openFile, openNominal, openImage, openProject })
+  // A file the address names — a shared link — goes the same way as a drop.
+  useOpenFromAddress({ openFile, openNominal, openImage, openProject })
 
   // The commands an agent runs (src/commands) work through the session, and
   // through the same handlers as the buttons for what only the browser has:
@@ -1306,113 +1302,17 @@ export default function App() {
     useStore.getState().removeElement(id)
   }
 
-  // The instruction of the moment rides above the model; everything else the
-  // tool has to say goes to the status strip.
+  // The instruction of the moment rides above the model (app/stageHints);
+  // everything else the tool has to say goes to the status strip.
   const fileName = useStore((s) => s.fileName)
   const vertexCountLoaded = useStore((s) => s.vertexCount > 0)
   const draftMode = draft ? creationMethod(draft.kind, draft.method).mode : null
-  // While a dimension is collecting references, say which slot a viewport
-  // click would fill; a construction slot invites clicks the same way.
-  const openSlotHint = (() => {
-    if (!draft && sectionDraft) {
-      if (!sectionDraft.axis)
-        return 'Click the element to cut along — a plane, cylinder, cone, line or circle — or one of the XY, YZ, XZ planes, or choose in the panel'
-      const verb = sectionDraft.editId !== undefined ? 'save' : 'create'
-      return sectionDraftReady(sectionDraft)
-        ? `Drag the arrow to slide the plane, a ring to tilt it · Enter or middle-click to ${verb} · Esc to discard`
-        : 'Drag the arrow to slide the plane along its direction, a ring to tilt it, or type the offset in the panel'
-    }
-    if (!draft && alignDraft) {
-      if (alignDraft.pickSlot !== null) {
-        const need = ALIGN_PICK_COUNT[alignDraft.pickSlot]
-        const have = alignSlotPicks(alignDraft, alignDraft.pickSlot).length
-        const what =
-          alignDraft.pickSlot === 'primary'
-            ? 'on the face to set on a plane'
-            : alignDraft.pickSlot === 'secondary'
-              ? 'along the edge to align with the axis'
-              : 'for the zero point'
-        return `Click the scan — point ${have + 1} of ${need} ${what} · Esc to stop picking`
-      }
-      if (alignDraft.proposal)
-        return 'This is the pose the scan suggests — change a side or a direction in the panel if it is not yours, then press Confirm alignment'
-      return alignDraft.primary === null && alignDraft.primaryPicks.length === 0
-        ? 'The coordinate planes show where the part is going — set a face on one of them via the panel'
-        : 'Add an axis (step 2) or a zero point (step 3) if you need them — then press Confirm alignment'
-    }
-    if (draft && draftMode === 'construct') {
-      const method = creationMethod(draft.kind, draft.method)
-      if (draft.pickSlot != null)
-        return picksItsPoints(draft)
-          ? `Click the scan or a point element for “${method.slots[draft.pickSlot].label}”`
-          : `Click the scan to pick “${method.slots[draft.pickSlot].label}” · Esc to stop picking`
-      const empty = draft.refs.findIndex((r) => r === null)
-      if (empty < 0) return null
-      return `Click an element in the viewport for “${method.slots[empty].label}” — or choose it in the panel`
-    }
-    if (draft || !dimDraft) return null
-    const empty = dimDraft.refs.findIndex((r) => r === null)
-    if (empty < 0) {
-      const fits = dimDraft.refs.map((id) => elements.find((e) => e.id === id)?.fit)
-      const ok =
-        fits.every((f): f is FitData => f !== undefined) &&
-        !evaluateDimension(dimDraft.type, fits, { anchor: dimDraft.anchor, basic: dimDraft.basic })
-          .invalid
-      return ok ? 'Enter or middle-click to add the dimension · Esc to cancel' : null
-    }
-    const label = dimensionTypeInfo(dimDraft.type).slots[empty].label
-    return `Click an element in the viewport for “${label}” — the dimension type follows what you pick`
-  })()
+  const openSlotHint = openSlotHintOf({ draft, draftMode, sectionDraft, alignDraft, dimDraft, elements })
   const markCount = useMark((s) => s.count)
-  // Marking a surface by hand has its own line — the same line the local fine
-  // fit gets, since it is the same tool set: which gesture is live, what the
-  // buttons do while it is, and the way back to the camera. Only where Escape
-  // leads and how the element is finished differ.
-  // Editing an element runs the same gestures as making one; only what Enter
-  // and Escape land on is different — a change written back, or dropped.
   const editingDraft = draft?.editId !== undefined
-  const paintHint = !painting
-    ? null
-    : markChipText(markGesture, markCount, `the ${elementKindInfo(draft!.kind).noun}`, {
-        idle: editingDraft ? 'Esc discards the changes' : 'Esc discards the element',
-        live: 'Esc to navigate, twice to discard',
-      }) +
-      (draft!.status === 'ready'
-        ? editingDraft
-          ? ' · Enter or middle-click saves it'
-          : ' · Enter or middle-click creates it'
-        : '')
-  const stageHint = !draft
-    ? openSlotHint
-    : draftMode === 'construct'
-      ? openSlotHint
-      : painting
-        ? paintHint
-        : draft.picks.length === 0 && draft.status !== 'ready'
-          ? draftMode === 'pick' && draft.kind === 'point'
-            ? 'Click the point on the scan you want to measure to'
-            : `Click a point on the ${elementKindInfo(draft.kind).noun} you want to measure`
-          : draft.status === 'ready'
-            ? `Enter or middle-click to ${editingDraft ? 'save' : 'create'} · Esc to discard · click again to ${
-                draftMode === 'pick' && draft.kind === 'point' ? 'move the point' : 'add points'
-              }`
-            : draftMode === 'pick' && draft.picks.length > 0 && draft.status === 'empty'
-              ? `Point ${draft.picks.length} of ${creationMethod(draft.kind, draft.method).minPicks ?? 1} — keep clicking around the ${elementKindInfo(draft.kind).noun}`
-              : null
-
-  // The same tools mark two different things in this workspace: the surface a
-  // local fine fit runs on, and the region an element map is restricted to.
-  const markHint = !marking
-    ? null
-    : markChipText(
-        markGesture,
-        markCount,
-        useDeviation.getState().source === 'element' ? 'the surface to measure' : 'the surface to fit on',
-        {
-          idle: 'Esc closes',
-          live: 'Esc to navigate, twice to close',
-        },
-      )
+  const paintHint = paintHintOf({ draft, painting, markGesture, markCount, editingDraft })
+  const stageHint = stageHintOf({ draft, draftMode, openSlotHint, painting, paintHint, editingDraft })
+  const markHint = markHintOf({ marking, markGesture, markCount, source: useDeviation.getState().source })
 
   // The guided hints: which control is ringing is the control's own business
   // (usePulse), but the sentence that goes with it belongs on the stage, and
@@ -1539,7 +1439,7 @@ export default function App() {
         onOpenProject={openProject}
         onOpenScan={openFile}
         onOpenImage={openImage}
-        canSave={(fileName !== null && vertexCountLoaded) || flatImageName !== null || runtimes.some((r) => r.canSave)}
+        savable={(fileName !== null && vertexCountLoaded) || flatImageName !== null || runtimes.some((r) => r.canSave)}
       />
       <RecoveryBar recovery={recovery} />
       <div className="mid">

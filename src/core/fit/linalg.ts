@@ -1,4 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// The dense linear algebra behind the fits, borrowed as well by alignment,
+// deviation, sections and export: linear systems by elimination or Cholesky,
+// symmetric eigenproblems by Jacobi rotation — a plane's normal, a cylinder's
+// axis from its normals and a best-fit rotation are each an extreme
+// eigenvector of a small matrix — and the point-set helpers the fits share.
+
 import type { Vec3 } from '../types'
 import { cross } from '../vec'
 
@@ -148,7 +154,7 @@ export function symmetricEigen3(input: ArrayLike<number>): Eigen3 {
 
   const order = [0, 1, 2].sort((i, j) => a[i * 3 + i] - a[j * 3 + j])
   const values = order.map((i) => a[i * 3 + i]) as [number, number, number]
-  const vectors = order.map((i) => normalize([v[i], v[3 + i], v[6 + i]])) as [Vec3, Vec3, Vec3]
+  const vectors = order.map((i) => normalizeOrZ([v[i], v[3 + i], v[6 + i]])) as [Vec3, Vec3, Vec3]
   return { values, vectors }
 }
 
@@ -232,7 +238,7 @@ export function symmetricEigenN(n: number, input: ArrayLike<number>): EigenN {
  *  the nullable `normalize` from '../vec': the fitting iterations need a
  *  usable direction even when a degenerate step collapses a vector, and a
  *  null contract would force a failure branch into every numeric loop. */
-export function normalize(v: Vec3): Vec3 {
+export function normalizeOrZ(v: Vec3): Vec3 {
   const len = Math.hypot(v[0], v[1], v[2])
   if (!(len > 1e-20)) return [0, 0, 1]
   return [v[0] / len, v[1] / len, v[2] / len]
@@ -244,7 +250,52 @@ export function orthoBasis(n: Vec3): [Vec3, Vec3] {
   const ay = Math.abs(n[1])
   const az = Math.abs(n[2])
   const helper: Vec3 = ax <= ay && ax <= az ? [1, 0, 0] : ay <= az ? [0, 1, 0] : [0, 0, 1]
-  const u = normalize(cross(n, helper))
-  const v = normalize(cross(n, u))
+  const u = normalizeOrZ(cross(n, helper))
+  const v = normalizeOrZ(cross(n, u))
   return [u, v]
+}
+
+/** The mean of the points `idx` names. */
+export function centroidOf(positions: Float32Array, idx: ArrayLike<number>): Vec3 {
+  const n = idx.length
+  let mx = 0, my = 0, mz = 0
+  for (let i = 0; i < n; i++) {
+    const j = idx[i] * 3
+    mx += positions[j]
+    my += positions[j + 1]
+    mz += positions[j + 2]
+  }
+  return [mx / n, my / n, mz / n]
+}
+
+/** The points `idx` names as coordinates in the plane through `centre`
+ *  that `u` and `v` span — where a fit across an axis looks for its circle. */
+export function projectOntoPlane(positions: Float32Array, idx: ArrayLike<number>, centre: Vec3, u: Vec3, v: Vec3): { pu: Float64Array; pv: Float64Array } {
+  const n = idx.length
+  const pu = new Float64Array(n)
+  const pv = new Float64Array(n)
+  for (let i = 0; i < n; i++) {
+    const j = idx[i] * 3
+    const qx = positions[j] - centre[0]
+    const qy = positions[j + 1] - centre[1]
+    const qz = positions[j + 2] - centre[2]
+    pu[i] = qx * u[0] + qy * u[1] + qz * u[2]
+    pv[i] = qx * v[0] + qy * v[1] + qz * v[2]
+  }
+  return { pu, pv }
+}
+
+/** The root mean square of a residual over the points `idx` names, those it
+ *  has no finite answer for left out — Infinity when none is left. */
+export function rmsOver(positions: Float32Array, idx: ArrayLike<number>, residual: (x: number, y: number, z: number) => number): number {
+  let sumSq = 0
+  let m = 0
+  for (let i = 0; i < idx.length; i++) {
+    const j = idx[i] * 3
+    const e = residual(positions[j], positions[j + 1], positions[j + 2])
+    if (!Number.isFinite(e)) continue
+    sumSq += e * e
+    m++
+  }
+  return m === 0 ? Infinity : Math.sqrt(sumSq / m)
 }

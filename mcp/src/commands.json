@@ -481,7 +481,7 @@
   {
     "name": "deviation.settings",
     "title": "Set how the deviation is read",
-    "description": "The deviation map’s reading: range, the colour scale ± mm; maxDistance, how far from the reference a point may be to count, mm; bands, a stepped scale of that many colours or null for smooth; tolerance, ± mm, the share within which the statistics give; facingDeg, how far the reference surface a point is measured against may turn from facing it, degrees, or null for the nearest surface whatever it faces — a change of it measures the map again. Returns the deviation state. One undo step.",
+    "description": "The deviation map’s reading: range, the colour scale ± mm; maxDistance, how far from the reference a point may be to count, mm; bands, a stepped scale of that many colours or null for smooth; tolerance, ± mm, the share within which the statistics give; facingDeg, how far the reference surface a point is measured against may turn from facing it, degrees, or null for the nearest surface whatever it faces — a change of it measures the map again; colormap, the colour map every deviation map and the live map of the bodies are drawn in — the person’s own choice, kept in the browser and outside the undo, so set it only to read a render by its colours and read settings.colormap for what the ramp shows at −range, 0 and +range and the caps past either end before judging a picture. Returns the deviation state. One undo step.",
     "input": {
       "type": "object",
       "properties": {
@@ -526,6 +526,21 @@
             }
           ],
           "description": "Facing limit, degrees, or null."
+        },
+        "colormap": {
+          "type": "string",
+          "enum": [
+            "jet",
+            "viridis",
+            "magma",
+            "plasma",
+            "inferno",
+            "cividis",
+            "mako",
+            "rocket",
+            "turbo"
+          ],
+          "description": "The colour map: jet (blue inside, green on the surface, red outside) or one of the perceptual ramps."
         }
       },
       "additionalProperties": false

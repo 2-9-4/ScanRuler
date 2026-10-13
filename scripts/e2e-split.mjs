@@ -18,7 +18,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { importStep, writeBinarySTL } from 'meshstep'
 import { cubeStep } from '../tests/stepFixtures.ts'
-import { check, fail, finish, launchApp, setViewTheme, shotPath, sleep, viewThemeIds } from './e2e-lib.mjs'
+import { check, fail, finish, launchApp, loadScan, setViewTheme, shotPath, sleep, viewThemeIds } from './e2e-lib.mjs'
 
 const SIZE = 20
 
@@ -155,11 +155,7 @@ check(
   'the colour-plot switch is dead with nothing measured',
 )
 
-await (await page.$('[data-test=start-scan] input[type=file]')).uploadFile(scanPath)
-await page.waitForFunction(
-  () => /[1-9][\d,]* triangles/.test(document.querySelector('.file-info')?.textContent ?? ''),
-  { timeout: 300_000 },
-)
+await loadScan(page, scanPath, { inputSelector: '[data-test=start-scan] input[type=file]', timeout: 300_000, settle: 0 })
 check(
   await page.$eval('[data-test=toggle-split]', (el) => el.disabled),
   'the split switch is still dead with only the scan in',

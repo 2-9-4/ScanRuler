@@ -1,4 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// Everything the deviation workspace knows: what the scan is measured
+// against — a reference part, which has to be loaded and best-fitted first,
+// or a fitted element, already in the scan's frame — the best fit and its
+// progress, the colour scale, and what is drawn. The two maps are held side
+// by side, each with its own status and version, so switching between them
+// throws neither away; the figures under the scale and the pinned readings
+// belong to whichever is on screen. The maps themselves, a value per scan
+// vertex, live in refs like every big buffer.
+
 import { create } from 'zustand'
 import type { AlignResult, PointPair } from '../core/deviation/align'
 import { MAX_DEFLECTION_SCALE, MIN_DEFLECTION_SCALE } from '../core/deviation/deflection'

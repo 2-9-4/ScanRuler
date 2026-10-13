@@ -1,4 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// A scan brought onto its reference by a rigid best fit: automatically, from
+// hand-picked point pairs, or as a local fine fit on surface marked by hand.
+// All three finish in the same point-to-plane ICP (see icp.ts) and differ in
+// where it starts and what it runs on — the automatic fit screens the frame
+// the two files came in and the 24 principal-axis attitudes, the picked fit
+// starts from the pairs, the local one from the pose already in hand, gated
+// so a marked patch cannot snap onto a neighbouring feature. Each also comes
+// as a generator the worker can stop between passes.
+
 import { symmetricEigen3 } from '../fit/linalg'
 import type { Vec3 } from '../types'
 import { absoluteOrientation } from './absoluteOrientation'

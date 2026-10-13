@@ -1,25 +1,21 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// The sphere's best fit: Coope's algebraic fit, linear and dependable, as a
+// start, then the orthogonal-distance fixed-point iteration that makes it the
+// Gaussian best fit, once per round of the "used points" clipping. The robust
+// estimate a click starts from lives in ransac.ts.
+
 import type { Sphere } from '../types'
 import { clippedRefit } from './clip'
-import { solveLinear } from './linalg'
+import { centroidOf, solveLinear } from './linalg'
 
 /** Linear (algebraic) sphere fit after Coope: with q = p − centroid, solve
  *  2q·a + t = |q|² in least squares for center offset a and t = r² − |a|².
  *  Fast and dependable as an initial estimate. */
-export function fitSphereAlgebraic(positions: Float32Array, idx: ArrayLike<number>): Sphere | null {
+function fitSphereAlgebraic(positions: Float32Array, idx: ArrayLike<number>): Sphere | null {
   const n = idx.length
   if (n < 4) return null
 
-  let mx = 0, my = 0, mz = 0
-  for (let i = 0; i < n; i++) {
-    const j = idx[i] * 3
-    mx += positions[j]
-    my += positions[j + 1]
-    mz += positions[j + 2]
-  }
-  mx /= n
-  my /= n
-  mz /= n
+  const [mx, my, mz] = centroidOf(positions, idx)
 
   let sxx = 0, sxy = 0, sxz = 0, syy = 0, syz = 0, szz = 0
   let sx = 0, sy = 0, sz = 0
@@ -62,7 +58,7 @@ export function fitSphereAlgebraic(positions: Float32Array, idx: ArrayLike<numbe
 
 /** Geometric (orthogonal-distance) refinement minimizing Σ(dᵢ − r)² via the
  *  standard fixed-point iteration c ← x̄ − r̄·ū. This is the Gaussian best-fit. */
-export function refineSphereGeometric(
+function refineSphereGeometric(
   positions: Float32Array,
   idx: ArrayLike<number>,
   init: Sphere,
@@ -71,16 +67,7 @@ export function refineSphereGeometric(
   const n = idx.length
   if (n === 0) return init
 
-  let mx = 0, my = 0, mz = 0
-  for (let i = 0; i < n; i++) {
-    const j = idx[i] * 3
-    mx += positions[j]
-    my += positions[j + 1]
-    mz += positions[j + 2]
-  }
-  mx /= n
-  my /= n
-  mz /= n
+  const [mx, my, mz] = centroidOf(positions, idx)
 
   let cx = init.cx, cy = init.cy, cz = init.cz, r = init.r
   for (let iter = 0; iter < maxIter; iter++) {

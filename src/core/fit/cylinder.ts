@@ -1,8 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// The cylinder, found from its normals first: every normal of a cylinder is
+// square to its axis, so the axis is the direction the normal cloud scatters
+// least along, and the position and radius are then a circle fit in the plane
+// across it. Candidates from two points with their normals compete with that
+// estimate by median residual (LMedS); damped Gauss–Newton refines all five
+// degrees of freedom, the axis tilted by two angles so it stays a unit vector
+// and the axis point never wanders along the axis itself.
+
 import type { Cylinder, Vec3 } from '../types'
 import { fitCircle2d } from './circle2d'
 import { clippedRefit } from './clip'
-import { cross, normalize, orthoBasis, solveLinear, symmetricEigen3 } from './linalg'
+import { centroidOf, cross, normalizeOrZ, orthoBasis, projectOntoPlane, rmsOver, solveLinear, symmetricEigen3 } from './linalg'
+import { curvedBeyondPlane } from './plane'
 import { ransacConsensus } from './ransac'
 
 /** Distance of a point from the cylinder surface (positive outside), and the
@@ -26,16 +35,7 @@ export function cylinderResidual(c: Cylinder, x: number, y: number, z: number): 
 }
 
 function rms(positions: Float32Array, idx: ArrayLike<number>, c: Cylinder): number {
-  let sumSq = 0
-  let m = 0
-  for (let i = 0; i < idx.length; i++) {
-    const j = idx[i] * 3
-    const e = radial(c, positions[j], positions[j + 1], positions[j + 2]).e
-    if (!Number.isFinite(e)) continue
-    sumSq += e * e
-    m++
-  }
-  return m === 0 ? Infinity : Math.sqrt(sumSq / m)
+  return rmsOver(positions, idx, (x, y, z) => radial(c, x, y, z).e)
 }
 
 /** Axis direction from surface normals. Every normal of a cylinder is
@@ -73,31 +73,14 @@ export function fitCylinderOnAxis(
 ): Cylinder | null {
   const n = idx.length
   if (n < 5) return null
-  const d = normalize(axis)
+  const d = normalizeOrZ(axis)
   const [u, v] = orthoBasis(d)
 
-  let mx = 0, my = 0, mz = 0
-  for (let i = 0; i < n; i++) {
-    const j = idx[i] * 3
-    mx += positions[j]
-    my += positions[j + 1]
-    mz += positions[j + 2]
-  }
-  mx /= n
-  my /= n
-  mz /= n
+  const centre = centroidOf(positions, idx)
+  const [mx, my, mz] = centre
 
   // Project onto the (u, v) plane through the centroid.
-  const pu = new Float64Array(n)
-  const pv = new Float64Array(n)
-  for (let i = 0; i < n; i++) {
-    const j = idx[i] * 3
-    const qx = positions[j] - mx
-    const qy = positions[j + 1] - my
-    const qz = positions[j + 2] - mz
-    pu[i] = qx * u[0] + qy * u[1] + qz * u[2]
-    pv[i] = qx * v[0] + qy * v[1] + qz * v[2]
-  }
+  const { pu, pv } = projectOntoPlane(positions, idx, centre, u, v)
 
   // The circle itself is the shared 2D kernel's job.
   const fit2d = fitCircle2d(pu, pv)
@@ -174,7 +157,7 @@ export function refineCylinderGeometric(
         lambda *= 10
         continue
       }
-      const axis = normalize([
+      const axis = normalizeOrZ([
         c.ax + step[2] * u[0] + step[3] * v[0],
         c.ay + step[2] * u[1] + step[3] * v[1],
         c.az + step[2] * u[2] + step[3] * v[2],
@@ -273,7 +256,7 @@ function cylinderFrom2(
   const len = Math.hypot(axisRaw[0], axisRaw[1], axisRaw[2])
   // Near-parallel normals say nothing about where the axis runs.
   if (!(len > 0.08)) return null
-  const d = normalize(axisRaw)
+  const d = normalizeOrZ(axisRaw)
   const [u, v] = orthoBasis(d)
 
   const p0u = positions[a] * u[0] + positions[a + 1] * u[1] + positions[a + 2] * u[2]
@@ -343,6 +326,10 @@ export function ransacCylinder(
 
   const refined = fitCylinderClipped(positions, core.inliers, core.model, 3)
   if (!refined) return null
+  // A plane fits a patch with no curvature as well — a flat face whose
+  // normals scatter, as a scan's do, still yields candidates, and the
+  // radius cap above is all that holds them.
+  if (!curvedBeyondPlane(positions, refined.used, rms(positions, refined.used, refined.cylinder))) return null
   return {
     cylinder: refined.cylinder,
     inliers: refined.used,

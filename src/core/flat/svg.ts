@@ -19,24 +19,15 @@ import {
   DRAWING_EDGE_COLOR,
   labelSpot,
   num,
-  type FlatDrawingElement,
   type FlatDrawingInput,
 } from './drawing'
 import { splineBezierForm } from './spline'
 import type { FlatFit, Vec2 } from './types'
 
-/** The element and the gathered sheet are the drawing exports' shared
- *  shapes — see core/flat/drawing; the SVG names stay for its callers. */
-export type FlatSvgElement = FlatDrawingElement
-export type FlatSvgInput = FlatDrawingInput
-
-/** The teal the stage draws detected edges in. */
-export const SVG_EDGE_COLOR = DRAWING_EDGE_COLOR
-
 const esc = (s: string): string =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
-export function buildFlatSvg(r: FlatSvgInput): string {
+export function buildFlatSvg(r: FlatDrawingInput): string {
   // The sheet as it is shown: aligned to the part, mirrored and turned, the
   // same pose FlatScene gives its camera.
   const rot = poseMap(sheetPose(r.alignDir, r.turns, r.mirror))
@@ -144,7 +135,7 @@ export function buildFlatSvg(r: FlatSvgInput): string {
   )
 
   out.push(
-    `  <g id="edges" fill="none" stroke="${SVG_EDGE_COLOR}" stroke-width="${n(edgeWidth)}" stroke-linecap="round" stroke-linejoin="round">`,
+    `  <g id="edges" fill="none" stroke="${DRAWING_EDGE_COLOR}" stroke-width="${n(edgeWidth)}" stroke-linecap="round" stroke-linejoin="round">`,
   )
   if (r.chains) {
     const { points, offsets } = r.chains

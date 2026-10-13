@@ -1,6 +1,6 @@
 {
   "name": "scanruler-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Drive ScanRuler, the 3D-scan measuring tool, from an AI agent: a local MCP server that reaches the ScanRuler tab open in your browser.",
   "type": "module",
   "license": "AGPL-3.0-only",
@@ -17,7 +17,7 @@
   },
   "files": ["bin", "src", "README.md", "LICENSE"],
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "start": "node bin/scanruler-mcp.js",

@@ -12,6 +12,9 @@ import type { ExtendSide } from '../core/elements/extend'
 import type { FitData, Vec3 } from '../core/types'
 import type { PickMarker } from './PickScene'
 import { DEFAULT_THEME, type ViewTheme } from './viewThemes'
+import { frameQuaternion } from './frameBasis'
+import { pinLabel, pinValue, type PinVerdict } from './pinLabel'
+export { pinLabel, type PinVerdict } from './pinLabel'
 
 /** Radius of a picked-point marker, in pixels of the canvas.
  *
@@ -33,7 +36,7 @@ export interface OverlayElement {
    * How it is drawn, and with it what a click on it means.
    *
    * A **shell** is the translucent body — right on bare scan, and the only form
-   * you can reasonably aim a click at, so shells are what element picking
+   * a click can reasonably be aimed at, so shells are what element picking
    * resolves through.
    *
    * An **outline** is just the border. It is for the element a deviation map is
@@ -46,14 +49,6 @@ export interface OverlayElement {
   style?: 'shell' | 'outline'
   /** Faded back: an element on offer rather than the one in use. */
   muted?: boolean
-}
-
-/** What a measurement's pin says beyond its value: small lines under it —
- *  the elements a tolerance is about, the limit and how the value stands to
- *  it — and whether the value is over its limit, which paints it red. */
-export interface PinVerdict {
-  notes?: string[]
-  over?: boolean
 }
 
 export interface OverlayPair extends PinVerdict {
@@ -109,57 +104,6 @@ const OCCLUSION_SLACK = 0.004
 const _pinWorld = new THREE.Vector3()
 const _pinNdc = new THREE.Vector3()
 const _pinCoords = new THREE.Vector2()
-
-/** A pin in the 3D view: what it marks on top, the measured value under it, so
- *  the numbers can be read off the model without going back to the panel. An
- *  empty value leaves just the name — nothing is not a number.
- *
- *  A tint is an element's own colour on the title. It goes on as `--tint`
- *  under the stylesheet's `tinted` rule rather than as the colour itself, so
- *  that the dark chassis can lift it toward white before it is used as text:
- *  the palette is tuned to hold on the light instrument, and its deeper tones
- *  sink into a dark chip. */
-export function pinLabel(
-  kind: string,
-  title: string,
-  value: string,
-  tint?: string,
-  verdict?: PinVerdict,
-): CSS2DObject {
-  const div = document.createElement('div')
-  div.className = `viewport-label ${kind}`
-  if (verdict?.over) div.classList.add('over')
-  const t = document.createElement('div')
-  t.className = 'label-title'
-  t.textContent = title
-  if (tint) {
-    t.classList.add('tinted')
-    t.style.setProperty('--tint', tint)
-  }
-  div.append(t)
-  if (value) {
-    const v = document.createElement('div')
-    v.className = 'label-value'
-    v.textContent = value
-    div.append(v)
-  }
-  for (const note of verdict?.notes ?? []) {
-    const n = document.createElement('div')
-    n.className = 'label-note'
-    n.textContent = note
-    div.append(n)
-  }
-  return new CSS2DObject(div)
-}
-
-/** What an element's viewport pin says under its name: the diameter where
- *  there is one, nothing otherwise — sigma and coordinates stay in the panel. */
-function pinValue(fit: FitData): string {
-  if (fit.kind === 'sphere' || fit.kind === 'cylinder' || fit.kind === 'circle')
-    return `Ø ${(fit.radius * 2).toFixed(3)} mm`
-  if (fit.kind === 'cone') return `∠ ${(fit.halfAngle * 2).toFixed(2)}°`
-  return ''
-}
 
 /** The geometry a shape mesh had built for itself alone — the unit shapes are
  *  shared and long-lived, but a cone's frustum is per-element and must go when
@@ -545,13 +489,7 @@ export class Overlays {
         depthTest: false,
       })
       const mesh = new THREE.Mesh(geo, mat)
-      mesh.quaternion.setFromRotationMatrix(
-        new THREE.Matrix4().makeBasis(
-          new THREE.Vector3(...fit.basisU),
-          new THREE.Vector3(...fit.basisV),
-          new THREE.Vector3(...fit.normal),
-        ),
-      )
+      mesh.quaternion.copy(frameQuaternion(fit))
       mesh.position.set(...fit.center)
       mesh.renderOrder = 3
       this.selectionGroup.add(mesh)
@@ -707,13 +645,7 @@ export class Overlays {
     }
     const mesh = new THREE.Mesh(this.unitPlane, material)
     // The unit quad lies in XY, so its own axes are mapped onto the patch's.
-    mesh.quaternion.setFromRotationMatrix(
-      new THREE.Matrix4().makeBasis(
-        new THREE.Vector3(...fit.basisU),
-        new THREE.Vector3(...fit.basisV),
-        new THREE.Vector3(...fit.normal),
-      ),
-    )
+    mesh.quaternion.copy(frameQuaternion(fit))
     mesh.position.set(...fit.center)
     mesh.scale.set(Math.max(2 * fit.extentU, 1e-5), Math.max(2 * fit.extentV, 1e-5), 1)
     return mesh

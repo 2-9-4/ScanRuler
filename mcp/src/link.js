@@ -17,7 +17,7 @@ import { decoder, encode } from './framing.js'
 
 /** The hosted app. Loopback pages — a dev server, `--serve` — are allowed
  *  on any port; anything else takes `--allow-origin`. */
-export const HOSTED_ORIGINS = ['https://scanruler.com', 'https://www.scanruler.com']
+const HOSTED_ORIGINS = ['https://scanruler.com', 'https://www.scanruler.com']
 
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]'])
 
@@ -43,7 +43,7 @@ const HEARTBEAT_MS = 15_000
 const HELLO_MS = 10_000
 
 /** Where a result carries a file's bytes, if it does. */
-export const resultBinary = (result) => (result?.file?.bytes instanceof Uint8Array ? 'result.file.bytes' : undefined)
+const resultBinary = (result) => (result?.file?.bytes instanceof Uint8Array ? 'result.file.bytes' : undefined)
 
 /** A socket's frame, as the decoder takes it. */
 export const frameOf = (data, isBinary) => (isBinary ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength) : data.toString('utf8'))

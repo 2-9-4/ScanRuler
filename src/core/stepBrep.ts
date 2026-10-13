@@ -127,30 +127,12 @@ export function writeCylinderSolid(w: StepWriter, name: string, fit: CylinderFit
   const half = Math.max(fit.length, MIN) / 2
   const bottom = addScaled(fit.center, axis, -half)
   const top = addScaled(fit.center, axis, half)
-  const down: Vec3 = [-axis[0], -axis[1], -axis[2]]
 
   const bottomRim = circleEdge(w, bottom, axis, ref, r)
   const topRim = circleEdge(w, top, axis, ref, r)
 
   const wall = w.add(`CYLINDRICAL_SURFACE('',#${placement(w, bottom, axis, ref)},${num(r)})`)
-  const wallFace = face(w, name, wall, [
-    w.add(`FACE_OUTER_BOUND('',#${edgeLoop(w, [{ edge: bottomRim, forward: true }])},.T.)`),
-    w.add(`FACE_BOUND('',#${edgeLoop(w, [{ edge: topRim, forward: false }])},.T.)`),
-  ])
-
-  // Each lid faces out of the solid, so the bottom one is built on a plane
-  // whose normal already points away from the body.
-  const bottomPlane = w.add(`PLANE('',#${placement(w, bottom, down, ref)})`)
-  const bottomFace = face(w, name, bottomPlane, [
-    w.add(`FACE_OUTER_BOUND('',#${edgeLoop(w, [{ edge: bottomRim, forward: false }])},.T.)`),
-  ])
-  const topPlane = w.add(`PLANE('',#${placement(w, top, axis, ref)})`)
-  const topFace = face(w, name, topPlane, [
-    w.add(`FACE_OUTER_BOUND('',#${edgeLoop(w, [{ edge: topRim, forward: true }])},.T.)`),
-  ])
-
-  const shell = w.add(`CLOSED_SHELL('',(#${wallFace},#${bottomFace},#${topFace}))`)
-  return w.add(`MANIFOLD_SOLID_BREP('${esc(name)}',#${shell})`)
+  return cappedSolid(w, name, wall, { bottom, top, bottomRim, topRim }, axis, ref)
 }
 
 /**
@@ -171,7 +153,6 @@ export function writeConeSolid(w: StepWriter, name: string, fit: ConeFit): numbe
   const half = Math.max(fit.length, MIN) / 2
   const bottom = addScaled(fit.center, axis, -half)
   const top = addScaled(fit.center, axis, half)
-  const down: Vec3 = [-axis[0], -axis[1], -axis[2]]
   const semi = (fit.halfAngle * Math.PI) / 180
 
   const bottomRim = circleEdge(w, bottom, axis, ref, r1)
@@ -180,11 +161,29 @@ export function writeConeSolid(w: StepWriter, name: string, fit: ConeFit): numbe
   const wall = w.add(
     `CONICAL_SURFACE('',#${placement(w, bottom, axis, ref)},${num(r1)},${num(semi)})`,
   )
+  return cappedSolid(w, name, wall, { bottom, top, bottomRim, topRim }, axis, ref)
+}
+
+/** The solid a wall between two rims makes with a flat lid on each: the
+ *  wall's face bounded by both rims, the lids taking the rims back the other
+ *  way. Every entity in the order the writers always put them down. */
+function cappedSolid(
+  w: StepWriter,
+  name: string,
+  wall: number,
+  ends: { bottom: Vec3; top: Vec3; bottomRim: number; topRim: number },
+  axis: Vec3,
+  ref: Vec3,
+): number {
+  const { bottom, top, bottomRim, topRim } = ends
+  const down: Vec3 = [-axis[0], -axis[1], -axis[2]]
   const wallFace = face(w, name, wall, [
     w.add(`FACE_OUTER_BOUND('',#${edgeLoop(w, [{ edge: bottomRim, forward: true }])},.T.)`),
     w.add(`FACE_BOUND('',#${edgeLoop(w, [{ edge: topRim, forward: false }])},.T.)`),
   ])
 
+  // Each lid faces out of the solid, so the bottom one is built on a plane
+  // whose normal already points away from the body.
   const bottomPlane = w.add(`PLANE('',#${placement(w, bottom, down, ref)})`)
   const bottomFace = face(w, name, bottomPlane, [
     w.add(`FACE_OUTER_BOUND('',#${edgeLoop(w, [{ edge: bottomRim, forward: false }])},.T.)`),

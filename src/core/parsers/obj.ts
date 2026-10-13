@@ -1,4 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// Wavefront OBJ, read as far as a scan needs it: vertex positions, and faces
+// fanned into triangles from their first corner. Texture coordinates, the
+// file's normals, groups and materials are passed over — normals are worked
+// out afresh from the mesh — and a file with no faces is refused, as point
+// clouds are not supported.
+
 import type { ParsedMesh } from '../types'
 
 export function parseOBJ(buffer: ArrayBuffer, onProgress?: (text: string) => void): ParsedMesh {

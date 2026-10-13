@@ -16,12 +16,13 @@
 // Prereqs: dev server running (npm run dev), Chrome installed.
 //   node scripts/e2e-circle.mjs
 // Env: CHROME (chrome.exe path), APP_URL, SHOT_DIR.
-import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { importStep, writeBinarySTL } from 'meshstep'
 import { cubeStep } from '../tests/stepFixtures.ts'
 import {
+  awaitDownload,
   canvasRect,
   check,
   click,
@@ -214,24 +215,14 @@ check(
   'the markers belong to the making of it — the finished circle carries its own pin instead',
 )
 
-// The picked circle lies in the cube's top face, so its normal is ±Z and the
-// summary must place its center at the face height, z = SIZE/2 above the middle
-// — but the part is in scanner coordinates; assert on the copied summary shape
-// instead: a diameter, a center and a normal, plus sigma from 4 points.
-await click(page, '[data-test=copy-summary]').catch(() => {})
-
 // ---- STEP export: assumed where given, measured everywhere else -------------
 const cdp = await page.createCDPSession()
 const exportStep = async (label) => {
   const dir = mkdtempSync(join(tmpdir(), `scanruler-circle-${label}-`))
   await cdp.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: dir })
   await click(page, '[data-test=export-step]')
-  for (let i = 0; i < 100; i++) {
-    await sleep(200)
-    const f = readdirSync(dir).find((n) => n.endsWith('.step'))
-    if (f) return readFileSync(join(dir, f), 'utf8')
-  }
-  return null
+  const f = await awaitDownload(dir, '.step')
+  return f ? readFileSync(join(dir, f), 'utf8') : null
 }
 
 const stepText = await exportStep('elements')

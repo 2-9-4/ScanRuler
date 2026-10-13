@@ -18,7 +18,8 @@ import { DimensionRow, WarningNote } from './DimensionRow'
 import { ShowAllButton } from './ShowAllButton'
 import { ValueWindow } from './DroValue'
 import { InfoDot } from './InfoDot'
-import { NameField, RefSelect } from './RefSelect'
+import { RefSelect } from './RefSelect'
+import { DimDraftHead } from './DimensionSection'
 
 export function FlatDimensionSection({
   editorOpen,
@@ -92,14 +93,7 @@ export function FlatDimensionSection({
       ) : (
         dimInfo && (
           <div className="draftbox dimbox">
-            <div className="sec-head">
-              {dimDraft.editId !== undefined
-                ? `Edit ${dimensions.find((d) => d.id === dimDraft.editId)?.name ?? 'dimension'}`
-                : 'New dimension'}
-            </div>
-            {dimDraft.editId !== undefined && (
-              <NameField value={dimDraft.name ?? ''} testId="flat-dim-name" onChange={setDimName} />
-            )}
+            <DimDraftHead editId={dimDraft.editId} name={dimDraft.name} dimensions={dimensions} nameTestId="flat-dim-name" onName={setDimName} />
             <label className="field">
               <span>Type</span>
               <select

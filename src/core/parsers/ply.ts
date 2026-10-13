@@ -1,10 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// PLY in all three encodings — ASCII, and binary of either byte order — read
+// for vertex positions and face lists alone; colours, normals and the other
+// properties a scanner writes are stepped over. One header comment is
+// honoured besides: a file that says its winding is settled
+// (PLY_KEEP_WINDING) keeps it as written instead of having it guessed again.
+
 import type { ParsedMesh } from '../types'
 
 interface PlyProperty {
   name: string
   type: string
-  isList: boolean
+  list: boolean
   countType?: string
   itemType?: string
 }
@@ -74,9 +80,9 @@ export function parsePLY(buffer: ArrayBuffer, onProgress?: (text: string) => voi
       const el = elements[elements.length - 1]
       if (!el) continue
       if (parts[1] === 'list') {
-        el.props.push({ name: parts[4], type: 'list', isList: true, countType: parts[2], itemType: parts[3] })
+        el.props.push({ name: parts[4], type: 'list', list: true, countType: parts[2], itemType: parts[3] })
       } else {
-        el.props.push({ name: parts[2], type: parts[1], isList: false })
+        el.props.push({ name: parts[2], type: parts[1], list: false })
       }
     }
   }
@@ -125,7 +131,7 @@ function parseBinaryBody(
       const yi = el.props.findIndex((p) => p.name === 'y')
       const zi = el.props.findIndex((p) => p.name === 'z')
       if (xi < 0 || yi < 0 || zi < 0) throw new Error('PLY vertex element is missing x/y/z.')
-      const hasList = el.props.some((p) => p.isList)
+      const hasList = el.props.some((p) => p.list)
       positions = new Float32Array(el.count * 3)
       if (!hasList) {
         // Fixed stride fast path.
@@ -149,7 +155,7 @@ function parseBinaryBody(
         for (let i = 0; i < el.count; i++) {
           for (let p = 0; p < el.props.length; p++) {
             const prop = el.props[p]
-            if (prop.isList) {
+            if (prop.list) {
               const n = readScalar(dv, off, prop.countType!, little)
               off += TYPE_SIZE[prop.countType!] + n * TYPE_SIZE[prop.itemType!]
             } else {
@@ -171,7 +177,7 @@ function parseBinaryBody(
       let triTotal = 0
       for (let i = 0; i < el.count; i++) {
         for (const prop of el.props) {
-          if (prop.isList) {
+          if (prop.list) {
             const n = readScalar(dv, off, prop.countType!, little)
             off += TYPE_SIZE[prop.countType!] + n * TYPE_SIZE[prop.itemType!]
             if (prop.name === 'vertex_indices' || prop.name === 'vertex_index') {
@@ -187,7 +193,7 @@ function parseBinaryBody(
       let w = 0
       for (let i = 0; i < el.count; i++) {
         for (const prop of el.props) {
-          if (prop.isList) {
+          if (prop.list) {
             const n = readScalar(dv, off, prop.countType!, little)
             off += TYPE_SIZE[prop.countType!]
             const itemSize = TYPE_SIZE[prop.itemType!]
@@ -216,7 +222,7 @@ function parseBinaryBody(
       // Skip unknown elements (only possible when fixed-size).
       let stride = 0
       for (const p of el.props) {
-        if (p.isList) throw new Error(`Cannot skip PLY element "${el.name}" with list properties.`)
+        if (p.list) throw new Error(`Cannot skip PLY element "${el.name}" with list properties.`)
         stride += TYPE_SIZE[p.type]
       }
       off += el.count * stride
@@ -250,7 +256,7 @@ function parseAsciiBody(
       for (let i = 0; i < el.count; i++) {
         for (let p = 0; p < el.props.length; p++) {
           const prop = el.props[p]
-          if (prop.isList) {
+          if (prop.list) {
             const n = parseInt(tokens[ti++], 10)
             ti += n
           } else {
@@ -264,7 +270,7 @@ function parseAsciiBody(
     } else if (el.name === 'face') {
       for (let i = 0; i < el.count; i++) {
         for (const prop of el.props) {
-          if (prop.isList) {
+          if (prop.list) {
             const n = parseInt(tokens[ti++], 10)
             if (prop.name === 'vertex_indices' || prop.name === 'vertex_index') {
               const first = parseInt(tokens[ti], 10)
@@ -281,7 +287,7 @@ function parseAsciiBody(
     } else {
       for (let i = 0; i < el.count; i++) {
         for (const prop of el.props) {
-          if (prop.isList) {
+          if (prop.list) {
             const n = parseInt(tokens[ti++], 10)
             ti += n
           } else {

@@ -138,8 +138,6 @@ export const COLORMAPS: readonly Colormap[] = [
   },
 ]
 
-export const DEFAULT_COLORMAP: ColormapId = 'jet'
-
 /** The map with this id, or jet for one this version does not know. */
 export function colormapById(id: string | null | undefined): Colormap {
   return COLORMAPS.find((m) => m.id === id) ?? COLORMAPS[0]
@@ -195,8 +193,8 @@ export function scaleCaps(scale: FieldScale, map: Colormap): { low: Rgb; high: R
  *
  * Three distinct outcomes share the map and must stay distinguishable: within
  * the scale gets the ramp; past it but still measured gets the map's cap for
- * that end, so you can see that a real reading went off-scale rather than
- * assuming the surface is simply the end colour; outside the valid window gets
+ * that end, so a real reading that went off-scale shows as one rather than
+ * passing for a surface that is simply the end colour; outside the valid window gets
  * the unmeasured grey, because there was nothing there to measure.
  */
 export function paintField(values: Float32Array, scale: FieldScale, map: Colormap, out: Uint8Array): void {

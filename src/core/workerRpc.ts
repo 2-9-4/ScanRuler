@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 /** Request failures and worker failures are different: an ordinary error
- * rejects one job; a dead worker must release every waiter and stay dead until
- * its owner has recreated the worker and restored any required state. */
+ *  rejects one job; a dead worker must release every waiter and stay dead until
+ *  its owner has recreated the worker and restored any required state. */
 export class WorkerRpc {
   private worker: Worker | null = null
   private pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>()
@@ -64,4 +64,10 @@ export class WorkerRpc {
     this.onFailure = null
     this.fail(`${this.name} was shut down.`)
   }
+}
+
+/** A worker's answer to the page — called inside the worker. The buffers in
+ *  `transfer` are handed over rather than copied. */
+export function reply(msg: unknown, transfer: Transferable[] = []): void {
+  ;(self as unknown as Worker).postMessage(msg, transfer)
 }

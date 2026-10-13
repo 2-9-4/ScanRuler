@@ -1,4 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// The rigid motion every alignment and pose in the tool is held as: a
+// rotation and a translation, row-major and in double precision, with the
+// operations on it. Double because a pose is accumulated over dozens of ICP
+// increments, and float32 drift in the rotation would surface later as
+// micrometres of deviation that are not on the part.
+
 import type { Vec3 } from '../types'
 
 /** A rigid body motion `p ↦ R·p + t`, with R a proper rotation (det = +1).

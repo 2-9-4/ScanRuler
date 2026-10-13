@@ -1,10 +1,29 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // One model the workspace needs, in the left panel. Shared by both
-// workspaces, so a scan is opened the same way whichever one you are in.
+// workspaces, so a scan is opened the same way in either.
 
-import { useRef } from 'react'
+import { useRef, type RefObject } from 'react'
 import { MESH_ACCEPT, MESH_FORMATS } from '../core/formats'
 import { usePulse } from '../app/useHints'
+
+/** A file input out of sight, opened through `inputRef` by the key that
+ *  stands for it, and emptied after every pick so the same file can come
+ *  again. */
+export function HiddenFileInput({ inputRef, accept, onOpen }: { inputRef: RefObject<HTMLInputElement | null>; accept: string; onOpen: (file: File) => void }) {
+  return (
+    <input
+      ref={inputRef}
+      type="file"
+      accept={accept}
+      hidden
+      onChange={(e) => {
+        const f = e.target.files?.[0]
+        if (f) onOpen(f)
+        e.target.value = ''
+      }}
+    />
+  )
+}
 
 export function ModelSlot({
   role,
@@ -32,17 +51,7 @@ export function ModelSlot({
   const pulse = usePulse(`open-${slot}`)
   return (
     <div className="slot" data-test={`slot-${slot}`}>
-      <input
-        ref={inputRef}
-        type="file"
-        accept={accept}
-        hidden
-        onChange={(e) => {
-          const f = e.target.files?.[0]
-          if (f) onOpen(f)
-          e.target.value = ''
-        }}
-      />
+      <HiddenFileInput inputRef={inputRef} accept={accept} onOpen={onOpen} />
       <span
         className="dot"
         style={{ background: name ? dotColor : 'transparent', borderColor: dotColor }}

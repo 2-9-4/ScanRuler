@@ -14,13 +14,15 @@
 // Prereqs: dev server running (npm run dev), Chrome installed.
 //   node scripts/e2e-section.mjs
 // Env: CHROME (chrome.exe path), APP_URL, STL (scan path), SHOT_DIR.
-import { mkdtempSync, readdirSync, readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
+  awaitDownload,
   canvasRect,
   check,
   click,
+  downloadsTo,
   drag,
   fail,
   finish,
@@ -281,16 +283,11 @@ await page.screenshot({ path: shotPath('e2e-section-3d.png') })
 // The circle is exported with the section, in a wireframe group under its
 // name, as a CIRCLE at the ball's radius whose axis is the cutting plane's
 // normal — the line from ball to ball.
-const cdp = await page.createCDPSession()
 const stepDir = mkdtempSync(join(tmpdir(), 'scanruler-section-'))
-await cdp.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: stepDir })
+const cdp = await downloadsTo(page, stepDir)
 await click(page, '[data-test="export-step"]')
-let stepText = null
-for (let i = 0; i < 100 && !stepText; i++) {
-  await sleep(200)
-  const f = readdirSync(stepDir).find((n) => n.endsWith('.step'))
-  if (f) stepText = readFileSync(join(stepDir, f), 'utf8')
-}
+const stepFile = await awaitDownload(stepDir, '.step')
+const stepText = stepFile ? readFileSync(join(stepDir, stepFile), 'utf8') : null
 check(Boolean(stepText), 'the STEP file downloaded')
 if (stepText) {
   check(

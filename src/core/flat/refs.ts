@@ -1,4 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// What a flat element stands for when a dimension is taken off it — the
+// sheet's counterpart of elements/refs.ts, with a point and a line where the
+// 3D reduction has a point, an axis and a plane, and no part at all for a
+// spline, which has neither a centre nor a direction.
+
 import type { FlatElementKind, FlatFit, Vec2 } from './types'
 
 /** The proxy geometry a flat element contributes to a measurement — the 2D

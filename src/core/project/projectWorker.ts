@@ -4,6 +4,7 @@
 
 import { packProject, unpackProject, type ArchiveMember } from './archive'
 import type { ProjectManifest } from './manifest'
+import { reply } from '../workerRpc'
 
 export type ProjectWorkerRequest =
   | { type: 'pack'; requestId: number; manifest: ProjectManifest; members: ArchiveMember[] }
@@ -14,8 +15,7 @@ export type ProjectWorkerResponse =
   | { type: 'unpack-ok'; requestId: number; manifest: ProjectManifest; members: [string, Uint8Array][] }
   | { type: 'error'; requestId: number; message: string }
 
-const post = (msg: ProjectWorkerResponse, transfer: Transferable[] = []) =>
-  (self as unknown as Worker).postMessage(msg, transfer)
+const post = (msg: ProjectWorkerResponse, transfer: Transferable[] = []) => reply(msg, transfer)
 
 self.onmessage = (e: MessageEvent<ProjectWorkerRequest>) => {
   const msg = e.data

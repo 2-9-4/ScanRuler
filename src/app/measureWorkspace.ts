@@ -25,8 +25,6 @@ export interface MeasureDeps {
   sceneRef: RefObject<SceneManager | null>
 }
 
-export type MeasureWorkspace = ReturnType<typeof measureWorkspace>
-
 export function measureWorkspace({ clientRef, sceneRef }: MeasureDeps) {
   // Region of the pending preview fit, kept out of the store because it is a
   // large typed array that only the scene needs.

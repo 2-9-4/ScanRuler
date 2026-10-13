@@ -17,7 +17,7 @@ import {
   type Rigid,
 } from '../src/core/deviation/rigid'
 import { buildMeshGraph } from '../src/core/geometry/buildGraph'
-import { boxMesh } from './helpers'
+import { boxMesh, poseError, rotated } from './helpers'
 import type { Vec3 } from '../src/core/types'
 
 const SIZE = 40
@@ -30,20 +30,6 @@ const GRID = 16
  *  read as an outlier. */
 const PAINT = 0.5
 
-/** The furthest any point of the part ends up from where the other transform
- *  would have put it, in mm. */
-function poseError(a: Rigid, b: Rigid, positions: Float32Array): number {
-  const pa = new Float64Array(3)
-  const pb = new Float64Array(3)
-  let worst = 0
-  for (let v = 0; v < positions.length; v += 3) {
-    rigidApply(a, positions[v], positions[v + 1], positions[v + 2], pa)
-    rigidApply(b, positions[v], positions[v + 1], positions[v + 2], pb)
-    worst = Math.max(worst, Math.hypot(pa[0] - pb[0], pa[1] - pb[1], pa[2] - pb[2]))
-  }
-  return worst
-}
-
 function moved(positions: Float32Array, pose: Rigid): Float32Array {
   const out = new Float32Array(positions.length)
   const p = new Float64Array(3)
@@ -52,18 +38,6 @@ function moved(positions: Float32Array, pose: Rigid): Float32Array {
     out[v] = p[0]
     out[v + 1] = p[1]
     out[v + 2] = p[2]
-  }
-  return out
-}
-
-function rotated(normals: Float32Array, pose: Rigid): Float32Array {
-  const out = new Float32Array(normals.length)
-  const r = pose.r
-  for (let v = 0; v < normals.length; v += 3) {
-    const x = normals[v], y = normals[v + 1], z = normals[v + 2]
-    out[v] = r[0] * x + r[1] * y + r[2] * z
-    out[v + 1] = r[3] * x + r[4] * y + r[5] * z
-    out[v + 2] = r[6] * x + r[7] * y + r[8] * z
   }
   return out
 }

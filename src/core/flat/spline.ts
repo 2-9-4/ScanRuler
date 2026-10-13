@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// The fit-point spline: the curve a CAD sketch draws through the points you
-// click, with a tangent handle at every point to bend it by. Cubic Hermite
+// The fit-point spline: the curve a CAD sketch draws through the points
+// clicked, with a tangent handle at every point to bend it by. Cubic Hermite
 // segments between consecutive points, parameterised by chord length, and the
 // tangents solved so the curve is C2 wherever no handle has been set — the
 // same interpolating spline a sketcher's "fit point spline" is — with natural

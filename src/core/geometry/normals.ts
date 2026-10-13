@@ -1,4 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// Vertex normals for a freshly read mesh, and the one correction a file's
+// winding may need: a part exported inside-out is turned the right way out,
+// normals and triangles together, because alignment and wall thickness both
+// go by which way the surface faces.
+
+import { extentOf } from './bounds'
+import { tetraVolume6 } from './centroid'
+
 /** Area-weighted per-vertex normals (unnormalized cross products summed,
  *  then normalized). Orientation follows the triangle winding — see
  *  `orientNormalsOutward` for how an inside-out mesh is put right. */
@@ -70,28 +78,15 @@ export function orientNormalsOutward(
   const vcount = positions.length / 3
   if (vcount === 0) return false
   let cx = 0, cy = 0, cz = 0
-  let minX = Infinity, minY = Infinity, minZ = Infinity
-  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity
   for (let v = 0; v < positions.length; v += 3) {
-    const x = positions[v], y = positions[v + 1], z = positions[v + 2]
-    cx += x; cy += y; cz += z
-    if (x < minX) minX = x
-    if (x > maxX) maxX = x
-    if (y < minY) minY = y
-    if (y > maxY) maxY = y
-    if (z < minZ) minZ = z
-    if (z > maxZ) maxZ = z
+    cx += positions[v]; cy += positions[v + 1]; cz += positions[v + 2]
   }
+  const { min: [minX, minY, minZ], max: [maxX, maxY, maxZ] } = extentOf(positions)
   cx /= vcount; cy /= vcount; cz /= vcount
 
   let vol6 = 0
-  for (let t = 0; t < indices.length; t += 3) {
-    const a = indices[t] * 3, b = indices[t + 1] * 3, c = indices[t + 2] * 3
-    const ax = positions[a] - cx, ay = positions[a + 1] - cy, az = positions[a + 2] - cz
-    const bx = positions[b] - cx, by = positions[b + 1] - cy, bz = positions[b + 2] - cz
-    const px = positions[c] - cx, py = positions[c + 1] - cy, pz = positions[c + 2] - cz
-    vol6 += ax * (by * pz - bz * py) + ay * (bz * px - bx * pz) + az * (bx * py - by * px)
-  }
+  const centre: [number, number, number] = [cx, cy, cz]
+  for (let t = 0; t < indices.length; t += 3) vol6 += tetraVolume6(positions, indices[t] * 3, indices[t + 1] * 3, indices[t + 2] * 3, centre)
 
   const bboxVol = (maxX - minX) * (maxY - minY) * (maxZ - minZ)
   // Decisive means the enclosed volume is a real fraction of the bounding box;

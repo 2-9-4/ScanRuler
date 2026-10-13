@@ -1,4 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// Measured elements and dimensions as text: the headline value and detail
+// line an element is shown with, and the plain-text summary of everything
+// measured that is copied out — how each element came about, its geometry and
+// residuals, each dimension with its verdict, and a tally of passes and
+// fails. Where an element departs from its bare fit — extended, given an
+// assumed diameter, turned to a reference plane — the summary says so on a
+// line of its own.
+
 import type { ElementKind, ElementSource, FitData, SigmaPreset, Vec3 } from './types'
 import { diameterRange, verdictLines, type EvaluatedDimension } from './dimensions'
 import { hasDiameter } from './elements/assumed'
@@ -34,18 +42,7 @@ export interface MeasuredElement {
   fit: FitData
 }
 
-/** Narrow a list of store elements down to the ones that carry a fit. */
-export function measuredElements<
-  T extends { id: number; name: string; kind: ElementKind; fit?: FitData },
->(elements: readonly T[]): MeasuredElement[] {
-  const out: MeasuredElement[] = []
-  for (const e of elements) {
-    if (e.fit) out.push({ id: e.id, name: e.name, kind: e.kind, fit: e.fit })
-  }
-  return out
-}
-
-export function formatVec(v: Vec3): string {
+function formatVec(v: Vec3): string {
   return `(${v[0].toFixed(4)}, ${v[1].toFixed(4)}, ${v[2].toFixed(4)})`
 }
 
@@ -76,7 +73,7 @@ export function formatPrimary(fit: FitData): string {
 /** What the peak-to-peak form deviation of a kind is called in GD&T — the
  *  name the summary and the report label it with. Null for the kinds that
  *  have no surface form to speak of. */
-export function formErrorLabel(kind: ElementKind): string | null {
+function formErrorLabel(kind: ElementKind): string | null {
   switch (kind) {
     case 'plane':
       return 'flatness'

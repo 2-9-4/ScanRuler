@@ -2,10 +2,11 @@
 // The sheet as an SVG drawing: true scale, y down, edges as polylines and
 // fits as their native shapes, turned as the sheet is shown.
 import { describe, expect, it } from 'vitest'
+import type { FlatDrawingInput } from '../src/core/flat/drawing'
 import type { EdgeChains } from '../src/core/flat/edges'
 import { fitCirclePoints, fitLinePoints, flatPoint } from '../src/core/flat/fit'
 import { fitSplinePoints } from '../src/core/flat/spline'
-import { buildFlatSvg, type FlatSvgInput } from '../src/core/flat/svg'
+import { buildFlatSvg } from '../src/core/flat/svg'
 import type { FlatArcFit } from '../src/core/flat/types'
 
 // Two chains in image pixels on a 1000 × 800 px image at 10 px/mm: an L in
@@ -26,7 +27,7 @@ const arc = (start: number, sweep: number): FlatArcFit => ({
   usedPoints: 0,
 })
 
-function input(over: Partial<FlatSvgInput> = {}): FlatSvgInput {
+function input(over: Partial<FlatDrawingInput> = {}): FlatDrawingInput {
   return {
     bounds: { min: [0, 0], max: [100, 80] },
     chains,

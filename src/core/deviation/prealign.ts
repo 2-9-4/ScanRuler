@@ -1,5 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { cross, normalize, symmetricEigen3 } from '../fit/linalg'
+// Where to start a best fit when nothing is known about how the scan lies:
+// the principal axes of both point sets, matched every way they can be — 24
+// attitudes, since an axis has no sign and two near-equal moments have no
+// order. Only a starting guess, and a rough one: a partial scan's centroid
+// and inertia are not the whole part's, so a candidate need only land in the
+// right basin for ICP to finish the job.
+
+import { cross, normalizeOrZ, symmetricEigen3 } from '../fit/linalg'
 import type { Vec3 } from '../types'
 import { rigidApply, type Rigid } from './rigid'
 
@@ -44,14 +51,14 @@ export function principalFrame(xyz: ArrayLike<number>): PrincipalFrame {
 
   // symmetricEigen3 returns ascending; the dominant axis is last.
   const eig = symmetricEigen3(c)
-  const a0 = normalize(eig.vectors[2])
+  const a0 = normalizeOrZ(eig.vectors[2])
   let a1 = eig.vectors[1]
   // Re-orthogonalise against a0, then complete right-handed, so the frame is a
   // proper rotation even when two eigenvalues are nearly equal and Jacobi has
   // returned a slightly skewed pair.
   const d = a0[0] * a1[0] + a0[1] * a1[1] + a0[2] * a1[2]
-  a1 = normalize([a1[0] - d * a0[0], a1[1] - d * a0[1], a1[2] - d * a0[2]])
-  const a2 = normalize(cross(a0, a1))
+  a1 = normalizeOrZ([a1[0] - d * a0[0], a1[1] - d * a0[1], a1[2] - d * a0[2]])
+  const a2 = normalizeOrZ(cross(a0, a1))
 
   return {
     centroid: [mx, my, mz],
@@ -119,7 +126,7 @@ export function preAlignCandidates(scan: PrincipalFrame, nominal: PrincipalFrame
       if ((i >> 1) === (j >> 1)) continue
       const a0 = signed[i]
       const a1 = signed[j]
-      out.push(frameToFrame(scan, [a0, a1, normalize(cross(a0, a1))], nominal))
+      out.push(frameToFrame(scan, [a0, a1, normalizeOrZ(cross(a0, a1))], nominal))
     }
   }
   return out

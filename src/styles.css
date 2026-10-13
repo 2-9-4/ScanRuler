@@ -1054,25 +1054,6 @@ button.primary svg.icon .i-adt,
   text-overflow: ellipsis;
 }
 
-.toolrow button.iconkey {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 6px 0;
-  background: var(--well);
-  box-shadow: var(--inset);
-}
-
-.toolrow button.iconkey {
-  flex: 0 0 36px;
-}
-
-.toolrow button.iconkey:hover:not(:disabled) {
-  color: var(--accent-d);
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-
 /* A key with a picture beside its word. */
 button.withicon {
   white-space: nowrap;
@@ -2846,6 +2827,52 @@ button.x:disabled {
   color: var(--green);
 }
 
+/* An end of the scale the user sets: the figure, as a key, where the figure
+   would be — and the box it opens into, in the same place and type. The
+   legend itself lets clicks through to the stage; these two take them. */
+.devticks .devtick-edit,
+.devticks .devtick-input {
+  position: absolute;
+  left: 0;
+  transform: translateY(50%);
+  pointer-events: auto;
+  font: inherit;
+  line-height: 1.25;
+  color: var(--ink);
+  background: rgba(var(--glass), 0.82);
+  border-radius: 2px;
+}
+
+.devticks .devtick-edit {
+  padding: 0 2px;
+  border: 1px solid transparent;
+  cursor: text;
+}
+
+.devticks .devtick-edit:hover,
+.devticks .devtick-edit:focus-visible {
+  border-color: var(--line-strong);
+  background: rgba(var(--glass), 1);
+  outline: none;
+}
+
+.devticks .devtick-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0 2px;
+  border: 1px solid var(--accent);
+  background: rgba(var(--glass), 1);
+  outline: none;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.devticks .devtick-input::-webkit-outer-spin-button,
+.devticks .devtick-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
 .devstats {
   display: grid;
   grid-template-columns: auto auto;
@@ -3568,14 +3595,4 @@ button.x:disabled {
 .pickoption.empty {
   color: var(--dim);
   cursor: default;
-}
-
-/* The prompt that stands in for the sketch box when Escape asks. */
-button.danger {
-  color: #f0776f;
-  border-color: rgba(240, 119, 111, 0.45);
-}
-
-button.danger:hover:not(:disabled) {
-  border-color: #f0776f;
 }

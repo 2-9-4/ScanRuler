@@ -10,10 +10,12 @@ import { useFlat } from '../state/flatStore'
 import { useStore } from '../state/store'
 import { textBytes, type BuiltFile } from './exports'
 import { sheetFrame } from './flatSheet'
+import { chainCount } from '../core/flat/edges'
+import type { FlatDrawingInput } from '../core/flat/drawing'
 
 /** The section on the 2D stage, described for the report: its name, the
  *  scan it cuts, and where. Undefined with the image on the stage. */
-export function activeSectionInfo(): FlatReportInput['section'] {
+function activeSectionInfo(): FlatReportInput['section'] {
   const subject = useFlat.getState().subject
   if (subject.kind !== 'section') return undefined
   const store = useStore.getState()
@@ -54,4 +56,17 @@ export const flatExportStem = () =>
 export function buildFlatCsvFile(): BuiltFile {
   const name = `${flatExportStem()}-measurements.csv`
   return { name, mimeType: 'text/csv', bytes: textBytes(buildFlatCsv(flatReportInput())), status: `Measurements exported to ${name}.` }
+}
+
+/** "1,234 edge chains and 3 elements" — with a word on the edges when a
+ *  format did something to them, and a reason when there are none. */
+export function drawnSummary(input: FlatDrawingInput, edgeNote = '', showEdges = useFlat.getState().showEdges): string {
+  const chains = input.chains ? chainCount(input.chains) : 0
+  const edges = chains
+    ? `${chains.toLocaleString('en-US')} edge chain${chains === 1 ? '' : 's'}${edgeNote ? ` ${edgeNote}` : ''}`
+    : showEdges
+      ? 'no edges'
+      : 'the edges hidden'
+  const n = input.elements.length
+  return `${edges} and ${n} element${n === 1 ? '' : 's'}`
 }

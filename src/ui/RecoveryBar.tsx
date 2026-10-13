@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// The strip under the top bar that offers what another page left in this
+// browser's local recovery: pick a checkpoint, restore it, or discard it.
+// What a checkpoint holds, and how one comes back, is useRecovery's.
+
 import { useState } from 'react'
 import type { RecoveryStatus } from '../app/useRecovery'
 import { useStore } from '../state/store'

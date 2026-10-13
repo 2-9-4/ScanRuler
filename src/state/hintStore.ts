@@ -13,7 +13,8 @@ const HINTS_KEY = 'scanruler.hints'
  *
  *  Not one. Carrying a workflow through once can be an accident — a first look
  *  around that happened to end in a dimension — and a tool that draws a
- *  permanent conclusion from a single visit is one you cannot explore safely.
+ *  permanent conclusion from a single visit is one that cannot be explored
+ *  safely.
  *  Two separate visits is the cheapest thing that cannot happen by accident,
  *  and it means a reload always gives a hesitant user their hints back. */
 const LEARNED_AFTER = 2

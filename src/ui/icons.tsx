@@ -899,13 +899,19 @@ const ICONS = {
 
 export type IconName = keyof typeof ICONS
 
-/** One of the set, 24 px unless told otherwise. Decoration only: the key
- *  that carries it says what it is through its label, title or aria-label.
- *  At 16 px and under the stroke is drawn heavier, or it falls below a pixel. */
-export function Icon({ name, size = 24 }: { name: IconName; size?: number }) {
+/** The svg an icon is drawn in, 24 px unless told otherwise — the frame a
+ *  plugin's own pictures share with the set. Decoration only: the key that
+ *  carries it says what it is through its label, title or aria-label. At
+ *  16 px and under the stroke is drawn heavier, or it falls below a pixel. */
+export function IconFrame({ size = 24, children }: { size?: number; children: ReactNode }) {
   return (
     <svg className={size <= 16 ? 'icon small' : 'icon'} width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      {ICONS[name]}
+      {children}
     </svg>
   )
+}
+
+/** One of the set, 24 px unless told otherwise. */
+export function Icon({ name, size = 24 }: { name: IconName; size?: number }) {
+  return <IconFrame size={size}>{ICONS[name]}</IconFrame>
 }

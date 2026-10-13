@@ -11,6 +11,7 @@ import { arr, enumOf, int, num, obj, oneOf, str } from '../schema'
 import { describeSection } from '../state'
 import { CommandError, type Command } from '../types'
 import { requireMeasureFree, showWorkspace, waitFor } from './common'
+import { round4 } from '../../core/round'
 
 /** A coordinate plane by name, as the axis it is square to. */
 function worldAxisOf(name: string): WorldAxis | null {
@@ -96,8 +97,6 @@ export function findSection(ref: number | string): Section {
  *  most — past it every k-th point of each chain is kept. */
 const GET_LIMIT = 4000
 const GET_MAX = 50_000
-
-const round4 = (v: number) => Math.round(v * 10_000) / 10_000
 
 const get: Command<{ section: number | string; chains?: number[]; space?: 'sheet' | 'world' | 'both'; limit?: number }> = {
   name: 'get',

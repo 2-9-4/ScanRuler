@@ -141,6 +141,9 @@ export const str = (description?: string, extra: Extra = {}): JsonSchema => ({ t
 export const num = (description?: string, extra: Extra = {}): JsonSchema => ({ type: 'number', ...(description ? { description } : {}), ...extra })
 export const int = (description?: string, extra: Extra = {}): JsonSchema => ({ type: 'integer', ...(description ? { description } : {}), ...extra })
 export const bool = (description?: string, extra: Extra = {}): JsonSchema => ({ type: 'boolean', ...(description ? { description } : {}), ...extra })
+/** Any object: what the schema does not spell out is checked when the
+ *  command runs. */
+export const anyObject = (description: string, extra: Extra = {}): JsonSchema => ({ type: 'object', description, ...extra })
 export const bytes = (description: string): JsonSchema => ({ type: 'string', format: 'binary', description })
 export const oneOf = (branches: JsonSchema[], description?: string): JsonSchema => ({ oneOf: branches, ...(description ? { description } : {}) })
 export const enumOf = <T extends string | number>(values: readonly T[], description?: string): JsonSchema => ({

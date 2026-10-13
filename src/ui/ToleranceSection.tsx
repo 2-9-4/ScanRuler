@@ -62,7 +62,7 @@ export function ToleranceSection({
   const surfaceVersion = useSurfaces((s) => s.version)
   const evaluated = useMemo(
     () => evaluateDimensions(own, elements, surfaceSource),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Runs on the listed dependencies only, not on everything it reads.
     [own, elements, surfaceVersion],
   )
 

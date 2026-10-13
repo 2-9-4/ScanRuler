@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { meshUnitsOf } from '../core/meshUnits'
 // Saving the session as a project and opening one: the data half is in
 // ./project, the archive in core/project. What is left here is the order
 // things have to happen in on load — scan, its alignment, reference, image,
 // then the stores, then everything that is measured rather than stored.
 
+import { meshUnitsOf } from '../core/meshUnits'
 import { useRef, type RefObject } from 'react'
 import type { ElementKind } from '../core/types'
 import type { MeshWorkerClient } from '../core/workerClient'

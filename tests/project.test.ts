@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { beforeEach, describe, expect, it } from 'vitest'
-import { strToU8, unzipSync } from 'fflate'
+import { unzipSync } from 'fflate'
 import { manifestText, packProject, unpackProject } from '../src/core/project/archive'
 import {
   alignFromJson,
@@ -25,23 +25,8 @@ import { useStore, type Element } from '../src/state/store'
 import { useDeviation } from '../src/state/deviationStore'
 import { useThickness } from '../src/state/thicknessStore'
 import { useFlat } from '../src/state/flatStore'
-import { useShell } from '../src/state/shellStore'
 import { identityRigid } from '../src/core/deviation/rigid'
-
-const sources = () => ({
-  scan: { name: 'bracket.stl', bytes: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]) },
-  reference: { name: 'bracket.step', bytes: strToU8('ISO-10303-21;') },
-  image: { name: 'sheet.png', bytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47]) },
-})
-
-function fresh() {
-  useStore.getState().beginLoad('bracket.stl')
-  useStore.getState().finishLoad(100, 50, 10, [1, 2, 3])
-  useDeviation.setState({ nominalName: null, align: null, globalAlign: null, pairs: [], probes: [] })
-  useThickness.getState().clear()
-  useFlat.setState({ imageName: null, elements: [], dimensions: [], counts: [], datum: null })
-  useShell.getState().setWorkspace('elements')
-}
+import { fresh, sources } from './projectKit'
 
 describe('the project archive', () => {
   beforeEach(fresh)

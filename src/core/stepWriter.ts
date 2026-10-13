@@ -36,7 +36,6 @@ export function esc(s: string): string {
   return s
     .replace(/'/g, "''")
     .replace(/\\/g, '\\\\')
-    // eslint-disable-next-line no-control-regex
     .replace(/[^\x20-\x7e]/g, '?')
 }
 

@@ -51,6 +51,11 @@ export function showWorkspace(w: Workspace): void {
   if (useShell.getState().workspace !== w) useShell.getState().setWorkspace(w)
 }
 
+/** Refuse the input: the message says what is wrong with it. */
+export const invalid = (text: string): never => {
+  throw new CommandError('invalid_input', text)
+}
+
 /** Whatever a refused or failed step left in the error toast, or a fallback. */
 export const lastError = (fallback: string): string => useStore.getState().errorText ?? fallback
 

@@ -1,4 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// Every way an element is created, as the creation UI offers them — fitted to
+// the scan, picked on it, or constructed from other elements and typed-in
+// numbers — and the geometry of the constructed ones. A construction keeps
+// only its references and parameters and is evaluated again whenever a source
+// changes; even a number found on the scan, a centroid or a symmetry plane,
+// is carried as a parameter, so the element rebuilds, moves and saves exactly
+// like one typed in by hand.
+
 import type { CircleFit, ElementKind, FitData, LineFit, PlaneFit, PointFit, Vec3 } from '../types'
 import {
   acuteAngle,
@@ -337,6 +345,22 @@ export function creationMethod(kind: ElementKind, id: string): CreationMethod {
 /** Zero residual block for picked/constructed geometry. */
 const NO_FIT_STATS = { sigma: 0, usedPoints: 0, regionSize: 0 }
 
+/** A plane through `center` facing `normal`, drawn at a share of the
+ *  part's size since nothing was measured to give it extents. */
+function planeAt(center: Vec3, normal: Vec3, fallbackSize: number) {
+  const [basisU, basisV] = orthoBasis(normal)
+  const extent = Math.max(fallbackSize * 0.3, 1)
+  return {
+    kind: 'plane' as const,
+    center,
+    normal,
+    basisU,
+    basisV,
+    extentU: extent,
+    extentV: extent,
+  }
+}
+
 const need = <T>(v: T | null, what: string): T => {
   if (v === null) throw new ConstructionError(`Missing ${what}.`)
   return v
@@ -532,16 +556,8 @@ export function evaluateConstruction(
         throw new ConstructionError('Enter the normal direction and a point on the plane.')
       const normal = normalize([nx, ny, nz])
       if (!normal) throw new ConstructionError('The normal direction must not be zero.')
-      const [basisU, basisV] = orthoBasis(normal)
-      const extent = Math.max(fallbackSize * 0.3, 1)
       return {
-        kind: 'plane',
-        center: [px, py, pz],
-        normal,
-        basisU,
-        basisV,
-        extentU: extent,
-        extentV: extent,
+        ...planeAt([px, py, pz], normal, fallbackSize),
         ...NO_FIT_STATS,
       } satisfies PlaneFit
     }
@@ -552,16 +568,8 @@ export function evaluateConstruction(
         throw new ConstructionError('Find the symmetry plane first.')
       const normal = normalize([nx, ny, nz])
       if (!normal) throw new ConstructionError('The symmetry plane has no direction.')
-      const [basisU, basisV] = orthoBasis(normal)
-      const extent = Math.max(fallbackSize * 0.3, 1)
       return {
-        kind: 'plane',
-        center: [px, py, pz],
-        normal,
-        basisU,
-        basisV,
-        extentU: extent,
-        extentV: extent,
+        ...planeAt([px, py, pz], normal, fallbackSize),
         // The mirror registration's residual stands where a fit's sigma
         // does: how far the part is from symmetric about this plane, over
         // the samples that found their mirror image on the scan.

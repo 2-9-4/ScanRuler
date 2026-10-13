@@ -74,7 +74,7 @@ const SAMPLE = 2048
 /** A chain as the growing sees it: its points with a loop's closing
  *  duplicate dropped, whether it closes on itself, and the two numbers the
  *  band is scaled by. */
-interface ChainView {
+export interface ChainView {
   points: readonly Vec2[]
   closed: boolean
   spacing: number
@@ -87,7 +87,9 @@ function median(values: number[]): number {
   return sorted[sorted.length >> 1]
 }
 
-function viewChain(chain: readonly Vec2[]): ChainView {
+/** Read a chain the way the growing does — also how a sketch's chain is
+ *  cut into pieces, so the two agree on its spacing and scatter. */
+export function viewChain(chain: readonly Vec2[]): ChainView {
   const n0 = chain.length
   const step = Math.max(1, Math.floor(n0 / SAMPLE))
   const gaps: number[] = []

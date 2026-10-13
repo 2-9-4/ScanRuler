@@ -19,8 +19,6 @@ import { rigidApplyToPoints, rigidRotateVectors, type Rigid } from './deviation/
 
 export type CloudFormat = 'ply' | 'xyz'
 
-export const CLOUD_FORMATS: readonly CloudFormat[] = ['ply', 'xyz']
-
 /** The points and normals in the pose to write: copied and moved when there
  *  is a transform, the caller's own arrays untouched either way. */
 function posed(
@@ -45,15 +43,11 @@ function plyComment(text: string): string {
   return text.replace(/[\r\n]+/g, ' ').replace(/[^\x20-\x7e]/g, '?').trim()
 }
 
-/**
- * Build a binary little-endian PLY holding the vertices as a point cloud.
- *
- * @param positions xyz per vertex.
- * @param normals   nx ny nz per vertex, or null to write positions only.
- * @param transform Applied to every point (and turned onto every normal) on
- *                  the way out. Null exports the vertices as they stand.
- * @param comment   One line for the header's comment.
- */
+/** A binary little-endian PLY holding the vertices as a point cloud: xyz
+ *  per vertex, with nx ny nz per vertex unless `normals` is null.
+ *  `transform` is applied to every point and turned onto every normal on
+ *  the way out; null exports the vertices as they stand. `comment` is one
+ *  line for the header's comment. */
 export function buildPointCloudPly(
   positions: Float32Array,
   normals: Float32Array | null,

@@ -1,4 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// A cylinder from a click or from a painted selection, ready to be an
+// element: patch, robust estimate, a region grown along the whole wall, the
+// clipped best fit, and the checks that turn down a flat or a stray region
+// passing for one. The fit can also be confined to a span along the axis;
+// the reported length then stays the whole surface's, so the span is a fixed
+// distance in from the feature's ends rather than creeping inward with every
+// refit, while axis, radius and sigma come from the kept surface alone.
+
 import type { AxialWindow, Cylinder, CylinderFit, FitSettings, MeshGraph } from '../types'
 import {
   axisFromNormals,
@@ -9,7 +17,7 @@ import {
 } from './cylinder'
 import { FitError } from './errors'
 import { axialExtents } from './extents'
-import { collectPatch, growCylinderRegion } from './regionGrow'
+import { growCylinderRegion, seededFit } from './regionGrow'
 import { MIN_SELECTED, requireSelection } from './selection'
 
 type CylinderResult = CylinderFit & { region: Uint32Array }
@@ -114,37 +122,30 @@ export function fitCylinderFromSeed(
   settings: FitSettings,
   window?: AxialWindow,
 ): CylinderResult {
-  for (const patchSize of [1500, 6000, 24000]) {
-    const patch = collectPatch(g, seeds, patchSize)
-    if (patch.length < 30) break
+  const fit = seededFit(g, seeds, {
+    estimate: (patch, seed) => ransacCylinder(g.positions, g.normals, patch, { seed }),
+    grow: (cand) => growCylinderRegion(g, seeds, cand.cylinder, cand.sigma, cand.inliers.length),
+    finish: (grown) => {
+      const fin = fitCylinderClipped(g.positions, grown.region, grown.model, settings.sigma)
+      if (!fin) return null
+      const c = fin.cylinder
+      if (!Number.isFinite(c.r) || c.r <= 0) return null
+      // Out of scale with the model, or noisier than 3% of the radius: this was
+      // a flat patch or a junk region, not a cylinder.
+      if (c.r > 0.8 * g.bboxDiag) return null
+      if (fin.sigma > 0.03 * c.r) return null
 
-    const cand = ransacCylinder(g.positions, g.normals, patch, {
-      seed: (seeds[0] ?? 1) + patchSize,
-    })
-    if (!cand) continue
+      const result = cylinderResult(g.positions, fin, grown.region, grown.region)
+      // Under ~30° of arc the circle through the points is barely curved, so
+      // the radius and the axis position are guesses.
+      if (!result || !(result.coverage >= 29)) return null
 
-    const grown = growCylinderRegion(g, seeds, cand.cylinder, cand.sigma, cand.inliers.length)
-    if (!grown) continue
-    if (grown.region.length < 60) continue
-
-    const fin = fitCylinderClipped(g.positions, grown.region, grown.model, settings.sigma)
-    if (!fin) continue
-    const c = fin.cylinder
-    if (!Number.isFinite(c.r) || c.r <= 0) continue
-    // Out of scale with the model, or noisier than 3% of the radius: this was
-    // a flat patch or a junk region, not a cylinder.
-    if (c.r > 0.8 * g.bboxDiag) continue
-    if (fin.sigma > 0.03 * c.r) continue
-
-    const result = cylinderResult(g.positions, fin, grown.region, grown.region)
-    // Under ~30° of arc the circle through the points is barely curved, so
-    // the radius and the axis position are guesses.
-    if (!result || !(result.coverage >= 29)) continue
-
-    // The surface has been found; confining the fit to part of it is a
-    // separate matter, and one a bigger patch could not help with.
-    return window ? fitInsideWindow(g, result, window, settings) : result
-  }
+      // The surface has been found; confining the fit to part of it is a
+      // separate matter, and one a bigger patch could not help with.
+      return window ? fitInsideWindow(g, result, window, settings) : result
+    },
+  })
+  if (fit) return fit
   throw new FitError(
     "Couldn't fit a cylinder at this point — try clicking on a clearly curved part of the cylindrical surface.",
   )

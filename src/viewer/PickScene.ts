@@ -1,4 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// The halves of the split-screen picker an alignment's point pairs are
+// clicked in — scan on one side, reference on the other, each turned on its
+// own. The scan's half takes the marking gestures too, so the surface the fit
+// is measured on can be marked where the scan is already being looked at.
+
 import * as THREE from 'three'
 import { CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js'
 import type { Vec3 } from '../core/types'

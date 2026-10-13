@@ -37,6 +37,9 @@ export default defineConfig({
     environment: 'node',
     // Each plugin keeps its tests beside it; the open-source tree has none.
     include: ['tests/**/*.test.ts', 'plugins/*/tests/**/*.test.ts'],
-    testTimeout: 180_000,
+    // Long enough for any test that is not slow by nature, short enough that a
+    // hang is found quickly. The files whose tests build solids in the kernel
+    // or fit real scans raise it for themselves.
+    testTimeout: 20_000,
   },
 })

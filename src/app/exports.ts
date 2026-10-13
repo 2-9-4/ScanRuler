@@ -35,7 +35,7 @@ export const saveFile = (name: string, blob: Blob) => {
 export const exportStem = () => (useStore.getState().fileName ?? 'scan').replace(/\.[^.]+$/, '')
 
 /** Lazy export modules can fail to load (for example after a deployment).
- * Keep the session usable and report the failure through the normal UI. */
+ *  Keep the session usable and report the failure through the normal UI. */
 export async function runExport(job: () => Promise<void>): Promise<void> {
   try { await job() }
   catch (error) {
@@ -47,7 +47,7 @@ export async function runExport(job: () => Promise<void>): Promise<void> {
  *  up in the part under the section's name — what the STEP export writes
  *  beside the 3D elements. Hidden ones come too, as hidden 3D elements do:
  *  hiding is a way of looking, not a way of unmeasuring. */
-export const sectionStepGroups = (): StepSection[] => {
+const sectionStepGroups = (): StepSection[] => {
   const flat = useFlat.getState()
   return useStore
     .getState()

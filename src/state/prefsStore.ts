@@ -45,10 +45,10 @@ const AGENT_TOKEN_KEY = 'scanruler.agenttoken'
 
 /** The port the agent's local server listens on unless told otherwise — the
  *  one scanruler-mcp uses by default. */
-export const AGENT_PORT_DEFAULT = 7317
+const AGENT_PORT_DEFAULT = 7317
 
 /** A port as typed or stored, or the default when it is not one. */
-export const agentPortOf = (value: unknown): number => {
+const agentPortOf = (value: unknown): number => {
   const n = Number(value)
   return Number.isInteger(n) && n >= 1 && n <= 65535 ? n : AGENT_PORT_DEFAULT
 }
@@ -57,6 +57,7 @@ const read = (key: string): string | null => {
   try {
     return localStorage.getItem(key)
   } catch {
+    // Storage blocked: every preference reads as its default.
     return null
   }
 }

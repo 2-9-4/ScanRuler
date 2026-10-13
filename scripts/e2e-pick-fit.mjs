@@ -17,7 +17,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { importStep, writeBinarySTL } from 'meshstep'
 import { cubeStep } from '../tests/stepFixtures.ts'
-import { check, drag, fail, finish, launchApp, shotPath, sleep } from './e2e-lib.mjs'
+import { check, drag, fail, finish, launchApp, loadScan, shotPath, sleep } from './e2e-lib.mjs'
 
 const SIZE = 20
 
@@ -113,11 +113,7 @@ await page.click('[data-test=support-card] .sc-x').catch(() => {})
 // ---- both models ------------------------------------------------------------
 await page.click('[data-test=workspace-deviation]')
 await page.waitForSelector('[data-test=start-pane]')
-await (await page.$('[data-test=start-scan] input[type=file]')).uploadFile(scanPath)
-await page.waitForFunction(
-  () => /[1-9][\d,]* triangles/.test(document.querySelector('.file-info')?.textContent ?? ''),
-  { timeout: 300_000 },
-)
+await loadScan(page, scanPath, { inputSelector: '[data-test=start-scan] input[type=file]', timeout: 300_000, settle: 0 })
 await (await page.$('[data-test=slot-reference] input[type=file]')).uploadFile(stepPath)
 await page.waitForFunction(
   () => document.querySelector('[data-test=align-auto]')?.disabled === false,

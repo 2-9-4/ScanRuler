@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { readFileSync } from 'node:fs'
-import { beforeAll, describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { parseSTL } from '../src/core/parsers/stl'
 import { buildMeshGraph } from '../src/core/geometry/buildGraph'
 import { mulberry32 } from '../src/core/fit/ransac'
@@ -16,6 +16,10 @@ import {
 } from '../src/core/deviation/rigid'
 import type { MeshGraph, Vec3 } from '../src/core/types'
 import { fixture } from './fixtures'
+import { rotated } from './helpers'
+
+// Kernel builds and real-scan fits run long, and longer on a slow machine.
+vi.setConfig({ testTimeout: 180_000 })
 
 /** The furthest any point of the part ends up from where the other transform
  *  would have put it, in mm. Measured over the actual vertices rather than
@@ -64,18 +68,6 @@ function moved(positions: Float32Array, pose: Rigid): Float32Array {
     out[v] = p[0]
     out[v + 1] = p[1]
     out[v + 2] = p[2]
-  }
-  return out
-}
-
-function rotated(normals: Float32Array, pose: Rigid): Float32Array {
-  const out = new Float32Array(normals.length)
-  const r = pose.r
-  for (let v = 0; v < normals.length; v += 3) {
-    const x = normals[v], y = normals[v + 1], z = normals[v + 2]
-    out[v] = r[0] * x + r[1] * y + r[2] * z
-    out[v + 1] = r[3] * x + r[4] * y + r[5] * z
-    out[v + 2] = r[6] * x + r[7] * y + r[8] * z
   }
   return out
 }

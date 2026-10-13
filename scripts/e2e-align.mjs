@@ -17,6 +17,7 @@ import {
   canvasRect,
   check,
   click,
+  downloadsTo,
   finish,
   fitBall,
   launchApp,
@@ -35,8 +36,7 @@ const BAR_LENGTH = 148.64 // GOM reference center distance of the ball bar
 
 const { browser, page, consoleErrors } = await launchApp()
 
-const cdp = await page.createCDPSession()
-await cdp.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: DOWNLOAD_DIR })
+const cdp = await downloadsTo(page, DOWNLOAD_DIR)
 
 await loadScan(page, STL)
 const rect = await canvasRect(page)

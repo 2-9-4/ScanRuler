@@ -2,7 +2,7 @@
 // The front door: what a workspace shows on an empty stage, before there is any
 // part at all. One tile per model it will need, each its own drop target, where
 // the files are going to land. Every workspace uses it, so opening a model looks
-// the same whichever one you are in — only the number of tiles differs.
+// the same in every one of them — only the number of tiles differs.
 //
 // It goes the moment a scan arrives and does not come back. A card over the
 // model is a card over the thing the user loaded it to look at, and anything the
@@ -11,6 +11,7 @@
 import { useRef, useState } from 'react'
 import { MESH_ACCEPT } from '../core/formats'
 import { usePulse } from '../app/useHints'
+import { HiddenFileInput } from './ModelSlot'
 
 export interface StartSlot {
   role: string
@@ -47,17 +48,7 @@ function Tile({ role, what, name, accept = MESH_ACCEPT, onOpen }: StartSlot) {
         if (file) onOpen(file)
       }}
     >
-      <input
-        ref={inputRef}
-        type="file"
-        accept={accept}
-        hidden
-        onChange={(e) => {
-          const f = e.target.files?.[0]
-          if (f) onOpen(f)
-          e.target.value = ''
-        }}
-      />
+      <HiddenFileInput inputRef={inputRef} accept={accept} onOpen={onOpen} />
       <div className="starttile-role">{role}</div>
       <div className="starttile-what">{what}</div>
       {name ? (

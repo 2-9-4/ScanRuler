@@ -1,4 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// The fitter behind each kind of element measured by fitting it to the scan —
+// sphere, cylinder, cone, plane, torus — one started from a clicked seed, one
+// run on a surface marked by hand. Only the mesh worker reads it; points,
+// lines and circles are picked or constructed on the main thread, and the
+// names the interface shows live apart, in kinds.ts.
+
 import type { AxialWindow, FittedElementKind, FitOutput, FitSettings, MeshGraph } from '../types'
 import { fitConeFromSeed, fitConeOnSelection } from '../fit/fitConeFromSeed'
 import { fitCylinderFromSeed, fitCylinderOnSelection } from '../fit/fitCylinderFromSeed'

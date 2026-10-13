@@ -42,7 +42,7 @@ export function nearestVertex(positions: Float32Array, vertexCount: number, p: V
 
 /** The first triangle `v` is a corner of, or null for a vertex no triangle
  *  uses. */
-export function triangleOf(indices: Uint32Array, v: number): [number, number, number] | null {
+function triangleOf(indices: Uint32Array, v: number): [number, number, number] | null {
   for (let t = 0; t + 2 < indices.length; t += 3) {
     if (indices[t] === v || indices[t + 1] === v || indices[t + 2] === v) {
       return [indices[t], indices[t + 1], indices[t + 2]]

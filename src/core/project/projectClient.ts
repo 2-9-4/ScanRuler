@@ -1,4 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// The main thread's side of the project worker (projectWorker.ts): packing
+// a project into its zip and reading one back happen off the main thread,
+// so the viewport keeps answering while a large scan is deflated. The
+// worker holds nothing between requests, so one that has died is simply
+// started again on the next.
+
 import { WorkerRpc } from '../workerRpc'
 import type { ArchiveMember, UnpackedProject } from './archive'
 import type { ProjectManifest } from './manifest'

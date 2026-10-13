@@ -101,9 +101,9 @@ export interface FlatDimensionValue {
 }
 
 /** Beyond this fold angle, "parallel" distances stop being reported. */
-export const FLAT_PARALLEL_MAX_DEG = 3
+const FLAT_PARALLEL_MAX_DEG = 3
 /** Beyond this fold angle, a parallel distance carries a warning. */
-export const FLAT_PARALLEL_WARN_DEG = 0.5
+const FLAT_PARALLEL_WARN_DEG = 0.5
 /** How far past the measured segment a perpendicular foot may land before
  *  the dimension warns that it left the measured edge. */
 const EXTENT_MARGIN = 1.3

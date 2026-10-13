@@ -5,6 +5,52 @@ bar and the imprint is the entry it belongs to; the `.scanruler` projects it
 saves carry the same number as `appVersion`. How a release is cut is in the
 README under "Releases".
 
+## 0.5.3 — 2026-10-13
+
+- **Opening a file from a link** (2026-10-13). A file named in the page's
+  address opens on start, the way a dropped one does: `?open=<url>` fetches
+  any file a server lets the site read (CORS), and `/s/<name>` is the short
+  form for a file in the deployment's own file store, named to the build as
+  `VITE_FILES_URL` in `.env` — a project unless the name ends in a mesh, STEP or image
+  format; `workspace=<name>` on either says where to land once it is open.
+  The status strip reports a file that does not come, with the server's
+  status or the missing permission. README under "Opening a file
+  from a link" and "Deploying to Cloudflare"; `scripts/e2e-open-link.mjs`
+  tries both forms.
+- **The colour map in the deviation state** (2026-10-12). `deviation.settings`
+  takes `colormap` and the deviation state's `settings` names the map in
+  use and what its ramp shows at −range, 0 and +range, the caps past either
+  end and the unmeasured grey. The map is the person's browser preference,
+  so an agent reading a render could not know whether red meant outside
+  (jet) or nothing of the kind (viridis); now it reads the ramp first or
+  sets the map it knows. The live map's tooltip no longer names jet's
+  colours either.
+- **A flat patch is no cylinder estimate** (2026-10-12). The robust
+  estimate a cylinder fit from a click starts on turns down a patch the
+  best plane fits as well (`curvedBeyondPlane`). A flat face whose normals
+  scatter, as a scan's do, used to come back as a cylinder as large as the
+  radius cap allowed, which only the coverage check after the growing
+  turned down; the next, larger patch is now tried at once. A few degrees
+  of a large bore are still found where the arc rises clear of the noise.
+- **Node.js 22 or newer** (2026-10-11). `package.json` and scanruler-mcp's
+  now declare it (`engines`), the version CI runs on; scanruler-mcp asked
+  for 20, the app for nothing. The Node type definitions follow, so code
+  written against a newer Node's API no longer type-checks.
+- **Housekeeping** (2026-10-11). The e2e screenshots, which `.gitignore`
+  already named as generated, are no longer in the repository;
+  `scanruler_batch`'s description takes `section_get` as its example.
+- **The README catches up** (2026-10-11). It names 2D Measure among the
+  workspaces and cones and tori among the fits, has a Cone row in the
+  element table and the Agents group in Settings, says an agent reads
+  numbers to six significant digits, and no longer promises cones or the
+  2D DXF export, both of which ship. COMMERCIAL.md calls the sample scans
+  what they are: local fixtures, not committed.
+- **scanruler-mcp 0.2.0** (2026-10-11) — the version for what the server
+  gained since 0.1.0, the copy on npm: batch calls, rounded and exact
+  answers, Node 22. Its connection help names Firefox beside Chrome and
+  Edge, as the READMEs do, and its README the config folder under
+  `$XDG_CONFIG_HOME`.
+
 ## 0.5.2 — 2026-10-11
 
 - **A drag within the page no longer brings up the drop-a-file overlay**

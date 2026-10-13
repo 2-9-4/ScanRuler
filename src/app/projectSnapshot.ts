@@ -1,4 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// The project as it stands, collected once per change and shared by whoever
+// asks — the unsaved-changes check, the leave-page warning and the local
+// checkpoint (see useRecovery). Files are told apart by the identity of
+// their bytes, not their names: a scan replaced by another under the same
+// file name is still a change.
+
 import type { collectProject } from './project'
 import { keptParts, projectSections } from './projectSections'
 
@@ -23,9 +29,9 @@ function hasContent({ manifest }: ProjectSnapshot): boolean {
 }
 
 /** Stores invalidate this synchronously when persisted fields change. Dirty
- * checks and checkpoints then share one projection/serialization per revision.
- * Release the projection after writing so large selection arrays aren't kept
- * merely to answer whether the session is dirty. */
+ *  checks and checkpoints then share one projection/serialization per revision.
+ *  Release the projection after writing so large selection arrays aren't kept
+ *  merely to answer whether the session is dirty. */
 export class ProjectSnapshotCache {
   readonly key = snapshotKey()
   private snapshot: ProjectSnapshot | null = null

@@ -18,11 +18,9 @@
 // dependencies (npm --prefix mcp ci).
 //   node scripts/e2e-agent.mjs
 // Env: APP_URL, CHROME, STL, OUT_DIR.
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs'
-import { createServer } from 'node:net'
-import { tmpdir } from 'node:os'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { APP_URL, OUT_DIR, check, fail, finish, launchApp, repoFile, requireFixture, sleep } from './e2e-lib.mjs'
+import { APP_URL, check, fail, finish, launchAgent, launchApp, OUT_DIR, repoFile, requireFixture, sleep } from './e2e-lib.mjs'
 import { ballPairScan } from './e2e-fixtures.mjs'
 
 const REAL = repoFile('ballbar.stl')
@@ -38,24 +36,7 @@ if (!existsSync(repoFile('mcp/node_modules/@modelcontextprotocol/sdk/package.jso
 }
 const { startAgent } = await import('../mcp/tests/client.js')
 
-/** A port nothing listens on. */
-const freePort = () =>
-  new Promise((resolve, reject) => {
-    const probe = createServer()
-    probe.once('error', reject)
-    probe.listen(0, '127.0.0.1', () => {
-      const { port } = probe.address()
-      probe.close(() => resolve(port))
-    })
-  })
-
-const port = await freePort()
-const token = `e2e-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`
-const serverOptions = {
-  args: ['--port', String(port), '--out', OUT_DIR, '--app', APP_URL],
-  env: { SCANRULER_MCP_TOKEN: token, SCANRULER_MCP_CONFIG_DIR: mkdtempSync(join(tmpdir(), 'scanruler-mcp-')) },
-}
-const agent = await startAgent(serverOptions)
+const { agent, port, token, options: serverOptions } = await launchAgent(startAgent)
 const { call } = agent
 
 // ---- before the page -------------------------------------------------------
@@ -104,7 +85,7 @@ const rows = await page.$$eval('[data-test="element-row"]', (els) => els.length)
 check(rows === 2, `two elements in the panel (${rows})`)
 const shown = await page.$$eval('[data-test="dimension-value"]', (els) => els.map((e) => e.textContent.replace(/\s+/g, ' ').trim()))
 check(shown.length === 1 && shown[0].includes(value?.toFixed(3)), `the dimension in the panel: ${JSON.stringify(shown)}`)
-const undoTitle = await page.$eval('[data-test="sketch-undo"]', (e) => e.title)
+const undoTitle = await page.$eval('[data-test="undo"]', (e) => e.title)
 check(undoTitle.startsWith('Undo: Agent: add dimension'), `the undo key names the agent’s step: "${undoTitle}"`)
 
 const json = await call('report_get', { format: 'json' })

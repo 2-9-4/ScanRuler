@@ -29,8 +29,6 @@ import { forgetAllSurfaces } from './surfaces'
 /** A scan as the session holds it: its file's bytes, and their units. */
 export type ScanSource = NonNullable<SourceFiles['scan']>
 
-export type ScanSwap = ReturnType<typeof scanSwap>
-
 export function scanSwap({
   clientRef,
   sceneRef,

@@ -15,6 +15,7 @@
 // evenly sampled surface.
 
 import type { Vec3 } from '../types'
+import { makeUnionFind } from '../geometry/unionFind'
 
 export interface Hotspot {
   /** How many entries of the field lie in the patch. */
@@ -68,7 +69,7 @@ export interface HotspotReport {
 /** The grain, as a multiple of the point spacing: two spacings would make
  *  a hole of one missing vertex a seam; three keep a patch whole across the
  *  gaps a scan has and still part what lies a wall away. */
-export const GRAIN_SPACINGS = 3
+const GRAIN_SPACINGS = 3
 const DEFAULT_LIMIT = 8
 const DEFAULT_MIN_COUNT = 3
 /** How many vertices the spacing is read off, at most. */
@@ -96,19 +97,7 @@ export function hotspots(points: Float32Array, values: Float32Array, tolerance: 
 
   // Union-find over the selected entries, joined within the grain.
   const m = sel.length
-  const parent = new Int32Array(m)
-  for (let i = 0; i < m; i++) parent[i] = i
-  const find = (i: number): number => {
-    while (parent[i] !== i) {
-      parent[i] = parent[parent[i]]
-      i = parent[i]
-    }
-    return i
-  }
-  const union = (a: number, b: number) => {
-    const ra = find(a), rb = find(b)
-    if (ra !== rb) parent[ra] = rb
-  }
+  const { find, union } = makeUnionFind(m)
   const grid = gridOf(points, sel, grain)
   const group = options.group
   const g2 = grain * grain

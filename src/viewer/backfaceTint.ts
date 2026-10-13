@@ -38,7 +38,9 @@ export const BACKFACE_GLSL_FRAGMENT =
   'if ( uBackfaceTint > 0.5 && ! gl_FrontFacing ) diffuseColor.rgb = uBackfaceColor;'
 
 /**
- * Patch a material that needs the flag and nothing else.
+ * Amend a material's fragment shader with the flag, from an onBeforeCompile
+ * that may have other splices to make as well. The include line it hangs off
+ * stays in place, so the order of the splices does not matter.
  *
  * Flagged in the shader rather than by drawing the mesh a second time with the
  * faces flipped, because the second pass would have to be the same million
@@ -46,13 +48,6 @@ export const BACKFACE_GLSL_FRAGMENT =
  * of the part out of reach of the raycaster, which is what picking, hovering
  * and the brush all run on.
  */
-export function patchBackfaceTint(material: THREE.Material, uniforms: BackfaceUniforms): void {
-  material.onBeforeCompile = (shader) => spliceBackfaceTint(shader, uniforms)
-}
-
-/** The same amendment, for a material whose onBeforeCompile has other
- *  splices to make as well. The include line it hangs off stays in place, so
- *  the order of the splices does not matter. */
 export function spliceBackfaceTint(
   shader: { uniforms: { [name: string]: THREE.IUniform }; fragmentShader: string },
   uniforms: BackfaceUniforms,

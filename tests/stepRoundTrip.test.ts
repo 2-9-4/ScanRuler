@@ -13,6 +13,7 @@ import { buildStepFile, type StepElement } from '../src/core/exportStep'
 import { parseSTEP } from '../src/core/parsers/step'
 import { stepBuffer } from './stepFixtures'
 import type { CylinderFit, PlaneFit, SphereFit, TorusFit } from '../src/core/types'
+import { openEdgeCount } from './helpers'
 
 const NO_STATS = { sigma: 0, usedPoints: 0, regionSize: 0 }
 const STAMP = '2026-08-16T12:00:00'
@@ -30,23 +31,6 @@ function bounds(positions: Float32Array) {
     }
   }
   return { min, max }
-}
-
-/** Edges bounding anything other than two triangles: a hole, a crack, or a
- *  face that came back twice. */
-function openEdgeCount(indices: Uint32Array): number {
-  const seen = new Map<string, number>()
-  for (let t = 0; t < indices.length; t += 3) {
-    for (let e = 0; e < 3; e++) {
-      const a = indices[t + e]
-      const b = indices[t + ((e + 1) % 3)]
-      const key = a < b ? `${a}_${b}` : `${b}_${a}`
-      seen.set(key, (seen.get(key) ?? 0) + 1)
-    }
-  }
-  let open = 0
-  for (const n of seen.values()) if (n !== 2) open++
-  return open
 }
 
 describe('what CAD gets back from a solids export', () => {

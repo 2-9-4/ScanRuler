@@ -1,4 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// Reading a file in, short of putting it in place: the scan or the reference
+// handed to the worker and built for the viewport, the image decoded, each
+// held as prepared until its import commits it. A project prepares all its
+// members before committing any, so one that fails leaves the session as it
+// was; and busy and errors are reported for the import as a whole
+// (runImport), not member by member.
+
 import type { MeshWorkerClient, LoadedScan, LoadedNominal } from '../core/workerClient'
 import type { CreaseSetting } from '../core/geometry/crease'
 import type { Rigid } from '../core/deviation/rigid'
@@ -31,7 +38,7 @@ export interface PreparedImage {
 }
 
 /** Busy/error reporting belongs to the whole import, not its individual
- * members. Failures preserve the session and its previous status message. */
+ *  members. Failures preserve the session and its previous status message. */
 export function runImport(
   queue: ImportQueue,
   statusText: string,

@@ -33,7 +33,7 @@ function useLadder(): HintResult {
   const scanBusy = useStore((s) => s.busy)
   const scanLoaded = useStore((s) => s.fileName !== null)
   const fittedElements = useStore((s) => s.elements.filter((e) => e.fit).length)
-  const hasTargetElement = useStore((s) => s.elements.some((e) => isDeviationTarget(e.fit)))
+  const targetAvailable = useStore((s) => s.elements.some((e) => isDeviationTarget(e.fit)))
   const dimensions = useStore((s) => s.dimensions.length)
   const draftOpen = useStore((s) => s.draft !== null)
   const dimDraftOpen = useStore((s) => s.dimDraft !== null)
@@ -74,7 +74,7 @@ function useLadder(): HintResult {
     referenceLoaded,
     aligned,
     mapReady,
-    hasTargetElement,
+    targetAvailable,
     targetChosen,
     thicknessReady,
     pluginStep: tab >= 0 ? (pluginHints[tab]?.step ?? null) : undefined,
@@ -116,7 +116,7 @@ export function hintNow(): HintResult {
     referenceLoaded: d.nominalName !== null,
     aligned: d.alignStatus === 'done' && d.align !== null,
     mapReady: d.mapStatus === 'ready',
-    hasTargetElement: s.elements.some((e) => isDeviationTarget(e.fit)),
+    targetAvailable: s.elements.some((e) => isDeviationTarget(e.fit)),
     targetChosen: d.targetId !== null,
     thicknessReady: t.status === 'ready',
     pluginStep: plugins().some((p) => p.workspace?.id === workspace) ? null : undefined,

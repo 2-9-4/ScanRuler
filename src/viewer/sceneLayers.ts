@@ -75,7 +75,7 @@ export interface SceneLayer {
    *  the other layers' — see LAYER_ORDER. Lower comes first. */
   order: number
   /** Whether what the layer lights under the cursor covers the layers after
-   *  it: a grip or a sketch region does; a body's face does not. */
+   *  it: a grip or a drawn region does; a lit surface does not. */
   covers?: boolean
   /** A press: true when the layer takes it, the camera standing aside. */
   pointerDown?(e: PointerEvent): boolean

@@ -1,4 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// The "used points" clipping every fitted shape goes through: fit, drop the
+// points further out than k·sigma, fit again, until the set stops changing —
+// the Gaussian best fit with GOM-style outlier rejection, written once so the
+// plane, sphere, cylinder, cone and torus all report sigma and form deviation
+// the same way. A shape brings only its own fit and its signed residual.
 
 export interface ClippedRefit<M> {
   model: M

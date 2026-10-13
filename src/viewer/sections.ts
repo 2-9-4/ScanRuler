@@ -34,6 +34,8 @@ import type { Vec3 } from '../core/types'
 import { AXIS_COLORS } from './axisGizmo'
 import { SECTION_LINE_DEFAULT } from './lineWidths'
 import { pinLabel } from './overlays'
+import { onFramePlane, planeSheet } from './frameBasis'
+import { LineWidthRegistry } from './lineWidthRegistry'
 
 /** How the coordinate planes on offer are drawn: a fifth of the part's size
  *  about its centre — small, so they stand in the way of no element but the
@@ -81,11 +83,8 @@ export class SectionOverlay {
   private worldMeshes: THREE.Mesh[] = []
   private worldCleanup: (() => void)[] = []
   private hoveredWorld: WorldAxis | null = null
-  private resolution = new THREE.Vector2(1, 1)
-  /** Every live fat-line material, with the width it has at the default
-   *  setting — what the current setting scales. */
-  private lineMaterials = new Map<LineMaterial, number>()
-  private lineScale = 1
+  /** Every live fat-line material, kept sized — see setLineWidth. */
+  private fatLines = new LineWidthRegistry(SECTION_LINE_DEFAULT)
   private unitPlane = new THREE.PlaneGeometry(1, 1)
   /** The dot a sheet point is drawn as, scaled per section to the model. */
   private unitSphere = new THREE.SphereGeometry(1, 24, 16)
@@ -99,10 +98,7 @@ export class SectionOverlay {
   /** The canvas size, for the fat-line materials — every tick, a no-op
    *  unless it changed. */
   setResolution(width: number, height: number): void {
-    if (this.resolution.x === width && this.resolution.y === height) return
-    this.resolution.set(width, height)
-    for (const m of this.lineMaterials.keys()) m.resolution.copy(this.resolution)
-    this.ctx.invalidate()
+    if (this.fatLines.setResolution(width, height)) this.ctx.invalidate()
   }
 
   /** Whether the finished sections are on screen. */
@@ -121,11 +117,7 @@ export class SectionOverlay {
    *  here — the preview's cut, the sheet's curves — follows in proportion,
    *  and lines already on the part take the new width without a rebuild. */
   setLineWidth(px: number): void {
-    const scale = px / SECTION_LINE_DEFAULT
-    if (scale === this.lineScale) return
-    this.lineScale = scale
-    for (const [m, nominal] of this.lineMaterials) m.linewidth = nominal * scale
-    this.ctx.invalidate()
+    if (this.fatLines.setLineWidth(px)) this.ctx.invalidate()
   }
 
   /** The finished sections, rebuilt wholesale when anything about them
@@ -167,18 +159,8 @@ export class SectionOverlay {
     // The sheet: a square wide enough to cross the whole part, centred where
     // the part's centre falls on the plane — the element it was taken along
     // may sit right at an edge of the scan.
-    const n = new THREE.Vector3(...frame.normal)
-    const c = new THREE.Vector3(...this.ctx.modelCenter())
-    const o = new THREE.Vector3(...frame.origin)
-    const centre = c.clone().addScaledVector(n, -c.clone().sub(o).dot(n))
+    const centre = onFramePlane(frame, this.ctx.modelCenter())
     const half = this.ctx.modelRadius() * 1.15
-    const pose = new THREE.Quaternion().setFromRotationMatrix(
-      new THREE.Matrix4().makeBasis(
-        new THREE.Vector3(...frame.basisU),
-        new THREE.Vector3(...frame.basisV),
-        n,
-      ),
-    )
     const sheetMat = new THREE.MeshBasicMaterial({
       color,
       transparent: true,
@@ -186,10 +168,7 @@ export class SectionOverlay {
       depthWrite: false,
       side: THREE.DoubleSide,
     })
-    const sheet = new THREE.Mesh(this.unitPlane, sheetMat)
-    sheet.position.copy(centre)
-    sheet.quaternion.copy(pose)
-    sheet.scale.set(2 * half, 2 * half, 1)
+    const sheet = planeSheet(this.unitPlane, sheetMat, frame, centre, half)
     sheet.renderOrder = 2
     this.previewGroup.add(sheet)
     this.previewCleanup.push(() => sheetMat.dispose())
@@ -333,7 +312,7 @@ export class SectionOverlay {
   ): void {
     const mat = new LineMaterial({
       color: new THREE.Color(color).getHex(),
-      linewidth: width * this.lineScale,
+      linewidth: width * this.fatLines.scale,
       transparent: true,
       opacity,
       depthTest: onSurface,
@@ -347,10 +326,9 @@ export class SectionOverlay {
       mat.polygonOffsetFactor = -2
       mat.polygonOffsetUnits = -2
     }
-    mat.resolution.copy(this.resolution)
-    this.lineMaterials.set(mat, width)
+    const letGo = this.fatLines.track(mat, width)
     cleanup.push(() => {
-      this.lineMaterials.delete(mat)
+      letGo()
       mat.dispose()
     })
     for (let c = 0; c + 1 < cut.offsets.length; c++) {
@@ -380,7 +358,7 @@ export class SectionOverlay {
     const width = SECTION_LINE_DEFAULT + 1
     const mat = new LineMaterial({
       color: new THREE.Color(color).getHex(),
-      linewidth: width * this.lineScale,
+      linewidth: width * this.fatLines.scale,
       transparent: true,
       opacity: 1,
       depthTest: true,
@@ -390,10 +368,9 @@ export class SectionOverlay {
     mat.polygonOffset = true
     mat.polygonOffsetFactor = -3
     mat.polygonOffsetUnits = -3
-    mat.resolution.copy(this.resolution)
-    this.lineMaterials.set(mat, width)
+    const letGo = this.fatLines.track(mat, width)
     cleanup.push(() => {
-      this.lineMaterials.delete(mat)
+      letGo()
       mat.dispose()
     })
     let dotMat: THREE.MeshBasicMaterial | null = null

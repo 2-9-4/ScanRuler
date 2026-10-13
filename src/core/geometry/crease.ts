@@ -37,6 +37,7 @@
 import type { MeshGraph } from '../types'
 import { computeVertexNormals } from './normals'
 import { wireSlots } from './wireSlots'
+import { findRoot } from './unionFind'
 
 /** What the operator asked for the scan: split always — the default — only
  *  when it looks like CAD, or never. The reference is always split — it is
@@ -75,7 +76,7 @@ export function creaseAngleOf(value: unknown): number {
 
 /** The share of a mesh's edges that must be dead flat for it to count as a
  *  tessellation — see looksTessellated. */
-export const TESSELLATED_SHARE = 0.1
+const TESSELLATED_SHARE = 0.1
 
 /** An edge is flat when the faces either side of it agree to within this,
  *  in degrees. Float32 coordinates round a planar face's triangles a few
@@ -248,13 +249,7 @@ export function splitCreases(
   // Union-find over the triangles around one vertex, scratch sized to the
   // widest fan. Pairs sharing an edge are joined when the edge is smooth.
   let parent = new Uint32Array(64)
-  const find = (i: number): number => {
-    while (parent[i] !== i) {
-      parent[i] = parent[parent[i]]
-      i = parent[i]
-    }
-    return i
-  }
+  const find = (i: number): number => findRoot(parent, i)
   // Pass one: group the fans. The group of a corner is written into `group`
   // (per corner, the root's fan slot) so the copies can be dealt out after
   // the walk without repeating it.

@@ -129,6 +129,6 @@ export function useElementField({
       suggestRange(values, useDeviation.getState().maxDistance),
       restoring,
     )
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Runs on the listed dependencies only, not on everything it reads.
   }, [target, targetId, targetSide, targetFacingDeg, targetScope, scopeVersion, revision])
 }

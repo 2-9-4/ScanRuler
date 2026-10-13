@@ -1,4 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// STL, binary or ASCII, read as the triangle soup it is — nine floats a
+// triangle, each corner written out again for every face that meets there —
+// and left to geometry/weld.ts to join up. The file's facet normals are
+// skipped; the normals are worked out from the welded mesh instead.
+
 import type { ParsedMesh } from '../types'
 
 /** Binary if the byte length matches the triangle count in the header;

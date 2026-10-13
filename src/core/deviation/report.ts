@@ -1,4 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// A deviation map written out as plain text, for the clipboard: what was
+// compared with what, how the two were brought together — or, for a map
+// against one fitted element, what bounded it — and the figures. The settings
+// a reading depends on go in beside the numbers, so a report pasted into a
+// build log still says months later what it measured.
+
 import type { AlignResult, AlignSource } from './align'
 import type { DeviationStats } from './deviation'
 import { describeTarget, type ElementTarget, type MaterialSide } from './elementField'

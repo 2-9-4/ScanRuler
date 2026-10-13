@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WorkerRpc } from '../src/core/workerRpc'
 import { MeshWorkerClient } from '../src/core/workerClient'
 import { EdgeClient } from '../src/core/flat/edgeClient'
+import { tick } from './helpers'
 
 class FakeWorker {
   static instances: FakeWorker[] = []
@@ -18,7 +19,6 @@ class FakeWorker {
   crash(): void { this.onerror?.({ message: 'test failure', preventDefault() {} }) }
 }
 afterEach(() => { vi.unstubAllGlobals(); FakeWorker.instances = [] })
-const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 describe('worker lifecycle', () => {
   it('rejects every pending job on a crash and rejects future jobs until restarted', async () => {

@@ -373,7 +373,7 @@ export function useSceneSync({
     )
     // Overlays were rebuilt, so the selection glow has to be re-applied.
     sceneRef.current?.setHighlightedElements(highlightIds)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Runs on the listed dependencies only, not on everything it reads.
   }, [
     elements,
     dimensions,
@@ -389,7 +389,7 @@ export function useSceneSync({
 
   useEffect(() => {
     sceneRef.current?.setHighlightedElements(highlightIds)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Runs on the listed dependencies only, not on everything it reads.
   }, [highlightKey])
 
   // The sections, drawn on the part in the measure workspace like the
@@ -557,7 +557,7 @@ export function useSceneSync({
       if (useStore.getState().appliedAlignment) scene.frameAligned()
       else scene.frameAll()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Runs on the listed dependencies only, not on everything it reads.
   }, [alignOpen])
 
   // A viewport click selects elements whenever a dimension is being assembled
@@ -731,7 +731,7 @@ export function useSceneSync({
   const nominalReady = Boolean(nominalName) && !nominalBusy
   // Both models are on screen as soon as both are loaded. The reference is a
   // ghost while the scan is there to be seen through it, and turns solid when
-  // the scan is switched off — which is how you check it is the right part,
+  // the scan is switched off — which is how it is checked to be the right part,
   // since an aligned reference otherwise sits inside a scan of the same shape
   // and loses the depth test everywhere.
   const showScan = useDeviation((s) => s.showScan)
@@ -820,7 +820,7 @@ export function useSceneSync({
     if (useStore.getState().draft) cancelDraft()
     if (useStore.getState().alignDraft) useStore.getState().cancelAlignment()
     if (useStore.getState().sectionDraft) useStore.getState().cancelSection()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Runs on the listed dependencies only, not on everything it reads.
   }, [workspace, source])
 
   // While the split picker is up the main viewport is hidden behind it; stop
@@ -880,7 +880,7 @@ export function useSceneSync({
       )
     }, DEFLECTION_SETTLE_MS)
     return () => clearTimeout(timer)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Runs on the listed dependencies only, not on everything it reads.
   }, [playing, source, mapVersion, elementVersion, range, maxDistance, modelSize])
   useEffect(() => {
     sceneRef.current?.setDeflectionScale(animScale)

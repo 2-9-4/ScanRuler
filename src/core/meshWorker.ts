@@ -1,4 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// The scan and the reference, held off the main thread from the moment
+// their files are parsed: every fit, alignment, deviation map, thickness
+// reading, section and search runs here on the worker's copy, and only the
+// answers travel back. One request is answered at a time, in the order they
+// came. A best fit runs in slices so that a stop can reach it between them,
+// and a plugin's request that awaits holds the rest back until it settles —
+// nothing may run on a scan swapped out in the gap. An import can be staged:
+// prepared beside the models in use, put in their place when committed.
+
 import type { MeshGraph, ParsedMesh, Vec3 } from './types'
 import type { WorkerRequest, WorkerResponse } from './workerProtocol'
 import { parseSTL } from './parsers/stl'
@@ -34,6 +43,7 @@ import { autoAlign } from './autoAlign'
 import { workerPlugins } from './workerPlugins'
 import type { WorkerContext } from './workerPluginApi'
 import type { MeshBVH } from 'three-mesh-bvh'
+import { reply } from './workerRpc'
 
 let graph: MeshGraph | null = null
 /** The reference geometry, prepared for signed closest-point queries. Held
@@ -52,7 +62,7 @@ const stagedScans = new Map<number, MeshGraph>()
 const stagedNominals = new Map<number, NominalSurface>()
 
 function post(msg: WorkerResponse, transfer: Transferable[] = []): void {
-  ;(self as unknown as { postMessage(m: unknown, t: Transferable[]): void }).postMessage(msg, transfer)
+  reply(msg, transfer)
 }
 
 /** Hand the render thread the scan's geometry: its own copies of positions,

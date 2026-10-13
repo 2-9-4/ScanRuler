@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import type { MeshUnits } from '../core/meshUnits'
 // Reading a project manifest off the stores and writing one back onto them.
 // The orchestration around it — loading the model files, re-measuring the
 // maps — lives in useProject; this is the plain data half, so it can be
 // tested without a worker or a scene.
 
+import type { MeshUnits } from '../core/meshUnits'
 import { useStore } from '../state/store'
 import { useDeviation } from '../state/deviationStore'
 import { useThickness } from '../state/thicknessStore'
@@ -400,7 +400,8 @@ export function applyFlatPart(p: FlatPart): void {
 }
 
 /** Convert every saved recipe before replacing any live state. Malformed
- * elements, sketches or alignments must fail while the old session is intact. */
+ *  elements, alignments or plugin sections must fail while the old session is
+ *  intact. */
 export function prepareProjectState(m: ProjectManifest, members: ReadonlyMap<string, Uint8Array> = new Map()): () => void {
   for (const [name, arrays] of [
     ['scan', m.scan ? [m.scan.elements, m.scan.dimensions] : []],
@@ -430,7 +431,7 @@ export function prepareProjectState(m: ProjectManifest, members: ReadonlyMap<str
 /** Open the workspace a project was saved in — one of the app's, or one a
  *  plugin in use adds. A workspace this build does not have opens 3D
  *  Measure instead. */
-export function applyWorkspace(w: string): void {
+function applyWorkspace(w: string): void {
   const known: Workspace[] = [...CORE_WORKSPACES, ...plugins().flatMap((p) => (p.workspace ? [p.workspace.id] : []))]
   useShell.getState().setWorkspace(known.includes(w) ? w : 'elements')
 }

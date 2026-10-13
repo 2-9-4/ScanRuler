@@ -1,9 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// A cone from a click or from a painted selection, ready to be an element:
+// the cylinder's seed-and-grow pipeline with the cone's estimators in it,
+// the checks that turn down a flat or a stray patch passing for a taper, and
+// the report — the radius at the middle and at both ends read off the taper,
+// the half-angle in degrees, the arc of the surface the scan covers.
+
 import type { Cone, ConeFit, FitBase, FitSettings, MeshGraph } from '../types'
 import { coneAxisFromNormals, fitConeClipped, fitConeOnAxis, ransacCone } from './cone'
 import { FitError } from './errors'
 import { axialExtents } from './extents'
-import { collectPatch, growConeRegion } from './regionGrow'
+import { growConeRegion, seededFit } from './regionGrow'
 import { requireSelection } from './selection'
 
 /** The fitted extent turned into the reported geometry: the axis point moves
@@ -50,48 +56,30 @@ export function fitConeFromSeed(
   seeds: number[],
   settings: FitSettings,
 ): ConeFit & { region: Uint32Array } {
-  for (const patchSize of [1500, 6000, 24000]) {
-    const patch = collectPatch(g, seeds, patchSize)
-    if (patch.length < 30) break
+  const fit = seededFit(g, seeds, {
+    estimate: (patch, seed) => ransacCone(g.positions, g.normals, patch, { seed }),
+    grow: (cand) => growConeRegion(g, seeds, cand.cone, cand.sigma, cand.inliers.length),
+    finish: (grown) => {
+      const fin = fitConeClipped(g.positions, grown.region, grown.model, settings.sigma)
+      if (!fin) return null
+      const c = fin.cone
+      if (!Number.isFinite(c.r) || c.r <= 0) return null
+      // Steeper than ~83° is a face, not a taper — the plane tool's territory.
+      if (!(Math.abs(c.phi) < 1.45)) return null
 
-    const cand = ransacCone(g.positions, g.normals, patch, {
-      seed: (seeds[0] ?? 1) + patchSize,
-    })
-    if (!cand) continue
-
-    const grown = growConeRegion(g, seeds, cand.cone, cand.sigma, cand.inliers.length)
-    if (!grown) continue
-    if (grown.region.length < 60) continue
-
-    const fin = fitConeClipped(g.positions, grown.region, grown.model, settings.sigma)
-    if (!fin) continue
-    const c = fin.cone
-    if (!Number.isFinite(c.r) || c.r <= 0) continue
-    // Steeper than ~83° is a face, not a taper — the plane tool's territory.
-    if (!(Math.abs(c.phi) < 1.45)) continue
-
-    const report = coneReport(g.positions, grown.region, c)
-    if (!report) continue
-    // Out of scale with the model, or noisier than 3% of the mid radius: this
-    // was a flat patch or a junk region, not a cone.
-    if (report.radius2 > 0.8 * g.bboxDiag) continue
-    if (fin.sigma > 0.03 * report.radius) continue
-    // Under ~30° of arc the circle through the points is barely curved, so
-    // the radius and the axis position are guesses.
-    if (!(report.coverage >= 29)) continue
-
-    return {
-      kind: 'cone',
-      ...report,
-      sigma: fin.sigma,
-      usedPoints: fin.used.length,
-      regionSize: grown.region.length,
-      formError: fin.span,
-      residualMin: fin.min,
-      residualMax: fin.max,
-      region: grown.region,
-    }
-  }
+      const report = coneReport(g.positions, grown.region, c)
+      if (!report) return null
+      // Out of scale with the model, or noisier than 3% of the mid radius: this
+      // was a flat patch or a junk region, not a cone.
+      if (report.radius2 > 0.8 * g.bboxDiag) return null
+      if (fin.sigma > 0.03 * report.radius) return null
+      // Under ~30° of arc the circle through the points is barely curved, so
+      // the radius and the axis position are guesses.
+      if (!(report.coverage >= 29)) return null
+      return coneOutput(report, fin, grown.region)
+    },
+  })
+  if (fit) return fit
   throw new FitError(
     "Couldn't fit a cone at this point — try clicking in the middle of the tapered surface, away from its edges.",
   )
@@ -124,15 +112,24 @@ export function fitConeOnSelection(
   }
   const report = coneReport(g.positions, selection, fin.cone)
   if (!report) throw new FitError("Couldn't measure the extent of the marked surface.")
+  return coneOutput(report, fin, selection)
+}
+
+/** The cone fitted to `region`, as an element takes it. */
+function coneOutput(
+  report: NonNullable<ReturnType<typeof coneReport>>,
+  fin: NonNullable<ReturnType<typeof fitConeClipped>>,
+  region: Uint32Array,
+): ConeFit & { region: Uint32Array } {
   return {
     kind: 'cone',
     ...report,
     sigma: fin.sigma,
     usedPoints: fin.used.length,
-    regionSize: selection.length,
+    regionSize: region.length,
     formError: fin.span,
     residualMin: fin.min,
     residualMax: fin.max,
-    region: selection,
+    region,
   }
 }

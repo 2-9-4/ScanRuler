@@ -1,4 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// The 2D workspace's viewport: a sheet — a scanned image, or the blank
+// ground a section through the scan is drawn on — shown face on in document
+// millimetres, with everything measured on it drawn over it in that same
+// frame, so a pick needs no conversion. The owner pushes the picture in
+// through the set… calls and hears clicks, drags and typed edits back
+// through the on… callbacks; the measurements themselves are the owner's.
+// Turning, mirroring and aligning the sheet move the camera, never the
+// sheet, so a pick lands where it lands whichever way the sheet is seen.
+
 import * as THREE from 'three'
 import { Line2 } from 'three/addons/lines/Line2.js'
 import { LineGeometry } from 'three/addons/lines/LineGeometry.js'
@@ -8,7 +17,7 @@ import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js
 import { CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js'
 import { gridSpacing, poseAxes, sheetPose } from '../core/flat/datum'
 import type { EdgeChains } from '../core/flat/edges'
-import { splineMidpoint, splinePolyline, type HandleEnd, type SplineHandle } from '../core/flat/spline'
+import { splinePolyline, type HandleEnd, type SplineHandle } from '../core/flat/spline'
 import type { FlatFit, Vec2 } from '../core/flat/types'
 import type { PixelsPerMm } from '../core/flat/image'
 import { dimStrokes, type DimShape } from '../core/flat/dimStrokes'
@@ -17,6 +26,8 @@ import type { ControlScheme } from './navSchemes'
 import { OrthoViewport } from './orthoViewport'
 import { pinLabel } from './overlays'
 import type { ViewTheme } from './viewThemes'
+import { LineWidthRegistry } from './lineWidthRegistry'
+import { labelSpot } from '../core/flat/drawing'
 
 /**
  * The 2D Measure workspace's viewport: the scanned sheet on the stage, face
@@ -32,7 +43,7 @@ import type { ViewTheme } from './viewThemes'
  * the calibration changes the sheet is rescaled, not rebuilt.
  */
 /** An axis-aligned box in document units. */
-type DocBox = { x0: number; y0: number; x1: number; y1: number }
+interface DocBox { x0: number; y0: number; x1: number; y1: number }
 
 /** A sketch dimension for setSketchDimensions: what it measures and where
  *  its number sits, the number as written, and the id its edits go under —
@@ -140,9 +151,7 @@ export class FlatScene {
    *  material needs the canvas size; this is the one copy they all read.
    *  Each is kept with the width it has at the default setting, which the
    *  operator's line-width setting scales — see setLineWidth. */
-  private lineResolution = new THREE.Vector2(1, 1)
-  private lineMaterials = new Map<LineMaterial, number>()
-  private lineScale = 1
+  private fatLines = new LineWidthRegistry(SHEET_LINE_DEFAULT)
   /** The draft's hand picks in document units, kept for hit-testing: a press
    *  on one of them starts a drag instead of a pan or a pick. */
   private draftPicks: Vec2[] = []
@@ -316,10 +325,8 @@ export class FlatScene {
         const el = this.viewport.renderer.domElement
         const w = el.clientWidth || 1
         const h = el.clientHeight || 1
-        if (this.lineResolution.x !== w || this.lineResolution.y !== h) {
-          this.lineResolution.set(w, h)
-          for (const m of this.lineMaterials.keys()) m.resolution.copy(this.lineResolution)
-          this.edgeMaterial.resolution.copy(this.lineResolution)
+        if (this.fatLines.setResolution(w, h)) {
+          this.edgeMaterial.resolution.copy(this.fatLines.resolution)
           this.viewport.invalidate()
         }
         if (this.onViewChange) {
@@ -1165,16 +1172,15 @@ export class FlatScene {
   ): void {
     const mat = new LineMaterial({
       color: new THREE.Color(color).getHex(),
-      linewidth: width * this.lineScale,
+      linewidth: width * this.fatLines.scale,
       transparent: true,
       opacity,
       depthTest: false,
       worldUnits: false,
     })
-    mat.resolution.copy(this.lineResolution)
-    this.lineMaterials.set(mat, width)
+    const letGo = this.fatLines.track(mat, width)
     cleanup.push(() => {
-      this.lineMaterials.delete(mat)
+      letGo()
       mat.dispose()
     })
     for (const pts of polylines) {
@@ -1205,26 +1211,6 @@ export class FlatScene {
     cleanup.push(() => label.element.remove())
   }
 
-  /** Where a fit's label floats: beside the feature, not on top of it. */
-  private labelSpot(fit: FlatFit): Vec2 {
-    const lift = this.sheetDiag() * 0.01
-    if (fit.kind === 'point') return [fit.at[0], fit.at[1] + lift]
-    if (fit.kind === 'line') return [fit.center[0], fit.center[1] + lift]
-    if (fit.kind === 'circle') {
-      const d = fit.radius * 0.7071
-      return [fit.center[0] + d, fit.center[1] + d]
-    }
-    if (fit.kind === 'spline') {
-      const [x, y] = splineMidpoint(fit)
-      return [x, y + lift]
-    }
-    const mid = fit.start + fit.sweep / 2
-    return [
-      fit.center[0] + fit.radius * Math.cos(mid),
-      fit.center[1] + fit.radius * Math.sin(mid),
-    ]
-  }
-
   /** The measured elements, rebuilt wholesale when anything about them
    *  changes — same policy as the 3D overlays. */
   setFlatElements(
@@ -1240,7 +1226,7 @@ export class FlatScene {
       this.addLabel(
         this.elementGroup,
         this.elementCleanup,
-        this.labelSpot(item.fit),
+        labelSpot(item.fit, this.sheetDiag()),
         item.name,
         item.value,
         item.color,
@@ -1858,11 +1844,7 @@ export class FlatScene {
    *  callouts and pin marks drawn with the curves follow in proportion, and
    *  what is already on the sheet takes the new width without a rebuild. */
   setLineWidth(px: number): void {
-    const scale = px / SHEET_LINE_DEFAULT
-    if (scale === this.lineScale) return
-    this.lineScale = scale
-    for (const [m, nominal] of this.lineMaterials) m.linewidth = nominal * scale
-    this.viewport.invalidate()
+    if (this.fatLines.setLineWidth(px)) this.viewport.invalidate()
   }
 
   /** The colour of the edge chains — the sketch draws its slice in one

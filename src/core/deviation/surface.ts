@@ -1,4 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// A triangle mesh prepared for signed closest-point queries: the reference a
+// scan is aligned to and measured against, and any other mesh a nearest point
+// is wanted on. The distance comes from a BVH; the sign is the part that has
+// to be right. It is read off the pseudonormal of whichever vertex, edge or
+// face the closest point lands on — exact on a closed mesh, where the nearest
+// face's normal would speckle every sharp edge with false flips. A second
+// query finds the nearest surface that faces a given way, for a point whose
+// nearest one faces back at it.
+
 import * as THREE from 'three'
 import { INTERSECTED, MeshBVH, NOT_INTERSECTED, SAH } from 'three-mesh-bvh'
 

@@ -10,6 +10,7 @@
 import {
   colouredFraction,
   fail,
+  fieldSetter,
   finish,
   launchApp,
   loadScan,
@@ -85,18 +86,7 @@ if (bars < 3) fail('histogram is empty')
 
 // The field commits on blur, and blur only fires on an element that had the
 // focus — so this types the way a person does rather than poking the value in.
-const setField = async (sel, value) => {
-  await page.click(sel)
-  // A number input ignores select() and triple-click, so clear it the way a
-  // person would.
-  await page.keyboard.down('Control')
-  await page.keyboard.press('KeyA')
-  await page.keyboard.up('Control')
-  await page.keyboard.press('Backspace')
-  await page.type(sel, String(value))
-  await page.$eval(sel, (el) => el.blur())
-  await sleep(400)
-}
+const setField = fieldSetter(page, { settle: 400 })
 await setField('[data-test=thickness-high]', (high * 0.6).toFixed(2))
 const tightened = await readNumber('[data-test=thickness-high]')
 console.log(`thick end: ${high} -> ${tightened}`)

@@ -1,4 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// The undo history (historyStore.ts) wired to the session. A step puts the
+// stores' fields back; the geometry behind them is the session's to put
+// back: the scan moved into the step's alignment, or swapped across an edit
+// of it, the elements fitted again where the step changed what they were
+// fitted on, and the maps it invalidated measured again. A drag counts as
+// one step, and so does the typing in one field — pointer down to up, focus
+// in to out.
+
 import { useEffect, useRef, type RefObject } from 'react'
 import { beginHistoryGroup, configureHistory, endHistoryGroup, installHistory, useHistory } from '../state/historyStore'
 import { useStore } from '../state/store'

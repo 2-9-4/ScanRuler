@@ -209,7 +209,7 @@ function smoothInSpace(
 
 /** The end of the colour scale moves this share of the part's size at the
  *  suggested scale — about what an FE package's automatic scale shows. */
-export const DEFLECTION_SHARE = 0.05
+const DEFLECTION_SHARE = 0.05
 
 /** The scale runs from the deviation as measured to this many times it. */
 export const MIN_DEFLECTION_SCALE = 1

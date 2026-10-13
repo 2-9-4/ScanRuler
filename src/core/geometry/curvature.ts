@@ -21,7 +21,7 @@ import type { FieldScale } from '../field/colormap'
 /** Passes of neighbour averaging over the raw reading. Four reach about two
  *  rings, enough to put a scan's scatter under a 2 mm round without washing
  *  the round into the flats beside it. */
-export const CURVATURE_SMOOTHING = 4
+const CURVATURE_SMOOTHING = 4
 
 export interface CurvatureGraph {
   positions: Float32Array

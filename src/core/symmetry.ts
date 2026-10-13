@@ -237,15 +237,11 @@ function residual(
   }
 }
 
-/**
- * Find the plane the scan is mirror-symmetric about.
- *
- * @param surface  The scan itself, prepared for closest-point queries.
- * @param positions The scan's vertices, in the same frame.
- * @param normals   Their outward normals — they steer the registration away
- *                  from the far wall of a thin part.
- * @param seed      A plane to start from, or null for the principal planes.
- */
+/** The plane the scan is mirror-symmetric about. `surface` is the scan
+ *  itself, prepared for closest-point queries, and `positions` its vertices
+ *  in the same frame; `normals`, their outward normals, steer the
+ *  registration away from the far wall of a thin part. `seed` is a plane
+ *  to start from, or null for the principal planes. */
 export function findSymmetryPlane(
   surface: NominalSurface,
   positions: Float32Array,

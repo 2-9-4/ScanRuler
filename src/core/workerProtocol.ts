@@ -1,4 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// Every message between the main thread and the mesh worker, as the two
+// unions both sides are typed against: workerClient.ts asks, meshWorker.ts
+// answers. A request's id comes back on its answer; progress text and the
+// interim poses of an alignment arrive while a request is still open and
+// settle nothing, and the abort is the one message never answered. A
+// plugin's requests ride inside `plugin`, their payload opaque to the core.
+
 import type { AlignResult, PointPair } from './deviation/align'
 import type { Rigid } from './deviation/rigid'
 import type { StepInfo } from './parsers/step'
@@ -18,8 +25,8 @@ export type WorkerRequest =
    *  Absent or 1, the file is taken in millimetres. */
   | { type: 'load'; requestId: number; name: string; buffer: ArrayBuffer; crease: CreaseSetting; staged?: boolean; transform?: Rigid; scale?: number }
   /** Staged imports leave the current scan/reference available until all
-   * members and their render resources have been prepared. Omitted keeps a
-   * slot; null clears it; a number selects a staged load's request id. */
+   *  members and their render resources have been prepared. Omitted keeps a
+   *  slot; null clears it; a number selects a staged load's request id. */
   /** Put prepared models in place: the scan and the reference — a number is
    *  a prepared load, null empties the slot. */
   | { type: 'commit-import'; requestId: number; scan?: number | null; nominal?: number | null }

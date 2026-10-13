@@ -42,7 +42,7 @@ export interface PaintBrush {
   /** Take triangles facing away from the camera as well. Off by default,
    *  because a window dragged over a closed part would otherwise mark the far
    *  wall along with the near one — and on a scan the far wall is usually the
-   *  one you cannot see to judge. */
+   *  one that cannot be seen to judge. */
   backfaces?: boolean
 }
 

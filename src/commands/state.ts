@@ -15,6 +15,8 @@ import type { Rigid } from '../core/deviation/rigid'
 import type { Vec3 } from '../core/types'
 import { cutoffLabel } from '../core/summary'
 import { useDeviation } from '../state/deviationStore'
+import { usePrefs } from '../state/prefsStore'
+import { colormapById, rampColor, UNMEASURED_RGB } from '../core/field/colormap'
 import { useFlat } from '../state/flatStore'
 import { useHistory, historyBlocked } from '../state/historyStore'
 import { useShell, type Workspace } from '../state/shellStore'
@@ -208,7 +210,30 @@ export function describeDeviation() {
       bands: d.bands,
       tolerance: d.tolerance,
       facingDeg: d.mapFacingDeg,
+      colormap: describeColormap(usePrefs.getState().colormap, d.range),
     },
+  }
+}
+
+/** The colour map the deviation is drawn in — a browser preference, so an
+ *  agent reading a render cannot assume jet's green, red and blue: the map's
+ *  name and what its ramp shows at −range, 0 and +range, and the caps past
+ *  either end. */
+export function describeColormap(id: string, range: number) {
+  const map = colormapById(id)
+  const at = (t: number): [number, number, number] => {
+    const out: [number, number, number] = [0, 0, 0]
+    rampColor(map, t, out)
+    return out
+  }
+  return {
+    id: map.id,
+    low: { mm: -range, rgb: at(0) },
+    zero: { mm: 0, rgb: at(0.5) },
+    high: { mm: range, rgb: at(1) },
+    under: { mm: `< ${-range}`, rgb: [...map.under] as [number, number, number] },
+    over: { mm: `> ${range}`, rgb: [...map.over] as [number, number, number] },
+    unmeasured: { rgb: [...UNMEASURED_RGB] as [number, number, number] },
   }
 }
 
@@ -266,6 +291,7 @@ export async function scanBounds(): Promise<{ min: Vec3; max: Vec3 } | null> {
   try {
     return await client.bounds()
   } catch {
+    // A worker that cannot say is as good as no scan: the readout goes on without the box.
     return null
   }
 }

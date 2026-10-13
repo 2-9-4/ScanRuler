@@ -7,7 +7,6 @@
 // are not here: those change with the job in hand and live on the view bar,
 // in the corner of the stage.
 
-import { useEffect } from 'react'
 import { COLORMAPS, colormapById, cssRgb, legendGradient } from '../core/field/colormap'
 import { CREASE_ANGLE_DEG, CREASE_ANGLE_MAX, CREASE_ANGLE_MIN, CREASE_ANGLE_STEP, type CreaseMode } from '../core/geometry/crease'
 import { MESH_UNITS, type MeshUnits } from '../core/meshUnits'
@@ -18,6 +17,7 @@ import { useStore } from '../state/store'
 import { LINE_MAX, LINE_MIN, LINE_STEP } from '../viewer/lineWidths'
 import { SCHEMES, schemeById } from '../viewer/navSchemes'
 import { VIEW_THEMES, themeById } from '../viewer/viewThemes'
+import { useDismiss } from './useDismiss'
 
 export function SettingsModal() {
   const open = usePrefs((s) => s.settingsOpen)
@@ -59,16 +59,7 @@ export function SettingsModal() {
   // Escape closes it. Captured, like the imprint's, so the workspace's own
   // Escape handling — which would discard the draft behind the dialog — never
   // sees the key.
-  useEffect(() => {
-    if (!open) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return
-      e.stopPropagation()
-      close(false)
-    }
-    window.addEventListener('keydown', onKey, true)
-    return () => window.removeEventListener('keydown', onKey, true)
-  }, [open, close])
+  useDismiss(open, () => close(false))
 
   if (!open) return null
   const scheme = schemeById(navScheme)

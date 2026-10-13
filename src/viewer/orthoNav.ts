@@ -736,7 +736,7 @@ export class OrthoNavigator {
       this.puckPivot?.add(this.tmp)
     }
 
-    // Push the puck forward, away from you, to zoom in.
+    // Push the puck forward, away from the operator, to zoom in.
     if (m.ty) {
       const zoom = this.camera.zoom * Math.exp(m.ty * PUCK_ZOOM_PER_S * m.dt)
       this.camera.zoom = Math.max(0.02, Math.min(2000, zoom))

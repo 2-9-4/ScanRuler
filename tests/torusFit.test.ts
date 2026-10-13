@@ -9,14 +9,10 @@ import { fitTorusFromSeed, fitTorusOnSelection } from '../src/core/fit/fitTorusF
 import { mulberry32 } from '../src/core/fit/ransac'
 import { fitTorusClipped, ransacTorus, refineTorusGeometric, torusFromShift, torusResidual } from '../src/core/fit/torus'
 import type { Torus, Vec3 } from '../src/core/types'
-import { gaussian } from './helpers'
+import { gaussian, unit } from './helpers'
 
 const SETTINGS = { method: 'gaussian', sigma: 3 } as const
 
-function unit(v: Vec3): Vec3 {
-  const l = Math.hypot(v[0], v[1], v[2])
-  return [v[0] / l, v[1] / l, v[2] / l]
-}
 function basis(d: Vec3): [Vec3, Vec3] {
   const helper: Vec3 = Math.abs(d[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0]
   const u = unit([d[1] * helper[2] - d[2] * helper[1], d[2] * helper[0] - d[0] * helper[2], d[0] * helper[1] - d[1] * helper[0]])

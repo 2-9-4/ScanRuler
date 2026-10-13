@@ -10,6 +10,7 @@ import { bytes, enumOf, int, num, obj, vec3 } from '../schema'
 import { scanBounds } from '../state'
 import { CommandError, type Command } from '../types'
 import { discardSchema, fileNameSchema, fileOf, lastError, requireDiscardable } from './common'
+import { roundTo } from '../../core/round'
 
 export const unitsSchema = enumOf(
   MESH_UNITS.map((u) => u.id),
@@ -17,7 +18,7 @@ export const unitsSchema = enumOf(
 )
 
 /** The scan as the readout names it. */
-export async function scanSummary() {
+async function scanSummary() {
   const bounds = await scanBounds()
   const s = useStore.getState()
   const units = commandHost().session.sources.current.scan?.units ?? 'mm'
@@ -66,10 +67,9 @@ const QUERY_MAX = 20_000
  *  unless told otherwise. */
 const QUERY_WITHIN_DEG = 30
 
-const round = (v: number, places: number) => Math.round(v * 10 ** places) / 10 ** places
 const triples = (a: Float32Array, places: number): [number, number, number][] => {
   const out: [number, number, number][] = []
-  for (let i = 0; i + 2 < a.length; i += 3) out.push([round(a[i], places), round(a[i + 1], places), round(a[i + 2], places)])
+  for (let i = 0; i + 2 < a.length; i += 3) out.push([roundTo(a[i], places), roundTo(a[i + 1], places), roundTo(a[i + 2], places)])
   return out
 }
 
@@ -148,9 +148,9 @@ const query: Command<QueryIn> = {
       step: near ? Math.max(1, Math.round(matched / Math.max(1, n))) : r.step,
       ...(n > 0
         ? {
-            bounds: { min: lo.map((v) => round(v, 4)), max: hi.map((v) => round(v, 4)) },
-            centroid: centroid.map((v) => round(v, 4)),
-            meanNormal: nl > 0 ? meanNormal.map((v) => round(v / nl, 4)) : null,
+            bounds: { min: lo.map((v) => roundTo(v, 4)), max: hi.map((v) => roundTo(v, 4)) },
+            centroid: centroid.map((v) => roundTo(v, 4)),
+            meanNormal: nl > 0 ? meanNormal.map((v) => roundTo(v / nl, 4)) : null,
           }
         : {}),
       vertices,

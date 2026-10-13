@@ -54,7 +54,7 @@ export interface HintInput {
   aligned: boolean
   mapReady: boolean
   /** A plane, cylinder or sphere exists to measure against. */
-  hasTargetElement: boolean
+  targetAvailable: boolean
   targetChosen: boolean
 
   // Wall thickness workspace.
@@ -131,7 +131,7 @@ function elementsLadder(m: HintInput): HintResult {
  *  part has to be loaded and best-fitted, an element only chosen. */
 function deviationLadder(m: HintInput): HintResult {
   if (m.onElement) {
-    if (!m.hasTargetElement) {
+    if (!m.targetAvailable) {
       return {
         target: 'target-goto-measure',
         text: 'No plane, cylinder or sphere yet — fit one in the 3D Measure workspace',

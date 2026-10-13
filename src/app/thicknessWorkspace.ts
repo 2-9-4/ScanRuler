@@ -9,8 +9,6 @@ import { useThickness } from '../state/thicknessStore'
 import { buildThicknessReport } from '../core/thickness/report'
 import type { ThicknessStats } from '../core/thickness/thickness'
 
-export type ThicknessWorkspace = ReturnType<typeof thicknessWorkspace>
-
 export function thicknessWorkspace({
   clientRef,
   thickness,

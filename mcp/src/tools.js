@@ -41,7 +41,7 @@ const imagePath = {
  *  step it is given to: six digits is a micrometre on a part under a metre
  *  and a millionth of a unit vector; past them the page's doubles are
  *  noise the agent pays for — 0.9483828176573491 in place of 0.948383. */
-export const DIGITS = 6
+const DIGITS = 6
 const STEP = 1e6
 
 const tidy = (v) => {
@@ -53,9 +53,9 @@ const tidy = (v) => {
  *  kept to DIGITS significant digits and no finer than a millionth — 1e-17,
  *  a zero's rounding error, is 0. Whole numbers — ids, indices, counts —
  *  are as they were. An `exact` answer is one whose numbers are handed
- *  back as inputs — a sketch's coordinates, a plane's frame — and keeps
- *  every digit: shortened, a face drawn on them is a hair off the face it
- *  was meant to share. */
+ *  back as inputs — a plane's frame, say — and keeps every digit:
+ *  shortened, what is built on them is a hair off what it was meant to
+ *  meet. */
 export const agentJson = (value, exact = false) =>
   exact ? JSON.stringify(value) : JSON.stringify(value, (_key, v) => (typeof v === 'number' && Number.isFinite(v) && !Number.isInteger(v) ? tidy(v) : v))
 

@@ -63,10 +63,6 @@ export function listCommands(): CommandInfo[] {
     }))
 }
 
-export function commandNamed(name: string): Command | undefined {
-  return commands.get(name)
-}
-
 // ---- Running ----------------------------------------------------------------
 
 let queue: Promise<unknown> = Promise.resolve()

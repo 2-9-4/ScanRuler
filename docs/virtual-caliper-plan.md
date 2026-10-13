@@ -1,5 +1,7 @@
 # Virtual caliper — research and implementation plan
 
+Status: not built (2026-10-11).
+
 Written 2026-09-23. Research into what other scan-inspection tools call a
 virtual caliper, whether ScanRuler's Elements (3D measure) workspace wants
 one, and how it would be built on what is already there. Nothing here is

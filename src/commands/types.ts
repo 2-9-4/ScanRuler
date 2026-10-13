@@ -50,6 +50,9 @@ export class CommandError extends Error {
   }
 }
 
+/** What a caught error says, whatever was thrown. */
+export const errorMessage = (e: unknown): string => (e instanceof Error ? e.message : String(e))
+
 /** A file a command hands back: the bytes and the name the panel's button
  *  would have saved it under. */
 export interface FileOut {
@@ -88,9 +91,9 @@ export interface Command<I = Record<string, unknown>> {
    *  command that is not read-only. False for those that walk the history
    *  themselves or start it afresh. */
   history?: boolean
-  /** The answer's numbers are handed back as inputs — a sketch's
-   *  coordinates, a plane's frame — and must come through to the last
-   *  digit: a caller that shortens numbers for reading leaves these alone. */
+  /** The answer's numbers are handed back as inputs — a plane's frame,
+   *  say — and must come through to the last digit: a caller that shortens
+   *  numbers for reading leaves these alone. */
   exact?: boolean
   /** The undo step's name for this input; the title otherwise. */
   label?(input: I): string

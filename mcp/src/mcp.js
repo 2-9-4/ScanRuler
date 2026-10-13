@@ -18,7 +18,7 @@ import { agentJson, imageContent, inputFor, saveFileResult, toolFor, toolName } 
  *  (tests/mcpCommands.test.ts). */
 export const SNAPSHOT = JSON.parse(readFileSync(new URL('./commands.json', import.meta.url), 'utf8'))
 
-export const INSTRUCTIONS = [
+const INSTRUCTIONS = [
   'These tools drive ScanRuler, a measuring app for 3D scans, in the browser tab the user has open: the user watches every step in the viewport and can undo it there.',
   'Start with scanruler_status. If no ScanRuler page is connected, call scanruler_open: it opens ScanRuler in the user’s browser, paired with this server, and waits for it. If that leaves it unconnected, tell the user what howToConnect says, then call scanruler_wait.',
   'Read session_state before acting and after: the scan’s bounding box says where the part lies, the elements and dimensions what is measured. Lengths are millimetres, angles degrees; answers give numbers to six significant digits.',
@@ -207,7 +207,7 @@ export function createMcpServer({
     name: 'scanruler_batch',
     title: 'Run several ScanRuler tools',
     description:
-      'Run several of the ScanRuler tools in one call, in order, each with its own arguments — a run of scan_nearest, element_fit or reverse_body_describe calls, say. Returns results, one per call in order: { tool, ok, result } or { tool, ok: false, error: { code, message } }. The first refused stops the rest (stopped says which index) unless stopOnError is false. Each call that changes the session is still its own undo step. A tool that returns a picture gives its text here, the picture written to a file only if its call gave path. The server’s own tools (scanruler_status, _open, _wait, _batch) cannot be batched.',
+      'Run several of the ScanRuler tools in one call, in order, each with its own arguments — a run of scan_nearest, element_fit or section_get calls, say. Returns results, one per call in order: { tool, ok, result } or { tool, ok: false, error: { code, message } }. The first refused stops the rest (stopped says which index) unless stopOnError is false. Each call that changes the session is still its own undo step. A tool that returns a picture gives its text here, the picture written to a file only if its call gave path. The server’s own tools (scanruler_status, _open, _wait, _batch) cannot be batched.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -238,9 +238,8 @@ export function createMcpServer({
       const stopOnError = args?.stopOnError !== false
       const results = []
       let stopped
-      // A batch holding an exact answer (a feature listed, a plane
-      // described) keeps every answer exact: the rounding is one pass over
-      // the whole.
+      // A batch holding an exact answer (a plane's frame, say) keeps
+      // every answer exact: the rounding is one pass over the whole.
       let exact = false
       for (let i = 0; i < calls.length; i++) {
         const c = calls[i] ?? {}

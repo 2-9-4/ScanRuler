@@ -29,7 +29,7 @@ export const elementRefSchema = (description: string): JsonSchema =>
 
 /** The coordinate planes by name, for wherever a plane is asked for as a
  *  reference: "XY", "YZ", "ZX" (also "XZ"), with or without " plane". */
-export function basePlaneId(name: string): number | null {
+function basePlaneId(name: string): number | null {
   const key = name.trim().toUpperCase().replace(/\s*PLANE$/, '')
   const canonical = key === 'XZ' ? 'ZX' : key
   return BASE_PLANES.find((p) => p.name.toUpperCase() === `${canonical} PLANE`)?.id ?? null

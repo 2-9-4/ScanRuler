@@ -88,12 +88,6 @@ export function fitFromAlignPicks(
 /** A signed global axis a datum direction is mapped onto. */
 export type AxisDir = 'x+' | 'x-' | 'y+' | 'y-' | 'z+' | 'z-'
 
-export const AXIS_DIRS: readonly AxisDir[] = ['z+', 'z-', 'x+', 'x-', 'y+', 'y-']
-
-export function axisDirLabel(a: AxisDir): string {
-  return (a[1] === '+' ? '+' : '−') + a[0].toUpperCase()
-}
-
 export function axisIndex(a: AxisDir): number {
   return a[0] === 'x' ? 0 : a[0] === 'y' ? 1 : 2
 }
@@ -106,7 +100,7 @@ function axisVector(a: AxisDir): Vec3 {
 
 /** The direction an element contributes as a datum: a plane or circle its
  *  normal, a line, cylinder or cone its axis. Points and spheres have none. */
-export function datumDirection(fit: FitData): Vec3 | null {
+function datumDirection(fit: FitData): Vec3 | null {
   if (fit.kind === 'plane') return fit.normal
   if (fit.kind === 'line') return fit.dir
   if (fit.kind === 'cylinder' || fit.kind === 'cone') return fit.axis

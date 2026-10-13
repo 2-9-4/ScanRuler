@@ -22,6 +22,7 @@ import {
   repoFile,
   shotPath,
   sleep,
+  stageCrop,
 } from './e2e-lib.mjs'
 
 const STL = process.env.STL ?? repoFile('ballbar.stl')
@@ -79,12 +80,7 @@ const tap = async (at) => {
 // without preserveDrawingBuffer is cleared once composited, so it has to be
 // round-tripped through a puppeteer screenshot. The crop skips the corner gizmo
 // and the banner, which would otherwise dominate "where is the part".
-const CROP = {
-  x: rect.x + rect.w * 0.05,
-  y: rect.y + rect.h * 0.04,
-  width: rect.w * 0.86,
-  height: rect.h * 0.78,
-}
+const CROP = stageCrop(rect)
 
 async function sample() {
   const png = await page.screenshot({ clip: CROP, encoding: 'base64' })

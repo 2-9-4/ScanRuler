@@ -84,7 +84,7 @@ export const ORIENT_TOLERANCE_DEG = 2
 
 /** The kinds with a direction to align — everything but a point and a
  *  sphere, which have none. */
-export const ORIENTABLE_KINDS: readonly ElementKind[] = [
+const ORIENTABLE_KINDS: readonly ElementKind[] = [
   'plane',
   'line',
   'cylinder',

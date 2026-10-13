@@ -1,4 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// The undo and redo keys in the top bar, each naming in its tooltip the step
+// it would take — the editor's own, while an editor with a history of its
+// own is active. The store subscriptions are not read: they are there so the
+// keys are drawn again when a computation or an editor starts or finishes,
+// the things that block a step.
+
 import { useRef } from 'react'
 import { activeLocalHistory, historyBlocked, historyWatchers, redo, undo, useHistory } from '../state/historyStore'
 import { useStore } from '../state/store'
@@ -24,7 +30,7 @@ export function UndoRedo() {
   const canRedo = !blocked && (local ? local.canRedo() : history.future.length > 0)
   const hint = blocked ? 'Finish the active operation or close its editor first' : null
   return <div className="undokeys" data-test="undo-keys">
-    <button className="ghost" data-test="sketch-undo" aria-label="Undo" disabled={!canUndo}
+    <button className="ghost" data-test="undo" aria-label="Undo" disabled={!canUndo}
       title={hint ?? `Undo${local ? ` ${local.label}` : history.past.at(-1) ? `: ${history.past.at(-1)!.label}` : ''} — Ctrl+Z`}
       onClick={() => void undo()}><Icon name="undo" size={16} /></button>
     <button className="ghost" data-test="redo" aria-label="Redo" disabled={!canRedo}

@@ -1,4 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// The element kinds as the interface names them: a title-case label for
+// buttons and element names, and a noun for the middle of a sentence. Kept
+// apart from registry.ts, which imports every fitter, so the panel and the
+// store can name a kind without pulling worker-side fitting code into the
+// main bundle.
+
 import type { ElementKind } from '../types'
 
 /** Everything the UI needs to know about an element type. Kept apart from the

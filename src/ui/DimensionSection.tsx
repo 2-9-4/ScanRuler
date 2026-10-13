@@ -23,6 +23,31 @@ import { DimensionRow, VerdictNote, WarningNote } from './DimensionRow'
 import { LimitFields } from './LimitFields'
 import { ShowAllButton } from './ShowAllButton'
 
+/** The head of a dimension's draft box: what the box is making or
+ *  editing, and while it edits one, the name to change. */
+export function DimDraftHead({
+  editId,
+  name,
+  dimensions,
+  nameTestId,
+  onName,
+}: {
+  editId: number | undefined
+  name: string | undefined
+  dimensions: readonly { id: number; name: string }[]
+  nameTestId: string
+  onName: (name: string) => void
+}) {
+  return (
+    <>
+      <div className="sec-head">
+        {editId !== undefined ? `Edit ${dimensions.find((d) => d.id === editId)?.name ?? 'dimension'}` : 'New dimension'}
+      </div>
+      {editId !== undefined && <NameField value={name ?? ''} testId={nameTestId} onChange={onName} />}
+    </>
+  )
+}
+
 export function DimensionSection({
   editorOpen,
   onPickPoint,
@@ -66,7 +91,7 @@ export function DimensionSection({
   const surfaceVersion = useSurfaces((s) => s.version)
   const evaluated = useMemo(
     () => evaluateDimensions(own, elements, surfaceSource),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Runs on the listed dependencies only, not on everything it reads.
     [own, elements, surfaceVersion],
   )
 
@@ -137,18 +162,7 @@ export function DimensionSection({
         dimDraft &&
         dimInfo && (
           <div className="draftbox dimbox">
-            <div className="sec-head">
-              {dimDraft.editId !== undefined
-                ? `Edit ${dimensions.find((d) => d.id === dimDraft.editId)?.name ?? 'dimension'}`
-                : 'New dimension'}
-            </div>
-            {dimDraft.editId !== undefined && (
-              <NameField
-                value={dimDraft.name ?? ''}
-                testId="dim-name"
-                onChange={(name) => setDimensionName(name)}
-              />
-            )}
+            <DimDraftHead editId={dimDraft.editId} name={dimDraft.name} dimensions={dimensions} nameTestId="dim-name" onName={(name) => setDimensionName(name)} />
             <label className="field">
               <span>Type</span>
               <select

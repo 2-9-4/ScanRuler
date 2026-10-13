@@ -33,7 +33,7 @@ try {
     const travel = async (redo = false, shortcut = false) => {
       const revision = history.useHistory.getState().revision
       if (shortcut) window.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, shiftKey: redo, bubbles: true, cancelable: true }))
-      else click(redo ? 'redo' : 'sketch-undo')
+      else click(redo ? 'redo' : 'undo')
       await wait(() => history.useHistory.getState().revision > revision && !history.useHistory.getState().restoring, 'history settled')
       await pause(100)
     }

@@ -48,14 +48,14 @@ export function TopBar({
   onOpenProject,
   onOpenScan,
   onOpenImage,
-  canSave,
+  savable,
   recovery,
 }: {
   onSaveProject: () => void
   onOpenProject: (file: File) => void
   onOpenScan: (file: File) => void
   onOpenImage: (file: File) => void
-  canSave: boolean
+  savable: boolean
   recovery: RecoveryStatus
 }) {
   const fileName = useStore((s) => s.fileName)
@@ -164,7 +164,7 @@ export function TopBar({
         className="ghost withicon"
         data-test="save-project"
         onClick={onSaveProject}
-        disabled={busy || !canSave}
+        disabled={busy || !savable}
         title={`Save the scan, the reference, the image and every measurement as one .${PROJECT_EXTENSION} file`}
       >
         <Icon name="save" size={16} />

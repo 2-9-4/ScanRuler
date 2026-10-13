@@ -1,7 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// A torus from a click on a round or from a painted selection, ready to be an
+// element. Beyond fit quality the click itself has to lie on the torus and
+// face the way its tube does there: a click on the flat beside a round finds
+// the round in its patch, and a torus leaning on the flat's first rows passes
+// on residual alone — the flat's own normal does not. A spindle torus, tube
+// wider than spine, is never taken for a scanned round.
+
 import type { FitSettings, MeshGraph, Torus, TorusFitOutput } from '../types'
 import { FitError } from './errors'
-import { collectPatch, growTorusRegion } from './regionGrow'
+import { growTorusRegion, seededFit } from './regionGrow'
 import { requireSelection } from './selection'
 import { canonicalTorus, fitTorusClipped, ransacTorus, torusCoverage, torusNormalAlign, torusResidual } from './torus'
 
@@ -57,25 +64,27 @@ const SEED_COS_MAX = Math.cos((32 * Math.PI) / 180)
  *  round, the clipped best fit. The patch grows when the local
  *  neighbourhood is too small or too flat to place the spine. */
 export function fitTorusFromSeed(g: MeshGraph, seeds: number[], settings: FitSettings): TorusFitOutput {
-  for (const patchSize of [1500, 6000, 24000]) {
-    const patch = collectPatch(g, seeds, patchSize)
-    if (patch.length < 30) break
-    const cand = ransacTorus(g.positions, g.normals, patch, { seed: (seeds[0] ?? 1) + patchSize })
-    if (!cand || !plausible(cand.torus, g)) continue
-    const grown = growTorusRegion(g, seeds, cand.torus, cand.sigma, cand.inliers.length)
-    if (!grown || grown.region.length < 60) continue
-    const fin = fitTorusClipped(g.positions, grown.region, settings.sigma, grown.model)
-    if (!fin || !plausible(fin.torus, g)) continue
-    // Noisier than a few percent of the tube radius it is not the round
-    // the click was on — a flat, a cylinder, a corner.
-    if (fin.sigma > 0.05 * fin.torus.r) continue
-    // And the click itself has to lie on it, facing the way the tube faces
-    // there: a click on the flat beside a round finds the round in its
-    // patch and a torus that leans on the flat's first rows, which the
-    // residual alone lets through — the flat's own normal does not.
-    if (!onIt(g, seeds, fin.torus, fin.sigma)) continue
-    return output(g, fin.torus, fin, grown.region)
-  }
+  const fit = seededFit(g, seeds, {
+    estimate: (patch, seed) => {
+      const cand = ransacTorus(g.positions, g.normals, patch, { seed })
+      return cand && plausible(cand.torus, g) ? cand : null
+    },
+    grow: (cand) => growTorusRegion(g, seeds, cand.torus, cand.sigma, cand.inliers.length),
+    finish: (grown) => {
+      const fin = fitTorusClipped(g.positions, grown.region, settings.sigma, grown.model)
+      if (!fin || !plausible(fin.torus, g)) return null
+      // Noisier than a few percent of the tube radius it is not the round
+      // the click was on — a flat, a cylinder, a corner.
+      if (fin.sigma > 0.05 * fin.torus.r) return null
+      // And the click itself has to lie on it, facing the way the tube faces
+      // there: a click on the flat beside a round finds the round in its
+      // patch and a torus that leans on the flat's first rows, which the
+      // residual alone lets through — the flat's own normal does not.
+      if (!onIt(g, seeds, fin.torus, fin.sigma)) return null
+      return output(g, fin.torus, fin, grown.region)
+    },
+  })
+  if (fit) return fit
   throw new FitError("Couldn't fit a torus at this point — try clicking on the middle of a round or a bend.")
 }
 

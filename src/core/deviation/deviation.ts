@@ -1,4 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// The deviation map: the signed distance from every scan vertex to the
+// reference surface, positive outside it, and the statistics and colour range
+// it is read with. The scan is queried against the reference, never the other
+// way round, since only the closed reference has an inside to sign by; and
+// the query is unbounded, so the search distance stays a display control that
+// moves either way without measuring again. A facing limit reads a point
+// whose nearest surface faces away from it — the far side of a thin wall —
+// against the nearest one that faces its way.
+
 import type { FieldScale } from '../field/colormap'
 import { fieldPercentiles, fieldStats, niceCeil, type FieldStats } from '../field/stats'
 import { writeDirection } from './deflection'
@@ -39,7 +48,7 @@ export function deviationScale(
  * reference does not have — would open most of the tree looking, and anything
  * this far off is past every search distance worth reading a map at.
  */
-export const FACING_REACH = 0.1
+const FACING_REACH = 0.1
 
 /**
  * The reference map's facing limit until the user sets another: surface facing
