@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // The two ways of seeing a part other than plain shaded — see-through, and
 // with its mesh drawn on — as the pieces every viewport that shows a part
-// shares. Like the back-face flag, both are statements about the *models*:
-// the scan and the reference in the main viewport and the reference standing
-// beside it in the split view all take them, or the same part would answer
-// differently on the two sides of the screen.
+// shares. Like the back-face flag, both are statements about a *part*, set
+// on its own key of the view bar: the reference takes its settings in the
+// main viewport and standing beside the scan in the split view alike, or the
+// same part would answer differently on the two sides of the screen.
 //
 // See-through is a material setting. The mesh is a piece of shader, and that
 // is the whole point of it: the triangle edges of a million-triangle scan

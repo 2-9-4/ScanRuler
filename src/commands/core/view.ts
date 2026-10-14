@@ -8,17 +8,22 @@
 // workspace puts on the stage follows its stores a frame or two behind.
 
 import { exportStem } from '../../app/exports'
+import { round4 } from '../../core/round'
+import { canCutAlong, isWorldAxis, tiltOf, worldPlaneName, type SectionRef } from '../../core/section/frame'
 import type { Vec3 } from '../../core/types'
 import { useDeviation } from '../../state/deviationStore'
+import { sectionViewFrames, useSectionView } from '../../state/sectionViewStore'
 import { useShell } from '../../state/shellStore'
 import { useStore } from '../../state/store'
 import type { StandardView } from '../../viewer/orthoViewport'
 import type { SceneManager } from '../../viewer/SceneManager'
 import { requireScene, sceneOf, sessionBusy } from '../host'
+import { elementRefSchema, findElement, type ElementRef } from '../refs'
 import { bool, enumOf, int, num, obj, oneOf, vec3, type JsonSchema } from '../schema'
 import { CommandError, type Command } from '../types'
 import { pluginToggleKeys, viewToggles, type ViewToggle } from '../viewToggles'
 import { waitFor } from './common'
+import { worldAxisOf } from './section'
 
 const VIEWS: readonly StandardView[] = ['iso', 'top', 'bottom', 'front', 'rear', 'left', 'right']
 
@@ -79,6 +84,75 @@ const frameSchema = oneOf(
 )
 
 type Frame = { min: Vec3; max: Vec3 } | { at: Vec3; size: number }
+
+// ---- the section view ---------------------------------------------------------------
+
+type SectionAsk = boolean | { across: ElementRef; offset?: number; flip?: boolean }
+
+const sectionSchema = oneOf(
+  [
+    bool('true opens it as the Section key does — square to the view, through the part’s middle; false puts it away.'),
+    obj(
+      {
+        across: elementRefSchema('A coordinate plane "XY", "YZ", "ZX", or an element with a direction.'),
+        offset: num('Where along its normal, mm: for a coordinate plane the coordinate, for an element from its centre.'),
+        flip: bool('Take away the half away from the camera instead.'),
+      },
+      ['across'],
+    ),
+  ],
+  'The section view: everything cut open at a plane, the half toward the camera taken away, closed parts capped — to see inside. Set after any turn.',
+)
+
+/** What a section is laid across, by name: a coordinate plane or an element
+ *  with a direction. */
+function sectionRefOf(across: ElementRef): SectionRef {
+  const world = typeof across === 'string' ? worldAxisOf(across) : null
+  if (world) return world
+  const el = findElement(across)
+  if (!el.fit || !canCutAlong(el.kind)) {
+    throw new CommandError('invalid_input', `${el.name} has no direction to cut across — choose a plane, cylinder, cone, line or circle, or "XY", "YZ", "ZX".`)
+  }
+  return el.id
+}
+
+/** The section view set as asked — the half toward the camera as it now
+ *  looks taken away, unless flipped — and the frames the stage takes to
+ *  follow. */
+async function sectioned(scene: SceneManager, section: SectionAsk | undefined): Promise<void> {
+  if (section === undefined) return
+  const view = useSectionView.getState()
+  const dir = scene.viewDirection()
+  if (section === false) view.close()
+  else if (section === true) {
+    if (!view.on) view.open(dir, scene.stageCentre())
+  } else {
+    const ref = sectionRefOf(section.across)
+    if (!view.on) view.open(dir, scene.stageCentre())
+    view.setRef(ref, dir)
+    if (section.offset !== undefined) view.setOffset(section.offset)
+    if (section.flip) view.flip()
+  }
+  for (let i = 0; i < 3; i++) await nextFrame()
+}
+
+/** The section view as it stands, for an answer: what it is laid across,
+ *  where, the direction of the half taken away, and a tilt the rings gave
+ *  it; null while it is off. */
+export function describeSectionView(): Record<string, unknown> | null {
+  const s = useSectionView.getState()
+  const frames = sectionViewFrames(s)
+  if (!frames) return null
+  const across = isWorldAxis(s.ref) ? worldPlaneName(s.ref) : (useStore.getState().elements.find((e) => e.id === s.ref)?.name ?? null)
+  const tilt = tiltOf(s.refDir, frames.gizmo.normal)
+  return {
+    across,
+    offset: round4(s.offset),
+    takenAway: frames.cut.normal.map(round4),
+    ...(tilt > 0 ? { tilt: Math.round(tilt * 100) / 100 } : {}),
+    ...(sceneOf()?.sliced() === false ? { cutsNothing: true } : {}),
+  }
+}
 
 /** Every toggle standing now, by key. */
 const toggles = (scene: SceneManager) => viewToggles(baseToggles(scene))
@@ -146,27 +220,28 @@ async function shown(scene: SceneManager, show: Record<string, boolean> | undefi
   return before
 }
 
-const set: Command<{ view?: StandardView; fit?: boolean; show?: Record<string, boolean>; frame?: Frame }> = {
+const set: Command<{ view?: StandardView; fit?: boolean; show?: Record<string, boolean>; frame?: Frame; section?: SectionAsk }> = {
   name: 'set',
   title: 'Turn the view',
   description:
-    'Turn the 3D view to a standard view and/or fit everything shown into the frame — with neither given, it fits — or frame a box or a place (frame). show puts the scan, the reference, the sections, the elements or the labels on screen or away, by key, and leaves them so — { scan: false } to look at what was built on the scan without it. It waits for the session to settle first (a fit, a map, a rebuild), so what was just made is in the frame. Not a step of the history. Needs the viewport. Returns the view and, under shown, every key that can be shown now and whether it is.',
-  input: obj({ view: viewSchema, fit: fitSchema, show: showSchema(), frame: frameSchema }),
+    'Turn the 3D view to a standard view and/or fit everything shown into the frame — with neither given, it fits — or frame a box or a place (frame). show puts the scan, the reference, the sections, the elements or the labels on screen or away, by key, and leaves them so — { scan: false } to look at what was built on the scan without it. section cuts everything open at a plane to look inside, and leaves it so. It waits for the session to settle first (a fit, a map, a rebuild), so what was just made is in the frame. Not a step of the history. Needs the viewport. Returns the view, the section view (null when off) and, under shown, every key that can be shown now and whether it is.',
+  input: obj({ view: viewSchema, fit: fitSchema, show: showSchema(), frame: frameSchema, section: sectionSchema }),
   readOnly: true,
-  run: async ({ view, fit, show, frame }) => {
+  run: async ({ view, fit, show, frame, section }) => {
     const scene = await settledScene('Turning the view')
     await shown(scene, show)
     aim(scene, view, fit, frame)
     await nextFrame()
-    return { view: view ?? null, fitted: frame ? false : (fit ?? !view), ...(frame ? { framed: frame } : {}), size: scene.viewSize(), shown: shownNow(scene) }
+    await sectioned(scene, section)
+    return { view: view ?? null, fitted: frame ? false : (fit ?? !view), ...(frame ? { framed: frame } : {}), size: scene.viewSize(), section: describeSectionView(), shown: shownNow(scene) }
   },
 }
 
-const render: Command<{ width?: number; height?: number; view?: StandardView; fit?: boolean; show?: Record<string, boolean>; frame?: Frame }> = {
+const render: Command<{ width?: number; height?: number; view?: StandardView; fit?: boolean; show?: Record<string, boolean>; frame?: Frame; section?: SectionAsk }> = {
   name: 'render',
   title: 'Picture the view',
   description:
-    'A picture of the 3D view as a PNG — what the person sees in the viewport, without the HTML labels over it (dimension values, names). Give view and/or fit to turn the view first, as view.set does, or frame to frame a box or a place. show puts the scan, the reference, the sections, the elements or the labels on screen or away for the picture alone, by key — { scan: false } pictures what was built on the scan on its own; view.set lists the keys. width and height in pixels: the viewport’s own shape at most 800 pixels on its long side by default, enough to check a step by — ask for more (up to 2048) for a picture to keep; one of them alone keeps the viewport’s shape. Waits for the session to settle first. Needs the viewport.',
+    'A picture of the 3D view as a PNG — what the person sees in the viewport, without the HTML labels over it (dimension values, names). Give view and/or fit to turn the view first, as view.set does, or frame to frame a box or a place. show puts the scan, the reference, the sections, the elements or the labels on screen or away for the picture alone, by key — { scan: false } pictures what was built on the scan on its own; view.set lists the keys. section cuts everything open for the picture alone, as view.set does. width and height in pixels: the viewport’s own shape at most 800 pixels on its long side by default, enough to check a step by — ask for more (up to 2048) for a picture to keep; one of them alone keeps the viewport’s shape. Waits for the session to settle first. Needs the viewport.',
   input: obj({
     width: int('Pixels across, 64 to 2048.', { minimum: 64, maximum: MAX_SIDE }),
     height: int('Pixels down, 64 to 2048.', { minimum: 64, maximum: MAX_SIDE }),
@@ -174,23 +249,30 @@ const render: Command<{ width?: number; height?: number; view?: StandardView; fi
     fit: fitSchema,
     show: showSchema(),
     frame: frameSchema,
+    section: sectionSchema,
   }),
   readOnly: true,
   returnsFile: true,
   returnsImage: true,
-  run: async ({ width, height, view, fit, show, frame }) => {
+  run: async ({ width, height, view, fit, show, frame, section }) => {
     const scene = await settledScene('A picture of the view')
     const before = await shown(scene, show)
+    const { on, ref, axis, refDir, offset, flipped } = useSectionView.getState()
     try {
       if (view || fit || frame) {
         aim(scene, view, fit, frame)
         await nextFrame()
       }
+      await sectioned(scene, section)
       return await picture(scene, width, height, view, show)
     } finally {
-      // What was put away for the picture comes back; the frame stays.
+      // What was put away or cut for the picture comes back; the frame stays.
       if (Object.keys(before).length > 0) {
         applyShow(scene, before)
+        await nextFrame()
+      }
+      if (section !== undefined) {
+        useSectionView.setState({ on, ref, axis, refDir, offset, flipped })
         await nextFrame()
       }
     }

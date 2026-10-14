@@ -101,6 +101,13 @@ export class SectionOverlay {
     if (this.fatLines.setResolution(width, height)) this.ctx.invalidate()
   }
 
+  /** The finished sections, for the section view to cut — not the one being
+   *  made, whose sheet is drawn through the part to be set up, nor the
+   *  coordinate planes on offer. See SceneManager.dressClipped. */
+  clipRoots(): THREE.Object3D[] {
+    return [this.group]
+  }
+
   /** Whether the finished sections are on screen. */
   shown(): boolean {
     return this.group.visible

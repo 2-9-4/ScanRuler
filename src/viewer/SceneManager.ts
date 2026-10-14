@@ -31,13 +31,14 @@ import type { SectionFrame, WorldAxis } from '../core/section/frame'
 import type { SectionCut } from '../core/section/slice'
 import type { ControlScheme } from './navSchemes'
 import type { PickMarker } from './PickScene'
-import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from 'three-mesh-bvh'
+import { computeBoundsTree, disposeBoundsTree } from 'three-mesh-bvh'
 import type { FitData, Vec3 } from '../core/types'
 import { rigidApplyToPoints, rigidRotate, rigidRotateVectors, type Rigid } from '../core/deviation/rigid'
 import { deflectionFactor, deflectionStartPhase } from '../core/deviation/deflection'
 import { applyFinish, DEFAULT_THEME, setSurfaceColor, type ViewTheme } from './viewThemes'
 import {
   backfaceUniforms,
+  spliceBackfaceTint,
 } from './backfaceTint'
 import {
   surfaceUniform,
@@ -53,14 +54,17 @@ import {
   type DeflectionUniform,
 } from './deflection'
 import {
-  patchWireframe,
   SEE_THROUGH_OPACITY,
   setSurfaceOpacity,
+  spliceWireframe,
   wireUniforms,
 } from './surfaceModes'
 import { principalAxis } from './scanLayout'
 import { patchScanShader } from './scanShader'
-import { buildSliceCap, type SliceCap } from './sliceCap'
+import { CAP_SLOT, closedPartOf, cutColor, SliceCap, type ClosedPart } from './sliceCap'
+import { clippedRaycast } from './clipRaycast'
+import { clipTree } from './clipTree'
+import { CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js'
 
 declare module 'three' {
   interface BufferGeometry {
@@ -71,7 +75,27 @@ declare module 'three' {
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree
-THREE.Mesh.prototype.raycast = acceleratedRaycast
+// Through the bounds tree, and never onto what a clip plane cuts away.
+THREE.Mesh.prototype.raycast = clippedRaycast
+
+/** A cap the cut wants on a part — see SceneManager.updateCaps. */
+interface CapWish {
+  mesh: THREE.Mesh
+  slot: number
+  color: number | null
+  flat: boolean
+  /** The part's closed shells, which alone are closed; null for the whole. */
+  closed: ClosedPart | null
+}
+
+/** A cap in place, with what it was made from — kept while that holds. */
+interface HeldCap {
+  cap: SliceCap
+  wish: CapWish
+  geometry: THREE.BufferGeometry
+  index: THREE.BufferAttribute | null
+  theme: ViewTheme
+}
 
 /** The overlay data and the marking brush are defined beside the modules that
  *  draw them; consumers keep importing everything from here. */
@@ -235,21 +259,41 @@ export class SceneManager {
   private other: SlotLayout | null = null
   private editedShown = false
   private nominalMesh: THREE.Mesh | null = null
-  /** The plane the part is cut open at, and the clip plane it makes in
-   *  world coordinates — see setSlicePlane. */
+  /** The plane a tool cuts the part open at — see setSlicePlane — its cap's
+   *  colour, and whether the cut is closed with one (setSliceCapped). */
   private slice: SectionFrame | null = null
-  private slicePlanes: THREE.Plane[] | null = null
   private sliceCapColor: number | null = null
-  /** Whether the cut is closed with a cap — see setSliceCapped. */
   private sliceCapped = true
+  /** The operator's section view, behind a tool's slice — see
+   *  setSectionView. */
+  private sectionView: SectionFrame | null = null
+  /** The one plane every clipped material holds, in world coordinates, moved
+   *  in place — so a drag of the plane is a write to it, not a pass over the
+   *  materials — the list they hold it in, and that list while something is
+   *  cut, null while nothing is. */
+  private clipPlane = new THREE.Plane()
+  private clipList: THREE.Plane[] = [this.clipPlane]
+  private slicePlanes: THREE.Plane[] | null = null
+  /** Whether what cuts is the section view, which cuts everything. */
+  private sectioned = false
+  /** What is drawn on the part wants dressing for the cut before the next
+   *  frame — see dressClipped — and whether it was dressed for one. */
+  private clipDirty = false
+  private dressedClipped = false
+  /** The gizmo a section plane wears: the section being made's, and the
+   *  section view's — see applyPlaneHandles. */
+  private draftHandles: { frame: SectionFrame; color: string } | null = null
+  private viewHandles: { frame: SectionFrame; color: string } | null = null
   /** A 2D sheet laid over this view, which it follows: the sheet's frame,
    *  what lies under its screen centre and its scale — see followSheet. The
    *  size the follow was last applied at, so a viewport shown again after
    *  being put away catches up. */
   private sheetFollow: { frame: SectionFrame; centre: readonly [number, number]; unitsPerPx: number } | null = null
   private followedSize = { w: 0, h: 0 }
-  /** The cap that closes the part where it is cut open — see applySlice. */
-  private cap: SliceCap | null = null
+  /** The caps that close the scan and the reference where they are cut open
+   *  — see updateCaps — and the unit sheet they are scaled from. */
+  private scanCap: HeldCap | null = null
+  private referenceCap: HeldCap | null = null
   private capGeometry = new THREE.PlaneGeometry(1, 1)
   /** Elements lit because something being built refers to them, and
    *  elements lit because a picker's option is hovered — two reasons, one
@@ -293,10 +337,13 @@ export class SceneManager {
    *  where a first arrow-key step starts from (cycleUnderCursor). */
   private hoverCovered = new WeakMap<SceneLayer, boolean>()
 
-  /** Back-face tinting, shared by every material of this view that opts in.
-   *  The split view's reference half keeps a pair of its own and is driven
-   *  from the same switch — see backfaceTint.ts. */
+  /** Back-face tinting of the scan — see backfaceTint.ts. The reference
+   *  has a pair of its own, as it has a key of its own on the view bar. */
   private backface = backfaceUniforms(DEFAULT_THEME.backface)
+  private referenceBackface = backfaceUniforms(DEFAULT_THEME.backface)
+  /** Whether the reference's back faces are asked to be tinted: they are
+   *  while it is solid, never while it is a ghost — see setNominalGhost. */
+  private referenceBackfaces = false
 
   /** The marking's tint, as a uniform: recolouring what is marked is one write
    *  here rather than a pass over the mask — see paintTint.ts. */
@@ -306,9 +353,10 @@ export class SceneManager {
    *  in step with the scheme — see regionTint.ts. */
   private uSurfaceColor: SurfaceUniform = surfaceUniform(DEFAULT_THEME)
 
-  /** The mesh mode's switch, shared by the scan and the reference: the
+  /** The mesh mode's switches, the scan's and the reference's: the
    *  triangle edges, drawn in the surface shader — see surfaceModes.ts. */
   private wire = wireUniforms()
+  private referenceWire = wireUniforms()
 
   /** The map played as motion — see deflection.ts. Each scan vertex's offset
    *  off the ideal surface, with the geometry it was laid on: the loop plays
@@ -319,10 +367,12 @@ export class SceneManager {
   /** When the loop began, in performance.now() time. */
   private deflectStart = 0
   private uDeflect: DeflectionUniform = { value: 0 }
-  /** See-through surfaces, so what is inside the scan — the reference, the
-   *  fitted elements, the pinned readings — shows. Held here as well as on
-   *  the materials because a part loaded later has to be dressed the same. */
-  private translucent = false
+  /** See-through surfaces, so what is inside the part — the reference, the
+   *  fitted elements, the pinned readings — shows: the scan's and the
+   *  reference's, each from its own key. Held here as well as on the
+   *  materials because a part loaded later has to be dressed the same. */
+  private scanSeeThrough = false
+  private referenceSeeThrough = false
   private scanGhost = false
   /** Whether the reference is a ghost or a solid part — see setNominalGhost.
    *  A ghost until the workspace says otherwise, which is how it starts. */
@@ -385,6 +435,9 @@ export class SceneManager {
       // anything new to show at all.
       onTick: () => {
         this.marking.drainStroke()
+        // Grips held at a size on the screen are scaled to the zoom ahead
+        // of the hover pass, which has to find them where they are drawn.
+        this.grips.followView()
         this.updateHover()
         // Anything held at a fixed size on screen — the picked-point markers —
         // has to be re-scaled when the zoom changes. A no-op on the frames it
@@ -404,6 +457,11 @@ export class SceneManager {
           this.applyFollow(0)
         }
         this.stepDeflection()
+        // What changed on the part since, cut as the section view cuts.
+        if (this.clipDirty) {
+          this.clipDirty = false
+          this.dressClipped()
+        }
         // Last, after everything above that may have written a vertex
         // attribute, and before the frame that uploads it.
         this.syncCopies()
@@ -461,6 +519,8 @@ export class SceneManager {
     this.grips = new ExtendGrips({
       partGroup: this.partGroup,
       raycaster: this.raycaster,
+      camera: this.camera,
+      worldPerPixel: () => this.viewport.worldPerPixel(),
       canvas: this.viewport.renderer.domElement,
       setPickRay: (x, y) => this.setPickRay(x, y),
       modelRadius: () => this.modelRadius,
@@ -505,7 +565,10 @@ export class SceneManager {
   private get clipSphere() {
     return this.viewport.clipSphere
   }
+  /** A frame is wanted — and whatever asked for it may have put something
+   *  on the part for the section view to cut. */
   private invalidate = (): void => {
+    this.clipDirty = true
     this.viewport.invalidate()
   }
 
@@ -529,13 +592,14 @@ export class SceneManager {
     this.marking.setTheme(theme)
     this.overlays.setTheme(theme)
     this.backface.uBackfaceColor.value.setHex(theme.backface)
+    this.referenceBackface.uBackfaceColor.value.setHex(theme.backface)
     setSurfaceColor(this.uSurfaceColor.value, theme)
     if (this.regions.setBaseColor(theme.surface)) this.surfaceRepainted()
     // The layout waiting out of sight is flagged when it comes back.
     this.other?.regions.setBaseColor(theme.surface)
     if (this.mesh) applyFinish(this.mesh.material as THREE.MeshStandardMaterial, theme)
-    // The cap wears the surface colour of the scheme.
-    if (this.cap) this.applySlice()
+    // The caps wear the finish of the scheme, and a tool's the surface colour.
+    this.updateCaps()
     if (this.nominalMesh) {
       const material = this.nominalMesh.material as THREE.MeshStandardMaterial
       material.color.setHex(theme.nominal)
@@ -991,6 +1055,8 @@ export class SceneManager {
     // The offsets are the scan's own, laid out again over the new copies.
     this.layOutDeflection()
     geometry.computeBoundsTree()
+    // A cap over the closed shells alone is cut from the old triangles.
+    this.applySlice()
     this.invalidate()
   }
 
@@ -1046,37 +1112,52 @@ export class SceneManager {
   }
 
   /**
-   * See through the parts: the scan and the reference go translucent, so the
-   * reference sitting inside the scan, the fitted elements and the pinned
-   * readings show instead of being hidden by whatever surface is in front of
-   * them. Picking is untouched — a click still lands on the nearest surface,
-   * which is the one the cursor is visibly over.
+   * See through the scan: it goes translucent, so the reference sitting
+   * inside it, the fitted elements and the pinned readings show instead of
+   * being hidden by the surface in front of them. Picking is untouched — a
+   * click still lands on the nearest surface, which is the one the cursor is
+   * visibly over.
    */
-  setTranslucent(on: boolean): void {
-    if (this.translucent === on) return
-    this.translucent = on
+  setScanSeeThrough(on: boolean): void {
+    if (this.scanSeeThrough === on) return
+    this.scanSeeThrough = on
     if (this.mesh) {
       setSurfaceOpacity(this.mesh.material as THREE.MeshStandardMaterial, this.scanOpacity())
     }
-    if (this.nominalMesh) {
-      setSurfaceOpacity(
-        this.nominalMesh.material as THREE.MeshStandardMaterial,
-        this.nominalOpacity(),
-      )
-    }
     for (const layer of this.layers) layer.opacityChanged?.(this.scanOpacity())
+    // A see-through part is cut but not capped: a solid face would hide what
+    // seeing through it is for.
+    this.updateCaps()
     this.invalidate()
   }
 
-  /** Draw the triangle edges on the scan and the reference — see
-   *  surfaceModes.ts. A uniform write, like the back-face flag. */
-  setWireframe(on: boolean): void {
+  /** See through the reference, while it is a solid part — the ghost is
+   *  see-through in its own right. */
+  setReferenceSeeThrough(on: boolean): void {
+    if (this.referenceSeeThrough === on) return
+    this.referenceSeeThrough = on
+    if (this.nominalMesh) {
+      setSurfaceOpacity(this.nominalMesh.material as THREE.MeshStandardMaterial, this.nominalOpacity())
+    }
+    this.updateCaps()
+    this.invalidate()
+  }
+
+  /** Draw the triangle edges on the scan — see surfaceModes.ts. A uniform
+   *  write, like the back-face flag. */
+  setScanMesh(on: boolean): void {
     this.wire.uWire.value = on ? 1 : 0
     this.invalidate()
   }
 
+  /** And on the reference. */
+  setReferenceMesh(on: boolean): void {
+    this.referenceWire.uWire.value = on ? 1 : 0
+    this.invalidate()
+  }
+
   private scanOpacity(): number {
-    return this.translucent || this.scanGhost ? SEE_THROUGH_OPACITY : 1
+    return this.scanSeeThrough || this.scanGhost ? SEE_THROUGH_OPACITY : 1
   }
 
   /** The scan as a see-through reference over something modelled on it:
@@ -1087,6 +1168,7 @@ export class SceneManager {
     this.scanGhost = on
     if (this.mesh) setSurfaceOpacity(this.mesh.material as THREE.MeshStandardMaterial, this.scanOpacity())
     for (const layer of this.layers) layer.opacityChanged?.(this.scanOpacity())
+    this.updateCaps()
     this.invalidate()
   }
 
@@ -1094,13 +1176,21 @@ export class SceneManager {
    *  changes what a solid reference looks like. */
   private nominalOpacity(): number {
     if (this.nominalGhost) return GHOST_OPACITY
-    return this.translucent ? SEE_THROUGH_OPACITY : 1
+    return this.referenceSeeThrough ? SEE_THROUGH_OPACITY : 1
   }
 
-  /** Show which way the surface faces: the far side of every triangle gets a
+  /** Show which way the scan faces: the far side of every triangle gets a
    *  colour of its own, so holes and flipped normals stop reading as part. */
   setBackfaceTint(on: boolean): void {
     this.backface.uBackfaceTint.value = on ? 1 : 0
+    this.invalidate()
+  }
+
+  /** And the reference — while it is solid. Through a ghost every far wall
+   *  is a back face, and the ghost would read as the warning colour. */
+  setReferenceBackfaceTint(on: boolean): void {
+    this.referenceBackfaces = on
+    this.referenceBackface.uBackfaceTint.value = on && !this.nominalGhost ? 1 : 0
     this.invalidate()
   }
 
@@ -1230,19 +1320,22 @@ export class SceneManager {
     return this.viewport.turning()
   }
 
-  /** Whether the part is cut open — see setSlicePlane. A plane that misses
-   *  the part cuts nothing, so this can be false with a plane set. */
+  /** Whether the part is cut open — by a tool's slice or the section view.
+   *  A plane that misses the part cuts nothing, so this can be false with a
+   *  plane set. */
   sliced(): boolean {
     return this.slicePlanes !== null
   }
 
   /**
-   * Cut the part open at a plane, taking away the half on the side its
-   * normal points to — the side the camera faces it from, so the slice is
-   * the face in view; null puts the part back together. Nothing is cut where
-   * the plane misses the part: a plane beside it would take all or none.
-   * The scan is cut, and so is whatever a plugin's layer cuts with it; the
-   * elements and the sections are drawn whole, being lines on the part.
+   * Cut the part open at a plane for a tool, taking away the half on the
+   * side its normal points to — the side the camera faces it from, so the
+   * slice is the face in view; null puts the part back together. Nothing is
+   * cut where the plane misses the part: a plane beside it would take all or
+   * none. The scan is cut, and so is whatever a plugin's layer cuts with it;
+   * the elements and the sections are drawn whole, being lines on the part
+   * the tool works against. While it is set it stands in front of the
+   * section view, which comes back when it goes.
    */
   setSlicePlane(frame: SectionFrame | null): void {
     this.slice = frame
@@ -1266,50 +1359,201 @@ export class SceneManager {
     if (this.slice) this.applySlice()
   }
 
+  /**
+   * The operator's section view: everything on the stage cut open at a
+   * plane to see inside — the scan, the reference, the elements, the
+   * sections, the pins and their labels, and whatever a plugin's layer cuts
+   * with them — taking away the half `frame`'s normal points to. A part is
+   * closed where it is cut only where it is closed itself: the shells of it
+   * that have no hole get a cap in its cut colour, and an open scan stays a
+   * shell looked into. A see-through part is cut but never capped.
+   *
+   * `frame` is in the scan's frame, like a section's; `gizmo` is the frame
+   * the plane's gizmo stands on — its arrow along the direction the offset
+   * counts positive in, whichever half is taken away — or null for none. A
+   * section being made keeps the gizmo while it is open, and a tool's slice
+   * stands in front of the whole view while one is set. Null puts the parts
+   * back together.
+   */
+  setSectionView(frame: SectionFrame | null, gizmo: SectionFrame | null = null, color = '#2e6fd0'): void {
+    this.sectionView = frame
+    this.viewHandles = frame && gizmo ? { frame: gizmo, color } : null
+    this.applyPlaneHandles()
+    this.applySlice()
+  }
+
+  /** The plane the section view cuts at, in world coordinates — for another
+   *  viewport showing the same parts — or null while it cuts nothing. */
+  sectionClip(): THREE.Plane | null {
+    return this.sectioned ? this.clipPlane : null
+  }
+
+  /** The middle of what is on the stage, in the scan's frame: the scan's,
+   *  or with no scan the reference's and whatever a layer stands in its
+   *  place — what the section view lays a coordinate plane through. */
+  stageCentre(): Vec3 {
+    if (this.mesh) return this.modelCenter()
+    const box = this.cutBox()
+    if (!box) return [0, 0, 0]
+    this.partGroup.updateMatrixWorld(true)
+    const c = box.getCenter(new THREE.Vector3()).applyMatrix4(new THREE.Matrix4().copy(this.partGroup.matrixWorld).invert())
+    return [c.x, c.y, c.z]
+  }
+
+  /** Which way the camera looks, as a unit vector in the scan's frame. */
+  viewDirection(): Vec3 {
+    const dir = new THREE.Vector3().subVectors(this.controls.target, this.camera.position)
+    this.partGroup.updateMatrixWorld(true)
+    const toPart = new THREE.Matrix4().copy(this.partGroup.matrixWorld).invert()
+    dir.transformDirection(toPart)
+    return [dir.x, dir.y, dir.z]
+  }
+
+  /** The gizmo a section plane wears: the one being made's while one is
+   *  open, the section view's otherwise. */
+  private applyPlaneHandles(): void {
+    const h = this.draftHandles ?? this.viewHandles
+    this.grips.setPlaneHandles(h?.frame ?? null, h?.color ?? '#ffffff')
+  }
+
+  /** Lay the cut where the tool's slice or the section view puts it, and
+   *  dress everything it cuts. */
   private applySlice(): void {
-    const frame = this.slice
+    const tool = this.slice
+    const frame = tool ?? this.sectionView
     let planes: THREE.Plane[] | null = null
-    if (frame && this.mesh) {
+    if (frame) {
       this.partGroup.updateMatrixWorld(true)
       const m = this.partGroup.matrixWorld
       const n = new THREE.Vector3(...frame.normal).transformDirection(m)
       const o = new THREE.Vector3(...frame.origin).applyMatrix4(m)
-      // Kept: what lies behind the plane, seen from its normal's side.
-      const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(n.negate(), o)
-      const box = this.movedScanBox()
-      if (box && box.intersectsPlane(plane)) planes = [plane]
+      // Kept: what lies behind the plane, seen from its normal's side. Moved
+      // in place — every clipped material holds this one plane.
+      this.clipPlane.setFromNormalAndCoplanarPoint(n.negate(), o)
+      const box = tool ? this.movedScanBox() : this.cutBox()
+      if (box && box.intersectsPlane(this.clipPlane)) planes = this.clipList
     }
+    const sectioned = planes !== null && !tool
     this.slicePlanes = planes
-    const dress = (mesh: THREE.Mesh | null) => {
+    this.sectioned = sectioned
+    // Dressed only when that changes: the plane itself moves in place.
+    const dress = (mesh: THREE.Mesh | null, by: THREE.Plane[] | null) => {
       if (!mesh) return
       const material = mesh.material as THREE.Material
-      material.clippingPlanes = planes
+      if (material.clippingPlanes === by) return
+      material.clippingPlanes = by
       material.needsUpdate = true
     }
-    dress(this.mesh)
-    for (const layer of this.layers) layer.clippingChanged?.(planes)
-    this.clearCap()
-    if (planes && this.mesh && this.sliceCapped) {
-      this.cap = buildSliceCap(planes[0], this.mesh.geometry, {
-        partGroup: this.partGroup,
-        scene: this.scene,
-        sheetGeometry: this.capGeometry,
-        color: this.sliceCapColor,
-        theme: this.theme,
-        modelCenter: () => this.modelCenter(),
-        modelRadius: () => this.modelRadius,
-        clearStencil: () => this.viewport.renderer.clearStencil(),
-      })
-    }
+    dress(this.mesh, planes)
+    dress(this.nominalMesh, sectioned ? planes : null)
+    for (const layer of this.layers) layer.clippingChanged?.(planes, sectioned)
+    this.updateCaps()
+    // The labels and the pins on the side cut away go with it.
+    this.clipDirty = true
+    this.overlays.retestOcclusion()
     this.invalidate()
   }
 
-  private clearCap(): void {
-    if (!this.cap) return
-    this.partGroup.remove(this.cap.back, this.cap.front)
-    this.scene.remove(this.cap.sheet)
-    this.cap.dispose()
-    this.cap = null
+  /** What the section view can cut, in world coordinates: the scan wherever
+   *  it is held, the reference, and with no scan whatever a layer stands in
+   *  its place. Null with nothing on the stage. */
+  private cutBox(): THREE.Box3 | null {
+    const box = new THREE.Box3()
+    const scan = this.movedScanBox()
+    if (scan) box.union(scan)
+    const reference = (this.nominalMesh?.geometry as THREE.BufferGeometry | undefined)?.boundingBox
+    if (reference) box.union(reference)
+    if (!this.mesh) {
+      this.partGroup.updateMatrixWorld(true)
+      for (const layer of this.layers) {
+        const b = layer.frameBox?.()
+        if (b) box.union(b.clone().applyMatrix4(this.partGroup.matrixWorld))
+      }
+    }
+    return box.isEmpty() ? null : box
+  }
+
+  /**
+   * Close what the cut opens: for a tool's slice, the scan as the tool asks
+   * (see setSliceCapped); for the section view, the closed shells of the
+   * scan and of the reference, each in its own cut colour, while it is
+   * drawn solid. A cap is kept while what it is cut from stays the same —
+   * a move of the plane only lays its sheet on the plane again.
+   */
+  private updateCaps(): void {
+    const planes = this.slicePlanes
+    const tool = this.slice !== null
+    const want = (mesh: THREE.Mesh | null, slot: number, solid: boolean): CapWish | null => {
+      if (!planes || !mesh) return null
+      // A tool's cap is the tool's to ask for, see-through scan or not.
+      if (tool) {
+        if (slot !== CAP_SLOT.scan || !this.sliceCapped) return null
+        return { mesh, slot, color: this.sliceCapColor, flat: this.sliceCapColor !== null, closed: null }
+      }
+      if (!solid) return null
+      const closed = closedPartOf(mesh.geometry as THREE.BufferGeometry)
+      if (closed.count === 0) return null
+      return { mesh, slot, color: cutColor(slot), flat: true, closed }
+    }
+    this.scanCap = this.keepCap(this.scanCap, want(this.mesh, CAP_SLOT.scan, this.scanOpacity() === 1))
+    this.referenceCap = this.keepCap(
+      this.referenceCap,
+      want(this.nominalMesh, CAP_SLOT.reference, this.sectioned && this.nominalOpacity() === 1),
+    )
+    // The sheets on the plane as it now stands, wide enough to cross the
+    // whole part.
+    const across = (held: HeldCap | null, box: THREE.Box3 | null | undefined) => {
+      if (held && box) held.cap.place(box.getCenter(new THREE.Vector3()), (box.min.distanceTo(box.max) / 2) * 1.3)
+    }
+    across(this.scanCap, this.movedScanBox())
+    across(this.referenceCap, (this.nominalMesh?.geometry as THREE.BufferGeometry | undefined)?.boundingBox)
+  }
+
+  /** The cap in hand if it is still the one wanted, a new one if not. */
+  private keepCap(held: HeldCap | null, wish: CapWish | null): HeldCap | null {
+    const same =
+      held !== null &&
+      wish !== null &&
+      held.wish.mesh === wish.mesh &&
+      held.geometry === wish.mesh.geometry &&
+      held.index === (wish.mesh.geometry as THREE.BufferGeometry).getIndex() &&
+      held.wish.color === wish.color &&
+      held.wish.flat === wish.flat &&
+      held.wish.closed === wish.closed &&
+      held.theme === this.theme
+    if (same) return held
+    held?.cap.dispose()
+    if (!wish) return null
+    const cap = new SliceCap(wish.mesh, this.clipList, this.capGeometry, {
+      slot: wish.slot,
+      color: wish.color,
+      flat: wish.flat,
+      theme: this.theme,
+      closed: wish.closed ?? undefined,
+    })
+    const geometry = wish.mesh.geometry as THREE.BufferGeometry
+    return { cap, wish, geometry, index: geometry.getIndex(), theme: this.theme }
+  }
+
+  /**
+   * Cut what is drawn on the part with the section view: the elements, the
+   * dimensions, the sections and the pins — their meshes and lines clipped
+   * by the plane, and their labels, which no plane clips, put away when what
+   * they label lies on the side cut away. Run before a frame whenever
+   * anything may have changed, as overlays are rebuilt at will.
+   */
+  private dressClipped(): void {
+    const planes = this.sectioned ? this.slicePlanes : null
+    if (planes === null && !this.dressedClipped) return
+    this.dressedClipped = planes !== null
+    this.partGroup.updateMatrixWorld(true)
+    const at = new THREE.Vector3()
+    const label = (o: THREE.Object3D) => {
+      if (!(o instanceof CSS2DObject)) return
+      const away = planes !== null && planes[0].distanceToPoint(o.getWorldPosition(at)) < 0
+      o.element.classList.toggle('cut-away', away)
+    }
+    for (const root of [...this.overlays.clipRoots(), ...this.sections.clipRoots()]) clipTree(root, planes, label)
   }
 
   /** Frame the part broadside, and remember what was framed so the alignment
@@ -1686,7 +1930,8 @@ export class SceneManager {
    *  takes all three away. */
   setSectionPreview(frame: SectionFrame | null, cut: SectionCut | null, color: string): void {
     this.sections.setPreview(frame, cut, color)
-    this.grips.setPlaneHandles(frame, color)
+    this.draftHandles = frame ? { frame, color } : null
+    this.applyPlaneHandles()
   }
 
   /** The coordinate planes offered to a section that has nothing to cut
@@ -1843,7 +2088,10 @@ export class SceneManager {
       side: THREE.DoubleSide,
     })
     applyFinish(material, this.theme)
-    patchWireframe(material, this.wire)
+    material.onBeforeCompile = (shader) => {
+      spliceBackfaceTint(shader, this.referenceBackface)
+      spliceWireframe(shader, this.referenceWire)
+    }
     setSurfaceOpacity(material, this.nominalOpacity())
     const mesh = new THREE.Mesh(geometry, material)
     return preparedHandle(geometry, material, 'reference', () => {
@@ -1852,6 +2100,8 @@ export class SceneManager {
       this.nominalMesh.visible = false
       this.nominalMesh.renderOrder = 1
       this.scene.add(this.nominalMesh)
+      // Cut with the rest, if the section view is cutting.
+      this.applySlice()
       this.invalidate()
     })
   }
@@ -1972,8 +2222,8 @@ export class SceneManager {
     this.partGroup.matrix.multiplyMatrices(this.alignMatrix, this.previewMatrix)
     this.partGroup.matrixWorldNeedsUpdate = true
     this.partGroup.updateMatrixWorld(true)
-    // The slice is a world plane through a part that just moved.
-    if (this.slice) this.applySlice()
+    // The cut is a world plane through a part that just moved.
+    if (this.slice || this.sectionView) this.applySlice()
     this.invalidate()
   }
 
@@ -2219,8 +2469,10 @@ export class SceneManager {
    */
   setNominalGhost(ghost: boolean): void {
     this.nominalGhost = ghost
+    this.setReferenceBackfaceTint(this.referenceBackfaces)
     if (!this.nominalMesh) return
     setSurfaceOpacity(this.nominalMesh.material as THREE.MeshStandardMaterial, this.nominalOpacity())
+    this.updateCaps()
     this.invalidate()
   }
 
@@ -2416,6 +2668,7 @@ export class SceneManager {
 
   private disposeNominal(): void {
     if (!this.nominalMesh) return
+    this.referenceCap = this.keepCap(this.referenceCap, null)
     const geometry = this.nominalMesh.geometry as THREE.BufferGeometry
     geometry.disposeBoundsTree?.()
     geometry.dispose()
@@ -2432,6 +2685,7 @@ export class SceneManager {
     // What the layers made of the scan goes with it.
     for (const layer of this.layers) layer.scanReplaced?.()
     if (!this.mesh) return
+    this.scanCap = this.keepCap(this.scanCap, null)
     const geometry = this.mesh.geometry as THREE.BufferGeometry
     geometry.disposeBoundsTree?.()
     geometry.dispose()

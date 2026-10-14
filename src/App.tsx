@@ -75,6 +75,7 @@ import { useShell } from './state/shellStore'
 import { useMark } from './state/markStore'
 import { useThickness } from './state/thicknessStore'
 import { imageScaleX, useFlat } from './state/flatStore'
+import { sectionViewFrames, useSectionView } from './state/sectionViewStore'
 import type { FieldScale } from './core/field/colormap'
 import { deviationScale } from './core/deviation/deviation'
 import { thicknessScale } from './core/thickness/thickness'
@@ -1042,29 +1043,41 @@ export default function App() {
     // A plugin's grip no plugin took has nowhere to go.
     if (!isCoreSide(side)) return
     const store = useStore.getState()
+    // A section plane's gizmo is the section being made's while one is open,
+    // and the section view's otherwise — see SceneManager.applyPlaneHandles.
+    const view = useSectionView.getState()
+    const plane = store.sectionDraft
+      ? {
+          axis: store.sectionDraft.axis,
+          offset: store.sectionDraft.offset,
+          frame: store.sectionDraft.frame,
+          setOffset: store.setSectionDraftOffset,
+          setAxis: store.setSectionDraftAxis,
+        }
+      : view.on
+        ? { axis: view.axis, offset: view.offset, frame: sectionViewFrames(view)?.gizmo ?? null, setOffset: view.setOffset, setAxis: view.setAxis }
+        : null
     // The arrow on a section plane: the drag slides it along its normal, and
-    // the worker cuts again behind it — see useSections.
+    // the worker cuts a section being made again behind it — see useSections.
     if (side === 'offset') {
-      const d = store.sectionDraft
-      if (!d) return
-      if (phase === 'start') extendStart.current = d.offset
-      else if (phase === 'move') store.setSectionDraftOffset(extendStart.current + delta)
+      if (!plane) return
+      if (phase === 'start') extendStart.current = plane.offset
+      else if (phase === 'move') plane.setOffset(extendStart.current + delta)
       return
     }
     // A ring on it: the drag tilts the plane about one of its own axes,
     // through the point the gizmo sits on. `delta` is degrees.
     if (side === 'tiltU' || side === 'tiltV') {
-      const d = store.sectionDraft
-      if (!d?.axis || !d.frame) return
+      if (!plane?.axis || !plane.frame) return
       if (phase === 'start') {
         turnStart.current = {
-          axis: d.axis,
-          about: side === 'tiltU' ? d.frame.basisU : d.frame.basisV,
-          offset: d.offset,
+          axis: plane.axis,
+          about: side === 'tiltU' ? plane.frame.basisU : plane.frame.basisV,
+          offset: plane.offset,
         }
       } else if (phase === 'move' && turnStart.current) {
         const t = turnStart.current
-        store.setSectionDraftAxis(turnAxis(t.axis, t.offset, t.about, delta))
+        plane.setAxis(turnAxis(t.axis, t.offset, t.about, delta))
       } else if (phase === 'end') {
         turnStart.current = null
       }
@@ -1677,7 +1690,7 @@ export default function App() {
               the bar's switches to act on. */}
           <div className="stagecorner">
             {!picking && <SupportCard />}
-            {!picking && !onFlat && <ViewBar pluginKeys={active?.viewKeys} hideModelKeys={active?.hideModelKeys} />}
+            {!picking && !onFlat && <ViewBar partKeys={active?.partKeys} sideKeys={active?.viewKeys} scanKey={active?.scanKey} hideModelKeys={active?.hideModelKeys} viewDirection={() => sceneRef.current?.viewDirection() ?? [0, 0, -1]} stageCentre={() => sceneRef.current?.stageCentre() ?? [0, 0, 0]} />}
           </div>
           {/* With no card on the stage any more, the step that is still
               outstanding says so here instead — the reference that has yet to be

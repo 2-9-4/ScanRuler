@@ -33,6 +33,9 @@ describe('the view', () => {
     expect((await refused('view.render', { width: 10 })).code).toBe('invalid_input')
     expect((await refused('view.render', { show: { scan: 'no' } })).code).toBe('invalid_input')
     expect((await refused('view.set', { frame: { min: [0, 0, 0] } })).code).toBe('invalid_input')
+    // A section view is laid across something.
+    expect((await refused('view.set', { section: { offset: 2 } })).code).toBe('invalid_input')
+    expect((await refused('view.render', { section: 'XY' })).code).toBe('invalid_input')
     // The session's readout has no view to speak of without a viewport.
     expect((await run<{ view: unknown }>('session.state')).view).toBeNull()
   })

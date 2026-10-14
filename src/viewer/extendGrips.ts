@@ -30,12 +30,23 @@ export interface PluginGrip {
   shape: 'arrow' | 'ring'
   position: Vec3
   dir: Vec3
-  /** An arrow's length, or a ring's radius. */
+  /** An arrow's length, or a ring's radius: millimetres on the part, or
+   *  pixels on the screen with `pixels`. */
   size: number
+  /** Held at its size on the screen as the view zooms — `size` and
+   *  `standoff` in pixels: an arrow on a small face that does not bury it,
+   *  one on a large part still big enough to take hold of. */
+  pixels?: boolean
+  /** How far along `dir` an arrow stands off `position`, in the units of
+   *  `size` — kept clear of a ring about the same point. */
+  standoff?: number
   /** Its own colour, where it is not the one all the grips wear — the axes
    *  of a gizmo told apart. */
   color?: string
 }
+
+/** How far the number field stands off its arrow's tip, in pixels. */
+const FIELD_GAP_PX = 6
 
 const ELEMENT_SIDES: readonly string[] = [...CYLINDER_SIDES, ...PLANE_SIDES]
 
@@ -67,12 +78,20 @@ interface ExtendGrip {
   ring: boolean
   /** The colour it wears when it is not lit. */
   color: string
+  /** Held on the screen: its length or radius, and how far an arrow stands
+   *  off `position`, in pixels — the mesh scaled again as the view zooms. */
+  screen: { size: number; standoff: number } | null
 }
 
 /** Everything the grips are allowed to touch outside themselves. */
 export interface ExtendGripsContext {
   partGroup: THREE.Group
   raycaster: THREE.Raycaster
+  /** Which way the view looks — the field on an arrow stands off its tip
+   *  the way the tip points on the screen. */
+  camera: THREE.Camera
+  /** Millimetres one pixel spans at the current zoom. */
+  worldPerPixel(): number
   /** The canvas — the grips own its cursor while one is lit or held. */
   canvas: HTMLElement
   setPickRay(clientX: number, clientY: number): void
@@ -120,6 +139,10 @@ export class ExtendGrips {
   private fieldGroup = new THREE.Group()
   private field: { side: GripSide; label: CSS2DObject; input: HTMLInputElement; unit: HTMLElement; value: number } | null = null
   private hoveredHandle: GripSide | null = null
+  /** The view the grips held on the screen were last fitted to: what a
+   *  pixel was worth, and which way the camera looked. */
+  private pixel = 0
+  private viewTurn = new THREE.Quaternion()
   /** What was last reported through onActiveSide, so it is only said when it
    *  changes. */
   private activeSide: GripSide | null = null
@@ -260,8 +283,9 @@ export class ExtendGrips {
     this.ctx.invalidate()
   }
 
-  /** The field stands off the tip of its grip's arrow, or beside its ring,
-   *  where the hand that dragged it is. */
+  /** The field stands off the tip of its grip's arrow — its edge nearest
+   *  the tip a few pixels past it, the way the tip points on the screen, so
+   *  it covers none of the arrow — or on its ring's middle. */
   private placeField(): void {
     const f = this.field
     if (!f) return
@@ -271,12 +295,62 @@ export class ExtendGrips {
       this.ctx.invalidate()
       return
     }
-    const size = Math.max(this.ctx.modelRadius() * 0.05, 1e-5)
-    const ring = grip.mesh.geometry === this.unitRing
     f.label.visible = true
-    f.label.position.copy(grip.position)
-    if (!ring) f.label.position.addScaledVector(grip.dir, size * 1.4)
+    if (grip.ring) {
+      f.label.position.copy(grip.position)
+      f.label.center.set(0.5, 0.5)
+    } else {
+      const length = grip.mesh.scale.y
+      f.label.position
+        .copy(grip.mesh.position)
+        .addScaledVector(grip.dir, length / 2 + FIELD_GAP_PX * this.pixel)
+      this.ctx.partGroup.updateWorldMatrix(true, false)
+      const onScreen = grip.dir
+        .clone()
+        .transformDirection(this.ctx.partGroup.matrixWorld)
+        .applyQuaternion(this.ctx.camera.quaternion.clone().invert())
+      // Scaled so the larger part is 1: a field off a slanting tip puts its
+      // corner there. Seen end on, the arrow points nowhere on the screen,
+      // and the field stands to its right.
+      const m = Math.max(Math.abs(onScreen.x), Math.abs(onScreen.y))
+      const [x, y] = m < 0.2 ? [1, 0] : [onScreen.x / m, onScreen.y / m]
+      f.label.center.set(0.5 - x / 2, 0.5 + y / 2)
+    }
     this.ctx.invalidate()
+  }
+
+  /**
+   * Keep the grips held on the screen at their size as the view zooms, and
+   * the field off its arrow's tip as the view turns. Called every frame;
+   * a no-op on the frames the view has not moved.
+   */
+  followView(): void {
+    const pixel = this.ctx.worldPerPixel()
+    const zoomed = pixel !== this.pixel
+    const turned = !this.viewTurn.equals(this.ctx.camera.quaternion)
+    if (!zoomed && !turned) return
+    this.pixel = pixel
+    this.viewTurn.copy(this.ctx.camera.quaternion)
+    if (zoomed) {
+      let held = false
+      for (const h of this.handles) {
+        if (!h.screen) continue
+        this.fitToScreen(h)
+        held = true
+      }
+      if (held) this.ctx.invalidate()
+    }
+    if (this.field) this.placeField()
+  }
+
+  /** A grip held on the screen, scaled to what a pixel is worth now — a
+   *  ring about its middle, an arrow's base still its standoff off its
+   *  point. */
+  private fitToScreen(h: ExtendGrip): void {
+    if (!h.screen) return
+    const size = Math.max(h.screen.size * this.pixel, 1e-5)
+    h.mesh.scale.setScalar(size)
+    if (!h.ring) h.mesh.position.copy(h.position).addScaledVector(h.dir, h.screen.standoff * this.pixel + size / 2)
   }
 
   private rebuild(): void {
@@ -289,14 +363,17 @@ export class ExtendGrips {
     if (this.hoveredHandle !== null && this.handleDrag === null) this.setHoveredHandle(null)
     // The grips are placed below; the field follows them once they are.
     queueMicrotask(() => this.placeField())
+    this.pixel = this.ctx.worldPerPixel()
 
     for (const g of this.feature) {
       const position = new THREE.Vector3(...g.position)
       const dir = new THREE.Vector3(...g.dir).normalize()
-      if (g.shape === 'ring') this.addRing(g.side, position, dir, Math.max(g.size, 1e-5), g.color)
-      // Sized to the profiles the arrow stands on, never smaller than a grip
-      // on the part would be — a hairline profile still needs a handle.
-      else this.addGrip(g.side, position, dir, Math.max(g.size, this.ctx.modelRadius() * 0.05, 1e-5), undefined, true, g.color)
+      const screen = g.pixels ? { size: g.size, standoff: g.standoff ?? 0 } : null
+      if (g.shape === 'ring') this.addRing(g.side, position, dir, Math.max(g.size, 1e-5), { color: g.color, screen })
+      // On the part, sized to what the arrow stands on, never smaller than
+      // a grip on the part would be — a hairline profile still needs a
+      // handle.
+      else this.addGrip(g.side, position, dir, Math.max(g.size, this.ctx.modelRadius() * 0.05, 1e-5), { slim: true, color: g.color, standoff: g.standoff, screen })
     }
 
     if (this.plane) {
@@ -350,23 +427,34 @@ export class ExtendGrips {
       // thicker than a fair share of the patch it belongs to.
       const bar = (along: THREE.Vector3, span: number) => ({ along, span })
       const thick = Math.max(Math.min(size, Math.min(eu, ev) * 0.6), this.ctx.modelRadius() * 0.008)
-      this.addGrip('uMin', centre.clone().addScaledVector(u, -eu), u.clone().negate(), thick, bar(v, ev))
-      this.addGrip('uMax', centre.clone().addScaledVector(u, eu), u.clone(), thick, bar(v, ev))
-      this.addGrip('vMin', centre.clone().addScaledVector(v, -ev), v.clone().negate(), thick, bar(u, eu))
-      this.addGrip('vMax', centre.clone().addScaledVector(v, ev), v.clone(), thick, bar(u, eu))
+      this.addGrip('uMin', centre.clone().addScaledVector(u, -eu), u.clone().negate(), thick, { edge: bar(v, ev) })
+      this.addGrip('uMax', centre.clone().addScaledVector(u, eu), u.clone(), thick, { edge: bar(v, ev) })
+      this.addGrip('vMin', centre.clone().addScaledVector(v, -ev), v.clone().negate(), thick, { edge: bar(u, eu) })
+      this.addGrip('vMax', centre.clone().addScaledVector(v, ev), v.clone(), thick, { edge: bar(u, eu) })
     }
   }
 
   /** One grip: an arrow on an axis, or a bar along an edge when the side it
-   *  belongs to has an edge to lie on. */
+   *  belongs to has an edge to lie on — `standoff` millimetres along `dir`
+   *  from `position`, or held on the screen, `size` and all, with `screen`. */
   private addGrip(
     side: GripSide,
     position: THREE.Vector3,
     dir: THREE.Vector3,
     size: number,
-    edge?: { along: THREE.Vector3; span: number },
-    slim = false,
-    color = this.handleColor,
+    {
+      edge,
+      slim = false,
+      color = this.handleColor,
+      standoff = 0,
+      screen = null,
+    }: {
+      edge?: { along: THREE.Vector3; span: number }
+      slim?: boolean
+      color?: string
+      standoff?: number
+      screen?: { size: number; standoff: number } | null
+    } = {},
   ): void {
     const material = new THREE.MeshBasicMaterial({
       // A rebuild in the middle of a drag must not put the lit grip out.
@@ -390,19 +478,27 @@ export class ExtendGrips {
       mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir)
       mesh.scale.setScalar(size)
       // Base on the end face, tip pointing the way the drag will take it.
-      mesh.position.copy(position).addScaledVector(dir, size / 2)
+      mesh.position.copy(position).addScaledVector(dir, standoff + size / 2)
     }
     mesh.renderOrder = 6
     mesh.userData.extendSide = side
     this.handleGroup.add(mesh)
-    this.handles.push({ side, position: position.clone(), dir: dir.clone(), mesh, material, ring: false, color })
+    const grip: ExtendGrip = { side, position: position.clone(), dir: dir.clone(), mesh, material, ring: false, color, screen: edge ? null : screen }
+    this.fitToScreen(grip)
+    this.handles.push(grip)
     this.handleMeshes.push(mesh)
     this.handleCleanup.push(() => material.dispose())
   }
 
   /** One ring: a torus about `about` through `centre`, whose drag turns the
    *  plane about that axis — which is what its `dir` records. */
-  private addRing(side: GripSide, centre: THREE.Vector3, about: THREE.Vector3, radius: number, color = this.handleColor): void {
+  private addRing(
+    side: GripSide,
+    centre: THREE.Vector3,
+    about: THREE.Vector3,
+    radius: number,
+    { color = this.handleColor, screen = null }: { color?: string; screen?: { size: number; standoff: number } | null } = {},
+  ): void {
     const material = new THREE.MeshBasicMaterial({
       color: side === this.hoveredHandle ? 0xffffff : color,
       transparent: true,
@@ -417,7 +513,9 @@ export class ExtendGrips {
     mesh.renderOrder = 6
     mesh.userData.extendSide = side
     this.handleGroup.add(mesh)
-    this.handles.push({ side, position: centre.clone(), dir: about.clone(), mesh, material, ring: true, color })
+    const grip: ExtendGrip = { side, position: centre.clone(), dir: about.clone(), mesh, material, ring: true, color, screen }
+    this.fitToScreen(grip)
+    this.handles.push(grip)
     this.handleMeshes.push(mesh)
     this.handleCleanup.push(() => material.dispose())
   }

@@ -267,8 +267,8 @@ await page.screenshot({ path: shotPath('split-open.png') })
 
 const opened = await bothHalves('opened')
 check(
-  !(await page.$('[data-test=toggle-ghost]')),
-  'the ghost switch stands down while the reference has a half of its own',
+  Boolean(await page.$('[data-test=toggle-reference][aria-disabled=true]')),
+  'the Reference key stands down while the reference has a half of its own',
 )
 
 // ---- one material, one light, in both halves --------------------------------
@@ -355,8 +355,8 @@ check(!(await page.$('[data-test=compare-half]')), 'the reference half goes away
 const closed = await page.$$eval('.viewslot canvas', (els) => els.length)
 if (closed !== 1) fail(`expected one viewport after closing the split view, got ${closed}`)
 check(
-  Boolean(await page.$('[data-test=toggle-ghost]')),
-  'the ghost switch comes back with the single view',
+  Boolean(await page.$('[data-test=toggle-reference]:not([aria-disabled])')),
+  'the Reference key comes back with the single view',
 )
 await page.screenshot({ path: shotPath('split-closed.png') })
 

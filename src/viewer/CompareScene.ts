@@ -15,6 +15,7 @@ import type { ControlScheme } from './navSchemes'
 import { OrthoViewport } from './orthoViewport'
 import { applyFinish, setSurfaceColor, type ViewTheme } from './viewThemes'
 import { backfaceUniforms, spliceBackfaceTint } from './backfaceTint'
+import { CAP_SLOT, closedPartOf, cutColor, SliceCap } from './sliceCap'
 import {
   SEE_THROUGH_OPACITY,
   setSurfaceOpacity,
@@ -33,6 +34,17 @@ export class CompareScene {
   private backface: ReturnType<typeof backfaceUniforms>
   /** And its own mesh-mode switch, for the same reason. */
   private wire = wireUniforms()
+  /** The section view's plane, read off the scan's half every frame — see
+   *  followSection — held here as the one plane the material clips by, with
+   *  the cap that closes the part where it is closed. */
+  private sectionSource: (() => THREE.Plane | null) | null = null
+  private clipPlane = new THREE.Plane()
+  private clipList = [this.clipPlane]
+  private cut = false
+  private cap: SliceCap | null = null
+  private capGeometry = new THREE.PlaneGeometry(1, 1)
+  private theme: ViewTheme
+  private seeThrough = false
 
   constructor(container: HTMLDivElement, geometry: THREE.BufferGeometry, theme: ViewTheme) {
     this.viewport = new OrthoViewport(container, {
@@ -45,8 +57,14 @@ export class CompareScene {
       // change events: writing one camera makes the other fire a change of its
       // own, and telling that echo apart from a gesture costs more than the
       // handful of comparisons a tick does.
-      onTick: () => this.link?.tick(),
+      onTick: () => {
+        this.link?.tick()
+        this.followCut()
+      },
     })
+    this.theme = theme
+    // The section view's plane is a clip on the material — see followSection.
+    this.viewport.renderer.localClippingEnabled = true
 
     // Bare-surface colour, not the reference's own: the ghost is a contrasting
     // blue because it lies *inside* a scan of nearly the same shape, and two
@@ -85,6 +103,56 @@ export class CompareScene {
     this.link = new CameraLink(scan, this.viewport.viewLink())
   }
 
+  /** Cut this half where the scan's half is cut by the section view: the
+   *  plane, in world coordinates — the reference's, which both halves share
+   *  — read every frame, so a drag of it on the other side moves it here
+   *  too; null while it cuts nothing. */
+  followSection(source: () => THREE.Plane | null): void {
+    this.sectionSource = source
+  }
+
+  private followCut(): void {
+    const plane = this.sectionSource?.() ?? null
+    if (!plane) {
+      if (!this.cut) return
+      this.cut = false
+      this.material.clippingPlanes = null
+      this.material.needsUpdate = true
+      this.updateCap()
+      this.viewport.invalidate()
+      return
+    }
+    if (this.cut && this.clipPlane.equals(plane)) return
+    this.clipPlane.copy(plane)
+    if (!this.cut) {
+      this.cut = true
+      this.material.clippingPlanes = this.clipList
+      this.material.needsUpdate = true
+    }
+    this.updateCap()
+    this.viewport.invalidate()
+  }
+
+  /** Closed where the part is closed, in the cut colour the scan's half
+   *  wears — one material in both halves — while it is drawn solid. */
+  private updateCap(): void {
+    const closed = this.cut && !this.seeThrough ? closedPartOf(this.mesh.geometry) : null
+    if (!closed || closed.count === 0) {
+      this.cap?.dispose()
+      this.cap = null
+      return
+    }
+    this.cap ??= new SliceCap(this.mesh, this.clipList, this.capGeometry, {
+      slot: CAP_SLOT.scan,
+      color: cutColor(CAP_SLOT.scan),
+      flat: true,
+      theme: this.theme,
+      closed,
+    })
+    const box = this.mesh.geometry.boundingBox!
+    this.cap.place(box.getCenter(new THREE.Vector3()), (box.min.distanceTo(box.max) / 2) * 1.3)
+  }
+
   /** Match the main viewport's buttons — one navigation habit across the whole
    *  tool, and doubly so for two halves side by side. */
   setNavScheme(scheme: ControlScheme): void {
@@ -98,6 +166,11 @@ export class CompareScene {
     setSurfaceColor(this.material.color, theme)
     applyFinish(this.material, theme)
     this.backface.uBackfaceColor.value.setHex(theme.backface)
+    this.theme = theme
+    // The cap is lit in the new scheme's finish.
+    this.cap?.dispose()
+    this.cap = null
+    this.updateCap()
     this.viewport.invalidate()
   }
 
@@ -118,10 +191,15 @@ export class CompareScene {
   /** See-through, from the same switch as the scan's half. */
   setTranslucent(on: boolean): void {
     setSurfaceOpacity(this.material, on ? SEE_THROUGH_OPACITY : 1)
+    // Cut but not capped while see-through, as in the scan's half.
+    this.seeThrough = on
+    this.updateCap()
     this.viewport.invalidate()
   }
 
   dispose(): void {
+    this.cap?.dispose()
+    this.capGeometry.dispose()
     this.material.dispose()
     this.viewport.dispose()
   }

@@ -10,6 +10,7 @@
 
 import { useEffect, useRef } from 'react'
 import type * as THREE from 'three'
+import { useDeviation } from '../state/deviationStore'
 import { usePrefs } from '../state/prefsStore'
 import { useStore } from '../state/store'
 import { CompareScene } from '../viewer/CompareScene'
@@ -34,9 +35,9 @@ export function CompareView({
   const compareRef = useRef<CompareScene | null>(null)
   const navScheme = useStore((s) => s.navScheme)
   const viewTheme = useStore((s) => s.viewTheme)
-  const showBackfaces = useStore((s) => s.showBackfaces)
-  const translucent = useStore((s) => s.translucent)
-  const wireframe = useStore((s) => s.wireframe)
+  const showBackfaces = useDeviation((s) => s.nominalBackfaces)
+  const translucent = useDeviation((s) => s.nominalSeeThrough)
+  const wireframe = useDeviation((s) => s.nominalMesh)
 
   useEffect(() => {
     const compare = new CompareScene(
@@ -48,10 +49,13 @@ export function CompareView({
     // Read from the store rather than from the prop, so a half opened with the
     // switch already on is tinted on its first frame instead of on the next
     // change of it.
-    compare.setBackfaceTint(useStore.getState().showBackfaces)
-    compare.setTranslucent(useStore.getState().translucent)
-    compare.setWireframe(useStore.getState().wireframe)
+    const look = useDeviation.getState()
+    compare.setBackfaceTint(look.nominalBackfaces)
+    compare.setTranslucent(look.nominalSeeThrough)
+    compare.setWireframe(look.nominalMesh)
     compare.linkTo(scene.viewLink())
+    // And cut where the scan's half is cut by the section view.
+    compare.followSection(() => scene.sectionClip())
     compareRef.current = compare
     return () => {
       compare.dispose()
@@ -68,9 +72,9 @@ export function CompareView({
     compareRef.current?.setViewTheme(sceneTheme(viewTheme, dark))
   }, [viewTheme, dark])
 
-  // The view bar's switch is one statement about the models, so it holds
-  // for both halves: the scan's viewport takes it in useSceneSync, this one
-  // here.
+  // The Reference key's menu is one statement about the part, so it holds
+  // wherever the part is shown: the main viewport takes it in useSceneSync,
+  // this one here.
   useEffect(() => {
     compareRef.current?.setBackfaceTint(showBackfaces)
   }, [showBackfaces])

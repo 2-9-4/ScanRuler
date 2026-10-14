@@ -2439,7 +2439,7 @@
   {
     "name": "view.render",
     "title": "Picture the view",
-    "description": "A picture of the 3D view as a PNG — what the person sees in the viewport, without the HTML labels over it (dimension values, names). Give view and/or fit to turn the view first, as view.set does, or frame to frame a box or a place. show puts the scan, the reference, the sections, the elements or the labels on screen or away for the picture alone, by key — { scan: false } pictures what was built on the scan on its own; view.set lists the keys. width and height in pixels: the viewport’s own shape at most 800 pixels on its long side by default, enough to check a step by — ask for more (up to 2048) for a picture to keep; one of them alone keeps the viewport’s shape. Waits for the session to settle first. Needs the viewport.",
+    "description": "A picture of the 3D view as a PNG — what the person sees in the viewport, without the HTML labels over it (dimension values, names). Give view and/or fit to turn the view first, as view.set does, or frame to frame a box or a place. show puts the scan, the reference, the sections, the elements or the labels on screen or away for the picture alone, by key — { scan: false } pictures what was built on the scan on its own; view.set lists the keys. section cuts everything open for the picture alone, as view.set does. width and height in pixels: the viewport’s own shape at most 800 pixels on its long side by default, enough to check a step by — ask for more (up to 2048) for a picture to keep; one of them alone keeps the viewport’s shape. Waits for the session to settle first. Needs the viewport.",
     "input": {
       "type": "object",
       "properties": {
@@ -2551,6 +2551,47 @@
             }
           ],
           "description": "Frame a box or a place instead of everything shown — a corner or a fillet looked at closely; fit is then left alone."
+        },
+        "section": {
+          "oneOf": [
+            {
+              "type": "boolean",
+              "description": "true opens it as the Section key does — square to the view, through the part’s middle; false puts it away."
+            },
+            {
+              "type": "object",
+              "properties": {
+                "across": {
+                  "oneOf": [
+                    {
+                      "type": "integer",
+                      "description": "The element’s id.",
+                      "minimum": 1
+                    },
+                    {
+                      "type": "string",
+                      "description": "The element’s name, as the list shows it — \"Sphere 1\".",
+                      "minLength": 1
+                    }
+                  ],
+                  "description": "A coordinate plane \"XY\", \"YZ\", \"ZX\", or an element with a direction."
+                },
+                "offset": {
+                  "type": "number",
+                  "description": "Where along its normal, mm: for a coordinate plane the coordinate, for an element from its centre."
+                },
+                "flip": {
+                  "type": "boolean",
+                  "description": "Take away the half away from the camera instead."
+                }
+              },
+              "required": [
+                "across"
+              ],
+              "additionalProperties": false
+            }
+          ],
+          "description": "The section view: everything cut open at a plane, the half toward the camera taken away, closed parts capped — to see inside. Set after any turn."
         }
       },
       "additionalProperties": false
@@ -2562,7 +2603,7 @@
   {
     "name": "view.set",
     "title": "Turn the view",
-    "description": "Turn the 3D view to a standard view and/or fit everything shown into the frame — with neither given, it fits — or frame a box or a place (frame). show puts the scan, the reference, the sections, the elements or the labels on screen or away, by key, and leaves them so — { scan: false } to look at what was built on the scan without it. It waits for the session to settle first (a fit, a map, a rebuild), so what was just made is in the frame. Not a step of the history. Needs the viewport. Returns the view and, under shown, every key that can be shown now and whether it is.",
+    "description": "Turn the 3D view to a standard view and/or fit everything shown into the frame — with neither given, it fits — or frame a box or a place (frame). show puts the scan, the reference, the sections, the elements or the labels on screen or away, by key, and leaves them so — { scan: false } to look at what was built on the scan without it. section cuts everything open at a plane to look inside, and leaves it so. It waits for the session to settle first (a fit, a map, a rebuild), so what was just made is in the frame. Not a step of the history. Needs the viewport. Returns the view, the section view (null when off) and, under shown, every key that can be shown now and whether it is.",
     "input": {
       "type": "object",
       "properties": {
@@ -2662,6 +2703,47 @@
             }
           ],
           "description": "Frame a box or a place instead of everything shown — a corner or a fillet looked at closely; fit is then left alone."
+        },
+        "section": {
+          "oneOf": [
+            {
+              "type": "boolean",
+              "description": "true opens it as the Section key does — square to the view, through the part’s middle; false puts it away."
+            },
+            {
+              "type": "object",
+              "properties": {
+                "across": {
+                  "oneOf": [
+                    {
+                      "type": "integer",
+                      "description": "The element’s id.",
+                      "minimum": 1
+                    },
+                    {
+                      "type": "string",
+                      "description": "The element’s name, as the list shows it — \"Sphere 1\".",
+                      "minLength": 1
+                    }
+                  ],
+                  "description": "A coordinate plane \"XY\", \"YZ\", \"ZX\", or an element with a direction."
+                },
+                "offset": {
+                  "type": "number",
+                  "description": "Where along its normal, mm: for a coordinate plane the coordinate, for an element from its centre."
+                },
+                "flip": {
+                  "type": "boolean",
+                  "description": "Take away the half away from the camera instead."
+                }
+              },
+              "required": [
+                "across"
+              ],
+              "additionalProperties": false
+            }
+          ],
+          "description": "The section view: everything cut open at a plane, the half toward the camera taken away, closed parts capped — to see inside. Set after any turn."
         }
       },
       "additionalProperties": false

@@ -171,6 +171,20 @@ export async function click(page, sel, { timeout = 10_000 } = {}) {
   await page.click(sel)
 }
 
+/** A switch in the menu over a part's key on the view bar (ui/PartKey), by
+ *  the key's and the switch's data-test names: the menu opened from the
+ *  key's caret, the switch pressed, and the menu let close with the pointer
+ *  moved off it — so a picture taken next has no menu in it. The menu stays
+ *  in the page while closed, so whether a switch is on can be read without
+ *  it: `aria-checked`. */
+export async function viewOption(page, key, option) {
+  await click(page, `[data-test="${key}-menu"]`)
+  await page.waitForSelector(`[data-test="${key}-options"]:not([hidden])`, { timeout: 3000 })
+  await click(page, `[data-test="${option}"]`)
+  await page.mouse.move(1, 1)
+  await page.waitForSelector(`[data-test="${key}-options"][hidden]`, { timeout: 3000 })
+}
+
 /** Choose a <select> option by its visible label rather than its value. */
 /** A RefPicker (ui/RefPicker.tsx): open it, hover the option with this label
  *  — which is when the viewport shows what it stands for — then take it. */

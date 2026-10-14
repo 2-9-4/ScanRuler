@@ -5,6 +5,59 @@ bar and the imprint is the entry it belongs to; the `.scanruler` projects it
 saves carry the same number as `appVersion`. How a release is cut is in the
 README under "Releases".
 
+## 0.6.0 — 2026-10-14
+
+- **Grips held on the screen** (2026-10-13). A grip a plugin puts on the
+  part can keep its size on the screen as the view zooms: `PluginGrip`
+  takes `pixels`, with `size` — and `standoff`, how far an arrow stands
+  off its point — in pixels, the viewer scaling it each frame ahead of the
+  hover pass (`ExtendGrips.followView`). The number field on an arrow
+  stands off its tip the way the tip points on the screen, its edge a few
+  pixels past it, rather than at a twentieth of the model from its base,
+  inside a long arrow. A row of the element list takes a key of its
+  owner's in the eye's place (`ElementRow` / `RowTools` `eyeKey`), for a
+  row whose thing is switched some other way than shown or hidden.
+- **Section view** (2026-10-13). **Section** on the view bar cuts
+  everything on the stage open at a plane to look inside — the scan, the
+  reference, the elements, dimensions, sections and pinned readings, a
+  label going with what it labels — taking away the half toward the
+  camera. It opens across the coordinate plane most square to the view,
+  through the middle of the part; the row above the key lays it across the
+  XY, YZ or XZ plane or an element with a direction, holds its coordinate
+  or offset, and **Flip** takes the other half; on the part, the arrow and
+  rings a section is set up with slide and tilt it. A shell with no hole in
+  it is closed where it is cut, with a flat cut face in a colour per part —
+  clay for the scan, blue for the reference — found by edge parity
+  (`core/geometry/closedShells`); an open scan stays a shell, and a
+  see-through part is cut but not closed. Picks hold to what is drawn: a
+  ray meets nothing on the half cut away, nor anything behind a cut face
+  (`viewer/clipRaycast`, for every mesh, a tool's slice included). The split
+  view's reference half is cut at the same plane. A tool's own slice stands
+  in front of the section view while it cuts. `view.set` and `view.render`
+  take `section` — `true`, `false` or `{ across, offset, flip }` — and
+  `view.set` answers with it; a layer hears whether a cut is the section
+  view (`clippingChanged(planes, section)`) and closes its solids with
+  `CapSet` — a part lying inside others with its cap drawn over theirs,
+  hatched (`CapPart.over`, `hatch`; `viewer/hatch`). The cut colours have
+  no red in them: red on a part says something is wrong there. Not saved. README under "Looking inside: the section view";
+  `scripts/e2e-section-view.mjs`.
+- **The view bar, one row of parts** (2026-10-13). The bar is a single row
+  read from the left: a key for each part on the stage — **Scan**, in the
+  deviation workspace **Reference**, in 3D Measure **Elements** — then the
+  workspace's own keys at the side, then **Section**. A click on a part's
+  key shows the part or puts it away; resting the pointer on it, or its
+  caret, opens a menu of how it is drawn: the scan's and the reference's
+  **Transparent**, **Mesh** and **Backfaces**, each part its own now
+  instead of one switch for both — the reference's settings hold in the
+  split view's half too — and Measure's **Labels** under Elements, whose
+  click puts the elements, dimensions and sections away as a whole. A dot
+  on a key says something in its menu stands otherwise than usual. The
+  deviation panel's *Show reference* and *Show scan* checkboxes are gone,
+  the keys doing that now. A plugin adds its parts with `partKeys`
+  (`ui/PartKey`), its side keys with `viewKeys`, and may hold the Scan
+  key's click and Transparent itself and add rows to its menu
+  (`scanKey`). README under "The view bar".
+
 ## 0.5.3 — 2026-10-13
 
 - **Opening a file from a link** (2026-10-13). A file named in the page's

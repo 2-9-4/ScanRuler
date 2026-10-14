@@ -124,8 +124,16 @@ interface DeviationState extends ProbeSlice {
   /** The band the "within tolerance" figure counts, in mm. */
   tolerance: number
   showHistogram: boolean
+  /** The reference and the scan shown — the view bar's Reference and Scan
+   *  keys while this workspace is on screen. */
   showNominal: boolean
   showScan: boolean
+  /** How the reference is drawn, from the Reference key's menu: see-through
+   *  and with its back faces tinted while it is solid — a ghost is neither —
+   *  and its triangle edges, in this viewport and in the split view's. */
+  nominalSeeThrough: boolean
+  nominalMesh: boolean
+  nominalBackfaces: boolean
   /** Whether the measured map is painted onto the scan at all. Off leaves the
    *  bare surface to be looked at — the shape of the part rather than the
    *  reading on it — and takes nothing away: the map stays measured, and the
@@ -204,6 +212,9 @@ interface DeviationState extends ProbeSlice {
   setShowHistogram: (v: boolean) => void
   setShowNominal: (v: boolean) => void
   setShowScan: (v: boolean) => void
+  setNominalSeeThrough: (v: boolean) => void
+  setNominalMesh: (v: boolean) => void
+  setNominalBackfaces: (v: boolean) => void
   setShowMap: (v: boolean) => void
   setSplit: (v: boolean) => void
   setAnimate: (v: boolean) => void
@@ -301,6 +312,9 @@ export const useDeviation = create<DeviationState>()((set, get) => ({
   // by then the reading is on the scan and the ghost only gets in the way.
   showNominal: true,
   showScan: true,
+  nominalSeeThrough: false,
+  nominalMesh: false,
+  nominalBackfaces: true,
   showMap: true,
   split: false,
   animScale: 10,
@@ -487,6 +501,9 @@ export const useDeviation = create<DeviationState>()((set, get) => ({
   setShowHistogram: (showHistogram) => set({ showHistogram }),
   setShowNominal: (showNominal) => set({ showNominal }),
   setShowScan: (showScan) => set({ showScan }),
+  setNominalSeeThrough: (nominalSeeThrough) => set({ nominalSeeThrough }),
+  setNominalMesh: (nominalMesh) => set({ nominalMesh }),
+  setNominalBackfaces: (nominalBackfaces) => set({ nominalBackfaces }),
   setShowMap: (showMap) => set({ showMap }),
 
   // The left half is the scan, so opening the split view with the scan switched

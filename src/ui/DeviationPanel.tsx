@@ -135,17 +135,13 @@ export function DeviationPanel({
       setRange: s.setRange,
       setShowElement: s.setShowElement,
       setShowHistogram: s.setShowHistogram,
-      setShowNominal: s.setShowNominal,
-      setShowScan: s.setShowScan,
       setSource: s.setSource,
       setTargetFacing: s.setTargetFacing,
       setTolerance: s.setTolerance,
       showElement: s.showElement,
       showHistogram: s.showHistogram,
-      showNominal: s.showNominal,
       showScan: s.showScan,
       source: s.source,
-      split: s.split,
       targetFacingDeg: s.targetFacingDeg,
       targetId: s.targetId,
       targetSide: s.targetSide,
@@ -468,8 +464,8 @@ export function DeviationPanel({
             <>
               {!d.showScan && (
                 <p className="warnnote">
-                  ⚠ The scan is hidden, so there is nothing to mark on — switch <b>Show scan</b>{' '}
-                  back on under the colour scale. What is already marked is still there.
+                  ⚠ The scan is hidden, so there is nothing to mark on — show it again with the{' '}
+                  <b>Scan</b> key on the view bar. What is already marked is still there.
                 </p>
               )}
               <MarkTools
@@ -615,30 +611,9 @@ export function DeviationPanel({
             />
             {/* Showing the elements belongs to the Element section rather than
                 here: they are on the part from the moment this workspace opens,
-                which is before there is any colour scale to put a switch on. */}
-            {/* The ghost over the scan is what this switches, so it goes away
-                with the split view, where the reference has a viewport of its
-                own and this would switch nothing. */}
-            {!onElement && !d.split && (
-              <label className="checkrow">
-                <input
-                  type="checkbox"
-                  data-test="toggle-ghost"
-                  checked={d.showNominal}
-                  onChange={(e) => d.setShowNominal(e.target.checked)}
-                />
-                <span>Show reference</span>
-              </label>
-            )}
-            <label className="checkrow">
-              <input
-                type="checkbox"
-                data-test="toggle-scan"
-                checked={d.showScan}
-                onChange={(e) => d.setShowScan(e.target.checked)}
-              />
-              <span>Show scan</span>
-            </label>
+                which is before there is any colour scale to put a switch on.
+                The scan and the reference are the view bar's Scan and
+                Reference keys. */}
           </div>
 
           <div className={aside}>
@@ -709,8 +684,8 @@ export function DeviationPanel({
             />
             {d.animate && !d.showScan && (
               <p className="hint">
-                The scan is hidden, so there is nothing to watch move — switch <b>Show scan</b> back
-                on.
+                The scan is hidden, so there is nothing to watch move — show it again with the{' '}
+                <b>Scan</b> key on the view bar.
               </p>
             )}
           </div>

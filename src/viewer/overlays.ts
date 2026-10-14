@@ -929,6 +929,20 @@ export class Overlays {
     this.ctx.invalidate()
   }
 
+  /** Test the pins again on the next frame though the view has not moved:
+   *  what stands between them and the camera has — a cut opened the part,
+   *  or moved through it. */
+  retestOcclusion(): void {
+    this.occlusionView = null
+  }
+
+  /** Everything drawn here that lies on the part, for the section view to
+   *  cut — the elements and their dimensions, the selection, the fit being
+   *  made, the pins and the picked points. See SceneManager.dressClipped. */
+  clipRoots(): THREE.Object3D[] {
+    return [this.overlayGroup, this.selectionGroup, this.previewGroup, this.probeGroup, this.pickMarkerGroup]
+  }
+
   /** Once a frame, from the viewport, before it draws: test the pins against
    *  the part again if the view has changed since they were last tested. A
    *  hover frame that moved nothing tests nothing.

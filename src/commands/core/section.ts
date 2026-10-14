@@ -14,7 +14,7 @@ import { requireMeasureFree, showWorkspace, waitFor } from './common'
 import { round4 } from '../../core/round'
 
 /** A coordinate plane by name, as the axis it is square to. */
-function worldAxisOf(name: string): WorldAxis | null {
+export function worldAxisOf(name: string): WorldAxis | null {
   const key = name.trim().toUpperCase().replace(/\s*PLANE$/, '')
   return key === 'XY' ? 'z' : key === 'YZ' ? 'x' : key === 'ZX' || key === 'XZ' ? 'y' : null
 }

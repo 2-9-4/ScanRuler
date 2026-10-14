@@ -23,6 +23,7 @@ export function ElementRow({
   onEdit,
   onToggleVisible,
   onDelete,
+  eyeKey,
 }: {
   name: string
   color: string
@@ -53,6 +54,8 @@ export function ElementRow({
   onEdit: () => void
   onToggleVisible: () => void
   onDelete: () => void
+  /** A key of the caller's own in the eye's place — see RowTools. */
+  eyeKey?: ReactNode
 }) {
   // A double click on the row opens it too, as a feature row in a CAD
   // tree does — with the same standing down as the ✎ key.
@@ -87,6 +90,7 @@ export function ElementRow({
         onEdit={onEdit}
         onToggleVisible={onToggleVisible}
         onDelete={onDelete}
+        eyeKey={eyeKey}
       />
     </div>
   )

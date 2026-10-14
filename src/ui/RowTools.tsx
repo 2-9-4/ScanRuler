@@ -2,6 +2,7 @@
 // The edit / eye / bin trio at the end of an element or dimension row: re-open it,
 // hide it in the viewport, delete it.
 
+import type { ReactNode } from 'react'
 import { Icon } from './icons'
 
 export function RowTools({
@@ -13,6 +14,7 @@ export function RowTools({
   onEdit,
   onToggleVisible,
   onDelete,
+  eyeKey,
 }: {
   /** The row's element or dimension name, worked into the button titles. */
   name: string
@@ -24,6 +26,9 @@ export function RowTools({
   onEdit: () => void
   onToggleVisible: () => void
   onDelete: () => void
+  /** A key of the caller's own in the eye's place — for a row whose thing
+   *  is not shown or hidden but switched some other way. */
+  eyeKey?: ReactNode
 }) {
   return (
     <>
@@ -36,13 +41,15 @@ export function RowTools({
       >
         <Icon name="edit" size={14} />
       </button>
-      <button
-        className="x eye"
-        title={visible ? `Hide ${name} in the viewport` : `Show ${name}`}
-        onClick={onToggleVisible}
-      >
-        <Icon name={visible ? 'eye' : 'eyeOff'} size={14} />
-      </button>
+      {eyeKey ?? (
+        <button
+          className="x eye"
+          title={visible ? `Hide ${name} in the viewport` : `Show ${name}`}
+          onClick={onToggleVisible}
+        >
+          <Icon name={visible ? 'eye' : 'eyeOff'} size={14} />
+        </button>
+      )}
       <button className="x" title={`Delete ${name}`} onClick={onDelete}>
         <Icon name="bin" size={14} />
       </button>

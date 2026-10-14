@@ -24,6 +24,7 @@ import {
   repoFile,
   shotPath,
   sleep,
+  viewOption,
 } from './e2e-lib.mjs'
 
 const STL = process.env.STL ?? repoFile('ballbar.stl')
@@ -298,14 +299,15 @@ check(
   'the marking tools are put away again once it is saved',
 )
 
-await click(page, '[data-test="toggle-backfaces"]')
+// The back-face tint is on as a session opens: off, and on again.
+const backfaces = () => page.$eval('[data-test="toggle-backfaces"]', (e) => e.getAttribute('aria-checked') === 'true')
+const tinted = await backfaces()
+await viewOption(page, 'toggle-scan', 'toggle-backfaces')
 await sleep(400)
 await page.screenshot({ path: shotPath('e2e-paint.png') })
-check(
-  await page.$eval('[data-test="toggle-backfaces"]', (e) => e.getAttribute('aria-pressed') === 'true'),
-  'back-face tint switches on',
-)
-await click(page, '[data-test="toggle-backfaces"]')
+check((await backfaces()) !== tinted, `the back-face tint switches ${tinted ? 'off' : 'on'}`)
+await viewOption(page, 'toggle-scan', 'toggle-backfaces')
 await sleep(300)
+check((await backfaces()) === tinted, 'and back')
 
 await finish(browser, consoleErrors)

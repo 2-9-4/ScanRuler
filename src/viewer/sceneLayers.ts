@@ -102,8 +102,14 @@ export interface SceneLayer {
   /** Every frame, before it is drawn, with the canvas's size in pixels. */
   tick?(width: number, height: number): void
   themeChanged?(theme: ViewTheme): void
-  /** The part was cut open at a plane — or closed again, with null. */
-  clippingChanged?(planes: THREE.Plane[] | null): void
+  /** The part was cut open at a plane — or closed again, with null. The
+   *  list is the same one while the cut stands, and its plane is moved in
+   *  place: a material holding it follows without being told again.
+   *  `section`: the cut is the operator's section view, which cuts
+   *  everything on the part and closes what is closed — a layer's solids
+   *  then get caps of their own (sliceCap, from CAP_SLOT.layers on); a
+   *  tool's slice leaves closing to the tool. */
+  clippingChanged?(planes: THREE.Plane[] | null, section: boolean): void
   /** The scan's opacity changed — see-through, or solid again. */
   opacityChanged?(opacity: number): void
   /** The weight of the lines drawn on the part, px. */

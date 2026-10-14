@@ -47,7 +47,8 @@ import {
   suggestDeflectionScale,
 } from '../core/deviation/deflection'
 import { thicknessStats } from '../core/thickness/thickness'
-import { rigidToColumnMajor } from '../core/deviation/rigid'
+import { identityRigid, rigidCompose, rigidInvert, rigidToColumnMajor } from '../core/deviation/rigid'
+import { sectionViewFrames, useSectionView } from '../state/sectionViewStore'
 import type { RefObject } from 'react'
 import type { PluginRuntime } from '../plugins/api'
 
@@ -204,21 +205,33 @@ export function useSceneSync({
     [sceneRef],
   )
 
-  // Which way the surface faces, shown on the surface itself.
+  // How the scan is drawn, from the menu of its key on the view bar: which
+  // way the surface faces, shown on the surface itself; see-through, unless
+  // the workspace on screen holds that switch and ghosts the scan its own
+  // way; and its mesh.
   const showBackfaces = useStore((s) => s.showBackfaces)
   useEffect(() => {
     sceneRef.current?.setBackfaceTint(showBackfaces)
   }, [showBackfaces])
-
-  // The other two ways of seeing the parts, from the same row of switches.
   const translucent = useStore((s) => s.translucent)
+  const ownSeeThrough = Boolean(plugin?.scanKey?.seeThrough)
   useEffect(() => {
-    sceneRef.current?.setTranslucent(translucent)
-  }, [translucent])
+    sceneRef.current?.setScanSeeThrough(translucent && !ownSeeThrough)
+  }, [translucent, ownSeeThrough])
   const wireframe = useStore((s) => s.wireframe)
   useEffect(() => {
-    sceneRef.current?.setWireframe(wireframe)
+    sceneRef.current?.setScanMesh(wireframe)
   }, [wireframe])
+  // And the reference, from its own key's.
+  const nominalSeeThrough = useDeviation((s) => s.nominalSeeThrough)
+  const nominalMesh = useDeviation((s) => s.nominalMesh)
+  const nominalBackfaces = useDeviation((s) => s.nominalBackfaces)
+  useEffect(() => {
+    const scene = sceneRef.current
+    scene?.setReferenceSeeThrough(nominalSeeThrough)
+    scene?.setReferenceMesh(nominalMesh)
+    scene?.setReferenceBackfaceTint(nominalBackfaces)
+  }, [nominalSeeThrough, nominalMesh, nominalBackfaces])
 
   // Keep viewport overlays in sync with the elements and the dimensions the
   // user created between them.
@@ -244,6 +257,10 @@ export function useSceneSync({
   // the datums it works against — without the readings, which are the
   // measure workspace's.
   const showElements = elementsWorkspace || Boolean(plugin?.showsElements)
+  // In the measure workspace the view bar's Elements key puts everything
+  // measured away at once — the elements, the dimensions between them, their
+  // tints on the scan and the sections — each one's own eye left as it is.
+  const elementsKeyHides = useStore((s) => s.elementsHidden) && elementsWorkspace
   const offeredElements = useDeviation((s) => s.source === 'element' && s.showElement)
   const candidates = markWorkspace && offeredElements
   const targetId = useDeviation((s) => s.targetId)
@@ -355,7 +372,7 @@ export function useSceneSync({
       elementsWorkspace ? pairs : [],
       elementsWorkspace ? angles : [],
       elementsWorkspace ? tags : [],
-      showElements || items.length > 0,
+      (showElements || items.length > 0) && !elementsKeyHides,
     )
     // A hidden element's surface tint goes with its overlay — and outside the
     // measure workspace that is every element, so the scan is bare underneath
@@ -367,9 +384,10 @@ export function useSceneSync({
     // A plugin's workspace shows the elements as datums, and nothing of the
     // surfaces they were fitted to.
     sceneRef.current?.setHiddenRegions(
-      (elementsWorkspace ? elements.filter((e) => !e.visible || e.id === editingElementId) : elements).map(
-        (e) => e.id,
-      ),
+      (elementsWorkspace && !elementsKeyHides
+        ? elements.filter((e) => !e.visible || e.id === editingElementId)
+        : elements
+      ).map((e) => e.id),
     )
     // Overlays were rebuilt, so the selection glow has to be re-applied.
     sceneRef.current?.setHighlightedElements(highlightIds)
@@ -380,6 +398,7 @@ export function useSceneSync({
     surfaceVersion,
     elementsWorkspace,
     showElements,
+    elementsKeyHides,
     candidates,
     targetId,
     bareSurface,
@@ -419,9 +438,9 @@ export function useSceneSync({
             .filter((el) => el.visible && el.fit)
             .map((el) => liftFlatFit(sec.frame, el.fit!)),
         })),
-      showElements,
+      showElements && !elementsKeyHides,
     )
-  }, [sections, editingSectionId, showElements, flatSubject, flatElements, flatSheets])
+  }, [sections, editingSectionId, showElements, elementsKeyHides, flatSubject, flatElements, flatSheets])
 
   // The name tags and readouts, the measure workspace's own switch: off, the
   // bodies, the cuts and the callout lines stay and only the text goes.
@@ -442,6 +461,34 @@ export function useSceneSync({
   useEffect(() => {
     sceneRef.current?.setSectionPreview(sectionFrame, sectionCut, sectionColor)
   }, [sectionFrame, sectionCut, sectionColor])
+
+  // The section view: every part on the stage cut open at its plane, with
+  // the gizmo that slides and tilts it — which a section being made takes
+  // while it is open.
+  const viewOn = useSectionView((s) => s.on)
+  const viewAxis = useSectionView((s) => s.axis)
+  const viewOffset = useSectionView((s) => s.offset)
+  const viewFlipped = useSectionView((s) => s.flipped)
+  useEffect(() => {
+    const frames = sectionViewFrames({ on: viewOn, axis: viewAxis, offset: viewOffset, flipped: viewFlipped })
+    sceneRef.current?.setSectionView(frames?.cut ?? null, frames?.gizmo ?? null)
+  }, [viewOn, viewAxis, viewOffset, viewFlipped])
+  // Its plane lies in the scan's frame: a datum alignment baked into the
+  // scan — or undone — carries it along, and another scan puts it away.
+  const scanName = useStore((s) => s.fileName)
+  useEffect(() => {
+    useSectionView.getState().close()
+  }, [scanName])
+  useEffect(
+    () =>
+      useStore.subscribe((s, prev) => {
+        if (s.appliedAlignment === prev.appliedAlignment || s.fileName !== prev.fileName) return
+        const from = prev.appliedAlignment ?? identityRigid()
+        const to = s.appliedAlignment ?? identityRigid()
+        useSectionView.getState().move(rigidCompose(to, rigidInvert(from)))
+      }),
+    [],
+  )
 
   // The coordinate planes on offer while the section has nothing to cut
   // across yet, through the part's centre — the very point choosing one puts
@@ -739,8 +786,10 @@ export function useSceneSync({
   // this one. Two parts in one frame is exactly what the split view undoes.
   const split = useDeviation((s) => s.split)
   // A plugin's workspace may put the scan away, for something of its own
-  // that stands in its place.
-  const scanHidden = Boolean(plugin?.hideScan)
+  // that stands in its place. Elsewhere the view bar's Scan key does —
+  // unless the workspace holds that key itself.
+  const pluginHidesScan = Boolean(plugin?.hideScan)
+  const scanKeyHides = useStore((s) => s.scanHidden) && !plugin?.scanKey?.shown
   useEffect(() => {
     const scene = sceneRef.current
     if (!scene) return
@@ -749,8 +798,8 @@ export function useSceneSync({
     const onDev = workspace === 'deviation' && source === 'reference'
     scene.setNominalVisible(onDev && nominalReady && showNominal && !split)
     scene.setNominalGhost(!onDev || showScan)
-    scene.setScanVisible(workspace === 'deviation' ? showScan : !scanHidden)
-  }, [workspace, source, showNominal, showScan, nominalReady, split, scanHidden])
+    scene.setScanVisible(workspace === 'deviation' ? showScan : !pluginHidesScan && !scanKeyHides)
+  }, [workspace, source, showNominal, showScan, nominalReady, split, pluginHidesScan, scanKeyHides])
 
   // Which mouse buttons orbit, pan and zoom. Held in the store rather than the
   // scene so the settings dialog can show it and remember it.

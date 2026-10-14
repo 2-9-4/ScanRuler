@@ -775,13 +775,6 @@ const ICONS = {
       <circle className="i-dt" cx="12" cy="20" r="1.15" />
     </>
   ),
-  opaque: (
-    <>
-      <path className="i-f" d="M4 9h11v11H4Z" />
-      <path className="i-f" d="m4 9 5-5h11l-5 5Z" />
-      <path className="i-f" d="m15 9 5-5v11l-5 5Z" />
-    </>
-  ),
   transparent: (
     <>
       <path className="i-th i-ft i-ds" d="M9 4v11h11M9 15l-5 5" />
@@ -799,6 +792,14 @@ const ICONS = {
     <>
       <path className="i-g" d="M2.5 14 8 5.5h13.5L16 14Z" />
       <path className="i-a" d="M12 10v11M9.5 18.5 12 21l2.5-2.5" />
+    </>
+  ),
+  sectionView: (
+    <>
+      <path className="i-th i-ft i-ds" d="M9.5 9H15v11H9.5M15 9l5-5v11l-5 5M14.5 4H20" />
+      <path className="i-g" d="M4 9h5.5v11H4Z" />
+      <path className="i-g" d="m4 9 5-5h5.5l-5 5Z" />
+      <path className="i-f" d="m9.5 9 5-5v11l-5 5Z" />
     </>
   ),
 

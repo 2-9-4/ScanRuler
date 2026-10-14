@@ -2,10 +2,10 @@
 // Back-face flagging, as one piece of shader shared by every view that draws a
 // part.
 //
-// The switch on the view bar is a statement about the *models*, not about
-// a viewport: "show me which way the surface faces". So it has to reach every
-// half that shows a model — the scan in the main viewport and the reference
-// standing beside it in the split view — or the same part answers the question
+// The switch on the view bar is a statement about a *part*, not about a
+// viewport: "show me which way this surface faces". So it has to reach every
+// half that shows the part — the reference in the main viewport and standing
+// beside the scan in the split view — or the same part answers the question
 // differently on the two sides of the screen, which is worse than not asking.
 //
 // A flag and a colour rather than two materials, so switching it is a uniform

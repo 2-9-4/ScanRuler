@@ -25,6 +25,7 @@ import {
   repoFile,
   shotPath,
   sleep,
+  viewOption,
 } from './e2e-lib.mjs'
 
 const STL = process.env.STL ?? repoFile('ballbar.stl')
@@ -93,7 +94,9 @@ const shoot = async (name, clip) => {
   await page.screenshot({ clip: canvasClip, path: shotPath(`e2e-surface-${name}.png`) })
   return page.screenshot({ clip, encoding: 'base64' })
 }
-const pressed = (sel) => page.$eval(sel, (el) => el.getAttribute('aria-pressed') === 'true')
+// The switches are in the menu over the view bar's Scan key.
+const pressed = (sel) => page.$eval(sel, (el) => el.getAttribute('aria-checked') === 'true')
+const scanOption = (option) => viewOption(page, 'toggle-scan', option)
 /** The part's box, padded a little and kept inside the canvas. */
 const padded = (part, pad = 8) => {
   const x0 = Math.max(rect.x, part.x - pad)
@@ -118,14 +121,14 @@ const clip = padded({ x: ball.cx - ballR, y: ball.cy - ballR, width: 2 * ballR, 
 console.log(`ball on canvas: ${Math.round(clip.width)}×${Math.round(clip.height)} px`)
 
 const plain = await shoot('1-plain', clip)
-await click(page, '[data-test="toggle-translucent"]')
+await scanOption('toggle-translucent')
 check(await pressed('[data-test="toggle-translucent"]'), 'TRANSPARENT reads as on')
 const xray = await shoot('2-transparent', clip)
 const dOn = await pixelDiff(page, plain, xray)
 console.log(`transparent on: ${dOn.toFixed(1)}% of the part's box changed`)
 check(dOn > 10, 'the part changes when TRANSPARENT goes on')
 
-await click(page, '[data-test="toggle-translucent"]')
+await scanOption('toggle-translucent')
 check(!(await pressed('[data-test="toggle-translucent"]')), 'TRANSPARENT reads as off again')
 const back = await shoot('3-plain-again', clip)
 const dOff = await pixelDiff(page, plain, back)
@@ -147,7 +150,7 @@ const nearClip = padded(near)
 console.log(`zoomed part on canvas: ${Math.round(nearClip.width)}×${Math.round(nearClip.height)} px`)
 
 const zoomed = await shoot('4-zoomed', nearClip)
-await click(page, '[data-test="toggle-wireframe"]')
+await scanOption('toggle-wireframe')
 check(await pressed('[data-test="toggle-wireframe"]'), 'MESH reads as on')
 const mesh = await shoot('5-mesh', nearClip)
 const dMesh = await pixelDiff(page, zoomed, mesh)
@@ -155,14 +158,14 @@ console.log(`mesh on: ${dMesh.toFixed(1)}% of the part's box changed`)
 check(dMesh > 5, 'the edges show when MESH goes on up close')
 
 // Both together: a see-through part with its mesh drawn on.
-await click(page, '[data-test="toggle-translucent"]')
+await scanOption('toggle-translucent')
 const both = await shoot('6-mesh-transparent', nearClip)
 const dBoth = await pixelDiff(page, mesh, both)
 console.log(`mesh + transparent: ${dBoth.toFixed(1)}% changed against mesh alone`)
 check(dBoth > 5, 'TRANSPARENT still changes the part with MESH on')
 
-await click(page, '[data-test="toggle-translucent"]')
-await click(page, '[data-test="toggle-wireframe"]')
+await scanOption('toggle-translucent')
+await scanOption('toggle-wireframe')
 const restored = await shoot('7-zoomed-again', nearClip)
 const dRestored = await pixelDiff(page, zoomed, restored)
 console.log(`both off: ${dRestored.toFixed(2)}% differs from the zoomed start`)

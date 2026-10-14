@@ -22,6 +22,7 @@ import type { ElementKind } from '../core/types'
 import type { MeshWorkerClient } from '../core/workerClient'
 import type { HoverReading } from '../ui/HoverReadout'
 import type { IconName } from '../ui/icons'
+import type { ViewSwitch } from '../ui/PartKey'
 import type { GripSide, PickHit, SceneManager } from '../viewer/SceneManager'
 
 // ---- Commands -----------------------------------------------------------------
@@ -165,7 +166,20 @@ export interface PluginRuntime {
   /** The scan put away: something of the workspace's own stands in its
    *  place. */
   hideScan?: boolean
-  /** The workspace's own keys in the view bar, above the models' keys. */
+  /** The workspace's hand on the view bar's Scan key: whether the scan is
+   *  shown, and whether it is transparent, in place of the app's own
+   *  settings — for a workspace that shows or ghosts the scan its own way.
+   *  The menu's mesh and back-face switches stay the app's; `menu` adds
+   *  the workspace's own rows under them (PartOption, a way of colouring
+   *  the scan, say), and `menuChanged` says one of them stands otherwise
+   *  than the workspace opens with, for the key's dot. */
+  scanKey?: { shown?: ViewSwitch; seeThrough?: ViewSwitch; menu?: ReactNode; menuChanged?: boolean }
+  /** The workspace's own parts in the view bar, as keys after the Scan key
+   *  in its housing — PartKey from ui/PartKey, a click showing the part and
+   *  its menu how it is drawn. */
+  partKeys?: ReactNode
+  /** The workspace's own keys at the side of the view bar, after the parts
+   *  and before the Section key — the ways of colouring the scan, say. */
   viewKeys?: ReactNode
   /** The models' keys put away — no model is on the stage. */
   hideModelKeys?: boolean

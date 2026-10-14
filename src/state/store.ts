@@ -143,17 +143,24 @@ interface AppState {
    *  uses the shared tools in markStore, the same ones the deviation
    *  workspace's local fine fit is marked with. */
   selectMode: SelectMode
-  /** The name tags and readouts on the part in 3D Measure. The elements
-   *  themselves are not this switch's: hiding those is the list's Hide all. */
+  /** The name tags and readouts on the part in 3D Measure — in the menu of
+   *  the view bar's Elements key. */
   showLabels: boolean
-  /** Colour the far side of every triangle differently, so holes and inverted
-   *  normals stop reading as solid part. */
+  /** The scan put away — the view bar's Scan key, where no workspace holds
+   *  the key itself. Not saved, and a new scan comes in shown. */
+  scanHidden: boolean
+  /** The elements, the dimensions and the sections put away as a whole in
+   *  3D Measure — the view bar's Elements key. Each one's own eye in the
+   *  list stays as it is. Not saved. */
+  elementsHidden: boolean
+  /** Colour the far side of every triangle of the scan differently, so holes
+   *  and inverted normals stop reading as solid part. */
   showBackfaces: boolean
-  /** Draw the parts see-through, so the reference inside the scan, the fitted
+  /** Draw the scan see-through, so the reference inside it, the fitted
    *  elements and the pinned readings show. A way of looking for the session,
    *  not a property of the part: neither this nor the mesh is saved. */
   translucent: boolean
-  /** Draw the triangle edges on the parts. */
+  /** Draw the triangle edges on the scan. */
   wireframe: boolean
   /** Id of the mouse navigation scheme (see viewer/navSchemes). Remembered per
    *  browser, because which buttons orbit is a habit from whichever CAD the
@@ -354,6 +361,8 @@ interface AppState {
   setDraftSigma: (k: SigmaPreset) => void
   setSelectMode: (mode: SelectMode) => void
   setShowLabels: (v: boolean) => void
+  setScanHidden: (v: boolean) => void
+  setElementsHidden: (v: boolean) => void
   setShowBackfaces: (v: boolean) => void
   setTranslucent: (v: boolean) => void
   setWireframe: (v: boolean) => void
@@ -446,6 +455,8 @@ function freshScanState() {
     nextOfDimGroup: { distance: 1, angle: 1 },
     vertexCount: 0,
     triangleCount: 0,
+    scanHidden: false,
+    elementsHidden: false,
   } satisfies Partial<AppState>
 }
 
@@ -1610,6 +1621,8 @@ export const useStore = create<AppState>()((set, get) => ({
     }),
   setSelectMode: (selectMode) => set({ selectMode }),
   setShowLabels: (showLabels) => set({ showLabels }),
+  setScanHidden: (scanHidden) => set({ scanHidden }),
+  setElementsHidden: (elementsHidden) => set({ elementsHidden }),
   setShowBackfaces: (showBackfaces) => set({ showBackfaces }),
   setTranslucent: (translucent) => set({ translucent }),
   setWireframe: (wireframe) => set({ wireframe }),

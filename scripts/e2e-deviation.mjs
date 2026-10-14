@@ -76,9 +76,9 @@ await sleep(700)
 
 // Once there is a map on the scan, the reference should have stood down and
 // the scan should still be shown.
-const ghostOff = await page.$eval('[data-test=toggle-ghost]', (el) => !el.checked)
+const ghostOff = await page.$eval('[data-test=toggle-reference]', (el) => el.getAttribute('aria-pressed') !== 'true')
 if (!ghostOff) fail('the reference is still shown after the map was measured')
-const scanOn = await page.$eval('[data-test=toggle-scan]', (el) => el.checked)
+const scanOn = await page.$eval('[data-test=toggle-scan]', (el) => el.getAttribute('aria-pressed') === 'true')
 if (!scanOn) fail('the scan is not shown after the map was measured')
 
 const rms = await page.$eval('[data-test=align-rms] b', (el) => Number(el.textContent))

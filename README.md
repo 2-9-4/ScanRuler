@@ -173,20 +173,85 @@ Whichever tool you pick stays picked from one element to the next; switching
 workspaces puts it back to **Navigate**, so a gesture is never holding the mouse
 because of something you did somewhere else.
 
+### The view bar
+
+The ways of looking at the parts are one row of keys in the bottom-left
+corner of the stage, read from the left. First what is on the stage, a key
+for each part: **Scan**, in Surface Deviation **Reference**, in 3D Measure
+**Elements**, and a workspace's own beside them. A click on a part's key
+shows the part or puts it away. Rest the pointer on the key — or click its
+caret, on a touchscreen — and a menu opens over it with how that part is
+drawn:
+
+- **Transparent** — the part see-through, so what lies inside it, the fitted
+  elements and the pinned readings show instead of hiding behind the
+  surface in front of them.
+- **Mesh** — the triangle edges drawn on the part, to see how fine it is and
+  where it is patchy. They come up as you zoom in; from a distance the
+  triangles are smaller than a pixel and the edges fade out.
+- **Backfaces** — see [below](#which-way-the-surface-faces).
+- **Labels**, under Elements — the name tags and readouts on the part. The
+  click on **Elements** puts the elements, the dimensions and the sections
+  away as a whole; each one's own eye in the list stays as it is.
+
+A workspace may add its own rows to a part's menu — a way of colouring the
+scan, say.
+
+Each part has its own: the scan transparent with the reference inside it
+solid, or the other way round. Inside the scan the reference is a ghost,
+which is see-through in its own way, so its **Transparent** and
+**Backfaces** wait until it is solid — with the scan put away, or in the
+[split view](#both-parts-side-by-side), whose reference half takes the
+reference's settings. A dot on a key says something in its menu stands
+otherwise than usual, so a setting left on never goes out of sight
+altogether.
+
+At the side come the workspace's own keys — **Split view** and **Colour
+plot** in Surface Deviation — and last **Section**, whose own row stands
+above the bar while it is open.
+
 ### Which way the surface faces
 
-**Backfaces** on the view bar in the bottom-left corner of the stage colours the far side of every triangle. A
+**Backfaces**, in the menu over the view bar's **Scan** key, colours the far side of every triangle. A
 scan is a surface, not a solid: where it has a hole, you are looking at the
 inside of the wall behind it, and in plain grey that reads as part. Switched
 on, it reads as a hole — which is also how an inverted normal gives itself
 away. Marked surface keeps the marking colour on the far side too, so what a
 gesture took through the part shows on the wall behind.
 
-It is a statement about the models rather than about one viewport, so it holds
-across the [split view](#both-parts-side-by-side): the reference in the half
-beside the scan is flagged the same way, by the same switch. A reference has
-holes too — an STL that was never closed, a STEP tessellation that came apart
+The reference has a **Backfaces** of its own, in the menu over its key, and it
+holds wherever the reference is shown solid — in the
+[split view](#both-parts-side-by-side) too, where the half beside the scan is
+flagged by the same switch. A reference has holes too — an STL that was never closed, a STEP tessellation that came apart
 — and one of those is worth seeing before it is used as the datum for a map.
+
+### Looking inside: the section view
+
+**Section** on the view bar cuts everything on the stage open at a plane, to
+look inside: the scan, the reference, the elements and dimensions measured on
+them, the sections and the pinned readings — a label goes with what it labels.
+It opens across the coordinate plane most square to the view, through the
+middle of the part, and takes away the half toward you, so the cut faces you.
+The row above the key says what the plane is laid across — the XY, YZ or XZ
+plane, or an element with a direction (a plane's normal, the axis of a
+cylinder, cone or line, a circle's normal) — and where along it, as a
+coordinate or an offset; **Flip** takes away the other half instead. On the
+part, the arrow slides the plane and the two rings tilt it, as on a section
+being made; **Square** turns a tilted plane back.
+
+A part is closed where it is cut only where it is closed itself. A shell with
+no hole in it — a watertight scan, a STEP reference — gets a flat cut face in
+a colour of its own, the way CAD draws cut material: clay for the scan, blue
+for the reference. An open scan stays a shell with its inside on view, in the
+far-side colour while **Backfaces** is on. A see-through part is cut but not
+closed. Clicks hold to what is drawn: nothing on the half cut away can be
+picked, hovered or measured, and a click on a cut face meets nothing behind
+it.
+
+Like the other keys it is a way of looking: it changes no number, and it is
+not saved. In the [split view](#both-parts-side-by-side) both halves are cut
+at the same plane. An agent sets it with `section` on `view.set` and
+`view.render`.
 
 ### How the part is shown
 
@@ -313,12 +378,8 @@ remembered per browser and none of it saved with a project:
   off here it stays away.
 
 The ways of *looking* at a part are not settings and are not here: they are on
-the **view bar** in the bottom-left corner of the stage, where they change with
-the job in hand — **Transparent**, **Mesh** and **Backfaces** for every part in
-every viewport, and above them the workspace's own row: **Labels** in 3D
-Measure — the name tags and readouts on the part, the elements themselves
-staying put (the list's **Hide all** is for those) — and **Split view** and
-**Colour plot** in Surface Deviation.
+the [view bar](#the-view-bar) in the bottom-left corner of the stage, where
+they change with the job in hand.
 
 ### Elements: fitted, picked and constructed
 
@@ -985,9 +1046,9 @@ map, pinned readings, and any elements fitted in the other workspace — rides
 along with it, so a fitted sphere stays on the ball it was fitted to.
 
 The map is measured as soon as the fit lands, and the reference stands down
-once there is a map on the scan. Separate **Show reference** and **Show scan**
-switches bring either back; with the scan switched off the reference turns
-solid, which is how you check it is the right part — an aligned reference
+once there is a map on the scan. The **Scan** and **Reference** keys on the
+[view bar](#the-view-bar) bring either back; with the scan put away the
+reference turns solid, which is how you check it is the right part — an aligned reference
 otherwise lies inside a scan of nearly the same shape and loses the depth test
 almost everywhere.
 
