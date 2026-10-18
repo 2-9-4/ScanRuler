@@ -69,7 +69,7 @@ export class RecoveryStorage {
   async write(manifest: ProjectManifest, members: ArchiveMember[]): Promise<void> {
     const changed = !this.members || members.length !== this.members.length ||
       members.some((member, i) => member.name !== this.members![i].name || member.bytes !== this.members![i].bytes)
-    const info: CheckpointInfo = { id: this.id, name: manifest.scan?.fileName ?? manifest.flat.image?.fileName ?? 'CAD project', savedAt: Date.now() }
+    const info: CheckpointInfo = { id: this.id, name: manifest.name ?? manifest.scan?.fileName ?? manifest.flat.image?.fileName ?? 'CAD project', savedAt: Date.now() }
     await this.transaction<void>('readwrite', (tx) => {
       tx.objectStore('info').put(info, this.id)
       tx.objectStore('checkpoints').put({ ...info, manifest }, this.id)

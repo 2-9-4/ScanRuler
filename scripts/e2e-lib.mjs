@@ -70,12 +70,14 @@ export async function finish(browser, consoleErrors) {
 // ---- browser and app --------------------------------------------------------
 
 /** Launch Chrome, open the app, and collect console/page errors as they come.
- *  `url` opens it at another address than APP_URL — with a fragment, say.
+ *  `url` opens it at another address than APP_URL — with a fragment, say;
+ *  `headless: false` opens a window on the screen (a real tab, which a
+ *  minimised window hides as a person's would).
  *  Returns { browser, page, consoleErrors }. */
-export async function launchApp({ width = 1500, height = 950, protocolTimeout, url = APP_URL } = {}) {
+export async function launchApp({ width = 1500, height = 950, protocolTimeout, url = APP_URL, headless = 'new' } = {}) {
   const browser = await puppeteer.launch({
     executablePath: CHROME,
-    headless: 'new',
+    headless,
     args: [`--window-size=${width},${height}`, '--no-sandbox', ...(process.env.CI ? ['--enable-unsafe-swiftshader'] : [])],
     defaultViewport: { width, height },
     ...(protocolTimeout ? { protocolTimeout } : {}),

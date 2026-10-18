@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Instrument chassis header: identity on the left, the workspace selector next
-// to it, and the loaded part named alongside. Models are opened from the
+// to it, the project's name and the loaded part alongside. Models are opened from the
 // workspace itself, not from here — a single "open" in a bar shared by two
 // workspaces cannot say which model it means. What the bar does open is a
 // project, which says for itself what it holds; a plain scan or image dropped
 // on the same button goes where it would have gone from its workspace.
 
-import { useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useStore } from '../state/store'
+import { useFlat } from '../state/flatStore'
 import { usePrefs } from '../state/prefsStore'
 import { useDeviation } from '../state/deviationStore'
 import { useShell, type Workspace } from '../state/shellStore'
@@ -16,7 +17,7 @@ import { UndoRedo } from './UndoRedo'
 import { AGENT_STATUS, useAgentLink } from '../commands/agentLink'
 import { Icon, type IconName } from './icons'
 import { IMAGE_ACCEPT, MESH_ACCEPT, isImageFile, isMeshFile, isStepFile } from '../core/formats'
-import { PROJECT_EXTENSION } from '../core/project/manifest'
+import { PROJECT_EXTENSION, projectStem } from '../core/project/manifest'
 import { isProjectFile } from '../app/useProject'
 import { APP_VERSION } from '../version'
 import type { RecoveryStatus } from '../app/useRecovery'
@@ -43,7 +44,59 @@ const workspaceTabs = () => [
     .sort((a, b) => a.order - b.order),
 ]
 
+/** The page's own title, while no project is named. */
+const APP_TITLE = 'ScanRuler by CNC Kitchen'
+
+/** The project's name, typed in place — what Save Project saves it under,
+ *  every export is named on and the browser tab reads. Unnamed, those go by
+ *  the scan's name, or the image's. Enter or leaving the field takes what
+ *  was typed; Escape puts it back. */
+function ProjectName() {
+  const name = useStore((s) => s.projectName)
+  const fileName = useStore((s) => s.fileName)
+  const imageName = useFlat((s) => s.imageName)
+  /** The text while it is being typed, or null. */
+  const [typed, setTyped] = useState<string | null>(null)
+  const dropped = useRef(false)
+  useEffect(() => {
+    document.title = name ? `${name} — ScanRuler` : APP_TITLE
+  }, [name])
+  const shown = typed ?? name ?? ''
+  const fallback = projectStem(null, fileName, imageName)
+  const placeholder = 'Untitled project'
+  return (
+    <input
+      className="projectname"
+      data-test="project-name"
+      aria-label="Project name"
+      spellCheck={false}
+      value={shown}
+      placeholder={placeholder}
+      size={Math.max(14, Math.min(32, (shown || placeholder).length + 1))}
+      title={`The project's name — what Save Project saves it under and every export is named on.${name ? '' : ` Unnamed, they go by ${fallback === 'project' ? 'the scan or the image it holds' : `“${fallback}”`}.`}`}
+      onFocus={() => setTyped(name ?? '')}
+      onChange={(e) => setTyped(e.target.value)}
+      onBlur={() => {
+        if (!dropped.current && typed !== null) useStore.getState().setProjectName(typed)
+        dropped.current = false
+        setTyped(null)
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.currentTarget.blur()
+        else if (e.key === 'Escape') {
+          // The field takes the key: the name goes back, and nothing else
+          // the key would close is closed.
+          e.preventDefault()
+          dropped.current = true
+          e.currentTarget.blur()
+        }
+      }}
+    />
+  )
+}
+
 export function TopBar({
+  onNewProject,
   onSaveProject,
   onOpenProject,
   onOpenScan,
@@ -51,6 +104,7 @@ export function TopBar({
   savable,
   recovery,
 }: {
+  onNewProject: () => void
   onSaveProject: () => void
   onOpenProject: (file: File) => void
   onOpenScan: (file: File) => void
@@ -123,6 +177,7 @@ export function TopBar({
           </button>
         ))}
       </div>
+      <ProjectName />
       {fileName && (
         <div className="partchip file-info" title={fileName}>
           <b>{fileName}</b>
@@ -162,13 +217,23 @@ export function TopBar({
       />
       <button
         className="ghost withicon"
+        data-test="new-project"
+        onClick={onNewProject}
+        disabled={busy}
+        title="Start a new project: the scan, the reference and the image closed, every measurement and every workspace's work let go, the name taken off — after asking, when there are changes not saved"
+      >
+        <Icon name="newProject" size={16} />
+        New<span className="btxt ptxt"> Project</span>
+      </button>
+      <button
+        className="ghost withicon"
         data-test="save-project"
         onClick={onSaveProject}
         disabled={busy || !savable}
         title={`Save the scan, the reference, the image and every measurement as one .${PROJECT_EXTENSION} file`}
       >
         <Icon name="save" size={16} />
-        Save<span className="btxt"> Project</span>
+        Save<span className="btxt ptxt"> Project</span>
       </button>
       <button
         className="ghost withicon"
@@ -178,7 +243,7 @@ export function TopBar({
         title={`Open a .${PROJECT_EXTENSION} project — or a plain scan or image to start fresh`}
       >
         <Icon name="load" size={16} />
-        Load<span className="btxt"> Project</span>
+        Load<span className="btxt ptxt"> Project</span>
       </button>
       {/* What is set once and left — the chassis, the colour mode, the mouse
           controls, the line weights, the hints. Beside the project keys

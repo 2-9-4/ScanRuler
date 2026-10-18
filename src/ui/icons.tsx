@@ -804,6 +804,13 @@ const ICONS = {
   ),
 
   // the top bar
+  newProject: (
+    <>
+      <path className="i-g" d="M5 3h9l5 5v13H5Z" />
+      <path d="M14 3v5h5" />
+      <path className="i-a" d="M12 11v7M8.5 14.5h7" />
+    </>
+  ),
   save: (
     <>
       <path className="i-g" d="M4 4h12.5L20 7.5V20H4Z" />

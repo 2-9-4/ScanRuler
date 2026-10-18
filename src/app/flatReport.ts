@@ -6,6 +6,7 @@
 import { evaluateFlatDimensions } from '../core/flat/dimensions'
 import { buildFlatCsv, type FlatReportInput } from '../core/flat/report'
 import { describeCut, sectionRefName, tiltOf } from '../core/section/frame'
+import { fileSafe } from '../core/project/manifest'
 import { useFlat } from '../state/flatStore'
 import { useStore } from '../state/store'
 import { textBytes, type BuiltFile } from './exports'
@@ -45,12 +46,18 @@ export function flatReportInput(): FlatReportInput {
     elements: s.elements,
     dimensions: evaluateFlatDimensions(s.dimensions, s.elements),
     counts: s.counts,
+    notes: s.notes,
   }
 }
 
-/** The stem every 2D export is named on: the section, or the image. */
-export const flatExportStem = () =>
-  (activeSectionInfo()?.name ?? useFlat.getState().imageName ?? 'scan').replace(/\.[^.]+$/, '')
+/** The stem every 2D export is named on: the section, or the project's
+ *  name, or the image. */
+export const flatExportStem = (): string => {
+  const section = activeSectionInfo()?.name
+  if (section) return section.replace(/\.[^.]+$/, '')
+  const named = fileSafe(useStore.getState().projectName ?? '')
+  return named !== '' ? named : (useFlat.getState().imageName ?? 'scan').replace(/\.[^.]+$/, '')
+}
 
 /** The measurements as CSV, for a spreadsheet. */
 export function buildFlatCsvFile(): BuiltFile {

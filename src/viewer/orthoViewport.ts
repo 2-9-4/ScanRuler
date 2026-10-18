@@ -116,10 +116,13 @@ export class OrthoViewport {
    *  mark shows as a stale image, so every path that could change what is on
    *  screen calls invalidate — an extra repaint costs nothing. */
   private needsRender = true
-  /** A turn of the camera under way — see animateLook. */
+  /** A turn of the camera under way — see animateLook. `from` is how far
+   *  along the eased way the pose q0, t0, zoom0 was taken: 0 for a turn
+   *  started there, more for one whose goal moved under way (retarget). */
   private flight: {
     start: number
     ms: number
+    from: number
     q0: THREE.Quaternion
     q1: THREE.Quaternion
     t0: THREE.Vector3
@@ -243,34 +246,45 @@ export class OrthoViewport {
 
     const animate = (): void => {
       this.rafId = requestAnimationFrame(animate)
-      // Ahead of the pause, so that a paused viewport lets go of the puck.
-      if (spaceMouseAttached()) this.stepSpaceMouse()
-      if (this.paused) return
-      // These run every tick, rendered or not: a turn under way moves the
-      // camera a step, the clip planes track the camera (and let the
-      // navigator drop its cached canvas rect), update() is what notices
-      // camera motion and fires 'change', and the owner's tick is what
-      // decides whether this frame has anything new to show at all.
-      this.stepFlight()
-      this.nav.updateClipPlanes()
-      this.controls.update()
-      this.opts.onTick?.()
-      if (!this.needsRender) return
-      this.needsRender = false
-      const w = this.container.clientWidth || 1
-      const h = this.container.clientHeight || 1
-      this.keyLight.position.copy(this.camera.position)
-      this.keyLight.target.position.copy(this.controls.target)
-      this.renderer.setViewport(0, 0, w, h)
-      this.renderer.render(this.scene, this.camera)
-      this.opts.onAfterRender?.(w, h)
-      this.labelRenderer.render(this.scene, this.camera)
-      spreadLabels(this.labelRenderer.domElement)
+      this.frame()
     }
     // Scheduled, not run inline: the owner composing this viewport is still
     // mid-constructor here, and its tick hooks reach for modules it has not
     // built yet. The first frame is one rAF away either way.
     this.rafId = requestAnimationFrame(animate)
+  }
+
+  /** One frame drawn now, out of the browser's turn — while the tab is
+   *  hidden and it draws none, a wait for the stage to follow the stores
+   *  draws its own (see commands' nextFrame). */
+  pump(): void {
+    this.frame()
+  }
+
+  private frame(): void {
+    // Ahead of the pause, so that a paused viewport lets go of the puck.
+    if (spaceMouseAttached()) this.stepSpaceMouse()
+    if (this.paused) return
+    // These run every tick, rendered or not: a turn under way moves the
+    // camera a step, the clip planes track the camera (and let the
+    // navigator drop its cached canvas rect), update() is what notices
+    // camera motion and fires 'change', and the owner's tick is what
+    // decides whether this frame has anything new to show at all.
+    this.stepFlight()
+    this.nav.updateClipPlanes()
+    this.controls.update()
+    this.opts.onTick?.()
+    if (!this.needsRender) return
+    this.needsRender = false
+    const w = this.container.clientWidth || 1
+    const h = this.container.clientHeight || 1
+    this.keyLight.position.copy(this.camera.position)
+    this.keyLight.target.position.copy(this.controls.target)
+    this.renderer.setViewport(0, 0, w, h)
+    this.renderer.render(this.scene, this.camera)
+    this.opts.onAfterRender?.(w, h)
+    this.labelRenderer.render(this.scene, this.camera)
+    spreadLabels(this.labelRenderer.domElement)
   }
 
   /** One frame of the SpaceMouse. A viewport that is paused or hidden — the 3D
@@ -362,6 +376,8 @@ export class OrthoViewport {
       dir.normalize()
     }
 
+    // A framing is a pose of its own: a turn under way would write over it.
+    this.flight = null
     if (view) this.camera.up.copy(view.up)
     else this.camera.up.set(0, 1, 0)
     this.controls.target.copy(center)
@@ -446,6 +462,7 @@ export class OrthoViewport {
    * mirrored by looking at it from behind this way, in place.
    */
   lookFrom(dir: THREE.Vector3, up: THREE.Vector3): void {
+    this.flight = null
     this.controls.target.copy(this.nav.centrePivot())
     // Where along the new axis the camera sits makes no difference to a
     // parallel projection; the clip planes are re-derived from the model each
@@ -477,15 +494,27 @@ export class OrthoViewport {
    * the sheet reads. A press or a wheel on the canvas cuts the turn short
    * where it is; `ms` of 0 lands at once. A turn already under way is
    * restarted from where it has got to.
+   *
+   * The camera turns about its target, and the target may lie anywhere
+   * along the line of sight — orbits about the cursor leave it in front of
+   * the part or far behind it. Turned about a point a long way off, the part
+   * would swing out across the screen and back. So the turn sets out from
+   * the target slid along the line of sight level with where it lands —
+   * which changes nothing on screen, the projection being parallel — and
+   * the part turns about a point at its own depth.
    */
   animateLook(dir: THREE.Vector3, up: THREE.Vector3, target: THREE.Vector3, ms = 500, zoom?: number): void {
     const goal = this.poseOf(dir, up, target, zoom)
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion)
+    const t0 = this.controls.target.clone()
+    t0.addScaledVector(forward, forward.dot(new THREE.Vector3().subVectors(goal.target, t0)))
     this.flight = {
       start: performance.now(),
       ms,
+      from: 0,
       q0: this.camera.quaternion.clone(),
       q1: goal.q,
-      t0: this.controls.target.clone(),
+      t0,
       t1: goal.target,
       zoom0: this.camera.zoom,
       zoom1: goal.zoom,
@@ -495,14 +524,73 @@ export class OrthoViewport {
   }
 
   /**
+   * Frame a box over `ms` milliseconds as the camera looks now — or turned
+   * to `view` — by the zoom alone, the frustum kept as it is: flown to where
+   * it fits the screen with the margin frameCamera leaves. What takes in a
+   * part that has grown past the screen, or a sheet whose content moved,
+   * without the jump of a fresh framing.
+   */
+  flyToFit(box: THREE.Box3, ms = 450, view?: { dir: THREE.Vector3; up: THREE.Vector3 }): void {
+    if (box.isEmpty()) return
+    const center = box.getCenter(new THREE.Vector3())
+    // The clip planes take in the box as well as what they did, so nothing
+    // is cut away on the way.
+    const clip = new THREE.Sphere(this.clipSphere.center.clone(), this.clipSphere.radius).union(box.getBoundingSphere(new THREE.Sphere()))
+    this.clipSphere.center.copy(clip.center)
+    this.clipSphere.radius = clip.radius
+    const dir = view ? view.dir.clone() : new THREE.Vector3().subVectors(this.camera.position, this.controls.target)
+    if (dir.lengthSq() < 1e-12) dir.set(0.62, 0.42, 1)
+    const up = view ? view.up.clone() : this.camera.up.clone()
+    const q = this.poseOf(dir, up, center).q
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(q)
+    const screenUp = new THREE.Vector3(0, 1, 0).applyQuaternion(q)
+    const corner = new THREE.Vector3()
+    let halfW = 1e-3
+    let halfH = 1e-3
+    for (let i = 0; i < 8; i++) {
+      corner.set(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z).sub(center)
+      halfW = Math.max(halfW, Math.abs(corner.dot(right)))
+      halfH = Math.max(halfH, Math.abs(corner.dot(screenUp)))
+    }
+    const zoom = Math.min((this.camera.right - this.camera.left) / 2 / (halfW * FRAME_MARGIN), (this.camera.top - this.camera.bottom) / 2 / (halfH * FRAME_MARGIN))
+    this.animateLook(dir, up, center, ms, zoom)
+  }
+
+  /** Whether the whole of a box is on screen as the camera stands — or as
+   *  it will once a turn under way lands. */
+  boxOnScreen(box: THREE.Box3): boolean {
+    if (box.isEmpty()) return true
+    const f = this.flight
+    const q = f ? f.q1 : this.camera.quaternion
+    const target = f ? f.t1 : this.controls.target
+    const zoom = f ? f.zoom1 : this.camera.zoom
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(q)
+    const screenUp = new THREE.Vector3(0, 1, 0).applyQuaternion(q)
+    const halfW = (this.camera.right - this.camera.left) / 2 / zoom
+    const halfH = (this.camera.top - this.camera.bottom) / 2 / zoom
+    const corner = new THREE.Vector3()
+    for (let i = 0; i < 8; i++) {
+      corner.set(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z).sub(target)
+      if (Math.abs(corner.dot(right)) > halfW || Math.abs(corner.dot(screenUp)) > halfH) return false
+    }
+    return true
+  }
+
+  /**
    * Look from `dir` with `up`, at `target`, at `zoom`, now — or, while a
    * turn is under way, make that where the turn lands, without restarting
    * it: what a view that follows another one calls on every change of it.
+   * The turn bends towards the new goal from where it has got to, on the
+   * same clock, rather than jumping by the share of the way already gone.
    */
   retarget(dir: THREE.Vector3, up: THREE.Vector3, target: THREE.Vector3, zoom?: number): void {
     const goal = this.poseOf(dir, up, target, zoom)
     const f = this.flight
     if (f) {
+      f.from = this.flightShare(f)
+      f.q0 = this.camera.quaternion.clone()
+      f.t0 = this.controls.target.clone()
+      f.zoom0 = this.camera.zoom
       f.q1 = goal.q
       f.t1 = goal.target
       f.zoom1 = goal.zoom
@@ -515,6 +603,28 @@ export class OrthoViewport {
   /** Whether a turn is under way. */
   turning(): boolean {
     return this.flight !== null
+  }
+
+  /** The pose the camera holds — or lands in, while a turn is under way —
+   *  as animateLook takes one: the direction from the target to the camera,
+   *  what is up the screen, the target, the zoom. */
+  pose(): { dir: THREE.Vector3; up: THREE.Vector3; target: THREE.Vector3; zoom: number } {
+    const f = this.flight
+    const q = f ? f.q1 : this.camera.quaternion
+    return {
+      dir: new THREE.Vector3(0, 0, 1).applyQuaternion(q),
+      up: new THREE.Vector3(0, 1, 0).applyQuaternion(q),
+      target: (f ? f.t1 : this.controls.target).clone(),
+      zoom: f ? f.zoom1 : this.camera.zoom,
+    }
+  }
+
+  /** How far along its eased way a turn is now, 0 to 1. */
+  private flightShare(f: { start: number; ms: number }): number {
+    const k = f.ms > 0 ? Math.min(1, (performance.now() - f.start) / f.ms) : 1
+    // Eased both ends: a turn that starts and stops dead reads as a jump
+    // with frames in it.
+    return k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2
   }
 
   private applyPose(q: THREE.Quaternion, target: THREE.Vector3, zoom: number, dist: number): void {
@@ -536,16 +646,15 @@ export class OrthoViewport {
   private stepFlight(): void {
     const f = this.flight
     if (!f) return
-    const k = f.ms > 0 ? Math.min(1, (performance.now() - f.start) / f.ms) : 1
-    // Eased both ends: a turn that starts and stops dead reads as a jump
-    // with frames in it.
-    const s = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2
+    const eased = this.flightShare(f)
+    // The rest of the way from the pose the turn last set out from.
+    const s = f.from < 1 ? Math.max(0, (eased - f.from) / (1 - f.from)) : 1
     const q = f.q0.clone().slerp(f.q1, s)
     const target = f.t0.clone().lerp(f.t1, s)
     // The zoom eases on a log scale: a zoom is a ratio, and halving reads
     // as far as doubling.
     const zoom = Math.exp(Math.log(f.zoom0) * (1 - s) + Math.log(f.zoom1) * s)
-    if (k >= 1) this.flight = null
+    if (eased >= 1) this.flight = null
     this.applyPose(q, target, zoom, f.dist)
   }
 
@@ -557,6 +666,7 @@ export class OrthoViewport {
    * to a full-sheet framing the way a quarter turn does.
    */
   rollTo(up: THREE.Vector3): void {
+    this.flight = null
     this.camera.up.copy(up)
     this.camera.lookAt(this.controls.target)
     this.camera.updateMatrixWorld(true)

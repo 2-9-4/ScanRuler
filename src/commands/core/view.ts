@@ -22,7 +22,7 @@ import { elementRefSchema, findElement, type ElementRef } from '../refs'
 import { bool, enumOf, int, num, obj, oneOf, vec3, type JsonSchema } from '../schema'
 import { CommandError, type Command } from '../types'
 import { pluginToggleKeys, viewToggles, type ViewToggle } from '../viewToggles'
-import { waitFor } from './common'
+import { nextFrame, waitFor } from './common'
 import { worldAxisOf } from './section'
 
 const VIEWS: readonly StandardView[] = ['iso', 'top', 'bottom', 'front', 'rear', 'left', 'right']
@@ -133,7 +133,7 @@ async function sectioned(scene: SceneManager, section: SectionAsk | undefined): 
     if (section.offset !== undefined) view.setOffset(section.offset)
     if (section.flip) view.flip()
   }
-  for (let i = 0; i < 3; i++) await nextFrame()
+  for (let i = 0; i < 3; i++) await nextFrame(scene)
 }
 
 /** The section view as it stands, for an answer: what it is laid across,
@@ -191,15 +191,12 @@ function aimAt(scene: SceneManager, frame: Frame | undefined): void {
   }
 }
 
-const nextFrame = () =>
-  new Promise<void>((resolve) => (typeof requestAnimationFrame === 'function' ? requestAnimationFrame(() => resolve()) : setTimeout(resolve, 16)))
-
 /** The viewport once the session has settled and the stage has caught up
  *  with the stores. */
 async function settledScene(what: string): Promise<SceneManager> {
   const scene = requireScene(what)
   await waitFor(() => sessionBusy() === null, 'the session to settle', 120_000)
-  for (let i = 0; i < 3; i++) await nextFrame()
+  for (let i = 0; i < 3; i++) await nextFrame(scene)
   return scene
 }
 
@@ -216,7 +213,7 @@ function aim(scene: SceneManager, view: StandardView | undefined, fit: boolean |
  *  effect, not at once. */
 async function shown(scene: SceneManager, show: Record<string, boolean> | undefined): Promise<Record<string, boolean>> {
   const before = applyShow(scene, show)
-  if (show) for (let i = 0; i < 3; i++) await nextFrame()
+  if (show) for (let i = 0; i < 3; i++) await nextFrame(scene)
   return before
 }
 
@@ -231,7 +228,7 @@ const set: Command<{ view?: StandardView; fit?: boolean; show?: Record<string, b
     const scene = await settledScene('Turning the view')
     await shown(scene, show)
     aim(scene, view, fit, frame)
-    await nextFrame()
+    await nextFrame(scene)
     await sectioned(scene, section)
     return { view: view ?? null, fitted: frame ? false : (fit ?? !view), ...(frame ? { framed: frame } : {}), size: scene.viewSize(), section: describeSectionView(), shown: shownNow(scene) }
   },
@@ -255,13 +252,19 @@ const render: Command<{ width?: number; height?: number; view?: StandardView; fi
   returnsFile: true,
   returnsImage: true,
   run: async ({ width, height, view, fit, show, frame, section }) => {
+    // The 3D view is not drawn while the 2D sheet has the screen: a picture
+    // of it would be an empty frame, which says nothing and looks like an
+    // answer.
+    if (useShell.getState().workspace === 'flat') {
+      throw new CommandError('invalid_state', 'The 2D workspace is on screen, where the 3D view is not drawn — flat.render pictures the 2D sheet; workspace.set measure brings the 3D view back.')
+    }
     const scene = await settledScene('A picture of the view')
     const before = await shown(scene, show)
     const { on, ref, axis, refDir, offset, flipped } = useSectionView.getState()
     try {
       if (view || fit || frame) {
         aim(scene, view, fit, frame)
-        await nextFrame()
+        await nextFrame(scene)
       }
       await sectioned(scene, section)
       return await picture(scene, width, height, view, show)
@@ -269,11 +272,11 @@ const render: Command<{ width?: number; height?: number; view?: StandardView; fi
       // What was put away or cut for the picture comes back; the frame stays.
       if (Object.keys(before).length > 0) {
         applyShow(scene, before)
-        await nextFrame()
+        await nextFrame(scene)
       }
       if (section !== undefined) {
         useSectionView.setState({ on, ref, axis, refDir, offset, flipped })
-        await nextFrame()
+        await nextFrame(scene)
       }
     }
   },
@@ -293,7 +296,7 @@ async function picture(scene: SceneManager, width: number | undefined, height: n
           ? fitIn(height * aspect, height)
           : fitIn(...((aspect >= 1 ? [DEFAULT_LONG_SIDE, DEFAULT_LONG_SIDE / aspect] : [DEFAULT_LONG_SIDE * aspect, DEFAULT_LONG_SIDE]) as [number, number]))
   const bytes = await scene.capture(w, h)
-  const stem = useStore.getState().fileName ? exportStem() : 'scanruler'
+  const stem = exportStem('scanruler')
   return { file: { name: `${stem}-view.png`, mimeType: 'image/png', bytes }, width: w, height: h, view: view ?? null, ...(show ? { shown: shownNow(scene) } : {}) }
 }
 

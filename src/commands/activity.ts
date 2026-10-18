@@ -44,17 +44,52 @@ export const commandGuard = (): CommandGuard => guard
 
 const busyChecks = new Map<string, () => string | null>()
 
+/** A store a wait can watch: what zustand's stores have. */
+export interface Watchable {
+  subscribe(listener: () => void): () => void
+}
+
+/** The stores a plugin's busy check reads, by its id — see watchSession. */
+const busyStores = new Map<string, readonly Watchable[]>()
+
+/** The session's own stores, as the command host names them. */
+let sessionStores: readonly Watchable[] = []
+
+/** The session's own stores, for a wait to look again on (watchSession) —
+ *  set by the command host (host.ts). The returned function lets them go. */
+export function watchSessionStores(stores: readonly Watchable[]): () => void {
+  sessionStores = stores
+  return () => {
+    if (sessionStores === stores) sessionStores = []
+  }
+}
+
 /** A plugin's part of what the session is busy with, under its id: what its
  *  own machinery is doing that a command must not run over — in a few
  *  words, or null when it is idle. Read wherever the session's own are:
  *  the guard on every command that changes the session, and the readout's
- *  `busy`. Called from the plugin's install(); the returned function takes
- *  it out again. Two under one id throw. */
-export function registerBusy(id: string, check: () => string | null): () => void {
+ *  `busy`. `stores`: those whose changes may change the answer, for a wait
+ *  to look again on (watchSession) rather than only on its timer, which a
+ *  hidden tab's browser slows to once a minute. Called from the plugin's
+ *  install(); the returned function takes it out again. Two under one id
+ *  throw. */
+export function registerBusy(id: string, check: () => string | null, stores: readonly Watchable[] = []): () => void {
   if (busyChecks.has(id)) throw new Error(`Two busy checks share the id "${id}".`)
   busyChecks.set(id, check)
+  busyStores.set(id, stores)
   return () => {
-    if (busyChecks.get(id) === check) busyChecks.delete(id)
+    if (busyChecks.get(id) !== check) return
+    busyChecks.delete(id)
+    busyStores.delete(id)
+  }
+}
+
+/** Hear every change of the session's stores, the plugins' busy stores and
+ *  `also`; the returned function stops. */
+export function watchSession(listener: () => void, also: readonly Watchable[] = []): () => void {
+  const stops = [...new Set([...sessionStores, ...also, ...[...busyStores.values()].flat()])].map((s) => s.subscribe(listener))
+  return () => {
+    for (const stop of stops) stop()
   }
 }
 

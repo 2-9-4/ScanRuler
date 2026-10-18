@@ -60,6 +60,20 @@ export const agentJson = (value, exact = false) =>
   exact ? JSON.stringify(value) : JSON.stringify(value, (_key, v) => (typeof v === 'number' && Number.isFinite(v) && !Number.isInteger(v) ? tidy(v) : v))
 
 /** A command as the MCP tool an agent sees. */
+/** The `wait` a tool that changes the session takes: the server runs every
+ *  such call as a job (mcp.js), and false answers with the job at once. */
+export const waitIn = {
+  type: 'boolean',
+  description: 'false: answer at once with { queued: true, job } while the change runs on; scanruler_wait { for: "job", job } gives its answer. true (the default): answer once it is done.',
+}
+
+/** The `timings` a tool that changes the session takes: the server keeps
+ *  what the page's answer carries of the build's steps (mcp.js). */
+export const timingsIn = {
+  type: 'boolean',
+  description: 'true: the answer adds ms (the call, start to answer) and, where the change built, steps.played — each step the build played with its ms (steps.restored counts those taken up from a kept state, not played).',
+}
+
 export function toolFor(command, { outDir }) {
   const input = structuredClone(command.input ?? { type: 'object' })
   input.properties = { ...(input.properties ?? {}) }
@@ -82,6 +96,10 @@ export function toolFor(command, { outDir }) {
   } else if (command.returnsFile) {
     input.properties.path = outPath(outDir)
     description += ' The file is written to `path`; the result says where and how large it is, not its bytes.'
+  }
+  if (!command.readOnly) {
+    input.properties.wait = waitIn
+    input.properties.timings = timingsIn
   }
   if (required.length) input.required = required
   else delete input.required

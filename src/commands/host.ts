@@ -13,9 +13,13 @@ import { useHistory } from '../state/historyStore'
 import { useStore } from '../state/store'
 import { useThickness } from '../state/thicknessStore'
 import type { BuiltFile } from '../app/exports'
+import type { EdgeChains } from '../core/flat/edges'
 import type { EdgeIndex } from '../core/flat/snap'
+import type { Vec2 } from '../core/flat/types'
 import type { SceneManager } from '../viewer/SceneManager'
-import { configureCommands, pluginBusy } from './activity'
+import { configureCommands, pluginBusy, useCommandActivity, watchSessionStores } from './activity'
+import { useShell } from '../state/shellStore'
+import { useMark } from '../state/markStore'
 import { CommandError } from './types'
 
 /** A project packed, or why it could not be. */
@@ -30,6 +34,17 @@ export interface ProjectHost {
   open(file: File, discard: boolean): Promise<void>
 }
 
+/** What lies on the 2D stage, as App holds it: the image's bitmap (none on a
+ *  section), the sheet's extent in document units, and the edges in their
+ *  own units — image pixels, or a section's millimetres — null while none
+ *  have been found. */
+export interface FlatSheetView {
+  kind: 'image' | 'section'
+  bitmap: ImageBitmap | null
+  bounds: { min: Vec2; max: Vec2 }
+  chains: EdgeChains | null
+}
+
 /** The 2D workspace's verbs that need the browser's image decoder or the
  *  sheet App holds. */
 export interface FlatHost {
@@ -40,6 +55,11 @@ export interface FlatHost {
   detectEdges(sensitivity: number): Promise<number>
   /** What a pick on the sheet snaps to — the subject's own edges. */
   edgeIndex(): EdgeIndex | null
+  /** The sheet on the stage, or null with nothing on it. */
+  sheet(): FlatSheetView | null
+  /** The image's grey levels, row 0 at the bottom as the sheet lies — what
+   *  the edges were found in. Null with no image. */
+  gray(): { gray: Uint8Array; width: number; height: number } | null
   /** The sheet as the SVG and DXF buttons write it; null with nothing on
    *  the sheet. */
   buildSvg(): Promise<BuiltFile | null>
@@ -76,9 +96,13 @@ export function sessionBusy(): string | null {
 export function installCommandHost(next: CommandHost): () => void {
   host = next
   const unguard = configureCommands({ busy: sessionBusy })
+  // What a command's wait looks again on, beside its timer — the timer a
+  // hidden tab's browser slows down (common.ts waitFor).
+  const unwatch = watchSessionStores([useStore, useShell, useFlat, useDeviation, useThickness, useMark, useHistory, useCommandActivity])
   return () => {
     if (host === next) host = null
     unguard()
+    unwatch()
   }
 }
 

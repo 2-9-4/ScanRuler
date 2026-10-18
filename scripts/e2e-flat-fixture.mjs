@@ -27,7 +27,12 @@ export function buildPng() {
       gray[y * W + x] = shade(Math.max(inRect, inDisc))
     }
   }
-  // PNG by hand: signature, IHDR, pHYs (600 dpi), IDAT, IEND.
+  return encodeGrayPng(gray, W, H, PPM)
+}
+
+/** An 8-bit grey image (rows top down) as PNG bytes declaring `ppm` pixels
+ *  per millimetre. PNG by hand: signature, IHDR, pHYs, IDAT, IEND. */
+export function encodeGrayPng(gray, W, H, PPM) {
   const crcTable = Array.from({ length: 256 }, (_, n) => {
     let c = n
     for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1

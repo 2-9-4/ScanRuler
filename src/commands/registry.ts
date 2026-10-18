@@ -63,6 +63,11 @@ export function listCommands(): CommandInfo[] {
     }))
 }
 
+/** Whether a command runs without the page — see Command.headless. */
+export function runsHeadless(name: string): boolean {
+  return commands.get(name)?.headless === true
+}
+
 // ---- Running ----------------------------------------------------------------
 
 let queue: Promise<unknown> = Promise.resolve()

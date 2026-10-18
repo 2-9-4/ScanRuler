@@ -247,6 +247,14 @@ export class PageLink extends Asker {
   }
 
   #receive(message) {
+    // The tab hidden or shown again — in the background, its window
+    // covered, the screen locked — for the status to say.
+    if (message.event === 'visibility') {
+      this.page = { ...this.page, hidden: message.hidden === true }
+      this.#tellPeers()
+      this.emit('visibility', this.page.hidden)
+      return
+    }
     if (message.event === 'commands' && Array.isArray(message.commands)) {
       this.page = { ...this.page, commands: message.commands }
       this.#tellPeers()

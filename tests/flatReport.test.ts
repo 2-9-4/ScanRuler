@@ -78,6 +78,12 @@ describe('buildFlatReport', () => {
     expect(text).toContain('Distance to line: 40.000 mm')
   })
 
+  it('lists the notes last, each on a line, blank ones left out', () => {
+    const text = buildFlatReport(sampleInput({ notes: [{ text: '#6-32 UNC × 7.1' }, { text: '  ' }] }))
+    expect(text.endsWith('\nNotes\n  #6-32 UNC × 7.1')).toBe(true)
+    expect(buildFlatReport(sampleInput())).not.toContain('Notes')
+  })
+
   it('shouts about a nominal scale and names the aligned part frame', () => {
     const datum = { originPx: [0, 0] as [number, number], xRefPx: [100, 0] as [number, number] }
     const text = buildFlatReport(

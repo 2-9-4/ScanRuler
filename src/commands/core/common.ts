@@ -11,6 +11,7 @@ import { draftHolds, useStore } from '../../state/store'
 import { useFlat, flatDraftHolds } from '../../state/flatStore'
 import { bool, str, type JsonSchema } from '../schema'
 import { CommandError, type FileOut } from '../types'
+import { watchSession } from '../activity'
 
 /**
  * Refuse while something open in the 3D Measure panel holds work the command
@@ -94,24 +95,69 @@ export function fileResult(built: BuiltFile): { file: FileOut; status: string } 
 export function waitFor<T>(read: () => T | null | undefined | false, what: string, timeoutMs = 120_000): Promise<T> {
   return new Promise((resolve, reject) => {
     const started = Date.now()
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let done = false
+    // Looked at again whenever a store changes — the worker's answers land
+    // in them, and a hidden tab's browser does not hold those back — and on
+    // a timer besides, for what no store says.
+    const unwatch = watchSession(() => check())
+    const finish = (then: () => void) => {
+      done = true
+      clearTimeout(timer)
+      unwatch()
+      then()
+    }
     const check = () => {
+      if (done) return
       let value: T | null | undefined | false
       try {
         value = read()
       } catch (e) {
-        reject(e)
+        finish(() => reject(e))
         return
       }
       if (value) {
-        resolve(value)
+        const found = value
+        finish(() => resolve(found))
         return
       }
       if (Date.now() - started > timeoutMs) {
-        reject(new CommandError('failed', `Gave up waiting for ${what} after ${Math.round(timeoutMs / 1000)} s.`))
+        finish(() => reject(new CommandError('failed', `Gave up waiting for ${what} after ${Math.round(timeoutMs / 1000)} s.`)))
         return
       }
-      setTimeout(check, 20)
+      clearTimeout(timer)
+      timer = setTimeout(check, 20)
     }
     check()
   })
+}
+
+/** A task's turn: what is waiting runs first. A MessageChannel's message,
+ *  which a hidden tab's browser does not slow down as it does timers. */
+export const nextTask = (): Promise<void> =>
+  new Promise((resolve) => {
+    if (typeof MessageChannel === 'undefined') {
+      setTimeout(resolve, 0)
+      return
+    }
+    const channel = new MessageChannel()
+    channel.port1.onmessage = () => {
+      channel.port1.close()
+      resolve()
+    }
+    channel.port2.postMessage(null)
+  })
+
+/** A frame for the stage to follow the stores: the browser's next one — or,
+ *  while the tab is hidden and the browser draws none, a task's turn and
+ *  then the viewport's frame drawn by hand (SceneManager.pumpFrame), so a
+ *  wait on the screen does not stall in a background tab. */
+export async function nextFrame(scene?: { pumpFrame(): void } | null): Promise<void> {
+  const hidden = typeof document === 'undefined' || document.visibilityState === 'hidden'
+  if (!hidden && typeof requestAnimationFrame === 'function') {
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+    return
+  }
+  await nextTask()
+  scene?.pumpFrame()
 }

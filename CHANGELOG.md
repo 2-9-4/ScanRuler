@@ -5,6 +5,286 @@ bar and the imprint is the entry it belongs to; the `.scanruler` projects it
 saves carry the same number as `appVersion`. How a release is cut is in the
 README under "Releases".
 
+## 0.6.1 — 2026-10-18
+
+- **A probe of the tab hidden for real** (2026-10-18).
+  `scripts/e2e-agent-hidden.mjs` runs an agent's round of calls — the scan
+  queried, a sphere fitted, the view turned and pictured, a section cut and
+  pictured, the steps undone — in a Chrome window on the screen, first in
+  front and then minimised, which Chrome counts as hidden (no frames,
+  timers held to a second and, after five minutes, to a minute; it waits
+  `HIDDEN_WAIT`, 330 s, before the hidden round). It passes when no call
+  hidden takes more than twice as long as in front, or half a second more,
+  none stalls, and the status and the trace say hidden. `launchApp` in
+  `scripts/e2e-lib.mjs` takes `headless: false` for a real window.
+- **A sloped or curved patch measured** (2026-10-18). `scan.fit_surface
+  { vertices | box, normal?, model? }` fits a patch of the scan — a sloped
+  side, a twisted ruled face, a dome, a saddle, a fairing — as a height over
+  its own best plane (`src/core/fit/heightSurface.ts`): a plane, a bilinear
+  patch (a twisted face) and a full quadric, each with its coefficients,
+  RMS and worst miss in the patch's frame, given in the frame the part is
+  measured in now; the quadric also with its principal curvatures, their
+  radii and directions and the shape they make (flat, cylinder, dome,
+  saddle). With `model: "best"` (the default) every one is fitted and the
+  simplest whose RMS is within a tenth of the lowest is named. A sphere's
+  cap of R50 reads a dome of R50 ± 2, a cylinder's strip of R30 a cylinder
+  along its axis, a twisted face bilinear.
+- **A picture of a section, with the gap in red** (2026-10-18).
+  `section.render { section, frame?, tolerance?, layers?, width?, height? }`
+  draws a section as a PNG for an agent checking a slice: the scan's cut as
+  points on the section's sheet (+u right, +v up, as `section.get` gives
+  them), a grid in millimetres with its values at the margins, a scale bar,
+  and what the workspaces' layers draw over it — outlines, such as a
+  model's cut by the section's plane, and labelled pieces, such as a
+  sketch's with their ids. Each scan point within ten tolerances of an
+  outline is read against it: grey on it, red off it by more than the
+  tolerance (the Deviation workspace's by default); the answer counts them
+  (`gap`: read, over, outside and inside a closed outline, max, rms, and
+  the box round the red to frame the next look) and gives the picture's
+  `map` from pixels to sheet places. It is a picture tool, so
+  `--tools compact` lists it. Workspaces add layers with
+  `registerSectionLayers` (`src/commands/sectionLayers.ts`, exported from
+  the plugin API) — the app draws the scan, a layer what it holds. In place
+  of a section, `plane: { origin, normal }` cuts the scan there for the
+  picture alone — no section is made, no undo step — and the answer gives
+  the sheet's axes; `pictureOfSheet` and `sheetThrough` do the same for a
+  workspace's own pictures.
+- **What finished, said once; timings on any change** (2026-10-18).
+  scanruler-mcp's `scanruler_wait { for: "idle" }` now waits for the
+  changes still running as well as the tab's own work, and answers
+  `finished`: every change done or failed since it last said so — a failed
+  one with its error code and message, a batch with the call it stopped at
+  — each once, a change the client was answered directly left out unless it
+  ran past a minute (a client's wait). Every tool that changes the session
+  takes `timings: true`, as a batch did: the answer adds the call's `ms`
+  and the steps its build played (`steps.played`), which the server
+  otherwise drops; inside a batch the batch's own flag decides.
+- **A trace of an agent's calls, to measure a run** (2026-10-18).
+  scanruler-mcp's `--trace <dir>` (or `SCANRULER_MCP_TRACE`) writes a line
+  per tool call into a new file per session in `<dir>`: when it started, the
+  tool, how long it took, bytes in and out, the error code of a refusal, the
+  pictures, and whether the tab was hidden at its start and end. A batch's
+  entries get a line each under the batch's call, a change started with
+  `wait: false` a line when it finishes, `scanruler_wait` what it waited for
+  and how many changes were running behind it, and the tool list each time
+  it is handed out its size; the tab hidden or shown again is a line too, a
+  second copy of the server sending its calls through the first included.
+  Off unless asked for, written on this computer only, and arguments only as
+  their size unless `--trace-args` is given. `scanruler_status` names the
+  file (`server.trace`). `node scripts/trace-summary.mjs <dir>` sums a run up:
+  how much of it was ScanRuler working and how much the agent, over how many
+  turns, and per tool the calls, batched calls, refusals, total and p95 time
+  and kilobytes each way (`--json` for the numbers).
+
+- **A skill for measuring a scan through an agent, and a test that skills
+  name only real tools** (2026-10-18). `skills/scan-measuring/` is a skill an
+  agent loads to measure a 3D scan through scanruler-mcp: `SKILL.md` the
+  workflow — open the scan, read the session, fit, dimension, align, cut
+  sections, compare, check thickness, report — with a table of red flags
+  (what a symptom means and what to do), `reference.md` every tool's input
+  in short with an example, the cost of the answers measured on a real scan
+  (`session_state` 20 kB, `scan_query` at 5,000 points 256 kB, a picture at
+  800 px 640 tokens and at 1,400 px 1,950), and the errors with their fixes.
+  `tests/skillNames.test.ts` reads every skill in `skills/` and the MCP
+  server's instructions and fails on a tool name in the app's namespaces or
+  the server's own that is no tool — a command renamed or taken away that a
+  skill still teaches.
+- **Every command fed junk** (2026-10-18). `tests/commandHostile.test.ts`
+  feeds every command the app registers, with a scan open, each of its
+  input properties in turn set to null, NaN, ±Infinity, -1, 1e308, the
+  empty string, a megabyte of text, an empty list and object, an object
+  nested 5000 deep and values of the wrong type — on the least input the
+  command otherwise takes — and each of them as the whole input: every
+  call must refuse with a CommandError or answer, never throw anything
+  else, never hang, and never refuse with a fault of its own (the registry
+  hands on whatever a command throws as `failed`; a message that is a
+  TypeError's or a stack run out counts as one). The sweep is
+  `tests/hostileKit.ts`, which a plugin runs over its own commands too. It
+  found nothing: 2,040 calls, 37 of them answered, the validator refusing
+  most of the rest and the commands the others.
+- **Batches that stand or fall whole, long changes as jobs, and a hidden
+  tab that does not stall** (2026-10-18). `history.checkpoint` marks where
+  the undo history stands and `history.restore { checkpoint }` undoes every
+  step made since, refusing — undoing nothing — when the mark has been
+  undone past; both run headless too. scanruler-mcp's `scanruler_batch`
+  uses them: stopped at a refused call it undoes what the calls before it
+  changed (`rollback`, on by default) and names `failed: { index, tool,
+  error }` and `undone`; `timings: true` adds each call's `ms`, `total_ms`,
+  and the steps a change's build played with their milliseconds, which a
+  change's answer otherwise leaves out (`steps.played`). Every tool that
+  changes the session takes `wait`, and the server runs each such call as a
+  job: `wait: false` answers `{ queued, job }` at once, `scanruler_wait {
+  for: "job", job }` gives the answer, and a call the client stopped
+  waiting for keeps running, listed by `scanruler_status` with its answer
+  kept. A hidden tab — in the background, covered, the screen locked —
+  draws no frames and has its timers slowed to once a minute, which stalled
+  every command that waits on the screen or for the session to settle: a
+  wait now looks again whenever one of the session's stores changes (the
+  command host names them; a plugin names its own to `registerBusy`), with
+  the timer as backstop only, and a frame waited for while the tab is
+  hidden is a task's turn (a MessageChannel's, which is not slowed) and
+  then one drawn by hand (`SceneManager.pumpFrame`). The page tells the
+  server when it is hidden or shown again, and `scanruler_status` gives
+  `page.hidden` with a note on browsers that unload background tabs.
+  Tests: `commandWaits` (a wait answered by a store change with every timer
+  stopped, and by a store a plugin named; the timer still times out; a
+  hidden page's frame drawn by hand, a shown one's by the browser), and the
+  server's `jobs` (a batch refused part way undone back to its start, not
+  with rollback false, nothing marked for a batch that reads; timings;
+  wait: false answered at once and read by its job, a refused one as its
+  error, a batch too; a call past the client's timeout kept and read; the
+  tab hidden and shown).
+- **ScanRuler headless, inside the agent's server** (2026-10-18). An agent
+  could reach ScanRuler only through a tab in a browser — which stalls when
+  the tab is in the background or the screen locked, and which one agent's
+  subagents had to share. Now `npm run build:engine` builds the app for
+  Node into one module, `dist-engine/engine.mjs` (`src/headless/engine.ts`:
+  the session with no viewport, its mesh worker in the same thread, the
+  commands registered and the plugins installed), and `scanruler-mcp
+  --engine <file>` — or `--headless` for the checkout's own build, or
+  `SCANRULER_ENGINE` — runs it in its own process in place of the page. The
+  server finds the engine by its path and names nothing in it. Only the
+  commands marked to run without a page are offered (`headless: true` on a
+  command: `session.state` and `history.undo`/`redo` in the app itself);
+  any other answers `unavailable`, naming the page mode, and the server
+  turns away a call to one by name the same way. A plugin starts what its
+  headless commands need through a new extension point, `headless()`, after
+  `install()`. The server's instructions say it runs headless,
+  `scanruler_status` gives `backend` (`page` or `headless`) and the
+  engine's path, `scanruler_open` has nothing to open, and stdout stays the
+  MCP channel's alone — the app's logging and the kernel's own reports go
+  to stderr. One engine to a process, so two servers started headless share
+  nothing. Tests: `headlessEngine` (only commands marked headless offered,
+  every command one or the other, a page command refused naming it, one
+  engine a process) and the server's `engine` (status, instructions, the
+  engine's tools run in it, a file written by path, a page tool and a batch
+  call to one answered unavailable, an engine looked for where it is not or
+  a module that is none refused).
+- **A compact tool list for small local models** (2026-10-17).
+  scanruler-mcp lists every command the tab offers as a tool of its own:
+  over a hundred tools and some 50k tokens of schema at scanruler.com,
+  read before the conversation starts. A local model with a 128k window ran
+  out of room after three tool rounds and chose unreliably among so many.
+  `--tools compact` (or `SCANRULER_MCP_TOOLS=compact`) lists seven, about
+  3k tokens: the server's four, `scanruler_tools`, and the tab's tools that
+  return a picture, `view_render` and `flat_render`. Those are listed so
+  the model calls them directly and sees the picture, which a batch gives
+  only as text; which tools they are is read off each command's own mark,
+  and a tab with another one has the client list the tools again.
+  `scanruler_tools` with no arguments gives every tool's name and title, a
+  line each. With `names` it gives those tools' definitions as the full
+  list has them, up to 20 at a time, and names it does not know in
+  `unknown`. It reads the connected tab's list when called, so it follows
+  the tab. The other tools run through `scanruler_batch`, one call as a
+  batch of one, and a direct call to one not listed still runs. The
+  server's instructions say so in this mode, and `scanruler_status` gives
+  the mode (`server.tools`). The full list stays the default. Tests: the
+  server's `mcp` (the five and each picture tool listed, nothing else; the
+  list names every command and follows the tab that connects; a tab with a
+  new picture tool has the client told the list changed; `names` gives the full list's
+  definitions and reports unknown names) and `main` (the option, the
+  variable, a mode refused).
+- **An agent can work the 2D sheet without seeing the stage** (2026-10-14).
+  An agent asked to sort a flatbed scan of inserts by size and tooth count
+  had no picture of the sheet, no way to name an edge but to click near
+  it, no word on whether a pick had snapped, and no way to label or remove
+  what it made. New and changed commands:
+  - **`flat.render`**: a picture of the sheet. It is drawn afresh as the
+    sheet lies — in its own units, +X right, +Y up, whatever the stage's
+    alignment or turns — with a grid ruled in those units and its values
+    written at the margins. The answer's `map` takes a picture pixel to a
+    sheet place, so a place read off the picture goes straight back as a
+    click. `frame` zooms in on a box. `show` puts in or out the image, the
+    edges with their chain numbers, the elements, counts and alignment, the
+    dimensions, the notes, the labels and the grid. `view.render` now
+    refuses while the 2D workspace has the screen, where the 3D view is not
+    drawn, and points to `flat.render`.
+  - **Edges by number:** `flat.edges` lists the detected chains — length,
+    closed or open, the box round them, and a polyline thinned to a
+    tolerance. It can take them nearest a place first, inside a box, or
+    long ones only. `flat.fit` takes whole chains (`chains`) or every edge
+    point in a box (`box`), by the kind's edge method.
+  - **Picks:** a pick answers where it landed and on which chain it snapped
+    (`picks`). `snap: false` leaves it where it was put; `reach` sets how
+    far it looks for an edge. A seed or edge click that finds no edge now
+    says which chain is nearest, how far it is and where.
+  - **Notes, changes and removals:** `flat.note_add` writes a text note on
+    the sheet. `flat.edit` renames an element, dimension or count, gives a
+    note new text or a new place, and shows or hides any of them.
+    `flat.remove` takes any of them away as one step. Text notes now appear
+    in the report, and the SVG and DXF exports write them as text on the
+    labels layer. The 3D element commands, asked for a name that is only
+    on the sheet, say so.
+  - **Parts and teeth:** `flat.objects` finds the separate parts on an
+    image by grey level and numbers them in reading order. For each it gives
+    the area, holes, box, centroid, equivalent diameter, the largest and
+    smallest caliper widths, the long axis and the edge chains along its
+    outline. `flat.profile` reads an outline — a part's or some chains' — as
+    radius against angle about a centre, or as distance against position
+    along an axis, side by side. It counts the peaks by prominence and gives
+    the pitch and the envelope (radial also as diameters). `mark: true` puts
+    a count on every peak, to check by eye.
+  - **`session.state`'s `flat`** now gives the sheet's extent and where its
+    origin is, the edges (status, chains, sensitivity), each dimension's
+    value, the notes and the counts. The alignment is given in sheet units
+    (`alignment`) where the picks were in pixels (`datum`).
+- **A project's name, and New Project** (2026-10-14). The top bar has a
+  field for the project's name, beside the workspace tabs: typed in place,
+  Enter or leaving the field takes it, Escape puts it back. It is kept in
+  the project file (`name` in `project.json`, absent while unnamed), and
+  it names the file Save Project writes, every export — the elements' STEP
+  and STL, the point cloud, the 2D sheet's files where no section names
+  them, a rendered view — and the browser tab. Unnamed, all of that goes
+  by the scan's name, or the image's, as before; a name is kept whole, a
+  dot in it no extension, with what a file name cannot hold made a dash.
+  A scan opened into a named project keeps the name. **New Project**, next
+  to Save and Load, starts over in the workspace on screen: the scan, the
+  reference and the image closed, every measurement and every workspace's
+  work let go, the settings back to the app's own and the name taken off —
+  what opening an empty project does, the blank one made from the stores'
+  defaults (`blankManifest`) — asking first when there are changes not
+  saved. Commands: `project.rename { name }` (empty takes it off),
+  `session.state` reads it as `project.name`, the report carries it, and
+  `session.reset` takes it off with the rest.
+- **The camera turns smoothly, and keeps the view it was given**
+  (2026-10-14).
+  - **A turn about the part:** a turn to a pose (`animateLook`) set out
+    about the camera's target, which orbits about the cursor can leave far
+    in front of the part or behind it, so the part swung out across the
+    screen and back. The target is now slid along the line of sight level
+    with where the turn lands first — nothing changes on screen, the
+    projection being parallel — and the part turns about a point at its
+    own depth.
+  - **A goal moved under way:** a view that follows another and changes
+    its goal while a turn is under way (`retarget`) jumped by the share of
+    the way already gone; the turn now bends towards the new goal from
+    where it has got to, on the same clock.
+  - **Framings take the turn's place:** a framing, a standard view or a
+    roll lands where it was asked, rather than being written over by a
+    turn still under way.
+  - **A followed sheet gives the view back:** the viewport that follows a
+    2D sheet laid over it goes back, in a short turn, to the view it was
+    in when the follow began, once the sheet is put away; the same frame
+    asked for again moves only where the turn lands. A sheet laid again
+    over new bounds flies to them (`frame(ms)`, `setBlankSheet(…, flyMs)`)
+    and the view under it with it, rather than both jumping.
+  - **A stage with no scan:** a layer that stands in for the scan, grown
+    past what the camera last framed, had the camera jump to a fixed view
+    from above with Y up. It now flies out to take the part in, looking
+    from where it looks (`flyToFit`), and only when the part reaches off
+    the screen (`boxOnScreen`) — a close look at a detail is left alone
+    (`LayerHost.takeIn`). The stage's first framing is the iso view, front
+    top right with Z up, as the iso key turns to.
+- **A tool's slice cuts the layers' parts** (2026-10-14). A tool's slice
+  cut only where the plane ran through the scan's box, so on a stage with
+  no scan — or past the scan's end — it cut nothing. It now cuts wherever
+  the plane runs through the scan or what the layers draw.
+- **Diameter dimensions on the 2D sheet** (2026-10-14). `DimShape` has a
+  `diameter`: the line through the centre at an angle, rim to rim with an
+  arrow on the rim at each end pointing out at it — in at it from outside on
+  a circle too small for both — the number in a gap of the line inside the
+  circle, or outside at the end of the line carried on to it.
+
 ## 0.6.0 — 2026-10-14
 
 - **Grips held on the screen** (2026-10-13). A grip a plugin puts on the

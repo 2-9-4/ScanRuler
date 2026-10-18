@@ -111,6 +111,13 @@ describe('buildFlatSvg', () => {
     expect(svg).toContain('<g id="elements" fill="none"')
   })
 
+  it('writes the notes in the labels layer, each standing on its spot', () => {
+    const svg = buildFlatSvg(input({ notes: [{ text: 'M3 <insert>', at: [20, 30] }] }))
+    // (20, 30) on the sheet is (20, 50) on an 80 mm page with y down.
+    expect(svg).toContain('<text class="note" x="20" y="50" fill="#333333">M3 &lt;insert&gt;</text>')
+    expect(buildFlatSvg(input())).not.toContain('class="note"')
+  })
+
   it('draws an arc counter-clockwise from its start, the long way round past a half turn', () => {
     const el = (fit: FlatArcFit) => [{ fit, color: '#000', name: 'Arc 1', value: '' }]
     const quarter = buildFlatSvg(input({ elements: el(arc(0, Math.PI / 2)) }))

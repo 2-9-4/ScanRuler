@@ -5,12 +5,13 @@
 import { runImport } from '../../app/imports'
 import { historyBlocked, redo, undo, useHistory } from '../../state/historyStore'
 import { useShell } from '../../state/shellStore'
+import { useStore } from '../../state/store'
 import { commandHost } from '../host'
 import { reportJson, reportText, REPORT_WORKSPACES, type ReportWorkspace } from '../report'
 import { enumOf, obj, str } from '../schema'
 import { internalWorkspace, publicWorkspace, sessionState, workspaceNames } from '../state'
 import { CommandError, type Command } from '../types'
-import { discardSchema, requireDiscardable } from './common'
+import { discardSchema, requireDiscardable, waitFor } from './common'
 
 const state: Command = {
   name: 'state',
@@ -19,6 +20,7 @@ const state: Command = {
     'The whole session as JSON: the app and its plugins, the workspace on screen, whether it is busy, the scan (file, units, vertex and triangle counts, bounding box, centre, size, applied alignment), every element with its fit, every dimension with its value, limit and verdict, the sections, what is open in the panels, the deviation, wall thickness and 2D Measure state with their statistics, the guided hint for the next step, and the undo history. Lengths in millimetres, angles in degrees. Read it before acting and after.',
   input: obj({}),
   readOnly: true,
+  headless: true,
   run: () => sessionState(),
 }
 
@@ -26,7 +28,7 @@ const reset: Command<{ discard?: boolean }> = {
   name: 'reset',
   title: 'Start over',
   description:
-    'Close the scan, the reference part and the 2D image, and with them every measurement, as opening an empty project does. Refuses while the session holds measurements unless discard is true. Not undoable: the history starts over too.',
+    'Close the scan, the reference part and the 2D image, and with them every measurement and the project’s name, as opening an empty project does. Refuses while the session holds measurements unless discard is true. Not undoable: the history starts over too.',
   input: obj({ discard: discardSchema }),
   history: false,
   run: async ({ discard }) => {
@@ -37,6 +39,7 @@ const reset: Command<{ discard?: boolean }> = {
       session.scan.commitScan(null)
       session.deviation.commitNominal(null)
       flat?.closeImage()
+      useStore.getState().setProjectName(null)
     })
     return await sessionState()
   },
@@ -93,6 +96,7 @@ const undoCommand: Command = {
   description: 'Undo the last step — one of the person’s or one of these commands, each of which is one step. Returns the step’s name and the session afterwards.',
   input: obj({}),
   history: false,
+  headless: true,
   run: () => travel(true),
 }
 
@@ -102,10 +106,66 @@ const redoCommand: Command = {
   description: 'Redo the step undone last. Returns the step’s name and the session afterwards.',
   input: obj({}),
   history: false,
+  headless: true,
   run: () => travel(false),
 }
 
 export const sessionCommands = [state, reset]
 export const workspaceCommands = [workspace]
 export const reportCommands = [report]
-export const historyCommands = [undoCommand, redoCommand]
+/** The history as a checkpoint found it: the step on top by itself, the
+ *  object the history holds — a checkpoint is the steps under it. */
+const checkpoints = new Map<string, { top: object | null; label: string | null }>()
+let nextCheckpoint = 1
+/** How many checkpoints are remembered, the oldest let go first. */
+const CHECKPOINTS = 100
+
+const checkpointCommand: Command = {
+  name: 'checkpoint',
+  title: 'Mark the history',
+  description:
+    'Mark where the undo history stands, before a run of changes that should stand or fall together: history.restore { checkpoint } later undoes every step made since, back to this mark. Changes nothing. Returns the checkpoint, the step on top and how many there are.',
+  input: obj({}),
+  readOnly: true,
+  headless: true,
+  run: async () => {
+    const past = useHistory.getState().past
+    const top = past.at(-1) ?? null
+    const checkpoint = `cp${nextCheckpoint++}`
+    checkpoints.set(checkpoint, { top, label: top?.label ?? null })
+    if (checkpoints.size > CHECKPOINTS) checkpoints.delete(checkpoints.keys().next().value!)
+    return { checkpoint, top: top?.label ?? null, steps: past.length }
+  },
+}
+
+const restoreCommand: Command<{ checkpoint: string }> = {
+  name: 'restore',
+  title: 'Back to a mark in the history',
+  description:
+    'Undo every step made since history.checkpoint gave this checkpoint, newest first, as the undo key would one by one — so a run of changes that went wrong in the middle is taken back whole. Refused, undoing nothing, when the mark is no longer under the steps on top — undone past it, or the history started afresh (a scan or a project opened). Returns the steps undone, newest first, and the session afterwards.',
+  input: obj({ checkpoint: str('What history.checkpoint returned.', { minLength: 1 }) }, ['checkpoint']),
+  history: false,
+  headless: true,
+  run: async ({ checkpoint }) => {
+    const mark = checkpoints.get(checkpoint)
+    if (!mark) throw new CommandError('not_found', `There is no checkpoint "${checkpoint}" — history.checkpoint gives one.`)
+    const past = useHistory.getState().past
+    const at = mark.top === null ? -1 : past.indexOf(mark.top as (typeof past)[number])
+    if (mark.top !== null && at < 0) {
+      throw new CommandError('invalid_state', `The history no longer holds the step the checkpoint was made on (“${mark.label}”) — it was undone, or the history started afresh; nothing was undone.`)
+    }
+    const undone: string[] = []
+    while (useHistory.getState().past.length - 1 > at) {
+      // Each step once the one before has settled — a rebuild it set off
+      // holds the history until it lands.
+      await waitFor(() => !historyBlocked() && !useHistory.getState().restoring, 'the history to be free to undo', 120_000)
+      const entry = useHistory.getState().past.at(-1)!
+      await undo()
+      if (useHistory.getState().future.at(-1) !== entry) throw new CommandError('failed', `The step "${entry.label}" could not be undone; ${undone.length} were.`)
+      undone.push(entry.label)
+    }
+    return { undone, state: await sessionState() }
+  },
+}
+
+export const historyCommands = [undoCommand, redoCommand, checkpointCommand, restoreCommand]

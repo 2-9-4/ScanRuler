@@ -65,6 +65,9 @@ export interface SceneLayerHost {
   /** With no scan loaded, the part's size — what overlays are drawn at —
    *  comes from the layer: see SceneManager.sizeStage. */
   sizeStage(radius: number, frame?: THREE.Box3): void
+  /** With no scan loaded, a part grown past what the camera last framed:
+   *  see SceneManager.takeIn. */
+  takeIn(part: THREE.Box3, framing: THREE.Box3): void
   /** The sphere the camera last framed, in world coordinates. */
   framedSphere(): THREE.Sphere
 }

@@ -80,6 +80,7 @@ export class PeerLink extends Asker {
     this.page = page
     if (page && !was) this.emit('connected', page)
     else if (!page && was) this.emit('disconnected')
+    else if (page && (page.hidden ?? false) !== (was.hidden ?? false)) this.emit('visibility', page.hidden === true)
     else if (page) this.emit('commands', page.commands)
   }
 
@@ -159,7 +160,7 @@ export class SharedLink extends EventEmitter {
 
   /** Pass on a link's page events while `active()` says it is the one in use. */
   #forward(link, active) {
-    for (const event of ['connected', 'disconnected', 'commands']) {
+    for (const event of ['connected', 'disconnected', 'commands', 'visibility']) {
       link.on(event, (...args) => {
         if (active()) this.emit(event, ...args)
       })

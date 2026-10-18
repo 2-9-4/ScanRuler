@@ -1692,8 +1692,10 @@ export class FlatScene {
    * lands on, so it has to reach a little past the last edge. It is not
    * seen: a white card behind the cut would be a page the cut is not on, so
    * the plane is there to be clicked and framed and the stage shows through.
+   * With `flyMs` the view flies to the new framing rather than jumping —
+   * for a sheet whose cut came in after it was first laid.
    */
-  setBlankSheet(min: Vec2, max: Vec2): void {
+  setBlankSheet(min: Vec2, max: Vec2, flyMs = 0): void {
     this.texture?.dispose()
     this.texture = null
     this.material.map = null
@@ -1706,7 +1708,7 @@ export class FlatScene {
     this.sheet.visible = true
     this.bounds = { x0: min[0], y0: min[1], x1: max[0], y1: max[1] }
     this.layoutSheet()
-    this.frame()
+    this.frame(flyMs)
   }
 
   /** The calibration changed: same pixels, different millimetres. A bare
@@ -1746,11 +1748,13 @@ export class FlatScene {
   }
 
   /** Frame the whole sheet, face on, turned and mirrored as asked — y up at
-   *  no turns. */
-  frame(): void {
+   *  no turns — at once, or flown to over `ms`. */
+  frame(ms = 0): void {
     if (!this.sheet.visible) return
     const box = new THREE.Box3().setFromObject(this.sheet)
-    this.viewport.frameCamera(box, null, { dir: this.screenDir(), up: this.screenUp() })
+    const view = { dir: this.screenDir(), up: this.screenUp() }
+    if (ms > 0) this.viewport.flyToFit(box, ms, view)
+    else this.viewport.frameCamera(box, null, view)
   }
 
   /** Show the sheet turned by whole quarter turns, counter-clockwise on

@@ -2,8 +2,9 @@
 // A dimension on a 2D sheet as a drawing carries it: extension lines off the
 // two measured points, a dimension line between them with a filled arrow at
 // each end, the number written along the line in a gap left for it; a radius
-// as a leader with its arrow on the rim; an angle as an arc between the two
-// lines.
+// as a leader with its arrow on the rim; a diameter as a line through the
+// centre with an arrow on the rim at each end; an angle as an arc between the
+// two lines.
 //
 // Pure: a DimShape says what is measured and where the number sits, in sheet
 // millimetres; dimStrokes turns it into lines and arrowheads for one zoom —
@@ -20,6 +21,10 @@ export type DimShape =
   /** A radius: the leader at `angle` about `c`, the number `reach` from the
    *  centre. `span` is the arc's own, for a leader that lands beside it. */
   | { kind: 'radius'; c: Vec2; r: number; angle: number; reach: number; span: { start: number; sweep: number } | null }
+  /** A diameter: the line through `c` at `angle`, rim to rim, the number
+   *  `reach` from the centre the way `angle` points — inside the circle in
+   *  a gap of the line, or outside at the end of the line carried on. */
+  | { kind: 'diameter'; c: Vec2; r: number; angle: number; reach: number }
   /** An angle: the arc of `radius` about `vertex` from `a0` counter-clockwise
    *  through `sweep`, the number at the angle `at`; the two lines' own
    *  stretches, for the extension an arc end beside its line needs. */
@@ -134,6 +139,23 @@ export function dimStrokes(shape: DimShape, px: number, textPx: number): DimStro
         lines.push(arcPoints(c, r, end, end + Math.sign(rel) * (over + (EXT_OVER_PX * px) / Math.max(r, 1e-9))))
       }
     }
+    return { lines, arrows, text: polar(c, reach, angle), textAngle: readable(angle) }
+  }
+
+  if (shape.kind === 'diameter') {
+    const { c, r, angle, reach } = shape
+    const u: Vec2 = [Math.cos(angle), Math.sin(angle)]
+    const near = polar(c, r, angle)
+    const far = polar(c, -r, angle)
+    // On a circle too small for two arrows inside, they point in at the rim
+    // from outside, as a short length's do.
+    const outside = 2 * r < 2.4 * arrow
+    let lo = outside ? -r - tail : -r
+    let hi = outside ? r + tail : r
+    lo = Math.min(lo, reach - half)
+    hi = Math.max(hi, reach + half)
+    for (const [a, b] of withGap(lo, hi, reach - half, reach + half)) lines.push([polar(c, a, angle), polar(c, b, angle)])
+    arrows.push({ tip: near, dir: outside ? scale2(u, -1) : u }, { tip: far, dir: outside ? u : scale2(u, -1) })
     return { lines, arrows, text: polar(c, reach, angle), textAngle: readable(angle) }
   }
 

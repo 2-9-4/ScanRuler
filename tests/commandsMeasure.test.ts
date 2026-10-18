@@ -42,7 +42,7 @@ describe('the command list', () => {
   it('holds the contract’s names', () => {
     const names = listCommands().map((c) => c.name)
     for (const name of [
-      'session.state', 'session.reset', 'workspace.set', 'scan.open', 'scan.nearest', 'scan.query',
+      'session.state', 'session.reset', 'workspace.set', 'scan.open', 'scan.nearest', 'scan.query', 'scan.fit_surface',
       'element.fit', 'element.fit_marked', 'element.construct', 'element.rename', 'element.remove', 'element.set_visible',
       'dimension.add', 'dimension.set_limit', 'dimension.set_basic', 'dimension.remove',
       'align.datum', 'align.auto', 'align.symmetry', 'align.clear', 'section.cut', 'section.get',
@@ -90,6 +90,23 @@ describe('scan', () => {
     expect((await refused('scan.nearest', { at: { screen: [10, 10] } })).code).toBe('not_implemented')
     expect((await refused('scan.nearest', { at: { candidate: 1 } })).code).toBe('not_implemented')
     expect(useHistory.getState().past).toHaveLength(0)
+  })
+
+  it('scan.fit_surface measures the box’s top as a plane — the simplest that holds — in its own frame', async () => {
+    type S = { points: number; frame: { origin: Vec3; normal: Vec3 }; models: Record<string, { rms: number; worst: number; curvature?: { shape: string } }>; best: string }
+    const top = await run<S>('scan.fit_surface', { box: { min: [-30, -30, 19.9], max: [30, 30, 20.1] }, normal: { dir: [0, 0, 1] } })
+    expect(top.points).toBe(39 * 39)
+    expect(top.best).toBe('plane')
+    expect(Object.keys(top.models).sort()).toEqual(['bilinear', 'plane', 'quadric'])
+    expect(top.models.plane.rms).toBeLessThan(1e-4)
+    expect(Math.abs(top.frame.normal[2])).toBeCloseTo(1, 6)
+    expect(top.frame.origin[2]).toBeCloseTo(20, 5)
+    expect(top.models.quadric.curvature!.shape).toBe('flat')
+    const one = await run<S>('scan.fit_surface', { box: { min: [-30, -30, 19.9], max: [30, 30, 20.1] }, model: 'plane' })
+    expect(Object.keys(one.models)).toEqual(['plane'])
+    expect((one as { best?: string }).best).toBeUndefined()
+    expect((await refused('scan.fit_surface', { box: { min: [50, 50, 50], max: [60, 60, 60] } })).code).toBe('invalid_input')
+    expect((await refused('scan.fit_surface', {})).code).toBe('invalid_input')
   })
 
   it('scan.query reads the vertices in a box or a ball, facing a way if asked, thinned to the limit', async () => {

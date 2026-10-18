@@ -864,6 +864,15 @@ interface theme, colour mode, navigation scheme, line widths, STEP style,
 scanner profiles — are not part
 of a project.
 
+A project has a **name**, typed in the top bar beside the workspace tabs and
+kept in the file: Save Project saves it under it, every export is named on it,
+and the browser tab carries it. Left unnamed, those go by the scan's name, or
+the image's, as they always did; a scan opened into a named project keeps the
+name. **New Project** starts over in the workspace on screen — the scan, the
+reference and the image closed, every measurement and every workspace's work
+let go, the settings back to the app's own and the name taken off — asking
+first when there are changes not saved.
+
 Completed work is also checkpointed locally in **this browser** about every
 two seconds after changes, once imports and measurements have settled. On a
 later visit, choose **Restore** from the recovery bar, or **Discard checkpoint**
@@ -1661,8 +1670,9 @@ the width between near-parallel lines (with the same fold-angle guards the 3D
 dimensions apply), and line–line angles. They re-evaluate whenever an element
 or the calibration moves.
 
-**Copy report** puts the session on the clipboard; **Export CSV** writes the
-elements and dimensions as raw numeric columns. Both open with the
+**Copy report** puts the session on the clipboard — the elements,
+dimensions, counts and text notes; **Export CSV** writes the elements and
+dimensions as raw numeric columns. Both open with the
 traceability line — what the scale is, where it came from, and which frame
 coordinates read in — because a figure without that line is how wrong numbers
 get trusted.
@@ -1670,8 +1680,9 @@ get trusted.
 **Export SVG** and **Export DXF** write the sheet as a drawing at true scale —
 one unit per millimetre, aligned and turned as the sheet is shown, so a part
 aligned along a reference edge comes in square. What is on the sheet is what
-is drawn: the detected edge chains while they are shown, and every visible
-element as a native line, circle, arc or spline, each layer its own group.
+is drawn: the detected edge chains while they are shown, every visible
+element as a native line, circle, arc or spline, and the text notes, each
+layer its own group.
 
 The **SVG** is for a vector editor, a laser, a browser or a print at 1:1 —
 edges as polylines point for point, elements as SVG shapes, the origin at the
@@ -1685,7 +1696,7 @@ CIRCLE, an arc an ARC by centre and angles, a point a POINT and a spline a
 SPLINE the sketch reads back exactly, on an `elements` layer; the edge chains
 are LWPOLYLINEs on an `edges` layer, thinned to within 0.01 mm of the detected
 points first, because a sketch handed a million line segments is a sketch
-nobody can use; the labels are TEXT on a `labels` layer. AutoCAD 2000 ASCII,
+nobody can use; the labels and notes are TEXT on a `labels` layer. AutoCAD 2000 ASCII,
 which every importer reads, with the traceability line in comments at the
 top.
 
@@ -1788,6 +1799,9 @@ the pairing, so from then on you just ask.
 > Load C:\Scans\bracket.stl and the nominal C:\CAD\bracket.step, best-fit
 > them, and tell me where the scan is more than 0.2 mm off. Show me a
 > picture.
+
+> Open the flatbed scan C:\Scans\inserts.png, find the inserts on it, count
+> each one's knurl teeth and write its size beside it.
 
 Name files by their full path — the agent opens them from your disk, and
 saves exports where you say. Everything happens in the tab in front of you;

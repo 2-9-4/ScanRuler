@@ -12,3 +12,6 @@ dist/
 # Generated e2e screenshots
 /e2e-*.png
 /e2e-out/
+
+# The app built for Node, headless (npm run build:engine)
+/dist-engine/

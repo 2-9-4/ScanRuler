@@ -96,10 +96,50 @@ export function collectProject(
   scope: Uint32Array | null,
   appVersion: string,
 ): { manifest: ProjectManifest; members: ArchiveMember[] } {
-  const s = useStore.getState()
-  const dev = useDeviation.getState()
-  const t = useThickness.getState()
-  const f = useFlat.getState()
+  const { manifest, members } = coreProject(sources, scope, appVersion, {
+    s: useStore.getState(),
+    dev: useDeviation.getState(),
+    t: useThickness.getState(),
+    f: useFlat.getState(),
+  })
+  // What was kept of the project opened last, then every section's own part —
+  // a section in use writes its part over a kept one of the same key.
+  const kept = keptParts()
+  Object.assign(manifest, kept.parts)
+  members.push(...kept.members)
+  const ctx = { sources, scanSaved: manifest.scan !== null, addMember: (name: string, bytes: Uint8Array) => members.push({ name, bytes }) }
+  for (const section of projectSections()) {
+    const part = section.collect(ctx)
+    if (part !== undefined) manifest[section.key] = part
+  }
+  return { manifest, members }
+}
+
+/** A project with nothing in it and every setting the app's own — what
+ *  New Project opens, in the workspace on screen. The plugins' sections
+ *  have no part in it, and each starts afresh the way it does for a project
+ *  without one. */
+export function blankManifest(appVersion: string): ProjectManifest {
+  return coreProject(emptySources(), null, appVersion, {
+    s: useStore.getInitialState(),
+    dev: useDeviation.getInitialState(),
+    t: useThickness.getInitialState(),
+    f: useFlat.getInitialState(),
+  }).manifest
+}
+
+/** The app's own parts of a project, read off the stores as given. */
+function coreProject(
+  sources: SourceFiles,
+  scope: Uint32Array | null,
+  appVersion: string,
+  { s, dev, t, f }: {
+    s: ReturnType<typeof useStore.getState>
+    dev: ReturnType<typeof useDeviation.getState>
+    t: ReturnType<typeof useThickness.getState>
+    f: ReturnType<typeof useFlat.getState>
+  },
+): { manifest: ProjectManifest; members: ArchiveMember[] } {
   const members: ArchiveMember[] = []
 
   let scan: ScanPart | null = null
@@ -225,21 +265,12 @@ export function collectProject(
     app: PROJECT_APP,
     schemaVersion: PROJECT_SCHEMA,
     appVersion,
+    ...(s.projectName ? { name: s.projectName } : {}),
     workspace: useShell.getState().workspace,
     scan,
     deviation,
     thickness,
     flat,
-  }
-  // What was kept of the project opened last, then every section's own part —
-  // a section in use writes its part over a kept one of the same key.
-  const kept = keptParts()
-  Object.assign(manifest, kept.parts)
-  members.push(...kept.members)
-  const ctx = { sources, scanSaved: scan !== null, addMember: (name: string, bytes: Uint8Array) => members.push({ name, bytes }) }
-  for (const section of projectSections()) {
-    const part = section.collect(ctx)
-    if (part !== undefined) manifest[section.key] = part
   }
   return { manifest, members }
 }
@@ -418,7 +449,9 @@ export function prepareProjectState(m: ProjectManifest, members: ReadonlyMap<str
   // Each section checks and converts its part the same way, before anything
   // is replaced — a part the file lacks is theirs to read as they will.
   const sections = projectSections().map((section) => section.prepare(m[section.key], { manifest: m, members }))
+  const projectName = typeof m.name === 'string' && m.name.trim() !== '' ? m.name.trim() : null
   return () => {
+    useStore.setState({ projectName })
     if (scan) useStore.setState(scan)
     useDeviation.setState(deviation)
     useThickness.setState(thickness)

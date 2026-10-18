@@ -147,6 +147,78 @@ serves a built ScanRuler (`npm run build` in a clone) at
 for working offline, and for the open-source build. A page from there needs
 no browser permission, and `--pair` then gives a link to it.
 
+### Without a browser (headless)
+
+```bash
+npm run build:engine                       # in a clone of ScanRuler
+npx scanruler-mcp --engine /path/to/scanruler/dist-engine/engine.mjs
+```
+
+runs ScanRuler itself inside the server, with no browser and no tab: the
+engine is a build of the app for Node, `dist-engine/engine.mjs`, which the
+server loads from where it is and names nothing in. `--headless` takes the
+engine built in the checkout the server is part of; `SCANRULER_ENGINE` gives
+a path as `--engine` does. There is no scan, no viewport and nobody
+watching, so only the commands that run without a page are tools —
+`session_state` and `history_undo`/`history_redo` in the app itself, and
+whatever a build of ScanRuler marks to run so; a tool that needs the page
+(`view_render`, `scan_open` …) answers `unavailable`, naming the page mode.
+Files still go by `path`. The server's instructions say it runs headless,
+`scanruler_status` says `backend: "headless"` and where the engine is, and
+`scanruler_open` has nothing to open. Each server is a session of its own —
+an agent's subagents can each start one and work side by side, sharing
+nothing — and what the app logs goes to stderr with the server's own lines.
+`--tools compact` works headless too: the server's five tools are listed, and
+the engine's are read through `scanruler_tools` and run through
+`scanruler_batch` (see *Small local models*).
+### Small local models
+
+Listed in full, every command the tab offers is a tool of its own: some sixty
+tools and 25k tokens of schema in the open-source build, over a hundred and
+50k tokens at scanruler.com, all read before the conversation starts. A
+frontier model takes that in its stride. A local model with a 128k window
+runs out of room within a few tool rounds, and picks less reliably among so
+many. For such a model, start the server with `--tools compact` (or set
+`SCANRULER_MCP_TOOLS=compact`). It then lists seven tools, about 3k tokens:
+the server's four, `scanruler_tools`, and the tab's tools that return a
+picture — `view_render` and `flat_render`.
+
+- `scanruler_tools` with no arguments lists the tab's tools, a name and a
+  line each, about 1.5k tokens for a hundred. With `names` it gives those
+  tools' full definitions, as the full list has them, up to 20 at a time.
+  Names it does not know come back in `unknown`.
+- The model runs the tools through `scanruler_batch`, one call as a batch of
+  one. A refused call comes back with the tab's error code and what was
+  wrong, so the model can try again with corrected arguments. A client that
+  lets the model call a tool it was not given can call them directly too.
+- The tools that return a picture are listed so the model calls them
+  directly and sees the picture. In a batch a picture comes back as text
+  only, written to a file when the call gives `path`. A tab that connects
+  with another picture tool has the client list the tools again.
+
+**LM Studio**: add `--tools` and `compact` to the server's arguments as two
+separate entries. In `mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "scanruler": {
+      "command": "npx",
+      "args": ["-y", "scanruler-mcp", "--tools", "compact"]
+    }
+  }
+}
+```
+
+**Codex** with a local model:
+
+```bash
+codex mcp add scanruler -- npx -y scanruler-mcp --tools compact
+```
+
+or `args = ["-y", "scanruler-mcp", "--tools", "compact"]` in
+`~/.codex/config.toml`.
+
 ## Options
 
 | Option | |
@@ -156,6 +228,11 @@ no browser permission, and `--pair` then gives a link to it.
 | `--serve <dir>` | Also serve a built ScanRuler from `<dir>`. |
 | `--allow-origin <url>` | Let a ScanRuler tab from another address connect — a self-hosted copy. Repeatable. scanruler.com and any page on this computer are always allowed. |
 | `--app <url>` | The ScanRuler address the pairing link opens. |
+| `--engine <file>` | Run ScanRuler headless in the server, from an engine built with `npm run build:engine` — no tab. Also `SCANRULER_ENGINE`. |
+| `--headless` | The same, with the engine built in the checkout the server is part of. |
+| `--tools <mode>` | `full`, the default: every command the tab offers is a tool. `compact`: the server's five and the tab's tools that return a picture; the rest are read through `scanruler_tools` and run through `scanruler_batch` — see *Small local models*. Also `SCANRULER_MCP_TOOLS`. |
+| `--trace <dir>` | Write a line per tool call — tool, ms, bytes each way, error, whether the tab was hidden — into a new file in `<dir>`, for measuring a run; off unless given. `scripts/trace-summary.mjs` in the ScanRuler repository sums a run up. Also `SCANRULER_MCP_TRACE`. |
+| `--trace-args` | With `--trace`, each call's arguments too; otherwise only their size. |
 | `--pair` | Print the port, the token and the pairing link, and exit. |
 | `--help` | The options. |
 
@@ -178,7 +255,9 @@ ScanRuler in the default browser, paired, and wait for it), `scanruler_wait`
 (until a tab is connected, or also idle) and `scanruler_batch` (several of
 the tab's tools in one call, in order — a run of `scan_nearest` or
 `element_fit` calls — each answer in its place, stopped at the first refused
-unless told to go on).
+unless told to go on). With `--tools compact` only the tab's tools that
+return a picture are listed; the rest are read through a fifth of the
+server's own, `scanruler_tools` — see *Small local models*.
 
 - **Places on the scan** are `{ "point": [x, y, z] }` in millimetres — the
   scan vertex nearest it is taken — or `{ "vertex": n }`. `scan_query` reads
@@ -196,7 +275,51 @@ unless told to go on).
   scan, the reference, the sections, the elements or the labels away for
   the picture (`{ "scan": false }` shows what was built on the scan on its
   own; a workspace adds keys of its own, which `view_set` lists), and
-  `frame` looks at a box or a place closely.
+  `frame` looks at a box or a place closely. `flat_render` is the 2D sheet's:
+  drawn as the sheet lies, with a grid ruled in millimetres and its values
+  at the margins, and a `map` from picture pixels to sheet places, so a
+  place read off the picture goes straight back as a place to click.
+  `section_render` pictures a section — or any plane, cut for the picture
+  alone — on its own sheet in millimetres: the scan's cut as points, what
+  the workspaces draw over it (a model's cut, a sketch's pieces with their
+  ids), and every point further than the tolerance from the model in red,
+  counted in the answer with the box round them.
+- **The 2D sheet** takes places as `[x, y]` in its own millimetres (pixels
+  before any scale), origin at the image's bottom-left corner, y up. An edge
+  is named by its chain number — `flat_edges` lists them, `flat_render`
+  writes them beside the edges, `flat_fit` takes them as `chains` — and a
+  pick answers where it snapped. `flat_objects` finds the separate parts on
+  an image and measures them; `flat_profile` reads an outline round a centre
+  or along an axis and counts its peaks — a knurl's teeth, say.
+- **Batches stand or fall whole.** `scanruler_batch` stops at the first
+  refused call, and with `rollback` (the default) undoes what the calls
+  before it changed — the answer names `failed: { index, tool, error }` and
+  `undone`, the steps taken back, newest first (`history_checkpoint` and
+  `history_restore` do the same by hand across several calls). `timings:
+  true` gives each call its `ms`, the batch its `total_ms`, and a change's
+  build the steps it played with their milliseconds (`result.steps.played`;
+  otherwise only how many it played and took up from a state held).
+- **Long changes.** Every tool that changes the session takes `wait`;
+  `wait: false` answers at once with `{ queued: true, job }` while the
+  change runs on, a batch too, and `scanruler_wait { for: "job", job }`
+  gives its answer when it is done. The server keeps every change as a job,
+  so a call the client stopped waiting for keeps running and keeps its
+  answer: `scanruler_status` lists the latest jobs, running, done or failed.
+  `scanruler_wait { for: "idle" }` waits for the changes still running too,
+  and answers `finished`: every change done or failed since it last said —
+  a failed one with its error, a batch with the call it stopped at — each
+  once, so a run of `wait: false` changes is read back in one call. A
+  change called on its own takes `timings: true` as well: its answer adds
+  the call's `ms` and the steps its build played. The tab answers what only
+  reads — `session_state` — while a change runs.
+- **A hidden tab.** A tab in the background, a covered or minimised window
+  or a locked screen is hidden to the browser, which then draws no frames
+  and slows timers to once a minute. Changes still run, and the waits a
+  command makes — for the session to settle, for the screen to follow —
+  look again on every change the session's stores see and draw their own
+  frames, so pictures still come. `scanruler_status` says `page.hidden`,
+  with a note: a browser that unloads background tabs (Chrome's Memory
+  Saver) may close it — keep the site among those always kept active.
 - **Results** are the session as the tab holds it afterwards, as JSON, in
   millimetres and degrees, every number that is not whole kept to six
   significant digits — except in an answer whose numbers are handed back

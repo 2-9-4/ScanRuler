@@ -64,10 +64,10 @@ describe('the view', () => {
     expect(pluginToggleKeys()).toEqual([])
   })
 
-  it('lists view.render as the command that answers with a picture', () => {
+  it('lists view.render, flat.render and section.render as the commands that answer with a picture', () => {
     const pictures = listCommands().filter((c) => c.returnsImage)
-    expect(pictures.map((c) => c.name)).toEqual(['view.render'])
-    expect(pictures[0]).toMatchObject({ readOnly: true, returnsFile: true })
+    expect(pictures.map((c) => c.name)).toEqual(['flat.render', 'section.render', 'view.render'])
+    for (const p of pictures) expect(p).toMatchObject({ readOnly: true, returnsFile: true })
     expect(listCommands().find((c) => c.name === 'view.set')).toMatchObject({ readOnly: true, returnsImage: false })
   })
 })

@@ -21,8 +21,9 @@
 // Messages: the page's `{ hello }`; the server's `{ welcome }` or
 // `{ refused }`; then the server's `{ id, method: 'run', name, input }` and
 // `{ id, method: 'list' }`, answered `{ id, result }` or `{ id, error }`, and
-// the page's `{ event: 'progress', id, text }` while a command runs. Files
-// travel as binary frames — see framing.ts.
+// the page's `{ event: 'progress', id, text }` while a command runs, and
+// `{ event: 'visibility', hidden }` when the tab is hidden or shown again.
+// Files travel as binary frames — see framing.ts.
 
 import { plugins } from '../plugins/registry'
 import { useStore } from '../state/store'
@@ -74,6 +75,10 @@ async function loopbackDenied(): Promise<boolean> {
   }
   return false
 }
+
+/** Whether the tab is hidden — in the background, its window covered or
+ *  minimised, the screen locked — where the browser stops drawing it. */
+const tabHidden = () => typeof document !== 'undefined' && document.visibilityState === 'hidden'
 
 /** Connect to the agent's server, and keep connecting while switched on.
  *  The returned function switches it off. */
@@ -156,6 +161,7 @@ export function startBridge({ port, token, socket = (url) => new WebSocket(url),
           commands: listCommands(),
           plugins: plugins().map((p) => p.id),
           viewport: sceneOf() !== null,
+          hidden: tabHidden(),
         },
       })
     here.onmessage = (event: MessageEvent) => {
@@ -178,8 +184,11 @@ export function startBridge({ port, token, socket = (url) => new WebSocket(url),
     }
   }
 
+  const visibility = () => send({ event: 'visibility', hidden: tabHidden() })
+  if (typeof document !== 'undefined') document.addEventListener('visibilitychange', visibility)
   void connect()
   return () => {
+    if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', visibility)
     stopped = true
     clearTimeout(timer)
     ws?.close(1000, 'Switched off')

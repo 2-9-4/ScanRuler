@@ -6,7 +6,7 @@ import type { Vec3 } from '../../core/types'
 import { useStore } from '../../state/store'
 import { commandHost } from '../host'
 import { locationSchema, requireScan, resolveLocation, type Location } from '../refs'
-import { bytes, enumOf, int, num, obj, vec3 } from '../schema'
+import { arr, bytes, enumOf, int, num, obj, vec3 } from '../schema'
 import { scanBounds } from '../state'
 import { CommandError, type Command } from '../types'
 import { discardSchema, fileNameSchema, fileOf, lastError, requireDiscardable } from './common'
@@ -170,4 +170,68 @@ const nearest: Command<{ at: Location }> = {
   run: async ({ at }) => resolveLocation(at),
 }
 
-export const scanCommands = [open, nearest, query]
+/** How many scan points a surface is fitted to at most. */
+const SURFACE_LIMIT = 20_000
+
+const fitSurface: Command<{ vertices?: number[]; box?: { min: Vec3; max: Vec3 }; normal?: { dir: Vec3; withinDeg?: number }; model?: 'plane' | 'bilinear' | 'quadric' | 'best'; limit?: number }> = {
+  name: 'fit_surface',
+  title: 'Fit a sloped or curved patch',
+  description:
+    'A patch of the scan measured as a surface — a sloped side, a twisted ruled face, a dome, a saddle, a fairing — the points given as vertices (from scan.query or a patch) or as a box (normal keeps those facing a way, within withinDeg, 30 by default). The best plane through them sets the patch’s own frame: origin at their centroid, normal (w) out of it, basisU and basisV in it, all in the frame the part is measured in now. Each model is a height over (u, v) along the normal: plane h = a + b·u + c·v; bilinear + d·u·v (a hyperbolic paraboloid: a straight-lined twisted face); quadric + d·u² + e·u·v + f·v² (a dome, bowl, saddle or a cylinder’s strip). Each answers its coefficients, rms and worst (mm off along the normal); the quadric also curvature: k1 and k2 (1/mm, the larger first), r1 and r2 (their radii, null where flat), axis1 and axis2 (their directions in the world) and shape (flat, cylinder, dome or saddle) at the patch’s middle. model: one of them, or best (the default) — every one, and best names the simplest whose rms is within a tenth of the lowest: the model that holds, plain. At most limit points are fitted (20000), spread evenly. Changes nothing.',
+  input: obj({
+    vertices: arr(int(undefined, { minimum: 0 }), 'The scan vertices of the patch.', { minItems: 7 }),
+    box: obj({ min: vec3('The lowest corner, mm.'), max: vec3('The highest corner, mm.') }, ['min', 'max'], 'The patch as the scan inside a box, in place of vertices.'),
+    normal: obj({ dir: vec3('The direction, any length.'), withinDeg: num('Degrees; 30 by default.', { exclusiveMinimum: 0, maximum: 180 }) }, ['dir'], 'With box: only the vertices facing this way.'),
+    model: enumOf(['plane', 'bilinear', 'quadric', 'best'], 'Which surface; best (the default) fits each and names the simplest that holds.'),
+    limit: int(`How many points at most; ${SURFACE_LIMIT} by default.`, { minimum: 7, maximum: SURFACE_LIMIT }),
+  }),
+  readOnly: true,
+  run: async ({ vertices, box, normal, model = 'best', limit = SURFACE_LIMIT }) => {
+    requireScan()
+    if ((vertices === undefined) === (box === undefined)) throw new CommandError('invalid_input', 'Give vertices or box — one of them.')
+    let points: Float32Array
+    if (box) {
+      for (let k = 0; k < 3; k++) if (!(box.min[k] <= box.max[k])) throw new CommandError('invalid_input', 'The box’s min lies past its max.')
+      const client = commandHost().session.clientRef.current
+      if (!client) throw new CommandError('unavailable', 'The mesh worker is not running.')
+      const cosLimit = normal ? Math.cos(((normal.withinDeg ?? QUERY_WITHIN_DEG) * Math.PI) / 180) : undefined
+      points = (await client.query({ min: box.min, max: box.max, ...(normal && cosLimit !== undefined ? { normal: { dir: normal.dir, cosLimit } } : {}), limit })).positions
+    } else {
+      // The vertices by number, as the viewport holds them — in the frame
+      // the part is measured in now.
+      const all = commandHost().session.sceneRef.current?.scanPositions()
+      if (!all) throw new CommandError('unavailable', 'Reading vertices by number needs the viewport — give box instead.')
+      const count = all.length / 3
+      const bad = vertices!.find((v) => v >= count)
+      if (bad !== undefined) throw new CommandError('invalid_input', `vertices: ${bad} is past the scan’s ${count} vertices.`)
+      const step = Math.max(1, Math.ceil(vertices!.length / limit))
+      const picked = vertices!.filter((_, i) => i % step === 0)
+      points = new Float32Array(picked.length * 3)
+      picked.forEach((v, i) => points.set([all[v * 3], all[v * 3 + 1], all[v * 3 + 2]], i * 3))
+    }
+    if (points.length / 3 < 7) throw new CommandError('invalid_input', `Only ${points.length / 3} scan points lie there — a surface needs 7 at least.`)
+    const { fitSurfaceModels, SURFACE_MODELS } = await import('../../core/fit/heightSurface')
+    const models = model === 'best' ? SURFACE_MODELS : [model]
+    const r = fitSurfaceModels(points, models)
+    if (!r) throw new CommandError('failed', 'The points lie on a line — no surface is fitted through them.')
+    const v4 = (v: Vec3) => v.map((x) => roundTo(x, 4))
+    return {
+      points: points.length / 3,
+      frame: { origin: v4(r.frame.origin), basisU: v4(r.frame.basisU), basisV: v4(r.frame.basisV), normal: v4(r.frame.normal) },
+      models: Object.fromEntries(
+        r.fits.map((f) => [
+          f.model,
+          {
+            coefficients: f.coefficients,
+            rms: f.rms,
+            worst: f.worst,
+            ...(f.curvature ? { curvature: { ...f.curvature, axis1: v4(f.curvature.axis1), axis2: v4(f.curvature.axis2) } } : {}),
+          },
+        ]),
+      ),
+      ...(model === 'best' ? { best: r.best } : {}),
+    }
+  },
+}
+
+export const scanCommands = [open, nearest, query, fitSurface]

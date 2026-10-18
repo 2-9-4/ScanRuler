@@ -86,10 +86,15 @@ describe('the project archive', () => {
     )
   })
 
-  it('names the file after the scan, else the image', () => {
-    expect(projectStem('bracket.stl', 'sheet.png')).toBe('bracket')
-    expect(projectStem(null, 'sheet.png')).toBe('sheet')
-    expect(projectStem(null, null)).toBe('project')
+  it('names the file after the project, else the scan, else the image', () => {
+    expect(projectStem(null, 'bracket.stl', 'sheet.png')).toBe('bracket')
+    expect(projectStem(null, null, 'sheet.png')).toBe('sheet')
+    expect(projectStem(null, null, null)).toBe('project')
+    // A name is kept whole, a dot in it no extension, but for what a file
+    // name cannot hold.
+    expect(projectStem('Bracket v2.1', 'bracket.stl', null)).toBe('Bracket v2.1')
+    expect(projectStem('Lid: left/right?', null, null)).toBe('Lid- left-right-')
+    expect(projectStem(' .. ', 'bracket.stl', null)).toBe('bracket')
   })
 })
 

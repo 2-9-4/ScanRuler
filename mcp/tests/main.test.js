@@ -3,11 +3,14 @@
 // may start it, more than once on one port: Claude Desktop starts one copy
 // for its chats and another for its other sessions.
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
 import { mkdtemp } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
+import { fileURLToPath } from 'node:url'
+import { SNAPSHOT } from '../src/mcp.js'
 import { startAgent } from './client.js'
 import { fakePage } from './fakePage.js'
 
@@ -93,4 +96,23 @@ test('copies on one port: the second sends its calls through the first, and take
     await first?.close()
     await second?.close()
   }
+})
+
+test('--tools compact, or SCANRULER_MCP_TOOLS, lists the server’s own five and the picture tools; another mode is refused', { timeout: 30_000 }, async () => {
+  const configDir = await mkdtemp(join(tmpdir(), 'scanruler-mcp-'))
+  const env = { SCANRULER_MCP_TOKEN: TOKEN, SCANRULER_MCP_CONFIG_DIR: configDir }
+  for (const how of [{ args: ['--tools', 'compact'] }, { env: { SCANRULER_MCP_TOOLS: 'compact' } }]) {
+    const agent = await startAgent({ args: ['--port', String(await freePort()), ...(how.args ?? [])], env: { ...env, ...how.env }, stderr: 'pipe' })
+    try {
+      const { tools } = await agent.client.listTools()
+      assert.equal(tools.length, 5 + SNAPSHOT.filter((c) => c.returnsImage).length, JSON.stringify(how))
+      assert.ok(tools.some((t) => t.name === 'scanruler_tools'))
+      assert.equal((await status(agent)).server.tools, 'compact')
+    } finally {
+      await agent.close()
+    }
+  }
+  const refused = spawnSync(process.execPath, [fileURLToPath(new URL('../bin/scanruler-mcp.js', import.meta.url)), '--tools', 'tiny'], { env: { ...process.env, ...env }, encoding: 'utf8' })
+  assert.equal(refused.status, 1)
+  assert.match(refused.stderr, /--tools tiny is not one of full, compact\./)
 })

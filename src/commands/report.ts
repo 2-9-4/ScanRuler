@@ -72,6 +72,7 @@ export function reportJson() {
   return {
     title: 'ScanRuler report',
     app: { name: 'ScanRuler', version: APP_VERSION },
+    project: s.projectName,
     created: new Date().toISOString(),
     scan: s.fileName ? { fileName: s.fileName, vertices: s.vertexCount, triangles: s.triangleCount } : null,
     traceability: {

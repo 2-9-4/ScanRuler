@@ -85,13 +85,13 @@ import { PICK_MARK_TOOL_STATUS } from './app/deviationWorkspace'
 import { useElementField } from './app/useElementField'
 import { useSceneSync } from './app/useSceneSync'
 import { createSession, type AppSession } from './app/session'
-import { installCommandHost, type FlatHost, type ProjectHost } from './commands/host'
+import { installCommandHost, type FlatHost, type FlatSheetView, type ProjectHost } from './commands/host'
 import { commandRunning } from './commands/activity'
 import { takePairingLink } from './commands/agentLink'
 import { creaseNote } from './app/scanImport'
 import { useFlatSceneSync, type SheetView } from './app/useFlatSceneSync'
 import { buildFlatCsvFile, drawnSummary, flatExportStem, flatReportInput } from './app/flatReport'
-import { sheetAlignment, sheetElements, sheetFrame, sheetLoupeActive, sheetPoseOf, sheetScale } from './app/flatSheet'
+import { sheetAlignment, sheetElements, sheetFrame, sheetLoupeActive, sheetNotes, sheetPoseOf, sheetScale } from './app/flatSheet'
 import { useHintChip } from './app/useHints'
 import { useGlobalShortcuts } from './app/useGlobalShortcuts'
 import { useDragDrop } from './app/useDragDrop'
@@ -434,22 +434,33 @@ export default function App() {
    *  is on the sheet is what is exported: the edges while they are shown,
    *  the visible elements (one open for editing is not yet an element), the
    *  whole of it aligned and turned as shown. Null with nothing on the stage. */
-  const flatDrawingInput = (): FlatDrawingInput | null => {
-    const s = useFlat.getState()
+  /** The sheet on the stage as the commands see it — see FlatSheetView. */
+  const flatSheetView = (): FlatSheetView | null => {
     const sheet = activeSheet()
     if (!sheet) return null
+    if (sheet.kind === 'section') return { kind: 'section', bitmap: null, bounds: sheet.bounds, chains: sheet.chains }
     // Document units per chain unit: millimetres per pixel on the image. A
     // section's chains are millimetres already, and its sheet scale is 1.
-    const scale = sheetScale(s)
+    const scale = sheetScale(useFlat.getState())
+    return {
+      kind: 'image',
+      bitmap: sheet.bitmap,
+      bounds: { min: [0, 0], max: [sheet.bitmap.width * scale.x, sheet.bitmap.height * scale.y] },
+      chains: sheet.chains,
+    }
+  }
+
+  const flatDrawingInput = (): FlatDrawingInput | null => {
+    const s = useFlat.getState()
+    const sheet = flatSheetView()
+    if (!sheet) return null
     const report = flatReportInput()
     return {
-      bounds:
-        sheet.kind === 'image'
-          ? { min: [0, 0], max: [sheet.bitmap.width * scale.x, sheet.bitmap.height * scale.y] }
-          : sheet.bounds,
+      bounds: sheet.bounds,
       chains: s.showEdges ? sheet.chains : null,
-      chainUnit: scale,
+      chainUnit: sheetScale(s),
       elements: sheetElements(s),
+      notes: sheetNotes(s).filter((n) => n.text.trim() !== ''),
       alignDir: sheetAlignment(s),
       turns: s.turns,
       mirror: s.mirror,
@@ -1208,7 +1219,7 @@ export default function App() {
   })
 
   // Drag & drop anywhere.
-  const { saveProject, packProject, openProject, recovery } = useProject({
+  const { saveProject, packProject, openProject, newProject, recovery } = useProject({
     sources,
     clientRef,
     sceneRef,
@@ -1257,6 +1268,8 @@ export default function App() {
         return useFlat.getState().edgeCount
       },
       edgeIndex: () => activeEdgeIndex(),
+      sheet: flatSheetView,
+      gray: () => (useFlat.getState().subject.kind === 'image' ? flatGrayRef.current : null),
       buildSvg: buildFlatSvgFile,
       buildDxf: buildFlatDxfFile,
     },
@@ -1271,6 +1284,8 @@ export default function App() {
         closeImage: () => verbs().flat.closeImage(),
         detectEdges: (sensitivity) => verbs().flat.detectEdges(sensitivity),
         edgeIndex: () => verbs().flat.edgeIndex(),
+        sheet: () => verbs().flat.sheet(),
+        gray: () => verbs().flat.gray(),
         buildSvg: () => verbs().flat.buildSvg(),
         buildDxf: () => verbs().flat.buildDxf(),
       },
@@ -1448,6 +1463,7 @@ export default function App() {
     <div className="app">
       <TopBar
         recovery={recovery}
+        onNewProject={() => void newProject()}
         onSaveProject={saveProject}
         onOpenProject={openProject}
         onOpenScan={openFile}

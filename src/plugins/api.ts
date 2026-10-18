@@ -42,6 +42,8 @@ export { registerStateSection } from '../commands/stateSections'
 export { registerBusy } from '../commands/activity'
 export { registerViewToggles } from '../commands/viewToggles'
 export type { ViewToggle } from '../commands/viewToggles'
+export { registerSectionLayers } from '../commands/sectionLayers'
+export type { SectionLayer, SectionLayerDrawing, SectionOutline, SectionPiece, SectionSheet } from '../commands/sectionLayers'
 export { CommandError } from '../commands/types'
 export type { Command, CommandContext, CommandErrorCode, FileOut } from '../commands/types'
 export type { JsonSchema } from '../commands/schema'
@@ -226,4 +228,8 @@ export interface ScanRulerPlugin {
   /** The plugin's part in the app, as a React hook App calls on every render
    *  — the same plugins in the same order each time, as hooks need. */
   usePlugin?(host: PluginHost): PluginRuntime
+  /** Start what the plugin's headless commands (Command.headless) need when
+   *  the app runs without a browser (src/headless/engine.ts) — after
+   *  install(). Resolves with the function that stops it. */
+  headless?(): Promise<() => void>
 }

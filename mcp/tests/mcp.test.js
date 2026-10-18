@@ -12,6 +12,7 @@ import { ToolListChangedNotificationSchema } from '@modelcontextprotocol/sdk/typ
 import { PageLink } from '../src/link.js'
 import { createMcpServer, SNAPSHOT } from '../src/mcp.js'
 import { httpServer } from '../src/serve.js'
+import { toolFor, toolName } from '../src/tools.js'
 import { fakePage } from './fakePage.js'
 
 const TOKEN = 'another-test-token-of-length'
@@ -19,18 +20,19 @@ let link
 let http
 let port
 let client
+let close
 let dir
 let listChanged = 0
 // What scanruler_open's opening of the browser does, set by a test.
 let opener = async () => false
 
-before(async () => {
-  dir = await mkdtemp(join(tmpdir(), 'scanruler-mcp-'))
-  link = new PageLink({ token: TOKEN })
-  http = httpServer({})
+/** A server on a link and a port of its own, and a client connected to it. */
+async function serve(options = {}) {
+  const link = new PageLink({ token: TOKEN })
+  const http = httpServer({})
   link.attach(http)
   await new Promise((resolve) => http.listen(0, '127.0.0.1', resolve))
-  port = http.address().port
+  const port = http.address().port
   const server = createMcpServer({
     link,
     version: '0.0.0',
@@ -39,25 +41,30 @@ before(async () => {
     connectHelp: () => 'Open ScanRuler and pair it.',
     serverInfo: () => ({ port }),
     pageTimeoutMs: 50,
-    openPage: () => opener(),
-    openGraceMs: 50,
-    openWaitMs: 5_000,
+    ...options,
   })
   const [a, b] = InMemoryTransport.createLinkedPair()
-  client = new Client({ name: 'test', version: '0.0.0' })
+  const client = new Client({ name: 'test', version: '0.0.0' })
+  await Promise.all([server.connect(a), client.connect(b)])
+  const close = async () => {
+    await client.close()
+    link.close()
+    http.close()
+  }
+  return { link, http, port, client, close }
+}
+
+before(async () => {
+  dir = await mkdtemp(join(tmpdir(), 'scanruler-mcp-'))
+  ;({ link, http, port, client, close } = await serve({ openPage: () => opener(), openGraceMs: 50, openWaitMs: 5_000 }))
   client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
     listChanged++
   })
-  await Promise.all([server.connect(a), client.connect(b)])
 })
-after(async () => {
-  await client.close()
-  link.close()
-  http.close()
-})
+after(() => close())
 
-const call = async (name, args = {}) => {
-  const r = await client.callTool({ name, arguments: args })
+const call = async (name, args = {}, on = client) => {
+  const r = await on.callTool({ name, arguments: args })
   const text = r.content[0].text
   return { error: r.isError === true, text, json: r.isError ? null : JSON.parse(text), images: r.content.filter((c) => c.type === 'image') }
 }
@@ -70,6 +77,8 @@ test('before a page connects: the app’s tools are listed, status says how to c
   assert.ok(names.includes('scanruler_open'))
   assert.ok(names.includes('scan_open'))
   assert.equal(tools.length, SNAPSHOT.length + 4)
+  assert.ok(!names.includes('scanruler_tools'), 'listed in full, the tools need no catalogue')
+  assert.equal((await call('scanruler_tools')).text, 'unknown_command: There is no tool scanruler_tools.')
   const status = await call('scanruler_status')
   assert.equal(status.json.connected, false)
   assert.equal(status.json.howToConnect, 'Open ScanRuler and pair it.')
@@ -181,4 +190,111 @@ test('scanruler_open opens the paired page when none comes back by itself, and l
   assert.equal(opens, 1, 'a connected page is not opened a second time')
   ;(await page).page.close()
   opener = async () => false
+})
+
+const OWN = ['scanruler_batch', 'scanruler_open', 'scanruler_status', 'scanruler_tools', 'scanruler_wait']
+/** The tools listed in compact mode beside the server's own: the commands
+ *  that return a picture, by their flag. */
+const pictures = (commands) => commands.filter((c) => c.returnsImage).map(toolName)
+
+test('compact: the five and the picture tools listed, the rest read through scanruler_tools as the full list would give them', async () => {
+  const compact = await serve({ tools: 'compact' })
+  const on = (name, args) => call(name, args, compact.client)
+  try {
+    const full = (await client.listTools()).tools
+    const { tools } = await compact.client.listTools()
+    const shown = pictures(SNAPSHOT)
+    assert.ok(shown.length > 0, 'the app has commands that return a picture')
+    assert.deepEqual(tools.map((t) => t.name).sort(), [...OWN, ...shown].sort(), 'each picture command, and nothing else beyond the five')
+    for (const name of shown) assert.deepEqual(tools.find((t) => t.name === name), full.find((t) => t.name === name), `${name} as the full list gives it`)
+
+    // The list: every command, a line each.
+    const list = await on('scanruler_tools')
+    assert.equal(list.json.count, SNAPSHOT.length)
+    assert.deepEqual(Object.keys(list.json.tools), SNAPSHOT.map(toolName))
+    for (const c of SNAPSHOT) assert.equal(list.json.tools[toolName(c)], c.title, c.name)
+
+    // Definitions, the full list's own — its paths in place of bytes, its
+    // folder for exports — and names it does not know set apart.
+    const names = ['scan_open', 'export_step', 'view_render', 'element_fit']
+    const read = await on('scanruler_tools', { names: [...names, 'no_such_tool', 'element.fit'] })
+    assert.equal(read.error, false)
+    assert.deepEqual(read.json.tools, names.map((name) => full.find((t) => t.name === name)))
+    assert.deepEqual(read.json.unknown, ['no_such_tool', 'element.fit'])
+    assert.deepEqual((await on('scanruler_tools', { names: ['nothing_here'] })).json, { tools: [], unknown: ['nothing_here'] })
+    assert.deepEqual((await on('scanruler_tools', { names: 'scan_open, element_fit' })).json.tools.map((t) => t.name), ['scan_open', 'element_fit'], 'a string of names is read as a list')
+    const many = await on('scanruler_tools', { names: SNAPSHOT.map(toolName) })
+    assert.equal(many.error, true)
+    assert.match(many.text, /^invalid_input: names: at most 20 at a time/)
+
+    // A page's tool is not listed, but runs when called.
+    const refused = await on('session_state')
+    assert.match(refused.text, /^unavailable: /)
+  } finally {
+    await compact.close()
+  }
+})
+
+test('compact: the list follows the page that connects, and its tools run in a batch or called directly', async () => {
+  const compact = await serve({ tools: 'compact' })
+  const on = (name, args) => call(name, args, compact.client)
+  let changed = 0
+  compact.client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
+    changed++
+  })
+  const extra = { name: 'demo.thing', description: 'Something a plugin adds. It has no title of its own.', input: { type: 'object', properties: {} }, readOnly: false, returnsFile: false, returnsImage: false }
+  let page
+  try {
+    assert.equal((await on('scanruler_tools')).json.tools.demo_thing, undefined)
+    page = await fakePage(compact.port, { token: TOKEN, commands: [...SNAPSHOT, extra], answer: (name) => ({ ran: name }) })
+    assert.equal((await on('scanruler_wait', { timeoutSeconds: 5 })).json.connected, true)
+
+    const list = await on('scanruler_tools')
+    assert.deepEqual(Object.keys(list.json.tools), [...SNAPSHOT, extra].map(toolName), 'every command the page lists')
+    assert.equal(list.json.tools.demo_thing, 'Something a plugin adds.', 'untitled, the first sentence')
+    assert.deepEqual((await on('scanruler_tools', { names: ['demo_thing'] })).json.tools, [JSON.parse(JSON.stringify(toolFor(extra, { outDir: dir })))])
+    assert.equal((await compact.client.listTools()).tools.length, OWN.length + pictures(SNAPSHOT).length, 'a command with no picture stays unlisted')
+    assert.equal(changed, 0, 'and so the list is not said to have changed')
+
+    const batch = await on('scanruler_batch', { calls: [{ tool: 'demo_thing' }, { tool: 'scanruler_tools' }] })
+    assert.deepEqual(batch.json.results[0], { tool: 'demo_thing', ok: true, result: { ran: 'demo.thing' } })
+    assert.equal(batch.json.results[1].error.code, 'invalid_input', 'the server’s own are not batched')
+    assert.deepEqual((await on('session_state')).json, { ran: 'session.state' }, 'a direct call to a tool not listed')
+  } finally {
+    ;(await page)?.page.close()
+    await compact.close()
+  }
+})
+
+test('compact: a page with a new picture command has the client list the tools again, and shows the picture called directly', async () => {
+  const compact = await serve({ tools: 'compact' })
+  const on = (name, args) => call(name, args, compact.client)
+  let changed = 0
+  compact.client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
+    changed++
+  })
+  const picture = { name: 'demo.picture', title: 'Picture a thing', description: 'A picture a plugin adds to the list of commands.', input: { type: 'object', properties: {} }, readOnly: true, returnsFile: false, returnsImage: true }
+  let page
+  try {
+    assert.ok(!(await compact.client.listTools()).tools.some((t) => t.name === 'demo_picture'))
+    page = await fakePage(compact.port, {
+      token: TOKEN,
+      commands: [...SNAPSHOT, picture],
+      answer: (name) => ({ ran: name, file: { name: 'thing.png', mimeType: 'image/png', bytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47]) } }),
+    })
+    for (let i = 0; i < 100 && changed === 0; i++) await new Promise((r) => setTimeout(r, 10))
+    assert.equal(changed, 1, 'the client is told the list changed')
+    const { tools } = await compact.client.listTools()
+    assert.deepEqual(tools.map((t) => t.name).sort(), [...OWN, ...pictures([...SNAPSHOT, picture])].sort())
+
+    const shown = await on('demo_picture')
+    assert.equal(shown.images.length, 1, 'called directly, the picture is shown')
+    assert.equal(shown.json.ran, 'demo.picture')
+    const batched = await on('scanruler_batch', { calls: [{ tool: 'demo_picture' }] })
+    assert.equal(batched.images.length, 0)
+    assert.deepEqual(batched.json.results[0].result, { ran: 'demo.picture', file: { name: 'thing.png', mimeType: 'image/png', size: 4 } }, 'in a batch, its text')
+  } finally {
+    ;(await page)?.page.close()
+    await compact.close()
+  }
 })

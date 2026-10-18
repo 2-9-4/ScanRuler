@@ -17,6 +17,7 @@ import { poseMap, sheetPose } from './datum'
 import {
   describeRoll,
   DRAWING_EDGE_COLOR,
+  DRAWING_NOTE_COLOR,
   labelSpot,
   num,
   type FlatDrawingInput,
@@ -130,7 +131,7 @@ export function buildFlatSvg(r: FlatDrawingInput): string {
     `  <desc>${esc(
       `${r.scaleNote}. One unit is one ${r.unit === 'mm' ? 'millimetre' : 'image pixel'}; ` +
         `y runs down and the origin is the top-left corner of the sheet as shown${describeRoll(r.alignDir, r.turns, r.mirror)}. ` +
-        'Layers: edges (the detected edge chains), elements (the fitted geometry), labels.',
+        'Layers: edges (the detected edge chains), elements (the fitted geometry), labels (names, readings and notes).',
     )}</desc>`,
   )
 
@@ -174,6 +175,12 @@ export function buildFlatSvg(r: FlatDrawingInput): string {
         `<tspan x="${n(lx)}" dy="-1.2em">${esc(el.name)}</tspan>` +
         `<tspan x="${n(lx)}" dy="1.2em">${esc(el.value)}</tspan></text>`,
     )
+  }
+  for (const note of r.notes ?? []) {
+    // The note's spot is its lower left, as on the stage: the text stands
+    // on it.
+    const [x, y] = at(note.at)
+    out.push(`    <text class="note" x="${n(x)}" y="${n(y)}" fill="${DRAWING_NOTE_COLOR}">${esc(note.text)}</text>`)
   }
   out.push('  </g>')
   out.push('</svg>')

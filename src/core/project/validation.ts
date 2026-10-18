@@ -105,6 +105,7 @@ export function validateProjectParts(raw: unknown): void {
   }
   inspect(m, 0)
   fields(m, 'appVersion workspace', 'string', 'root')
+  if (m.name !== undefined) fields(m, 'name', 'string', 'root')
   if (m.scan !== null) {
     const s = object(m.scan, 'scan')
     file(s, 'scan')

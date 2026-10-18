@@ -86,6 +86,12 @@ export { blockedRefs, type DimensionDraft, type Draft, draftColorOf, draftHolds,
 export type { AlignSlot }
 
 interface AppState {
+  /** What the operator named the project — what it is saved and exported
+   *  under, whatever the scan was called — or null for one not named, which
+   *  goes by the scan's or the image's name. It is the project's, not the
+   *  scan's: a scan opened into a named project keeps the name. */
+  projectName: string | null
+  setProjectName: (name: string | null) => void
   fileName: string | null
   vertexCount: number
   triangleCount: number
@@ -461,6 +467,8 @@ function freshScanState() {
 }
 
 export const useStore = create<AppState>()((set, get) => ({
+  projectName: null,
+  setProjectName: (name) => set({ projectName: name?.trim() || null }),
   fileName: null,
   ...freshScanState(),
   modelSize: 1,

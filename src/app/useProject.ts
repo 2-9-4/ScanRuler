@@ -14,11 +14,12 @@ import { creaseSetting } from '../core/geometry/crease'
 import { useDeviation } from '../state/deviationStore'
 import { useThickness } from '../state/thicknessStore'
 import { useFlat } from '../state/flatStore'
-import { keepUnownedParts, projectSections } from './projectSections'
+import { forgetKeptParts, keepUnownedParts, projectSections } from './projectSections'
 import { ProjectClient } from '../core/project/projectClient'
 import { PROJECT_EXTENSION, projectStem, rigidFromJson } from '../core/project/manifest'
 import { saveFile } from './exports'
 import {
+  blankManifest,
   prepareProjectState,
   collectProject,
   projectHasContent,
@@ -78,7 +79,7 @@ export function useProject({
       const snapshot = capture()
       const { manifest, members } = snapshot
       const bytes = await client().pack(manifest, members)
-      const stem = projectStem(store.fileName, useFlat.getState().imageName)
+      const stem = projectStem(store.projectName, store.fileName, useFlat.getState().imageName)
       recovery.markSaved(snapshot)
       useStore.setState({
         busy: false,
@@ -186,5 +187,27 @@ export function useProject({
     }
   }, () => settled || !sessionIsDirty() || window.confirm('Opening a project replaces the measurements in this session. Continue?'))
 
-  return { saveProject, packProject, openProject, recovery }
+  /** Start a new project in place of the session: the scan, the reference
+   *  and the image closed, every measurement and every workspace's work let
+   *  go, the settings back to the app's own and the name taken off — what
+   *  opening an empty project does, in the workspace on screen. After
+   *  asking, when there are changes not saved, unless the caller has
+   *  settled that (`settled`). */
+  const newProject = (settled = false) => runImport(imports, 'Starting a new project…', async () => {
+    const applyState = prepareProjectState(blankManifest(APP_VERSION))
+    await clientRef.current!.commitImport({ scan: null, nominal: null })
+    commitScan(null)
+    commitNominal(null)
+    commitImage(null)
+    useStore.setState({ appliedAlignment: null })
+    elementScope.current = null
+    applyState()
+    useDeviation.setState((s) => ({ scopeVersion: s.scopeVersion + 1 }))
+    forgetKeptParts()
+    sceneRef.current?.frameAll()
+    useStore.setState({ busy: false, statusText: 'New project.' })
+    recovery.markSaved(capture())
+  }, () => settled || !recovery.dirty || window.confirm('Start a new project? The changes in this one that are not saved are lost.'))
+
+  return { saveProject, packProject, openProject, newProject, recovery }
 }

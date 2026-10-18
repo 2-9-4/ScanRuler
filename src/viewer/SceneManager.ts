@@ -27,7 +27,7 @@ import {
   type ProbeMarker,
 } from './overlays'
 import { SectionOverlay, type SectionOverlayItem } from './sections'
-import type { SectionFrame, WorldAxis } from '../core/section/frame'
+import { frameKey, type SectionFrame, type WorldAxis } from '../core/section/frame'
 import type { SectionCut } from '../core/section/slice'
 import type { ControlScheme } from './navSchemes'
 import type { PickMarker } from './PickScene'
@@ -290,6 +290,9 @@ export class SceneManager {
    *  being put away catches up. */
   private sheetFollow: { frame: SectionFrame; centre: readonly [number, number]; unitsPerPx: number } | null = null
   private followedSize = { w: 0, h: 0 }
+  /** The view as it was when the sheet was first followed — see
+   *  stopFollowingSheet. */
+  private beforeSheet: ReturnType<OrthoViewport['pose']> | null = null
   /** The caps that close the scan and the reference where they are cut open
    *  — see updateCaps — and the unit sheet they are scaled from. */
   private scanCap: HeldCap | null = null
@@ -1252,6 +1255,13 @@ export class SceneManager {
   }
 
   /** The canvas's size on screen, in CSS pixels. */
+  /** One frame drawn now — the viewport's tick and, when anything has
+   *  changed, its render — for a wait on the stage while the tab is hidden
+   *  and the browser draws none (commands' nextFrame). */
+  pumpFrame(): void {
+    this.viewport.pump()
+  }
+
   viewSize(): { width: number; height: number } {
     const el = this.viewport.renderer.domElement
     return { width: el.clientWidth || 1, height: el.clientHeight || 1 }
@@ -1273,24 +1283,34 @@ export class SceneManager {
    * the sheet lies exactly on the part beneath it. With `ms` the camera
    * swings there from wherever it was, the way CAD turns to a sketch plane,
    * so it is plain where the plane sits; with 0 it is there at once, or —
-   * during a swing — the swing lands there instead.
+   * during a swing — the swing lands there instead. The view the follow
+   * starts from is kept, to go back to when the sheet is put away.
    */
   followSheet(frame: SectionFrame, centre: readonly [number, number], unitsPerPx: number, ms = 0): void {
+    if (!this.sheetFollow) this.beforeSheet = this.viewport.pose()
     this.sheetFollow = { frame, centre, unitsPerPx }
     this.applyFollow(ms)
   }
 
   /** The sheet's frame changed under the follow — Align turned it: swing
-   *  round to the new frame with the sheet's view as it is. */
+   *  round to the new frame with the sheet's view as it is. The same frame
+   *  asked for again changes nothing but where the swing lands. */
   reframeSheet(frame: SectionFrame, ms = 400): void {
     if (!this.sheetFollow) return
+    const same = frameKey(frame) === frameKey(this.sheetFollow.frame)
     this.sheetFollow = { ...this.sheetFollow, frame }
-    this.applyFollow(ms)
+    this.applyFollow(same ? 0 : ms)
   }
 
-  /** The sheet put away: the camera is the operator's again. */
+  /** The sheet put away: the camera swings back to the view it was
+   *  followed from — the part as it was looked at before the sketch, now
+   *  with what the sketch made — and is the operator's again. */
   stopFollowingSheet(): void {
+    if (!this.sheetFollow) return
     this.sheetFollow = null
+    const back = this.beforeSheet
+    this.beforeSheet = null
+    if (back) this.viewport.animateLook(back.dir, back.up, back.target, 450, back.zoom)
   }
 
   private applyFollow(ms: number): void {
@@ -1430,7 +1450,7 @@ export class SceneManager {
       // Kept: what lies behind the plane, seen from its normal's side. Moved
       // in place — every clipped material holds this one plane.
       this.clipPlane.setFromNormalAndCoplanarPoint(n.negate(), o)
-      const box = tool ? this.movedScanBox() : this.cutBox()
+      const box = tool ? this.toolCutBox() : this.cutBox()
       if (box && box.intersectsPlane(this.clipPlane)) planes = this.clipList
     }
     const sectioned = planes !== null && !tool
@@ -1452,6 +1472,22 @@ export class SceneManager {
     this.clipDirty = true
     this.overlays.retestOcclusion()
     this.invalidate()
+  }
+
+  /** What a tool's slice can cut, in world coordinates: the scan wherever it
+   *  is held, and what the layers draw — a plane through a part modelled
+   *  with no scan, or past the scan's end, cuts that part. Null with
+   *  nothing on the stage. */
+  private toolCutBox(): THREE.Box3 | null {
+    const box = new THREE.Box3()
+    const scan = this.movedScanBox()
+    if (scan) box.union(scan)
+    this.partGroup.updateMatrixWorld(true)
+    for (const layer of this.layers) {
+      const b = layer.frameBox?.()
+      if (b) box.union(b.clone().applyMatrix4(this.partGroup.matrixWorld))
+    }
+    return box.isEmpty() ? null : box
   }
 
   /** What the section view can cut, in world coordinates: the scan wherever
@@ -2757,17 +2793,37 @@ export class SceneManager {
       scanOpacity: () => this.scanOpacity(),
       click: (x, y, additive) => this.handleClick(x, y, additive),
       sizeStage: (radius, frame) => this.sizeStage(radius, frame),
+      takeIn: (part, framing) => this.takeIn(part, framing),
       framedSphere: () => new THREE.Sphere(this.framedClip.center.clone(), this.framedClip.radius),
     }
   }
 
   /** With no scan, a layer's size stands in for the part's — what overlays
-   *  and elements are drawn at — and, given a box, the camera frames it. A
-   *  scan loaded later sizes the stage to itself. */
+   *  and elements are drawn at — and, given a box, the camera frames it
+   *  from the stage's own view, front-top-right with Z up, as the iso key
+   *  turns to. A scan loaded later sizes the stage to itself. */
   private sizeStage(radius: number, frame?: THREE.Box3): void {
     if (this.mesh) return
     this.modelRadius = radius
-    if (frame) this.frameCamera(frame, null)
+    if (frame) this.frameCamera(frame, null, STAGE_VIEW)
+    this.invalidate()
+  }
+
+  /** With no scan, a part grown past what the camera last framed: `framing`
+   *  becomes what was framed, and should `part` reach off the screen the
+   *  camera flies out to take in `framing`, looking from where it looks. A
+   *  view that shows it all is the operator's and stays as it is. */
+  private takeIn(part: THREE.Box3, framing: THREE.Box3): void {
+    if (this.mesh || framing.isEmpty()) return
+    const sphere = framing.getBoundingSphere(new THREE.Sphere())
+    this.framedClip.center.copy(sphere.center)
+    this.framedClip.radius = sphere.radius
+    if (this.viewport.boxOnScreen(part)) {
+      // The clip planes reach it all the same.
+      const clip = new THREE.Sphere(this.clipSphere.center.clone(), this.clipSphere.radius).union(sphere)
+      this.clipSphere.center.copy(clip.center)
+      this.clipSphere.radius = clip.radius
+    } else this.viewport.flyToFit(framing)
     this.invalidate()
   }
 }

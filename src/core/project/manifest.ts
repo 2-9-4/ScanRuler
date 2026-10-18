@@ -246,6 +246,9 @@ export interface ProjectManifest {
   app: typeof PROJECT_APP
   schemaVersion: number
   appVersion: string
+  /** What the operator named the project. Absent for one not named, and
+   *  in projects saved before projects had names. */
+  name?: string
   workspace: string
   scan: ScanPart | null
   deviation: DeviationPart
@@ -274,10 +277,21 @@ export function validateManifest(raw: unknown): ProjectManifest {
   return m as ProjectManifest
 }
 
-/** The file stem a project is saved under: the scan's, else the image's. */
-export function projectStem(scanName: string | null, imageName: string | null): string {
+/** The file stem a project is saved under: its name, else the scan's,
+ *  else the image's. A name is kept whole — a dot in it is no extension —
+ *  but for what a file name cannot hold. */
+export function projectStem(projectName: string | null, scanName: string | null, imageName: string | null): string {
+  const named = projectName === null ? '' : fileSafe(projectName)
+  if (named !== '') return named
   const base = scanName ?? imageName ?? 'project'
   return base.replace(/\.[^.]+$/, '')
+}
+
+/** A name as a file can carry it: what Windows, macOS or Linux refuse in a
+ *  file name made a dash, and no dots or spaces at its ends. */
+export function fileSafe(name: string): string {
+  // eslint-disable-next-line no-control-regex
+  return name.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '-').replace(/^[.\s]+|[.\s]+$/g, '')
 }
 
 export function extensionOf(name: string): string {

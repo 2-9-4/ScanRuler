@@ -326,6 +326,8 @@ export function buildFlatDxf(r: FlatDxfInput): string {
     text([lx, ly + 1.2 * textHeight], el.name, rgb)
     text([lx, ly], el.value, rgb)
   }
+  // A note's spot is its lower left, as on the stage: the text stands on it.
+  for (const note of r.notes ?? []) text(at(note.at), note.text, null)
 
   const layer = (name: string, aci: number, rgb: number | null): string[] => [
     group(0, 'LAYER'),
@@ -358,7 +360,7 @@ export function buildFlatDxf(r: FlatDxfInput): string {
     comment(
       `Layers: edges (the detected edge chains${
         r.edgeTolerance > 0 ? `, thinned to ${num(r.edgeTolerance, 4)} ${r.unit}` : ''
-      }), elements (the fitted geometry), labels`,
+      }), elements (the fitted geometry), labels (names, readings and notes)`,
     ),
     group(0, 'SECTION'),
     group(2, 'HEADER'),

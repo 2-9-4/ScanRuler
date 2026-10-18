@@ -208,6 +208,16 @@ describe('buildFlatDxf', () => {
     expect(dxfText('σ ±1 —')).toBe('\\U+03C3 %%p1 \\U+2014')
   })
 
+  it('writes each note as TEXT on the labels layer, standing on its spot', () => {
+    const before = ofType(buildFlatDxf(input()), 'TEXT').length
+    const texts = ofType(buildFlatDxf(input({ notes: [{ text: 'M3 × 5.7', at: [20, 30] }] })), 'TEXT')
+    expect(texts.length).toBe(before + 1)
+    const note = texts[texts.length - 1]
+    expect(val(note, 1)).toBe('M3 \\U+00D7 5.7')
+    expect(val(note, 8)).toBe('labels')
+    expect([Number(val(note, 10)), Number(val(note, 20))]).toEqual([20, 30])
+  })
+
   it('draws an arc counter-clockwise from its start angle, and a full one as a circle', () => {
     const el = (fit: FlatArcFit) => [{ fit, color: '#000000', name: 'Arc 1', value: '' }]
     const [quarter] = ofType(buildFlatDxf(input({ elements: el(arc(0, Math.PI / 2)) })), 'ARC')

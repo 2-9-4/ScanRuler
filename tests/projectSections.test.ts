@@ -2,7 +2,7 @@
 // A project opened in a build without a plugin whose part it holds: the part
 // and the files it names are kept and written back, until another scan.
 import { beforeEach, describe, expect, it } from 'vitest'
-import { collectProject, emptySources, prepareProjectState, projectHasContent } from '../src/app/project'
+import { blankManifest, collectProject, emptySources, prepareProjectState, projectHasContent } from '../src/app/project'
 import { forgetKeptParts, keepUnownedParts, keptParts, registerProjectSection } from '../src/app/projectSections'
 import { scanLoaded } from '../src/app/scanEvents'
 import { useStore } from '../src/state/store'
@@ -68,5 +68,47 @@ describe('parts of a project no plugin here owns', () => {
     } finally {
       stop()
     }
+  })
+})
+
+describe('a project’s name', () => {
+  beforeEach(() => {
+    useStore.setState(useStore.getInitialState(), true)
+    forgetKeptParts()
+  })
+
+  it('is saved, read back, and is no part kept for a plugin', () => {
+    useStore.getState().setProjectName('  Bracket v2.1 ')
+    const manifest = saved({})
+    expect(manifest.name).toBe('Bracket v2.1')
+    expect(keepUnownedParts(manifest, new Map())).toEqual([])
+    useStore.getState().setProjectName(null)
+    prepareProjectState(manifest)()
+    expect(useStore.getState().projectName).toBe('Bracket v2.1')
+    // A project without one opens unnamed, whatever was named before.
+    const { name: _name, ...unnamed } = manifest
+    void _name
+    prepareProjectState(unnamed as ProjectManifest)()
+    expect(useStore.getState().projectName).toBeNull()
+  })
+
+  it('outlives a scan opened into the project; an empty one is none', () => {
+    useStore.getState().setProjectName('Lid')
+    useStore.getState().beginLoad('other.stl')
+    expect(useStore.getState().projectName).toBe('Lid')
+    useStore.getState().setProjectName('   ')
+    expect(useStore.getState().projectName).toBeNull()
+    expect(saved({}).name).toBeUndefined()
+  })
+
+  it('is not in a blank project, whose settings are the app’s own', () => {
+    useStore.getState().setProjectName('Lid')
+    const blank = blankManifest('test')
+    expect(blank.name).toBeUndefined()
+    expect(blank.scan).toBeNull()
+    expect(blank.flat.elements).toEqual([])
+    expect(blank.deviation.probes).toEqual([])
+    prepareProjectState(blank)()
+    expect(useStore.getState().projectName).toBeNull()
   })
 })

@@ -51,8 +51,27 @@ export class EdgeIndex {
   chainHit(x: number, y: number, maxDist: number): { chain: Vec2[]; index: number } | null {
     const i = this.nearestIndex(x, y, maxDist)
     if (i < 0) return null
-    // Chains are laid out in order, so the one holding point i is the last
-    // offset at or before it.
+    const c = this.chainOfPoint(i)
+    const chain: Vec2[] = []
+    for (let k = this.offsets[c]; k < this.offsets[c + 1]; k++) {
+      chain.push([this.points[k * 2], this.points[k * 2 + 1]])
+    }
+    return { chain, index: i - this.offsets[c] }
+  }
+
+  /** The nearest edge point within `maxDist`, with the chain that holds it —
+   *  by its number in the detection — and how far it is: what a pick that
+   *  snapped landed on, or how far a click that missed fell short. */
+  nearestOnChain(x: number, y: number, maxDist: number): { at: Vec2; chain: number; distance: number } | null {
+    const i = this.nearestIndex(x, y, maxDist)
+    if (i < 0) return null
+    const at: Vec2 = [this.points[i * 2], this.points[i * 2 + 1]]
+    return { at, chain: this.chainOfPoint(i), distance: Math.hypot(at[0] - x, at[1] - y) }
+  }
+
+  /** Chains are laid out in order, so the one holding point i is the last
+   *  offset at or before it. */
+  private chainOfPoint(i: number): number {
     let lo = 0
     let hi = this.offsets.length - 2
     while (lo < hi) {
@@ -60,11 +79,7 @@ export class EdgeIndex {
       if (this.offsets[mid] <= i) lo = mid
       else hi = mid - 1
     }
-    const chain: Vec2[] = []
-    for (let k = this.offsets[lo]; k < this.offsets[lo + 1]; k++) {
-      chain.push([this.points[k * 2], this.points[k * 2 + 1]])
-    }
-    return { chain, index: i - this.offsets[lo] }
+    return lo
   }
 
   private nearestIndex(x: number, y: number, maxDist: number): number {

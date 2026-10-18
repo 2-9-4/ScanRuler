@@ -34,6 +34,8 @@ export interface FlatReportInput {
   elements: readonly FlatElement[]
   dimensions: readonly EvaluatedFlatDimension[]
   counts?: readonly { name: string; picks: readonly unknown[] }[]
+  /** The text notes written on the sheet, as written. */
+  notes?: readonly { text: string }[]
 }
 
 export function scaleLine(r: FlatReportInput): string {
@@ -106,6 +108,12 @@ export function buildFlatReport(r: FlatReportInput): string {
     lines.push('')
     lines.push('Counts')
     for (const c of r.counts) lines.push(`  ${c.name}: ${c.picks.length}`)
+  }
+  const notes = (r.notes ?? []).filter((n) => n.text.trim() !== '')
+  if (notes.length > 0) {
+    lines.push('')
+    lines.push('Notes')
+    for (const n of notes) lines.push(`  ${n.text.trim()}`)
   }
   return lines.join('\n')
 }

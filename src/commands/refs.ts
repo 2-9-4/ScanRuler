@@ -15,6 +15,7 @@
 import { BASE_PLANES } from '../core/basePlanes'
 import type { ScanSpot } from '../core/geometry/nearest'
 import type { ElementKind } from '../core/types'
+import { useFlat } from '../state/flatStore'
 import { useStore, type Element } from '../state/store'
 import { commandHost } from './host'
 import { arr, int, num, obj, oneOf, str, vec3, type JsonSchema } from './schema'
@@ -46,7 +47,12 @@ export function findElement(ref: ElementRef): Element {
   }
   const want = ref.trim().toLowerCase()
   const hits = elements.filter((e) => e.name.trim().toLowerCase() === want)
-  if (hits.length === 0) throw new CommandError('not_found', `There is no element named "${ref}".`)
+  if (hits.length === 0) {
+    // The 2D sheet's elements are its own, and the commands for them are
+    // flat.* — a name found there says where to go.
+    const onSheet = useFlat.getState().elements.some((e) => e.name.trim().toLowerCase() === want)
+    throw new CommandError('not_found', `There is no element named "${ref}"${onSheet ? ' in 3D — that one is on the 2D sheet: flat.edit and flat.remove take it' : ''}.`)
+  }
   if (hits.length > 1) throw new CommandError('invalid_input', `${hits.length} elements are named "${ref}" — name it by its id.`)
   return hits[0]
 }

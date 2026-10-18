@@ -142,5 +142,18 @@ const load: Command<{ bytes: Uint8Array; name?: string; discard?: boolean }> = {
   },
 }
 
+const rename: Command<{ name: string }> = {
+  name: 'rename',
+  title: 'Name the project',
+  description:
+    'Give the project a name — what Save Project saves it under, the stem of every export and the browser tab’s title, kept in the project file. An empty name takes it off, and the scan’s or the image’s name stands in again. session.state reads it as project.name.',
+  input: obj({ name: str('The name; empty takes it off.') }, ['name']),
+  history: false,
+  run: async ({ name }) => {
+    useStore.getState().setProjectName(name)
+    return { project: { name: useStore.getState().projectName } }
+  },
+}
+
 export const exportCommands = [step, stl, cloud, svg, dxf, csv]
-export const projectCommands = [save, load]
+export const projectCommands = [save, load, rename]

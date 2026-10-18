@@ -9,6 +9,7 @@ import { buildBinaryStl } from '../core/exportStl'
 import type { CloudFormat } from '../core/exportPointCloud'
 import { computeVertexNormals } from '../core/geometry/normals'
 import { liftFlatFit } from '../core/section/lift'
+import { fileSafe } from '../core/project/manifest'
 import { useStore } from '../state/store'
 import { useDeviation } from '../state/deviationStore'
 import { sectionElementsOf, useFlat } from '../state/flatStore'
@@ -30,9 +31,13 @@ export const saveFile = (name: string, blob: Blob) => {
   setTimeout(() => URL.revokeObjectURL(url), 10_000)
 }
 
-/** The scan's name without its extension — the stem every export is built
- *  on. */
-export const exportStem = () => (useStore.getState().fileName ?? 'scan').replace(/\.[^.]+$/, '')
+/** The stem every export is built on: the project's name, else the scan's
+ *  without its extension, else `fallback`. */
+export const exportStem = (fallback = 'scan'): string => {
+  const s = useStore.getState()
+  const named = s.projectName ? fileSafe(s.projectName) : ''
+  return named !== '' ? named : s.fileName ? s.fileName.replace(/\.[^.]+$/, '') : fallback
+}
 
 /** Lazy export modules can fail to load (for example after a deployment).
  *  Keep the session usable and report the failure through the normal UI. */

@@ -95,6 +95,10 @@ export interface Command<I = Record<string, unknown>> {
    *  say — and must come through to the last digit: a caller that shortens
    *  numbers for reading leaves these alone. */
   exact?: boolean
+  /** Runs without the page — no scan, no viewport, no browser — so the
+   *  app run headless offers it (src/headless/engine.ts). Off by default:
+   *  a command is marked once it has been run so. */
+  headless?: boolean
   /** The undo step's name for this input; the title otherwise. */
   label?(input: I): string
   run(input: I, ctx: CommandContext): Promise<unknown>

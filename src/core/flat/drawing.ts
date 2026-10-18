@@ -32,6 +32,9 @@ export interface FlatDrawingInput {
    *  section. */
   chainUnit: { x: number; y: number }
   elements: readonly FlatDrawingElement[]
+  /** The text notes on the sheet, each a line written from its spot
+   *  (document units) up and to the right, as the stage anchors it. */
+  notes?: readonly { text: string; at: Vec2 }[]
   /** The alignment's +X in document units — shown to the right of the
    *  screen, so drawn along the page's x — or null for a sheet as scanned. */
   alignDir: Vec2 | null
@@ -48,6 +51,9 @@ export interface FlatDrawingInput {
 
 /** The teal the stage draws detected edges in. */
 export const DRAWING_EDGE_COLOR = '#11b5a5'
+
+/** The ink a text note is written in — dark, as the stage's labels are. */
+export const DRAWING_NOTE_COLOR = '#333333'
 
 /** A coordinate, trimmed: three decimals of a millimetre is a micron, finer
  *  than any scanner resolves, and trailing zeros only cost bytes — of which

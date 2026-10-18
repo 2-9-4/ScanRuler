@@ -260,6 +260,8 @@ interface FlatState extends SheetState {
   finishCount: () => void
   deleteCount: (id: number) => void
   toggleCountVisible: (id: number) => void
+  /** A tally's name, as given; blank keeps the old one. */
+  renameCount: (id: number, name: string) => void
 
   /** Placing or editing a text note is the `note` tool. */
   startNote: () => void
@@ -660,6 +662,10 @@ export const useFlat = create<FlatState>()((set, get) => ({
     set((s) => ({
       counts: s.counts.map((c) => (c.id === id ? { ...c, visible: !c.visible } : c)),
     })),
+  renameCount: (id, name) =>
+    set((s) =>
+      name.trim() === '' ? {} : { counts: s.counts.map((c) => (c.id === id ? { ...c, name: name.trim() } : c)) },
+    ),
 
   notes: [],
   nextNoteId: 1,

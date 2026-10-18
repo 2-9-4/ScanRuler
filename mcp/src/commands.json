@@ -1582,7 +1582,7 @@
   {
     "name": "flat.calibrate",
     "title": "Calibrate the image",
-    "description": "Set the image’s scale against a known length, as the Calibrate tool does: distance takes two places a known distance apart, diameter three or more on a circle of known diameter; mm is that length. Every measurement on the image follows the new scale. Returns the calibration. One undo step.",
+    "description": "Set the image’s scale against a known length, as the Calibrate tool does: distance takes two places a known distance apart, diameter three or more on a circle of known diameter; mm is that length. Every measurement on the image follows the new scale, and the edges are found again (their chain numbers change). Returns the calibration. One undo step.",
     "input": {
       "type": "object",
       "properties": {
@@ -1628,7 +1628,7 @@
   {
     "name": "flat.detect_edges",
     "title": "Detect the image’s edges",
-    "description": "Find the edges in the image again at a sensitivity from 0 (only the strongest) to 1 (every faint one) — what the seed and edge methods of flat.fit and the snapping of every place follow. Needs the browser. Returns how many edge chains were found.",
+    "description": "Find the edges in the image again at a sensitivity from 0 (only the strongest) to 1 (every faint one) — what the edge methods of flat.fit and the snapping of every place follow. The chains are numbered afresh. Needs the browser. Returns how many edge chains were found.",
     "input": {
       "type": "object",
       "properties": {
@@ -1699,9 +1699,169 @@
     "returnsImage": false
   },
   {
+    "name": "flat.edges",
+    "title": "List the detected edges",
+    "description": "The edge chains detected on the sheet, by number — what flat.fit takes as chains and flat.render writes beside each. Each with its length, whether it closes on itself, how many points and the box round it, in the sheet’s units; the longest first, or with near the nearest first, each with its point nearest that place and how far (within reach only, when given). box keeps the chains that enter it, minLength the long ones. tolerance adds each chain’s polyline, thinned to stray no further than that (5000 points at most over all). limit chains at most, 50 by default. The numbers hold until the edges are found again. Changes nothing.",
+    "input": {
+      "type": "object",
+      "properties": {
+        "box": {
+          "type": "object",
+          "properties": {
+            "min": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "description": "The lowest corner.",
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "max": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "description": "The highest corner.",
+              "minItems": 2,
+              "maxItems": 2
+            }
+          },
+          "required": [
+            "min",
+            "max"
+          ],
+          "additionalProperties": false,
+          "description": "Only chains with a point in this box."
+        },
+        "near": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "description": "Nearest this place first.",
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "reach": {
+          "type": "number",
+          "description": "With near: only chains this close.",
+          "exclusiveMinimum": 0
+        },
+        "minLength": {
+          "type": "number",
+          "description": "Only chains at least this long.",
+          "minimum": 0
+        },
+        "tolerance": {
+          "type": "number",
+          "description": "Add each chain’s polyline, thinned to this.",
+          "exclusiveMinimum": 0
+        },
+        "limit": {
+          "type": "integer",
+          "description": "Chains at most — 50 by default.",
+          "minimum": 1,
+          "maximum": 2000
+        }
+      },
+      "additionalProperties": false
+    },
+    "readOnly": true,
+    "returnsFile": false,
+    "returnsImage": false
+  },
+  {
+    "name": "flat.edit",
+    "title": "Change a 2D element, dimension, note or count",
+    "description": "Change one thing on the 2D sheet, named by its id (or name): an element, a dimension or a count takes a new name; a note new text or a new place (at, its lower-left corner); any of them visible: false to leave it out of the stage, the picture and the exports, true to bring it back. Returns the 2D state. One undo step.",
+    "input": {
+      "type": "object",
+      "properties": {
+        "element": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "description": "The 2D element’s id.",
+              "minimum": 1
+            },
+            {
+              "type": "string",
+              "description": "Its name — \"Line 1\".",
+              "minLength": 1
+            }
+          ],
+          "description": "A 2D element."
+        },
+        "dimension": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "description": "Its id.",
+              "minimum": 1
+            },
+            {
+              "type": "string",
+              "description": "Its name — \"Distance 1\".",
+              "minLength": 1
+            }
+          ],
+          "description": "A 2D dimension."
+        },
+        "note": {
+          "type": "integer",
+          "description": "A note, by its id.",
+          "minimum": 1
+        },
+        "count": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "description": "Its id.",
+              "minimum": 1
+            },
+            {
+              "type": "string",
+              "description": "Its name — \"Count 1\".",
+              "minLength": 1
+            }
+          ],
+          "description": "A count (tally)."
+        },
+        "name": {
+          "type": "string",
+          "description": "The new name.",
+          "minLength": 1
+        },
+        "text": {
+          "type": "string",
+          "description": "A note’s new text.",
+          "minLength": 1
+        },
+        "at": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "description": "A note’s new lower-left corner.",
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "visible": {
+          "type": "boolean",
+          "description": "Shown, or left out."
+        }
+      },
+      "additionalProperties": false
+    },
+    "readOnly": false,
+    "returnsFile": false,
+    "returnsImage": false
+  },
+  {
     "name": "flat.fit",
     "title": "Fit a 2D element",
-    "description": "Make a 2D element on the sheet as its tool does — kind point, line, circle, arc or spline, by a method of that kind: point: flat-point-pick (pick), flat-point-midpoint (construct), flat-point-intersect (construct), flat-point-center (construct); line: flat-line-pick (pick), flat-line-seed (seed), flat-line-edge (edge); circle: flat-circle-pick (pick), flat-circle-seed (seed), flat-circle-edge (edge); arc: flat-arc-pick (pick), flat-arc-edge (edge); spline: flat-spline-pick (pick). A pick method takes points, the places clicked; a seed method one place on a detected edge, grown along it; an edge method a place on an edge, taken whole; a construct method refs, other 2D elements by id or name. Returns the element with its fit. One undo step.",
+    "description": "Make a 2D element on the sheet as its tool does — kind point, line, circle, arc or spline, by a method of that kind: point: flat-point-pick (pick), flat-point-midpoint (construct), flat-point-intersect (construct), flat-point-center (construct); line: flat-line-pick (pick), flat-line-seed (seed), flat-line-edge (edge); circle: flat-circle-pick (pick), flat-circle-seed (seed), flat-circle-edge (edge); arc: flat-arc-pick (pick), flat-arc-edge (edge); spline: flat-spline-pick (pick). A pick method takes points, the places clicked — each snapped to the nearest detected edge within reach unless snap: false, and the answer’s picks say where each landed and on which chain. A seed method takes one place on a detected edge and grows along it; an edge method a place on an edge, taken whole. The edge methods also take chains — whole edge chains by number (flat.edges, flat.render) — and box, every edge point inside it (of those chains only, with both); the kind’s edge method is the default then. A construct method takes refs, other 2D elements by id or name. Returns the element with its fit. One undo step.",
     "input": {
       "type": "object",
       "properties": {
@@ -1735,6 +1895,44 @@
           "description": "The places, in the sheet’s units.",
           "minItems": 1
         },
+        "chains": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "description": "Edge chains by number, taken whole — for an edge or seed method.",
+          "minItems": 1
+        },
+        "box": {
+          "type": "object",
+          "properties": {
+            "min": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "description": "The lowest corner.",
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "max": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "description": "The highest corner.",
+              "minItems": 2,
+              "maxItems": 2
+            }
+          },
+          "required": [
+            "min",
+            "max"
+          ],
+          "additionalProperties": false,
+          "description": "Edge points inside this box, in the sheet’s units — for an edge or seed method."
+        },
         "refs": {
           "type": "array",
           "items": {
@@ -1758,6 +1956,15 @@
           "type": "string",
           "description": "A name for it.",
           "minLength": 1
+        },
+        "snap": {
+          "type": "boolean",
+          "description": "Picks snap to the nearest edge within reach — true by default, as the panel’s Snap box is."
+        },
+        "reach": {
+          "type": "number",
+          "description": "How far a place reaches for an edge, in the sheet’s units — ten image pixels by default.",
+          "exclusiveMinimum": 0
         }
       },
       "required": [
@@ -1766,6 +1973,78 @@
       "additionalProperties": false
     },
     "readOnly": false,
+    "returnsFile": false,
+    "returnsImage": false
+  },
+  {
+    "name": "flat.note_add",
+    "title": "Write a note on the sheet",
+    "description": "Write a text note on the 2D sheet, as the Text tool does — a label beside a part, a size read elsewhere, a remark. One line, as the tool writes it: a line break is written as \" / \". at is its lower-left corner, in the sheet’s units. It is drawn on the stage and in flat.render, written into the SVG and DXF exports and listed in the report. Returns the note with its id. One undo step.",
+    "input": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "What it says.",
+          "minLength": 1
+        },
+        "at": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "description": "Its lower-left corner.",
+          "minItems": 2,
+          "maxItems": 2
+        }
+      },
+      "required": [
+        "text",
+        "at"
+      ],
+      "additionalProperties": false
+    },
+    "readOnly": false,
+    "returnsFile": false,
+    "returnsImage": false
+  },
+  {
+    "name": "flat.objects",
+    "title": "Find the parts on the image",
+    "description": "The separate parts lying on the flatbed image, parted from the background by a grey level (Otsu’s, unless threshold is given; dark says the parts are darker than the background, read off the image’s border by default) and numbered in reading order — rows from the top, left to right. Each with its area (holes left out) and holes, box, centroid, equivalentDiameter (of a circle of its area), feret — the largest and smallest caliper widths and the directions they are measured along, degrees from +X — axisAngle (its long axis, degrees), and chains, the edge chains along its outline, longest first. minArea drops smaller ones: 1 mm² by default, or its pixels at 600 dpi on an image with no scale. outline adds each outline as a polygon thinned to that tolerance. flat.profile takes an object by its number. limit, 100 by default. Changes nothing.",
+    "input": {
+      "type": "object",
+      "properties": {
+        "threshold": {
+          "type": "integer",
+          "description": "Grey level, 0 to 255.",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "dark": {
+          "type": "boolean",
+          "description": "The parts are darker than the background."
+        },
+        "minArea": {
+          "type": "number",
+          "description": "The smallest part, in the sheet’s units squared.",
+          "minimum": 0
+        },
+        "outline": {
+          "type": "number",
+          "description": "Add each outline, thinned to this, in the sheet’s units.",
+          "exclusiveMinimum": 0
+        },
+        "limit": {
+          "type": "integer",
+          "description": "Parts at most — 100 by default.",
+          "minimum": 1,
+          "maximum": 1000
+        }
+      },
+      "additionalProperties": false
+    },
+    "readOnly": true,
     "returnsFile": false,
     "returnsImage": false
   },
@@ -1798,9 +2077,280 @@
     "returnsImage": false
   },
   {
+    "name": "flat.profile",
+    "title": "Profile an outline and count its peaks",
+    "description": "An outline read against a centre or along an axis, and its peaks counted — the teeth of a knurl or a gear. The outline: an object of the last flat.objects by number, or edge chains by number (several make one). radial (the default): its radius against the angle about about — a circle, arc or point — or about the outline’s own centre: a part standing upright, seen from above. axial: its distance from about — a line — or from the outline’s own long axis, against the position along it, each side apart (left and right of the axis’ direction): a part lying on its side. A peak counts when it stands prominence above the higher of the valleys either side — by default 0.3 of the profile’s spread, never under the outline’s noise. Returns per side the count, the pitch (degrees round, or along the axis), the envelope (largest, smallest, mean peak, mean valley; radial also as diameters) and every peak’s angle or position and place; points adds the sampled profile. mark: true puts a count on the sheet with a numbered pick on every peak, to check by eye — one undo step; otherwise nothing changes.",
+    "input": {
+      "type": "object",
+      "properties": {
+        "object": {
+          "type": "integer",
+          "description": "An object of the last flat.objects, by number.",
+          "minimum": 1
+        },
+        "chains": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "description": "Edge chains by number, as one outline.",
+          "minItems": 1
+        },
+        "about": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "description": "The 2D element’s id.",
+              "minimum": 1
+            },
+            {
+              "type": "string",
+              "description": "Its name — \"Line 1\".",
+              "minLength": 1
+            }
+          ],
+          "description": "A circle, arc or point to read the radius about, or a line to read the distance from."
+        },
+        "axis": {
+          "type": "string",
+          "enum": [
+            "radial",
+            "axial"
+          ],
+          "description": "Without about: radial about the outline’s centre (the default), or axial along its long axis."
+        },
+        "samples": {
+          "type": "integer",
+          "description": "Bins round the turn, or along the axis — from the point count by default.",
+          "minimum": 16,
+          "maximum": 20000
+        },
+        "prominence": {
+          "type": "number",
+          "description": "How far a peak must stand out, in the sheet’s units.",
+          "exclusiveMinimum": 0
+        },
+        "mark": {
+          "type": "boolean",
+          "description": "Put a count on every peak."
+        },
+        "points": {
+          "type": "boolean",
+          "description": "Add the sampled profile."
+        }
+      },
+      "additionalProperties": false
+    },
+    "readOnly": false,
+    "returnsFile": false,
+    "returnsImage": false
+  },
+  {
+    "name": "flat.remove",
+    "title": "Remove from the 2D sheet",
+    "description": "Remove elements, dimensions, notes and counts from the 2D sheet, each by id or name (a note by id) — all of them or none. An element built on a removed one stays and says it has lost its source, and a dimension on one turns invalid, as in the panel; the answer names them. Returns what is left. One undo step.",
+    "input": {
+      "type": "object",
+      "properties": {
+        "elements": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "integer",
+                "description": "The 2D element’s id.",
+                "minimum": 1
+              },
+              {
+                "type": "string",
+                "description": "Its name — \"Line 1\".",
+                "minLength": 1
+              }
+            ],
+            "description": "A 2D element."
+          }
+        },
+        "dimensions": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "integer",
+                "minimum": 1
+              },
+              {
+                "type": "string",
+                "minLength": 1
+              }
+            ]
+          },
+          "description": "Dimensions, by id or name."
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "description": "Notes, by id."
+        },
+        "counts": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "integer",
+                "minimum": 1
+              },
+              {
+                "type": "string",
+                "minLength": 1
+              }
+            ]
+          },
+          "description": "Counts, by id or name."
+        }
+      },
+      "additionalProperties": false
+    },
+    "readOnly": false,
+    "returnsFile": false,
+    "returnsImage": false
+  },
+  {
+    "name": "flat.render",
+    "title": "Picture the sheet",
+    "description": "A picture of the 2D sheet as a PNG, drawn as the sheet lies in the sheet’s own units — +X right, +Y up, whatever the stage’s alignment or turns — with a grid ruled in those units and its values written along the top and left edges. map says where it lies: picture pixel (column c, row r from the top) is the sheet place [left + c·unitsPerPx, top − r·unitsPerPx], to hand straight back as a place. frame zooms in on a box. show puts layers in or out: image, edges (the detected chains — as the panel shows them by default), chains (their numbers, as flat.fit and flat.edges name them), elements (with counts and the alignment), dimensions, notes, labels (names and readings), grid. width and height in pixels: the frame’s shape at most 800 on its long side by default, up to 2048. Needs the browser.",
+    "input": {
+      "type": "object",
+      "properties": {
+        "frame": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "min": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "description": "The lowest corner.",
+                  "minItems": 2,
+                  "maxItems": 2
+                },
+                "max": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "description": "The highest corner.",
+                  "minItems": 2,
+                  "maxItems": 2
+                }
+              },
+              "required": [
+                "min",
+                "max"
+              ],
+              "additionalProperties": false,
+              "description": "A box on the sheet."
+            },
+            {
+              "type": "object",
+              "properties": {
+                "at": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "description": "Its centre.",
+                  "minItems": 2,
+                  "maxItems": 2
+                },
+                "size": {
+                  "oneOf": [
+                    {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      "minItems": 2,
+                      "maxItems": 2
+                    }
+                  ],
+                  "description": "Its side, or [width, height]."
+                }
+              },
+              "required": [
+                "at",
+                "size"
+              ],
+              "additionalProperties": false,
+              "description": "A box round a place."
+            }
+          ],
+          "description": "What to picture, in the sheet’s units — the whole sheet by default."
+        },
+        "width": {
+          "type": "integer",
+          "description": "Pixels across, 64 to 2048.",
+          "minimum": 64,
+          "maximum": 2048
+        },
+        "height": {
+          "type": "integer",
+          "description": "Pixels down, 64 to 2048.",
+          "minimum": 64,
+          "maximum": 2048
+        },
+        "show": {
+          "type": "object",
+          "properties": {
+            "image": {
+              "type": "boolean"
+            },
+            "edges": {
+              "type": "boolean"
+            },
+            "chains": {
+              "type": "boolean"
+            },
+            "elements": {
+              "type": "boolean"
+            },
+            "dimensions": {
+              "type": "boolean"
+            },
+            "notes": {
+              "type": "boolean"
+            },
+            "labels": {
+              "type": "boolean"
+            },
+            "grid": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false,
+          "description": "Layers in (true) or out (false)."
+        }
+      },
+      "additionalProperties": false
+    },
+    "readOnly": true,
+    "returnsFile": true,
+    "returnsImage": true
+  },
+  {
     "name": "flat.report",
     "title": "Get the 2D report",
-    "description": "The 2D Measure report as its Copy button gives it: the image or section, the scale it rests on, the alignment, every element and dimension.",
+    "description": "The 2D Measure report as its Copy button gives it: the image or section, the scale it rests on, the alignment, every element, dimension, count and note.",
     "input": {
       "type": "object",
       "properties": {},
@@ -1813,7 +2363,7 @@
   {
     "name": "flat.set_alignment",
     "title": "Align the sheet",
-    "description": "Put the sheet’s zero point at origin and its X axis through xAxis, as the Align tool’s two clicks do — every coordinate on the sheet is then read in that frame. clear: true takes the alignment off. Returns the 2D state. One undo step.",
+    "description": "Put the part’s zero point at origin and its X axis through xAxis, as the Align tool’s two clicks do: the report, the panel and the exports then read in that frame. Places given to the commands stay the sheet’s own. clear: true takes the alignment off. Returns the 2D state. One undo step.",
     "input": {
       "type": "object",
       "properties": {
@@ -1847,12 +2397,47 @@
     "returnsImage": false
   },
   {
+    "name": "history.checkpoint",
+    "title": "Mark the history",
+    "description": "Mark where the undo history stands, before a run of changes that should stand or fall together: history.restore { checkpoint } later undoes every step made since, back to this mark. Changes nothing. Returns the checkpoint, the step on top and how many there are.",
+    "input": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "readOnly": true,
+    "returnsFile": false,
+    "returnsImage": false
+  },
+  {
     "name": "history.redo",
     "title": "Redo",
     "description": "Redo the step undone last. Returns the step’s name and the session afterwards.",
     "input": {
       "type": "object",
       "properties": {},
+      "additionalProperties": false
+    },
+    "readOnly": false,
+    "returnsFile": false,
+    "returnsImage": false
+  },
+  {
+    "name": "history.restore",
+    "title": "Back to a mark in the history",
+    "description": "Undo every step made since history.checkpoint gave this checkpoint, newest first, as the undo key would one by one — so a run of changes that went wrong in the middle is taken back whole. Refused, undoing nothing, when the mark is no longer under the steps on top — undone past it, or the history started afresh (a scan or a project opened). Returns the steps undone, newest first, and the session afterwards.",
+    "input": {
+      "type": "object",
+      "properties": {
+        "checkpoint": {
+          "type": "string",
+          "description": "What history.checkpoint returned.",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "checkpoint"
+      ],
       "additionalProperties": false
     },
     "readOnly": false,
@@ -1904,6 +2489,27 @@
     "returnsImage": false
   },
   {
+    "name": "project.rename",
+    "title": "Name the project",
+    "description": "Give the project a name — what Save Project saves it under, the stem of every export and the browser tab’s title, kept in the project file. An empty name takes it off, and the scan’s or the image’s name stands in again. session.state reads it as project.name.",
+    "input": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The name; empty takes it off."
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "readOnly": false,
+    "returnsFile": false,
+    "returnsImage": false
+  },
+  {
     "name": "project.save",
     "title": "Save the project",
     "description": "The session as a .scanruler project file, as Save Project downloads it: the scan, the reference, the image and every measurement, each rebuilt when it is opened. Needs the browser. Returns the file’s bytes and its name.",
@@ -1940,6 +2546,99 @@
             "flat"
           ],
           "description": "For text: whose report — measure (the default), deviation, thickness or flat."
+        }
+      },
+      "additionalProperties": false
+    },
+    "readOnly": true,
+    "returnsFile": false,
+    "returnsImage": false
+  },
+  {
+    "name": "scan.fit_surface",
+    "title": "Fit a sloped or curved patch",
+    "description": "A patch of the scan measured as a surface — a sloped side, a twisted ruled face, a dome, a saddle, a fairing — the points given as vertices (from scan.query or a patch) or as a box (normal keeps those facing a way, within withinDeg, 30 by default). The best plane through them sets the patch’s own frame: origin at their centroid, normal (w) out of it, basisU and basisV in it, all in the frame the part is measured in now. Each model is a height over (u, v) along the normal: plane h = a + b·u + c·v; bilinear + d·u·v (a hyperbolic paraboloid: a straight-lined twisted face); quadric + d·u² + e·u·v + f·v² (a dome, bowl, saddle or a cylinder’s strip). Each answers its coefficients, rms and worst (mm off along the normal); the quadric also curvature: k1 and k2 (1/mm, the larger first), r1 and r2 (their radii, null where flat), axis1 and axis2 (their directions in the world) and shape (flat, cylinder, dome or saddle) at the patch’s middle. model: one of them, or best (the default) — every one, and best names the simplest whose rms is within a tenth of the lowest: the model that holds, plain. At most limit points are fitted (20000), spread evenly. Changes nothing.",
+    "input": {
+      "type": "object",
+      "properties": {
+        "vertices": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "description": "The scan vertices of the patch.",
+          "minItems": 7
+        },
+        "box": {
+          "type": "object",
+          "properties": {
+            "min": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "description": "The lowest corner, mm.",
+              "minItems": 3,
+              "maxItems": 3
+            },
+            "max": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "description": "The highest corner, mm.",
+              "minItems": 3,
+              "maxItems": 3
+            }
+          },
+          "required": [
+            "min",
+            "max"
+          ],
+          "additionalProperties": false,
+          "description": "The patch as the scan inside a box, in place of vertices."
+        },
+        "normal": {
+          "type": "object",
+          "properties": {
+            "dir": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "description": "The direction, any length.",
+              "minItems": 3,
+              "maxItems": 3
+            },
+            "withinDeg": {
+              "type": "number",
+              "description": "Degrees; 30 by default.",
+              "exclusiveMinimum": 0,
+              "maximum": 180
+            }
+          },
+          "required": [
+            "dir"
+          ],
+          "additionalProperties": false,
+          "description": "With box: only the vertices facing this way."
+        },
+        "model": {
+          "type": "string",
+          "enum": [
+            "plane",
+            "bilinear",
+            "quadric",
+            "best"
+          ],
+          "description": "Which surface; best (the default) fits each and names the simplest that holds."
+        },
+        "limit": {
+          "type": "integer",
+          "description": "How many points at most; 20000 by default.",
+          "minimum": 7,
+          "maximum": 20000
         }
       },
       "additionalProperties": false
@@ -2274,9 +2973,117 @@
     "returnsImage": false
   },
   {
+    "name": "section.render",
+    "title": "Picture a section",
+    "description": "A picture of a section as a PNG, for checking a slice against what was built on it: the scan’s cut as points on the section’s sheet ([u, v] mm as section.get gives them, +u right, +v up), a grid ruled in millimetres with its values at the top and left margins, a scale bar, and over it what the workspaces’ layers draw — a model’s cut by the section’s plane as outlines, a sketch’s pieces on the section with their ids. Every scan point within ten tolerances of an outline is read against it: on it within ± tolerance (grey), or off it (red), outside the outline or inside it; points with no outline near are pale. The answer gives gap: points (the cut’s), read, over (red), outside and inside (of a closed outline — inside is scan within the model’s material, so the model stands proud there; outside, the model is short), max and rms (mm) and overBox (the sheet box round the red, to frame the next look); layers: each layer drawn by key, its outlines and pieces counted; map: picture pixel (column c, row r from the top) is the sheet place [left + c·unitsPerPx, top − r·unitsPerPx]. section names a section; or plane { origin, normal } cuts the scan there for the picture alone — no section is made, the sheet’s u and v any pair square to the normal (the answer’s sheet gives them). frame { at: [u, v], size } looks at a square of the sheet; everything by default. tolerance: the Deviation workspace’s by default. layers: the keys to draw; every one by default, [] for the scan alone. 800 px on the long side by default, up to 2048. Needs the browser. Changes nothing.",
+    "input": {
+      "type": "object",
+      "properties": {
+        "section": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "description": "The section’s id.",
+              "minimum": 1
+            },
+            {
+              "type": "string",
+              "description": "The section’s name — \"Section 1\".",
+              "minLength": 1
+            }
+          ],
+          "description": "The section, by id or name."
+        },
+        "plane": {
+          "type": "object",
+          "properties": {
+            "origin": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "description": "A point on the plane, mm.",
+              "minItems": 3,
+              "maxItems": 3
+            },
+            "normal": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "description": "Its normal.",
+              "minItems": 3,
+              "maxItems": 3
+            }
+          },
+          "required": [
+            "origin",
+            "normal"
+          ],
+          "additionalProperties": false,
+          "description": "A plane to cut the scan by for the picture alone, in place of a section."
+        },
+        "frame": {
+          "type": "object",
+          "properties": {
+            "at": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "description": "The sheet place in the middle, [u, v] mm.",
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "size": {
+              "type": "number",
+              "description": "The side of the square looked at, mm.",
+              "exclusiveMinimum": 0
+            }
+          },
+          "required": [
+            "at",
+            "size"
+          ],
+          "additionalProperties": false,
+          "description": "Look at a square of the sheet."
+        },
+        "tolerance": {
+          "type": "number",
+          "description": "± mm a scan point may lie off the outlines and still be on them.",
+          "exclusiveMinimum": 0
+        },
+        "layers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "The layers to draw, by key; every one by default."
+        },
+        "width": {
+          "type": "integer",
+          "description": "Pixels across, 64 to 2048.",
+          "minimum": 64,
+          "maximum": 2048
+        },
+        "height": {
+          "type": "integer",
+          "description": "Pixels down, 64 to 2048.",
+          "minimum": 64,
+          "maximum": 2048
+        }
+      },
+      "additionalProperties": false
+    },
+    "readOnly": true,
+    "returnsFile": true,
+    "returnsImage": true
+  },
+  {
     "name": "session.reset",
     "title": "Start over",
-    "description": "Close the scan, the reference part and the 2D image, and with them every measurement, as opening an empty project does. Refuses while the session holds measurements unless discard is true. Not undoable: the history starts over too.",
+    "description": "Close the scan, the reference part and the 2D image, and with them every measurement and the project’s name, as opening an empty project does. Refuses while the session holds measurements unless discard is true. Not undoable: the history starts over too.",
     "input": {
       "type": "object",
       "properties": {

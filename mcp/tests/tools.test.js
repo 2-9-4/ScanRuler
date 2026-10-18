@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { SNAPSHOT } from '../src/mcp.js'
-import { agentJson, bytesProperty, imageContent, inputFor, saveFileResult, toolFor, toolName } from '../src/tools.js'
+import { agentJson, bytesProperty, imageContent, inputFor, saveFileResult, toolFor, toolName, timingsIn, waitIn } from '../src/tools.js'
 
 const command = (name) => SNAPSHOT.find((c) => c.name === name)
 
@@ -33,9 +33,14 @@ test('an exact answer keeps every digit', () => {
   assert.equal(agentJson({ a: 0.9483828176573491, h: 123.456789 }, true), '{"a":0.9483828176573491,"h":123.456789}')
 })
 
-test('a schema passes through as it is, but for files', () => {
+test('a schema passes through as it is, but for files, and a change takes wait and timings', () => {
   const fit = command('element.fit')
-  assert.deepEqual(toolFor(fit, { outDir: '/out' }).inputSchema, fit.input)
+  const { wait, timings, ...rest } = toolFor(fit, { outDir: '/out' }).inputSchema.properties
+  assert.deepEqual({ ...toolFor(fit, { outDir: '/out' }).inputSchema, properties: rest }, fit.input)
+  assert.equal(wait, waitIn)
+  assert.equal(timings, timingsIn)
+  assert.equal(toolFor(command('session.state'), { outDir: '/out' }).inputSchema.properties.wait, undefined)
+  assert.equal(toolFor(command('session.state'), { outDir: '/out' }).inputSchema.properties.timings, undefined)
   assert.equal(toolFor(command('session.state'), { outDir: '/out' }).annotations.readOnlyHint, true)
   assert.equal(toolFor(fit, { outDir: '/out' }).annotations.readOnlyHint, false)
 })

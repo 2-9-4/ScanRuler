@@ -18,6 +18,8 @@ import { useDeviation } from '../state/deviationStore'
 import { usePrefs } from '../state/prefsStore'
 import { colormapById, rampColor, UNMEASURED_RGB } from '../core/field/colormap'
 import { useFlat } from '../state/flatStore'
+import { evaluateFlatDimensions } from '../core/flat/dimensions'
+import { sheetFrame, sheetScale } from '../app/flatSheet'
 import { useHistory, historyBlocked } from '../state/historyStore'
 import { useShell, type Workspace } from '../state/shellStore'
 import { draftHolds, useStore, type Element, type Section } from '../state/store'
@@ -26,7 +28,7 @@ import { plugins } from '../plugins/registry'
 import { surfaceSource } from '../app/surfaces'
 import { hintNow } from '../app/useHints'
 import { APP_VERSION } from '../version'
-import { commandHost, sessionBusy } from './host'
+import { commandHost, sessionBusy, type FlatSheetView } from './host'
 import { useCommandActivity } from './activity'
 import { readStateSections } from './stateSections'
 import { describeView } from './core/view'
@@ -257,15 +259,39 @@ export function describeThickness() {
   }
 }
 
+/** The 2D sheet as the commands read and write it: every place in the
+ *  sheet's own units and frame — the alignment is how the panel and the
+ *  report read them, and the turns how the stage shows them; neither moves
+ *  a place given to a command. */
 export function describeFlat() {
   const f = useFlat.getState()
+  const unit = sheetScale(f)
+  const frame = sheetFrame(f)
+  let view: FlatSheetView | null = null
+  try {
+    view = commandHost().flat?.sheet() ?? null
+  } catch {
+    // No session to ask: the sheet's extent goes unsaid.
+  }
+  const values = new Map(evaluateFlatDimensions(f.dimensions, f.elements).map((d) => [d.dim.id, d.value.raw ?? null]))
   return {
     subject: f.subject,
     image: f.imageName ? { fileName: f.imageName, width: f.imageWidth, height: f.imageHeight } : null,
+    units: f.pxPerMm ? 'mm' : 'px',
+    sheet: view
+      ? {
+          min: view.bounds.min,
+          max: view.bounds.max,
+          frame: `origin at ${view.kind === 'image' ? 'the image’s bottom-left corner' : 'the cutting plane’s centre'}, +X right, +Y up`,
+        }
+      : null,
     calibration: { source: f.calSource, pxPerMm: f.pxPerMm },
-    datum: f.datum ?? null,
-    elements: f.elements.map((e) => ({ id: e.id, name: e.name, kind: e.kind, fit: e.fit ?? null })),
-    dimensions: f.dimensions.map((d) => ({ id: d.id, name: d.name, type: d.type, refs: [...d.refs] })),
+    alignment: frame,
+    edges: { status: f.edgeStatus, chains: f.edgeCount, sensitivity: f.edgeSensitivity, shown: f.showEdges, snap: f.snapToEdge },
+    elements: f.elements.map((e) => ({ id: e.id, name: e.name, kind: e.kind, fit: e.fit ?? null, ...(e.visible ? {} : { visible: false }) })),
+    dimensions: f.dimensions.map((d) => ({ id: d.id, name: d.name, type: d.type, refs: [...d.refs], value: values.get(d.id) ?? null })),
+    notes: f.notes.map((n) => ({ id: n.id, text: n.text, at: [n.at[0] * unit.x, n.at[1] * unit.y], ...(n.visible ? {} : { visible: false }) })),
+    counts: f.counts.map((c) => ({ id: c.id, name: c.name, count: c.picks.length })),
   }
 }
 
@@ -305,6 +331,7 @@ export async function sessionState() {
   const running = useCommandActivity.getState().running
   return {
     app: { name: 'ScanRuler', version: APP_VERSION, plugins: plugins().map((p) => p.id), viewport: session.sceneRef.current !== null },
+    project: { name: s.projectName },
     workspace: publicWorkspace(useShell.getState().workspace),
     busy: sessionBusy(),
     running: running?.name ?? null,

@@ -287,6 +287,40 @@ body {
   letter-spacing: 0.04em;
 }
 
+/* The project's name, typed where it is read: a field that looks like the
+   label it is until it is pointed at. */
+.projectname {
+  margin-left: 12px;
+  flex: 0 1 auto;
+  min-width: 90px;
+  font: inherit;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r);
+  padding: 5px 8px 6px;
+  text-overflow: ellipsis;
+}
+
+.projectname::placeholder {
+  color: var(--dim);
+  font-weight: 500;
+  font-style: italic;
+}
+
+.projectname:hover {
+  border-color: var(--line);
+}
+
+.projectname:focus {
+  outline: none;
+  background: var(--well);
+  border-color: var(--line);
+  box-shadow: var(--inset);
+}
+
 /* The loaded part, named on the chassis the way a machine names its job. */
 .partchip {
   margin-left: 10px;
@@ -554,6 +588,21 @@ button.block {
    hundred pixels the part chip's file name needs sooner. */
 @media (max-width: 1800px) {
   .modeswitch svg.icon {
+    display: none;
+  }
+}
+
+/* With three project keys — New, Save, Load — they give up the word
+   "Project" early, and the brand its caption after them: the version is in
+   the brand's tooltip and in the imprint as well. */
+@media (max-width: 1900px) {
+  .top .ptxt {
+    display: none;
+  }
+}
+
+@media (max-width: 1700px) {
+  .brand span {
     display: none;
   }
 }
