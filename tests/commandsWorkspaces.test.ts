@@ -5,6 +5,7 @@
 // in-process worker, with no viewport and no browser (see commandKit.ts):
 // what needs either says so.
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { sessionBusy } from '../src/commands/host'
 import { useDeviation } from '../src/state/deviationStore'
 import { useFlat } from '../src/state/flatStore'
 import { useThickness } from '../src/state/thicknessStore'
@@ -155,6 +156,79 @@ describe('deviation', () => {
     expect(far.unmeasured).toBe(0)
     await undo()
     await undo()
+  })
+
+  it('deviation.settings { on: "reference" } paints the map on the reference, and the hotspots read it', async () => {
+    // The reference: the scan's 40 mm cube with a 6 mm boss on top the scan
+    // does not have. Read on the scan, the boss is nowhere; read on the
+    // reference, its top stands 6 mm proud and its sides face no scan.
+    const boss = boxMesh(6, 6).map((v, i) => (i % 3 === 2 ? v + 23 : v))
+    const both = new Float32Array(boxMesh(40, 40).length + boss.length)
+    both.set(boxMesh(40, 40))
+    both.set(boss, boxMesh(40, 40).length)
+    await run('deviation.open_reference', { bytes: stlBytes(both), name: 'bossed.stl' })
+    await run('deviation.align')
+    await run('deviation.settings', { maxDistance: 3 })
+    type On = { on: string; onReference: { spacing: number; backedPct: number; farPct: number; noScanPct: number; withinTolerancePct: number } }
+    const state = (await run<{ deviation: On }>('deviation.settings', { on: 'reference' })).deviation
+    expect(state.on).toBe('reference')
+    expect(useDeviation.getState().referenceStatus).toBe('ready')
+    expect(state.onReference.backedPct).toBeGreaterThan(95)
+    expect(state.onReference.backedPct).toBeLessThan(100)
+    expect(state.onReference.farPct).toBeGreaterThan(0)
+    expect(state.onReference.noScanPct).toBeGreaterThan(0)
+    type V3 = [number, number, number]
+    type P = { centroid: V3; extreme: number; side: string; area: number }
+    type R = { on: string; patches: P[]; far: { count: number; outside: { count: number; patches: P[] }; inside: { count: number } }; noScan: { count: number; found: number; patches: { centroid: V3; area: number }[] } }
+    const h = await run<R>('deviation.hotspots', { on: 'reference', tolerance: 0.5 })
+    expect(h.on).toBe('reference')
+    expect(h.far.outside.count).toBeGreaterThan(0)
+    expect(h.far.inside.count).toBe(0)
+    const top = h.far.outside.patches[0]
+    expect(top.side).toBe('outside')
+    expect(top.extreme).toBeCloseTo(6, 0)
+    expect(top.centroid[2]).toBeCloseTo(26, 0)
+    expect(h.noScan.found).toBeGreaterThan(0)
+    // On the boss: its sides face no scan, and its foot is buried in the cube.
+    const bare = h.noScan.patches[0].centroid
+    expect(bare[2]).toBeGreaterThan(19.9)
+    expect(Math.abs(bare[0])).toBeLessThan(3.5)
+    expect(Math.abs(bare[1])).toBeLessThan(3.5)
+    // Back on the scan, and the scan's own reading as it was.
+    expect((await run<{ deviation: On }>('deviation.settings', { on: 'scan' })).deviation.on).toBe('scan')
+  })
+
+  it('deviation.settings { show } switches the map off and on, the state saying so, one undo step', async () => {
+    await run('deviation.open_reference', { bytes: BOX, name: 'nominal.stl' })
+    await run('deviation.align')
+    type S = { deviation: { settings: { show: boolean }; map: string } }
+    expect((await run<S>('session.state')).deviation.settings.show).toBe(true)
+    const off = await run<S>('deviation.settings', { show: false })
+    expect(off.deviation.settings.show).toBe(false)
+    // Off takes nothing away: the map stays measured.
+    expect(off.deviation.map).toBe('ready')
+    expect(useDeviation.getState().showMap).toBe(false)
+    expect(undoLabels().slice(-1)).toEqual(['Agent: deviation settings'])
+    expect((await refused('deviation.settings', { show: 'no' })).code).toBe('invalid_input')
+    await undo()
+    expect(useDeviation.getState().showMap).toBe(true)
+    await run('deviation.settings', { show: false })
+    expect((await run<S>('deviation.settings', { show: true })).deviation.settings.show).toBe(true)
+  })
+
+  it('the map on the reference being measured holds the commands that change the session, as the scan’s does', async () => {
+    await run('deviation.open_reference', { bytes: BOX, name: 'nominal.stl' })
+    await run('deviation.align')
+    useDeviation.getState().beginReferenceMap()
+    try {
+      expect(sessionBusy()).toMatch(/map on the reference/)
+      expect((await run<{ busy: string | null }>('session.state')).busy).toMatch(/map on the reference/)
+      expect((await refused('deviation.settings', { tolerance: 0.2 })).code).toBe('busy')
+    } finally {
+      useDeviation.getState().clearReferenceMap()
+    }
+    expect(sessionBusy()).toBeNull()
+    await run('deviation.settings', { tolerance: 0.2 })
   })
 
   it('deviation.set_target needs the viewport the element map is measured on', async () => {

@@ -28,6 +28,13 @@ export type { Probe }
  *  is already in its frame, so choosing one is the whole setup. */
 export type DeviationSource = 'reference' | 'element'
 
+/** Which surface a map against a reference is painted on: the scan, by its
+ *  distance to the reference, or the reference, by its distance to the scan
+ *  — see core/deviation/onReference.ts. The scan's says where the scan
+ *  stands off the reference; the reference's where the reference has
+ *  material the scan has not, and what of it no scan stands behind. */
+export type MapSide = 'scan' | 'reference'
+
 export type AlignStatus = 'idle' | 'running' | 'done' | 'failed'
 export type MapStatus = 'idle' | 'running' | 'ready'
 
@@ -78,6 +85,11 @@ interface DeviationState extends ProbeSlice {
   localMaxDistance: number
 
   mapStatus: MapStatus
+  /** Which surface the map is painted on, and the map on the reference:
+   *  measured on asking, kept beside the scan's, gone with the alignment. */
+  mapOn: MapSide
+  referenceStatus: MapStatus
+  referenceVersion: number
   stats: DeviationStats | null
   histogram: FieldHistogram | null
   /** Bumped whenever a fresh deviation field lands, so the view repaints. */
@@ -201,6 +213,14 @@ interface DeviationState extends ProbeSlice {
   revertToGlobal: () => void
   beginMap: () => void
   resolveMap: (range: number, maxDistance: number) => void
+  /** Paint the map on the scan or on the reference; the reference's is
+   *  measured by whoever owns it. */
+  setMapOn: (side: MapSide) => void
+  beginReferenceMap: () => void
+  resolveReferenceMap: () => void
+  failReferenceMap: (message: string) => void
+  /** The map on the reference is gone — the scan or the alignment moved. */
+  clearReferenceMap: () => void
   /** Only the setting: the map it changes is measured again by whoever owns
    *  it. */
   setMapFacing: (deg: number | null) => void
@@ -236,6 +256,7 @@ const CLEARED = {
   alignStopping: false,
   globalAlign: null,
   mapStatus: 'idle' as MapStatus,
+  referenceStatus: 'idle' as MapStatus,
   stats: null,
   histogram: null,
   probes: [] as Probe[],
@@ -282,6 +303,8 @@ export const useDeviation = create<DeviationState>()((set, get) => ({
   ...CLEARED,
   ...NO_TARGET,
   mapVersion: 0,
+  mapOn: 'scan' as MapSide,
+  referenceVersion: 0,
   elementVersion: 0,
   targetScope: 'all',
   scopeCount: 0,
@@ -429,6 +452,7 @@ export const useDeviation = create<DeviationState>()((set, get) => ({
       // becomes the thing to fall back to.
       globalAlign: align.source === 'local' ? s.globalAlign : align,
       mapStatus: 'idle',
+      referenceStatus: 'idle',
       stats: null,
       histogram: null,
       probes: [],
@@ -466,6 +490,7 @@ export const useDeviation = create<DeviationState>()((set, get) => ({
             alignStatus: 'done',
             alignMessage: null,
             mapStatus: 'idle',
+            referenceStatus: 'idle',
             stats: null,
             histogram: null,
             probes: [],
@@ -483,10 +508,24 @@ export const useDeviation = create<DeviationState>()((set, get) => ({
       mapVersion: s.mapVersion + 1,
       range: s.rangeAuto ? range : s.range,
       maxDistance: s.maxDistanceAuto ? maxDistance : s.maxDistance,
-      // The map is on the scan now, so the ghost stops earning its place.
-      showNominal: false,
+      // The map is on the scan now, so the ghost stops earning its place —
+      // unless the map is read on the reference.
+      showNominal: s.mapOn === 'reference',
       probes: [],
     })),
+
+  // The readout and the pins belong to the map on screen. Read on the
+  // reference, the scan would hide it, and the other way round.
+  setMapOn: (mapOn) =>
+    set((s) =>
+      s.mapOn === mapOn
+        ? {}
+        : { mapOn, probes: [], stats: null, histogram: null, showScan: mapOn === 'scan', showNominal: mapOn === 'reference' ? true : s.mapStatus !== 'ready' },
+    ),
+  beginReferenceMap: () => set({ referenceStatus: 'running' }),
+  resolveReferenceMap: () => set((s) => ({ referenceStatus: 'ready', referenceVersion: s.referenceVersion + 1, ...(s.mapOn === 'reference' ? { probes: [] } : {}) })),
+  failReferenceMap: (alignMessage) => set({ referenceStatus: 'idle', alignMessage }),
+  clearReferenceMap: () => set({ referenceStatus: 'idle' }),
 
   setMapFacing: (mapFacingDeg) =>
     set({ mapFacingDeg: mapFacingDeg === null ? null : Math.min(90, Math.max(1, mapFacingDeg)) }),

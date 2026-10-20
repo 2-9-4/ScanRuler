@@ -11,6 +11,7 @@ import { fitCylinderFromSeed, fitCylinderOnSelection } from '../fit/fitCylinderF
 import { fitPlaneFromSeed, fitPlaneOnSelection } from '../fit/fitPlaneFromSeed'
 import { fitSphereFromSeed, fitSphereOnSelection } from '../fit/fitSphereFromSeed'
 import { fitTorusFromSeed, fitTorusOnSelection } from '../fit/fitTorusFromSeed'
+import type { FitGuide } from '../fit/guide'
 
 /** The extension seam for measurement primitives: each fitted element type
  *  provides a click-seeded auto-fit and inherits the whole pick → fit →
@@ -24,6 +25,9 @@ export type FitFromSeed = (
   /** The span to confine the fit to, for the kinds that can be — a cylinder
    *  with its ends pulled in. The others take the whole surface regardless. */
   window?: AxialWindow,
+  /** What the surface sought is known to be — side, size, axis, a box — so
+   *  the search passes over the wrong one nearby. See fit/guide. */
+  guide?: FitGuide,
 ) => FitOutput
 
 /** The same fit on a surface the user marked by hand, which skips the search

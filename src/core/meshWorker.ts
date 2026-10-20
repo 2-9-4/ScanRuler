@@ -28,7 +28,8 @@ import {
 } from './deviation/align'
 import type { Steps } from './deviation/steps'
 import { computeDeviation, defaultMaxDistance, suggestRange } from './deviation/deviation'
-import { rigidApplyToPoints, rigidRotateVectors, type Rigid } from './deviation/rigid'
+import { rigidApplyToPoints, rigidInvert, rigidRotateVectors, type Rigid } from './deviation/rigid'
+import { meshArea, readReference, sampleSpacing, subdivideForMap } from './deviation/onReference'
 import { buildSolidIndex, computeThickness, suggestThicknessScale } from './thickness/thickness'
 import { sliceMesh } from './section/slice'
 import { meshCentroid } from './geometry/centroid'
@@ -44,8 +45,13 @@ import { workerPlugins } from './workerPlugins'
 import type { WorkerContext } from './workerPluginApi'
 import type { MeshBVH } from 'three-mesh-bvh'
 import { reply } from './workerRpc'
+import { firstHits, localNoise, scanRims } from './geometry/scanQa'
 
 let graph: MeshGraph | null = null
+/** How far from the reference the scan is looked for, as a fraction of the
+ *  scan's diagonal: past every search distance worth a map; the display's
+ *  own search distance cuts it closer. */
+const REFERENCE_REACH = 0.1
 /** The reference geometry, prepared for signed closest-point queries. Held
  *  across requests so an alignment and the deviation map that follows it do
  *  not each pay for the tree. */
@@ -279,7 +285,7 @@ function handle(msg: Exclude<WorkerRequest, { type: 'align-abort' }>): void {
       return
     }
     try {
-      const result = getFitter(msg.elementType)(graph, msg.seeds, msg.settings, msg.window)
+      const result = getFitter(msg.elementType)(graph, msg.seeds, msg.settings, msg.window, msg.guide)
       post({ type: 'fit-ok', requestId: msg.requestId, result }, [result.region.buffer])
     } catch (e) {
       post({ type: 'error', requestId: msg.requestId, message: errorText(e) })
@@ -480,6 +486,26 @@ function handle(msg: Exclude<WorkerRequest, { type: 'align-abort' }>): void {
     return
   }
 
+  if (msg.type === 'heights' || msg.type === 'scan-qa') {
+    if (!graph) {
+      post({ type: 'error', requestId: msg.requestId, message: 'No model loaded.' })
+      return
+    }
+    try {
+      if (msg.type === 'heights') {
+        if (!scanSolid) scanSolid = buildSolidIndex(graph.positions, graph.indices)
+        const values = firstHits(scanSolid, msg.grid)
+        post({ type: 'heights-ok', requestId: msg.requestId, values }, [values.buffer])
+      } else {
+        const rims = scanRims(graph.positions, graph.indices, msg.rims)
+        post({ type: 'scan-qa-ok', requestId: msg.requestId, rims, noise: localNoise(graph, msg.sample) })
+      }
+    } catch (e) {
+      post({ type: 'error', requestId: msg.requestId, message: errorText(e) })
+    }
+    return
+  }
+
   if (msg.type === 'curvature') {
     if (!graph) {
       post({ type: 'error', requestId: msg.requestId, message: 'No model loaded.' })
@@ -663,6 +689,39 @@ function handle(msg: Exclude<WorkerRequest, { type: 'align-abort' }>): void {
           suggestedHigh: high,
         },
         [values.buffer],
+      )
+    } catch (e) {
+      post({ type: 'error', requestId: msg.requestId, message: errorText(e) })
+    }
+    return
+  }
+
+  if (msg.type === 'deviate-reference') {
+    const mesh = msg.mesh ?? (nominal ? { positions: nominal.positions, indices: nominal.index } : null)
+    if (!graph || !mesh) {
+      post({ type: 'error', requestId: msg.requestId, message: 'Load both a scan and a reference geometry first.' })
+      return
+    }
+    try {
+      const scan = scanSurfaceOf(graph, progress, 'Preparing the scan for the map on the reference…')
+      const spacing = sampleSpacing(meshArea(mesh.positions, mesh.indices), msg.spacing)
+      progress('Cutting the reference finer for its map…')
+      const samples = subdivideForMap(mesh.positions, mesh.indices, null, spacing)
+      let lastPercent = -1
+      const values = readReference(scan, samples, {
+        toScan: rigidInvert(msg.transform),
+        reach: graph.bboxDiag * REFERENCE_REACH,
+        facingDeg: msg.facingDeg,
+        onProgress: (f) => {
+          const percent = Math.round(f * 100)
+          if (percent === lastPercent) return
+          lastPercent = percent
+          progress(`Measuring the reference against the scan — ${percent}%…`)
+        },
+      })
+      post(
+        { type: 'reference-deviation-ok', requestId: msg.requestId, ...samples, values },
+        [samples.positions.buffer, samples.normals.buffer, samples.indices.buffer, samples.parent.buffer, values.buffer],
       )
     } catch (e) {
       post({ type: 'error', requestId: msg.requestId, message: errorText(e) })

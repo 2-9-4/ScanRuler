@@ -25,7 +25,8 @@ import {
   type ElementRef,
   type Location,
 } from '../refs'
-import { anyObject, arr, bool, enumOf, int, num, obj, oneOf, str } from '../schema'
+import { anyObject, arr, bool, enumOf, int, num, obj, oneOf, str, vec3 } from '../schema'
+import type { FitGuide } from '../../core/fit/guide'
 import { describeElement } from '../state'
 import { CommandError, type Command } from '../types'
 import { requireMeasureFree, showWorkspace, waitFor } from './common'
@@ -137,15 +138,36 @@ const created = (id: number) => describeElement(useStore.getState().elements.fin
 
 // ---- element.fit ----------------------------------------------------------------
 
-const fit: Command<{ kind: FitKind; at: Location | Location[] } & Finishing> = {
+/** What a guide may say, by kind: side, radius and axis are a round
+ *  surface's; within any surface's. */
+const ROUND_KINDS: readonly FitKind[] = ['sphere', 'cylinder', 'cone']
+
+/** The guide the input gives, checked against the kind; undefined when none. */
+function guideOf(input: { kind: FitKind } & FitGuide): FitGuide | undefined {
+  const { kind, side, radius, axis, within } = input
+  if (side === undefined && radius === undefined && axis === undefined && within === undefined) return undefined
+  if (kind === 'point' || kind === 'circle') throw new CommandError('invalid_input', `A ${kind} is picked, not grown — side, radius, axis and within do not apply.`)
+  if ((side !== undefined || radius !== undefined) && !ROUND_KINDS.includes(kind)) throw new CommandError('invalid_input', `side and radius are for a sphere, cylinder or cone, not a ${kind}.`)
+  if (axis !== undefined && kind !== 'cylinder' && kind !== 'cone') throw new CommandError('invalid_input', `axis is for a cylinder or cone, not a ${kind}.`)
+  if (axis !== undefined && !(Math.hypot(...axis) > 0)) throw new CommandError('invalid_input', 'axis: give a direction, not a zero vector.')
+  if (radius && radius.min !== undefined && radius.max !== undefined && radius.min > radius.max) throw new CommandError('invalid_input', 'radius: min lies past max.')
+  if (within) for (let k = 0; k < 3; k++) if (!(within.min[k] <= within.max[k])) throw new CommandError('invalid_input', 'within: the box’s min lies past its max.')
+  return { ...(side ? { side } : {}), ...(radius ? { radius } : {}), ...(axis ? { axis } : {}), ...(within ? { within } : {}) }
+}
+
+const fit: Command<{ kind: FitKind; at: Location | Location[] } & FitGuide & Finishing> = {
   name: 'fit',
   title: 'Fit an element',
   description:
-    'Fit an element on the scan where the panel would take a click: a plane, sphere, cylinder, cone or torus grows its surface from the place given and is best-fitted to it; a point is the place itself; a circle goes through three or more places. `at` is one place, or a list — a feature seen in patches can be seeded on each. A place is { vertex } (a scan vertex), { point: [x, y, z] } (the nearest scan vertex to a point, mm, in the current frame), or { screen } / { candidate } (not available yet). Returns the element with its fit and the seed actually used (vertex and point), so a recipe can be replayed on another scan. One undo step.',
+    'Fit an element on the scan where the panel would take a click: a plane, sphere, cylinder, cone or torus grows its surface from the place given and is best-fitted to it; a point is the place itself; a circle goes through three or more places. `at` is one place, or a list — a feature seen in patches can be seeded on each. A place is { vertex } (a scan vertex), { point: [x, y, z] } (the nearest scan vertex to a point, mm, in the current frame), or { screen } / { candidate } (not available yet). A seed near an edge can land on the wrong surface (a cup’s underside for its inside): say what is sought — side, radius, axis, within — and surfaces that do not match are passed over; a fit that finds none is refused with the radii it saw. Returns the element with its fit and the seed actually used (vertex and point), so a recipe can be replayed on another scan. One undo step.',
   input: obj(
     {
       kind: enumOf(FIT_KINDS, 'What to fit.'),
       at: oneOf([locationSchema('One place.'), arr(locationSchema('A place.'), 'Several places.', { minItems: 1 })], 'Where on the scan.'),
+      side: enumOf(['inside', 'outside'], 'Sphere, cylinder, cone: inside — concave, normals toward the axis or centre (a bore, a cup’s inside, a countersink); outside — convex (a shaft, a ball).'),
+      radius: obj({ min: num('mm.', { exclusiveMinimum: 0 }), max: num('mm.', { exclusiveMinimum: 0 }) }, [], 'Sphere, cylinder, cone: the radius range the surface lies in.'),
+      axis: vec3('Cylinder, cone: the axis direction, roughly (within 20°).'),
+      within: obj({ min: vec3('Lowest corner, mm.'), max: vec3('Highest corner, mm.') }, ['min', 'max'], 'The surface stays inside this box.'),
       ...finishing,
     },
     ['kind', 'at'],
@@ -154,6 +176,7 @@ const fit: Command<{ kind: FitKind; at: Location | Location[] } & Finishing> = {
   run: async (input) => {
     requireScan()
     requireMeasureFree()
+    const guide = guideOf(input)
     const places = Array.isArray(input.at) ? input.at : [input.at]
     if (input.kind === 'point' && places.length !== 1) throw new CommandError('invalid_input', 'A point is one place.')
     if (input.kind === 'circle' && places.length < 3) throw new CommandError('invalid_input', 'A circle needs three places or more.')
@@ -176,7 +199,7 @@ const fit: Command<{ kind: FitKind; at: Location | Location[] } & Finishing> = {
         m.runPickFit(points)
       } else {
         useStore.getState().setDraftPicks(picks, points)
-        await m.runDraftFit(input.kind, picks)
+        await m.runDraftFit(input.kind, picks, guide)
       }
       const id = finishAndCreate(input)
       return { element: created(id), seeds: spots.map(spotJson) }

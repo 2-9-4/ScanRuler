@@ -132,9 +132,14 @@ describe('a field map on a scan with shading copies', () => {
     expect(rc.setFieldColors(new Uint8Array(N * 3).fill(77))).toBe(true)
     expect(colorAt(colors, 0)).toEqual([77, 77, 77])
     expect(colorAt(colors, N - 1)).toEqual([77, 77, 77])
-    // A map the length of the whole buffer is some other layout's.
+    expect(rc.fieldState).toBe('painted')
+    // A map the length of the whole buffer is some other layout's — and
+    // says it was left unpainted, for an answer that reports what is drawn.
     rc.setFieldColors(new Uint8Array((N + COPIES) * 3).fill(55))
     expect(colorAt(colors, 0)).toEqual(BASE)
+    expect(rc.fieldState).toBe('unfit')
+    rc.setFieldColors(null)
+    expect(rc.fieldState).toBeNull()
   })
 })
 

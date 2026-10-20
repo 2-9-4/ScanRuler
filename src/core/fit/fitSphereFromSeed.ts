@@ -4,8 +4,9 @@
 // stray region — by its size against the part's and its noise against its
 // radius; a painted selection is taken as given.
 
-import type { FitSettings, MeshGraph, SphereFitOutput } from '../types'
+import type { AxialWindow, FitSettings, MeshGraph, SphereFitOutput } from '../types'
 import { FitError } from './errors'
+import { guidedEstimate, guidedSeeds, guideRefusal, hasGuide, judgeRound, radialFrom, type FitGuide, type GuideSeen } from './guide'
 import { growSphereRegion, seededFit } from './regionGrow'
 import { ransacSphere } from './ransac'
 import { requireSelection } from './selection'
@@ -24,10 +25,32 @@ export function fitSphereFromSeed(
   g: MeshGraph,
   seeds: number[],
   settings: FitSettings,
+  _window?: AxialWindow,
+  guide?: FitGuide,
 ): SphereFitOutput {
+  const guided = hasGuide(guide) ? guide : null
+  const seen: GuideSeen[] = []
   const fit = seededFit(g, seeds, {
-    estimate: (patch, seed) => ransacSphere(g.positions, patch, { seed }),
-    grow: (cand) => growSphereRegion(g, seeds, cand.sphere, cand.sigma, cand.inliers.length),
+    estimate: (patch, seed) =>
+      guided
+        ? guidedEstimate(
+            g,
+            patch,
+            guided,
+            (p) => ransacSphere(g.positions, p, { seed }),
+            (c) => judgeRound(g, guided, c.sphere.r, c.inliers, radialFrom(c.sphere.cx, c.sphere.cy, c.sphere.cz), true),
+            (c, v) => {
+              const s = c.sphere
+              const d = Math.hypot(g.positions[v * 3] - s.cx, g.positions[v * 3 + 1] - s.cy, g.positions[v * 3 + 2] - s.cz)
+              return Math.abs(d - s.r) <= Math.max(3 * c.sigma, 0.01 * s.r)
+            },
+            seen,
+          )
+        : ransacSphere(g.positions, patch, { seed }),
+    grow: (cand) => {
+      const from = guided ? guidedSeeds(g, cand.inliers, guided, radialFrom(cand.sphere.cx, cand.sphere.cy, cand.sphere.cz)) : seeds
+      return from.length ? growSphereRegion(g, from, cand.sphere, cand.sigma, cand.inliers.length, guided ?? undefined) : null
+    },
     finish: (grown) => {
       const fin = fitSphereClipped(g.positions, grown.region, settings.sigma)
       if (!fin) return null
@@ -37,10 +60,18 @@ export function fitSphereFromSeed(
       // misfit (flat area, rod, junk region) — try a larger patch or fail.
       if (sphere.r > 0.8 * g.bboxDiag) return null
       if (fin.sigma > 0.03 * sphere.r) return null
+      if (guided) {
+        const no = judgeRound(g, guided, sphere.r, grown.region, radialFrom(sphere.cx, sphere.cy, sphere.cz), false)
+        if (no) {
+          seen.push(no)
+          return null
+        }
+      }
       return sphereOutput(fin, grown.region)
     },
   })
   if (fit) return fit
+  if (guided) throw new FitError(guideRefusal('sphere', guided, seen))
   throw new FitError("Couldn't fit a sphere at this point — try clicking nearer the middle of a sphere.")
 }
 

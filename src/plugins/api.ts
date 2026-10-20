@@ -19,7 +19,7 @@ import type { FieldScale } from '../core/field/colormap'
 import type { HintResult } from '../core/hints'
 import type { MeshUnits } from '../core/meshUnits'
 import type { ElementKind } from '../core/types'
-import type { MeshWorkerClient } from '../core/workerClient'
+import type { MeshWorkerClient, ReferenceDeviationResult } from '../core/workerClient'
 import type { HoverReading } from '../ui/HoverReadout'
 import type { IconName } from '../ui/icons'
 import type { ViewSwitch } from '../ui/PartKey'
@@ -81,6 +81,10 @@ export interface ScanMaps {
   elementScope: RefObject<Uint32Array | null>
   thickness: RefObject<Float32Array | null>
   thicknessRgb: RefObject<Uint8Array | null>
+  /** The reference cut finer and read against the scan — the map painted on
+   *  the reference (core/deviation/onReference.ts) — and its colours. */
+  referenceMap: RefObject<ReferenceDeviationResult | null>
+  referenceRgb: RefObject<Uint8Array | null>
 }
 
 /** What the app hands every plugin: the parts of it a plugin works through,

@@ -10,6 +10,7 @@
 import type { AxialWindow, Cylinder, CylinderFit, FitSettings, MeshGraph } from '../types'
 import {
   axisFromNormals,
+  cylinderResidual as cylinderResidualAt,
   fitCylinderClipped,
   fitCylinderOnAxis,
   ransacCylinder,
@@ -17,6 +18,7 @@ import {
 } from './cylinder'
 import { FitError } from './errors'
 import { axialExtents } from './extents'
+import { axisAgrees, guidedEstimate, guidedSeeds, guideRefusal, hasGuide, judgeRound, radialOff, type FitGuide, type GuideSeen } from './guide'
 import { growCylinderRegion, seededFit } from './regionGrow'
 import { MIN_SELECTED, requireSelection } from './selection'
 
@@ -121,10 +123,35 @@ export function fitCylinderFromSeed(
   seeds: number[],
   settings: FitSettings,
   window?: AxialWindow,
+  guide?: FitGuide,
 ): CylinderResult {
+  const guided = hasGuide(guide) ? guide : null
+  const seen: GuideSeen[] = []
+  const radial = (c: Cylinder) => radialOff(c.px, c.py, c.pz, c.ax, c.ay, c.az)
   const fit = seededFit(g, seeds, {
-    estimate: (patch, seed) => ransacCylinder(g.positions, g.normals, patch, { seed }),
-    grow: (cand) => growCylinderRegion(g, seeds, cand.cylinder, cand.sigma, cand.inliers.length),
+    estimate: (patch, seed) =>
+      guided
+        ? guidedEstimate(
+            g,
+            patch,
+            guided,
+            (p) => ransacCylinder(g.positions, g.normals, p, { seed }),
+            (c) =>
+              !axisAgrees(guided, [c.cylinder.ax, c.cylinder.ay, c.cylinder.az])
+                ? { radius: c.cylinder.r, why: 'axis off' }
+                : judgeRound(g, guided, c.cylinder.r, c.inliers, radial(c.cylinder), true),
+            (c, v) => {
+              const j = v * 3
+              const e = cylinderResidualAt(c.cylinder, g.positions[j], g.positions[j + 1], g.positions[j + 2])
+              return Math.abs(e) <= Math.max(3 * c.sigma, 0.01 * c.cylinder.r)
+            },
+            seen,
+          )
+        : ransacCylinder(g.positions, g.normals, patch, { seed }),
+    grow: (cand) => {
+      const from = guided ? guidedSeeds(g, cand.inliers, guided, radial(cand.cylinder)) : seeds
+      return from.length ? growCylinderRegion(g, from, cand.cylinder, cand.sigma, cand.inliers.length, guided ?? undefined) : null
+    },
     finish: (grown) => {
       const fin = fitCylinderClipped(g.positions, grown.region, grown.model, settings.sigma)
       if (!fin) return null
@@ -139,6 +166,15 @@ export function fitCylinderFromSeed(
       // Under ~30° of arc the circle through the points is barely curved, so
       // the radius and the axis position are guesses.
       if (!result || !(result.coverage >= 29)) return null
+      if (guided) {
+        const no = !axisAgrees(guided, result.axis)
+          ? { radius: c.r, why: 'axis off' }
+          : judgeRound(g, guided, c.r, grown.region, radial(c), false)
+        if (no) {
+          seen.push(no)
+          return null
+        }
+      }
 
       // The surface has been found; confining the fit to part of it is a
       // separate matter, and one a bigger patch could not help with.
@@ -146,6 +182,7 @@ export function fitCylinderFromSeed(
     },
   })
   if (fit) return fit
+  if (guided) throw new FitError(guideRefusal('cylinder', guided, seen))
   throw new FitError(
     "Couldn't fit a cylinder at this point — try clicking on a clearly curved part of the cylindrical surface.",
   )

@@ -6,7 +6,8 @@
 // scanruler_wait, to wait for it or for it to be idle; and scanruler_batch,
 // to run several of the page's tools in one call. In compact mode, for a
 // model with a small context window, the page's tools are not listed but
-// for those that return a picture, which a batch gives only as text: a
+// for those that return a picture, which a batch cannot show — it writes
+// the picture to a file and gives its text: a
 // fifth of the server's own, scanruler_tools, lists them a line each and
 // gives the definitions of those asked for, and scanruler_batch runs them.
 // Headless (engine.js), the tools are the commands ScanRuler runs in this
@@ -15,7 +16,7 @@
 import { readFileSync } from 'node:fs'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
-import { agentJson, imageContent, inputFor, saveFileResult, toolFor, toolName, waitIn } from './tools.js'
+import { agentJson, batchedPicture, imageContent, inputFor, saveFileResult, toolFor, toolName, waitIn } from './tools.js'
 import { jsonBytes, replyMeasure } from './trace.js'
 
 /** The app's own commands as of this release, so the tools are there before
@@ -54,7 +55,7 @@ const INSTRUCTIONS = {
     'ScanRuler’s own tools are not listed one by one, but for those that return a picture. scanruler_tools lists them all, a name and a line each; scanruler_tools with names gives those tools’ full definitions. Read a tool’s definition before its first use, and give it the arguments its inputSchema asks for.',
     'Run the tools through scanruler_batch — { "calls": [{ "tool": "session_state", "arguments": {} }] }; a single tool is a batch of one, and several run in order. Each result is { tool, ok, result } or { tool, ok: false, error: { code, message } }: the code is the page’s own (invalid_input, no_scan, busy, invalid_state, not_found …) and the message says what was wrong, so retry a refused call with its arguments corrected.',
     ...WORKING,
-    'The tools that return a picture — view_render, which pictures the 3D view, among them — are listed as tools of their own: call them directly to see the picture. In a batch a picture comes back as text only, and is written to a file when its call gives path. view_set turns the view.',
+    'The tools that return a picture — view_render, which pictures the 3D view, among them — are listed as tools of their own: call them directly to see the picture. In a batch a picture is not shown: it is written to a file — the call’s path, or a new file in the server’s output folder — and its result says where (file.path). view_set turns the view.',
   ].join(' '),
 }
 
@@ -229,6 +230,11 @@ export function createMcpServer({
     return { ...jobBrief(j), ...(failed ? { failed } : {}) }
   }
 
+  // Since when this copy of the server keeps jobs: one asked of a copy
+  // before it — another process, or this one restarted — is not known here.
+  const startedAt = new Date().toISOString()
+  const noJobs = `None asked of this server copy, which started at ${startedAt}. A change asked of an earlier copy is not known here: session_state says what the page holds.`
+
   const status = () => ({
     backend: headless ? 'headless' : 'page',
     connected: link.connected,
@@ -246,14 +252,15 @@ export function createMcpServer({
     server: serverInfo(),
     ...(link.connected || headless ? {} : { howToConnect: connectHelp() }),
     ...(link.page?.hidden ? { hiddenNote: 'The ScanRuler tab is hidden — in the background, its window covered or minimised, or the screen locked. Changes still run; pictures and anything that waits on the screen are slower, and a browser that unloads background tabs (Chrome’s Memory Saver) may close it: add the site to "Always keep these sites active".' } : {}),
-    ...(jobs.size > 0 ? { jobs: [...jobs.values()].reverse().map(jobBrief) } : {}),
+    ...(jobs.size > 0 ? { jobs: [...jobs.values()].reverse().map(jobBrief) } : { jobsNote: noJobs }),
+    ...staleTools(),
   })
 
   const own = [
     {
       name: 'scanruler_status',
       title: 'ScanRuler connection status',
-      description: 'Whether a ScanRuler page is connected to this agent, which version and plugins it has, whether its tab is hidden (page.hidden), and — when none is — how the user connects one. backend says whether ScanRuler runs in a tab (page) or in this server (headless). jobs lists the latest calls that change the session, newest first, each running, done or failed — a call whose answer you did not get is among them; scanruler_wait { for: "job", job } gives its answer.',
+      description: 'Whether a ScanRuler page is connected to this agent, which version and plugins it has, whether its tab is hidden (page.hidden), and — when none is — how the user connects one. backend says whether ScanRuler runs in a tab (page) or in this server (headless). jobs lists the latest calls that change the session, newest first, each running, done or failed — a call whose answer you did not get is among them; scanruler_wait { for: "job", job } gives its answer. tools, when there, says the tools you were given are not the ones the page offers now (stale).',
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true, openWorldHint: false },
       call: async () => text(status()),
@@ -292,7 +299,7 @@ export function createMcpServer({
         const until = Date.now() + 1000 * (args?.timeoutSeconds ?? 120)
         if (args?.for === 'job' || args?.job !== undefined) {
           const j = jobs.get(String(args?.job ?? ''))
-          if (!j) return failure({ code: 'not_found', message: `There is no job "${args?.job ?? ''}" — scanruler_status lists the latest.` })
+          if (!j) return failure({ code: 'not_found', message: `There is no job "${args?.job ?? ''}" — scanruler_status lists the latest. This server copy started at ${startedAt}; a job of an earlier one is not known here, and session_state says whether its change was made.` })
           let timer
           await Promise.race([j.done, new Promise((r) => (timer = setTimeout(r, Math.max(0, until - Date.now()))))])
           clearTimeout(timer)
@@ -325,9 +332,10 @@ export function createMcpServer({
   ]
 
   let listed = ''
+  let listedNames = []
   const definition = ({ call: _call, ...tool }) => tool
   // Compact, the list is the server's own tools and the page's that return
-  // a picture — a batch gives a picture as its text, so those are called
+  // a picture — a batch gives a picture as its text and a file, so those are called
   // directly; scanruler_tools reads commands() when it is called.
   const shown = (c) => !compact || Boolean(c.returnsImage)
   const listNow = () => [...own.map(definition), ...commands().filter(shown).map((c) => toolFor(c, { outDir }))]
@@ -335,6 +343,7 @@ export function createMcpServer({
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     const tools = listNow()
     listed = JSON.stringify(tools)
+    listedNames = tools.map((t) => t.name)
     trace?.write({ ev: 'list', t: trace.now(), tools: tools.length, bytes: Buffer.byteLength(listed, 'utf8') })
     return { tools }
   })
@@ -346,6 +355,27 @@ export function createMcpServer({
     if (!listed) return
     if (JSON.stringify(listNow()) !== listed) server.sendToolListChanged().catch(() => {})
   }
+  // A client told the list changed may not list it again — Claude Desktop
+  // runs two copies of the server, and the chat's may keep the list it got
+  // at its start: the status says so, with what was added and taken away.
+  function staleTools() {
+    if (!listed) return {}
+    const now = listNow()
+    if (JSON.stringify(now) === listed) return {}
+    const names = now.map((t) => t.name)
+    const added = names.filter((n) => !listedNames.includes(n))
+    const removed = listedNames.filter((n) => !names.includes(n))
+    return {
+      tools: {
+        stale: true,
+        listed: listedNames.length,
+        now: names.length,
+        ...(added.length ? { added } : {}),
+        ...(removed.length ? { removed } : {}),
+        note: 'The tools this chat was given are not the ones the ScanRuler page offers now — it changed since they were listed, and the client did not list them again. A tool or field missing from them may be there now: start a new chat to get the current tools; meanwhile scanruler_batch runs any of the page’s tools by name.',
+      },
+    }
+  }
   for (const event of ['connected', 'commands']) {
     link.on(event, () => {
       remember()
@@ -354,8 +384,9 @@ export function createMcpServer({
   }
 
   /** One of the page's tools run on the page: the result as MCP content,
-   *  or a failure. */
-  const runPageTool = async (name, args, onProgress, { timings = false, ms = false } = {}) => {
+   *  or a failure. `batched`: a picture is written to a file — the call's
+   *  path or a new one in outDir — and given as its text, not shown. */
+  const runPageTool = async (name, args, onProgress, { timings = false, ms = false, batched = false } = {}) => {
     const command = commands().find((c) => toolName(c) === name)
     const needsPage = !command && headless ? link.pageCommand(name) : null
     if (needsPage) return failure({ code: 'unavailable', message: `${name} needs the ScanRuler page — a scan, the viewport or the browser — and this server runs ScanRuler headless, with none. Start scanruler-mcp in page mode (without --engine or --headless) and pair it with a ScanRuler tab for it.` })
@@ -368,7 +399,7 @@ export function createMcpServer({
       const started = Date.now()
       let result = await link.run(command.name, input, binaryKey, onProgress)
       if (ms && result && typeof result === 'object' && !Array.isArray(result)) result = { ...result, ms: Date.now() - started }
-      const image = command.returnsImage ? await imageContent(result, args, { cwd, outDir }) : null
+      const image = command.returnsImage && !batched ? await imageContent(result, args, { cwd, outDir }) : null
       if (image) return { content: image }
       // Which steps a change's build played, and how long each took, only
       // for a batch asked for its timings.
@@ -376,7 +407,8 @@ export function createMcpServer({
         const { played: _played, ...steps } = result.steps
         result = { ...result, steps }
       }
-      return text(await saveFileResult(result, args, { cwd, outDir }), Boolean(command.exact))
+      const saved = command.returnsImage && batched ? await batchedPicture(result, args, { cwd, outDir }) : await saveFileResult(result, args, { cwd, outDir })
+      return text(saved, Boolean(command.exact))
     } catch (e) {
       return failure(e)
     }
@@ -384,13 +416,14 @@ export function createMcpServer({
 
   // Several of the page's tools in one call — what cuts a run of twenty
   // scan_nearest calls to one round trip. Each answer is the tool's own; a
-  // picture comes back as the text beside it (where it was written, if a
-  // path was given), not as an image.
+  // picture comes back as the text beside it, not as an image, and is
+  // written to a file — the call's path, or a new one in outDir — which the
+  // text names.
   own.push({
     name: 'scanruler_batch',
     title: 'Run several ScanRuler tools',
     description:
-      'Run several of the ScanRuler tools in one call, in order, each with its own arguments — a run of scan_nearest, element_fit or section_get calls, say. Returns results, one per call in order: { tool, ok, result } or { tool, ok: false, error: { code, message } }. The first refused stops the rest (stopped says which index) unless stopOnError is false — and then, with rollback (the default), every change the batch made before it is undone, so the batch stands or falls whole: the answer names failed: { index, tool, error } and undone (the steps taken back, newest first). Each call that changes the session is still its own undo step. timings: true gives each call its ms and the batch total_ms, and a change\'s build the steps it played with their ms (result.steps.played). wait: false answers at once with { queued, job }; scanruler_wait { for: "job", job } gives the batch\'s answer. A tool that returns a picture gives its text here, the picture written to a file only if its call gave path. The server’s own tools (scanruler_status, _open, _wait, _batch) cannot be batched.',
+      `Run several of the ScanRuler tools in one call, in order, each with its own arguments — a run of scan_nearest, element_fit or section_get calls, say. Returns results, one per call in order: { tool, ok, result } or { tool, ok: false, error: { code, message } }. The first refused stops the rest (stopped says which index) unless stopOnError is false — and then, with rollback (the default), every change the batch made before it is undone, so the batch stands or falls whole: the answer names failed: { index, tool, error } and undone (the steps taken back, newest first). Each call that changes the session is still its own undo step. timings: true gives each call its ms and the batch total_ms, and a change\'s build the steps it played with their ms (result.steps.played). wait: false answers at once with { queued, job }; scanruler_wait { for: "job", job } gives the batch\'s answer. A tool that returns a picture is not shown here: the picture is written to a file — its call’s path, or a new file in ${outDir} — and its result gives that file.path; call the tool directly to see the picture. The server’s own tools (scanruler_status, _open, _wait, _batch) cannot be batched.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -457,7 +490,7 @@ export function createMcpServer({
       const hiddenAt = hiddenNow()
       const one = own.some((t) => t.name === tool)
         ? failure({ code: 'invalid_input', message: `${tool} is the server’s own and is not batched — call it on its own.` })
-        : await runPageTool(tool, callArgs, undefined, { timings })
+        : await runPageTool(tool, callArgs, undefined, { timings, batched: true })
       if (ctx && trace) {
         trace.write({ ev: 'entry', call: ctx.call, index: i, t: at, tool, ms: Date.now() - at, in: jsonBytes(callArgs), ...replyMeasure(one), hidden: [hiddenAt, hiddenNow()], ...(trace.args ? { args: callArgs } : {}) })
       }

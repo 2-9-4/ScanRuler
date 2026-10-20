@@ -5,6 +5,7 @@
 // change nothing). On a 40 mm box and a pair of balls, in the in-process
 // worker — see commandKit.ts.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { sheetThrough } from '../src/commands/core/section'
 import { listCommands } from '../src/commands/registry'
 import { registerStateSection } from '../src/commands/stateSections'
 import { useHistory } from '../src/state/historyStore'
@@ -42,7 +43,7 @@ describe('the command list', () => {
   it('holds the contract’s names', () => {
     const names = listCommands().map((c) => c.name)
     for (const name of [
-      'session.state', 'session.reset', 'workspace.set', 'scan.open', 'scan.nearest', 'scan.query', 'scan.fit_surface',
+      'session.state', 'session.reset', 'workspace.set', 'scan.open', 'scan.nearest', 'scan.query', 'scan.fit_surface', 'scan.draft',
       'element.fit', 'element.fit_marked', 'element.construct', 'element.rename', 'element.remove', 'element.set_visible',
       'dimension.add', 'dimension.set_limit', 'dimension.set_basic', 'dimension.remove',
       'align.datum', 'align.auto', 'align.symmetry', 'align.clear', 'section.cut', 'section.get',
@@ -90,6 +91,18 @@ describe('scan', () => {
     expect((await refused('scan.nearest', { at: { screen: [10, 10] } })).code).toBe('not_implemented')
     expect((await refused('scan.nearest', { at: { candidate: 1 } })).code).toBe('not_implemented')
     expect(useHistory.getState().past).toHaveLength(0)
+  })
+
+  it('scan.draft reads the box’s four sides as walls along Z, square to it', async () => {
+    type D = { walls: number; points: number; patches: { draftDeg: number; area: number; facing: Vec3 }[] }
+    const r = await run<D>('scan.draft', { pull: [0, 0, 1] })
+    expect(r.patches).toHaveLength(4)
+    for (const p of r.patches) {
+      expect(Math.abs(p.draftDeg)).toBeLessThan(0.2)
+      expect(p.area).toBeGreaterThan(1000)
+      expect(Math.abs(p.facing[2])).toBeLessThan(1e-3)
+    }
+    expect((await refused('scan.draft', { pull: [0, 0, 0] })).code).toBe('invalid_input')
   })
 
   it('scan.fit_surface measures the box’s top as a plane — the simplest that holds — in its own frame', async () => {
@@ -357,6 +370,17 @@ describe('sections', () => {
     expect(undoLabels()).toEqual(['Agent: cut section', 'Agent: fit plane', 'Agent: cut section'])
     await undo()
     expect(useStore.getState().sections).toHaveLength(1)
+  })
+
+  it('lays a plane cut for a picture alone on a sketch’s sheet: world coordinates on a coordinate plane', async () => {
+    await openBox()
+    const { sheet, flat } = await sheetThrough([5, 3, 2], [0, 1, 0], 'Cut')
+    expect(flat.length).toBeGreaterThan(0)
+    // Zero at the world origin's foot, u = Z, v = X — as a section across
+    // ZX has them, and a sketch on that plane.
+    expect(sheet.origin.map((v) => v + 0)).toEqual([0, 3, 0])
+    expect(sheet.basisU).toEqual([0, 0, 1])
+    expect(sheet.basisV.map((v) => v + 0)).toEqual([1, 0, 0])
   })
 
   it('section.get hands back the chains as polylines, on the sheet and in the world', async () => {

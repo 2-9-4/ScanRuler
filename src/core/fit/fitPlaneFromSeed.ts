@@ -11,6 +11,8 @@ import { FitError } from './errors'
 import { orthoBasis } from './linalg'
 import { fitPlaneClipped, ransacPlane } from './plane'
 import { growPlaneRegion, seededFit } from './regionGrow'
+import { guidePatch, type FitGuide } from './guide'
+import type { AxialWindow } from '../types'
 import { requireSelection } from './selection'
 
 /** In-plane rotations tried when boxing the patch in, over a quarter turn —
@@ -156,10 +158,14 @@ export function fitPlaneFromSeed(
   g: MeshGraph,
   seeds: number[],
   settings: FitSettings,
+  _window?: AxialWindow,
+  guide?: FitGuide,
 ): PlaneFit & { region: Uint32Array } {
+  // A plane takes a box alone of the guide: it has no side, size or axis.
+  const within = guide?.within ? { within: guide.within } : undefined
   const fit = seededFit(g, seeds, {
-    estimate: (patch, seed) => ransacPlane(g.positions, patch, { seed }),
-    grow: (cand) => growPlaneRegion(g, seeds, cand.plane, cand.sigma, cand.inliers.length),
+    estimate: (patch, seed) => ransacPlane(g.positions, within ? guidePatch(g, patch, within) : patch, { seed }),
+    grow: (cand) => growPlaneRegion(g, within ? cand.inliers : seeds, cand.plane, cand.sigma, cand.inliers.length, within),
     finish: (grown): (PlaneFit & { region: Uint32Array }) | null => {
       const fin = fitPlaneClipped(g.positions, grown.region, settings.sigma)
       if (!fin) return null

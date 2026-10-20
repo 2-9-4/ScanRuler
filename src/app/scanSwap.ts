@@ -72,6 +72,9 @@ export function scanSwap({
     clearPreview()
     maps.deviation.current = null
     maps.deviationRgb.current = null
+    maps.referenceMap.current = null
+    maps.referenceRgb.current = null
+    useDeviation.getState().clearReferenceMap()
     maps.elementField.current = null
     maps.elementRgb.current = null
     maps.thickness.current = null

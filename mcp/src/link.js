@@ -45,6 +45,10 @@ const HELLO_MS = 10_000
 /** Where a result carries a file's bytes, if it does. */
 const resultBinary = (result) => (result?.file?.bytes instanceof Uint8Array ? 'result.file.bytes' : undefined)
 
+/** What a call dropped unanswered says after why. */
+export const MAY_HAVE_LANDED =
+  'If it was a change, it may still have been made on the page: read session_state (history.undo names the last step taken) before running it again, rather than retry it blindly.'
+
 /** A socket's frame, as the decoder takes it. */
 export const frameOf = (data, isBinary) => (isBinary ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength) : data.toString('utf8'))
 
@@ -80,9 +84,11 @@ export class Asker extends EventEmitter {
     else entry.resolve(message.result)
   }
 
-  /** Turn down everything still waiting for an answer. */
+  /** Turn down everything still waiting for an answer — saying, besides
+   *  why, that a change may have been made all the same: the page may have
+   *  run it and gone before its answer came back. */
   dropPending(message) {
-    for (const { reject } of this.pending.values()) reject({ code: 'unavailable', message })
+    for (const { reject } of this.pending.values()) reject({ code: 'unavailable', message: `${message} ${MAY_HAVE_LANDED}` })
     this.pending.clear()
   }
 

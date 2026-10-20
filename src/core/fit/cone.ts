@@ -67,6 +67,16 @@ export function coneNormalAlign(
   return Math.abs(sx * nx + sy * ny + sz * nz)
 }
 
+/** The same cosine signed: positive where the vertex normal points away from
+ *  the axis (a pin's tip), negative toward it (a countersink). */
+export function coneNormalSigned(c: Cone, x: number, y: number, z: number, nx: number, ny: number, nz: number): number {
+  const { wx, wy, wz } = slant(c, x, y, z)
+  if (wx === 0 && wy === 0 && wz === 0) return 0
+  const cos = Math.cos(c.phi)
+  const sin = Math.sin(c.phi)
+  return (cos * wx - sin * c.ax) * nx + (cos * wy - sin * c.ay) * ny + (cos * wz - sin * c.az) * nz
+}
+
 function rms(positions: Float32Array, idx: ArrayLike<number>, c: Cone): number {
   return rmsOver(positions, idx, (x, y, z) => slant(c, x, y, z).e)
 }

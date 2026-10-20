@@ -144,6 +144,16 @@ test('with a page: tools run on it — files read from paths and written to path
   assert.equal(batch.json.results[1].ok, true)
   assert.equal(batch.json.results[1].result.width, 320, 'a picture gives its text in a batch')
   assert.equal(batch.images.length, 0)
+  // ... and, with no path given, is written to the output folder, the
+  // text saying where — a second one beside the first, not over it.
+  const first = batch.json.results[1].result.file
+  assert.deepEqual(first, { name: 'ballbar-view.png', mimeType: 'image/png', size: 4, path: join(dir, 'ballbar-view.png') })
+  assert.equal((await readFile(first.path)).subarray(1, 4).toString(), 'PNG')
+  const two = await call('scanruler_batch', { calls: [{ tool: 'view_render', arguments: {} }, { tool: 'view_render', arguments: { path: 'kept.png' } }] })
+  assert.equal(two.images.length, 0)
+  assert.equal(two.json.results[0].result.file.path, join(dir, 'ballbar-view-2.png'))
+  assert.equal(two.json.results[1].result.file.path, join(dir, 'kept.png'), 'a path given is where it goes')
+  assert.equal((await readFile(join(dir, 'kept.png'))).subarray(1, 4).toString(), 'PNG')
   assert.deepEqual(batch.json.results[2], { tool: 'element_fit', ok: false, error: { code: 'invalid_input', message: 'element.fit refused.' } })
   const all = await call('scanruler_batch', { stopOnError: false, calls: [{ tool: 'element_fit', arguments: {} }, { tool: 'no_such_tool' }, { tool: 'scanruler_status' }, { tool: 'session_state' }] })
   assert.equal(all.json.ran, 4)
@@ -292,7 +302,7 @@ test('compact: a page with a new picture command has the client list the tools a
     assert.equal(shown.json.ran, 'demo.picture')
     const batched = await on('scanruler_batch', { calls: [{ tool: 'demo_picture' }] })
     assert.equal(batched.images.length, 0)
-    assert.deepEqual(batched.json.results[0].result, { ran: 'demo.picture', file: { name: 'thing.png', mimeType: 'image/png', size: 4 } }, 'in a batch, its text')
+    assert.deepEqual(batched.json.results[0].result, { ran: 'demo.picture', file: { name: 'thing.png', mimeType: 'image/png', size: 4, path: join(dir, 'thing.png') } }, 'in a batch, its text, and the picture in a file')
   } finally {
     ;(await page)?.page.close()
     await compact.close()

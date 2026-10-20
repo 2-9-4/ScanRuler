@@ -6,7 +6,10 @@ import type { Vec3 } from '../../core/types'
 import { useStore } from '../../state/store'
 import { commandHost } from '../host'
 import { locationSchema, requireScan, resolveLocation, type Location } from '../refs'
-import { arr, bytes, enumOf, int, num, obj, vec3 } from '../schema'
+import { arr, bool, bytes, enumOf, int, num, obj, oneOf, vec3 } from '../schema'
+import { acrossAxes, dominantFacing, robustPlane } from '../../core/geometry/scanQa'
+import { orthoBasis } from '../../core/fit/linalg'
+import { niceCeil } from '../../core/field/stats'
 import { scanBounds } from '../state'
 import { CommandError, type Command } from '../types'
 import { discardSchema, fileNameSchema, fileOf, lastError, requireDiscardable } from './common'
@@ -234,4 +237,316 @@ const fitSurface: Command<{ vertices?: number[]; box?: { min: Vec3; max: Vec3 };
   },
 }
 
-export const scanCommands = [open, nearest, query, fitSurface]
+/** How many scan points the draft is read off at most, spread evenly. */
+const DRAFT_LIMIT = 400_000
+
+const draft: Command<{ pull: Vec3; box?: { min: Vec3; max: Vec3 }; nearDeg?: number; patches?: number; minArea?: number }> = {
+  name: 'draft',
+  title: 'Read the draft against a pull',
+  description:
+    'The scan’s walls that run near a pull direction — the sides a mould opens along, a side core slides along — gathered into patches, each with the angle it leans off the pull: draftDeg, positive where the wall faces partly along the pull (it lets go as the tool moves that way), negative where it faces back (a back draft, an undercut to that pull); sigmaDeg its standard error, spreadDeg the points’ own spread (mostly the scan’s normal noise); with centroid, box, area (mm²), count and facing (which way the wall faces across the pull). Neighbouring walls are parted where the way they face jumps, so a box’s four sides are four patches and a boss’s round side one. Read it early on a moulded or cast part, along each direction the tools open: walls that lean half a degree to a few explain fits that miss by the lean. pull: the direction, any length; box: only the scan inside it; nearDeg: how far off square to the pull a wall may lean and still count (10 by default); patches: how many, the largest first (12); minArea: smaller ones left out, mm² (1). Changes nothing.',
+  input: obj({
+    pull: vec3('The pull direction, any length — the way the tool opens.'),
+    box: obj({ min: vec3('The lowest corner, mm.'), max: vec3('The highest corner, mm.') }, ['min', 'max'], 'Only the scan inside this box.'),
+    nearDeg: num('Degrees; 10 by default.', { exclusiveMinimum: 0, maximum: 45 }),
+    patches: int('How many patches; 12 by default.', { minimum: 1, maximum: 50 }),
+    minArea: num('mm²; 1 by default.', { minimum: 0 }),
+  }, ['pull']),
+  readOnly: true,
+  run: async ({ pull, box, nearDeg, patches, minArea }) => {
+    requireScan()
+    if (!(Math.hypot(...pull) > 0)) throw new CommandError('invalid_input', 'pull: give a direction, not a zero vector.')
+    const client = commandHost().session.clientRef.current
+    if (!client) throw new CommandError('unavailable', 'The mesh worker is not running.')
+    const inf = Infinity
+    const found = await client.query({ min: box?.min ?? [-inf, -inf, -inf], max: box?.max ?? [inf, inf, inf], limit: DRAFT_LIMIT })
+    if (!found.normals || found.positions.length < 9) throw new CommandError('invalid_input', 'Too few scan points lie there to read a wall off.')
+    const { draftPatches } = await import('../../core/fit/draft')
+    const r = draftPatches(found.positions, found.normals, pull, { ...(nearDeg !== undefined ? { nearDeg } : {}), ...(patches !== undefined ? { limit: patches } : {}), ...(minArea !== undefined ? { minArea } : {}) })
+    const v3 = (v: readonly number[]) => v.map((x) => roundTo(x, 3))
+    return {
+      pull: v3(r.pull),
+      nearDeg: r.nearDeg,
+      points: r.points,
+      walls: r.walls,
+      found: r.found,
+      patches: r.patches.map((p) => ({
+        draftDeg: roundTo(p.draftDeg, 3),
+        sigmaDeg: roundTo(p.sigmaDeg, 3),
+        spreadDeg: roundTo(p.spreadDeg, 2),
+        area: roundTo(p.area, 1),
+        count: p.count,
+        centroid: v3(p.centroid),
+        box: { min: v3(p.min), max: v3(p.max) },
+        facing: v3(p.facing),
+      })),
+    }
+  },
+}
+
+/** The most cells a height map's numbers hold, and how many a side it
+ *  aims at unless a cell is given. */
+const HEIGHT_CELLS = 1600
+const HEIGHT_SIDE = 40
+const AXIS_NAMES = ['+x', '-x', '+y', '-y', '+z', '-z'] as const
+type AxisName = (typeof AXIS_NAMES)[number]
+
+/** A grid of cells over the box across axis `k`, centred on it: the cell
+ *  asked for, or the round size that makes the longer side `side` cells —
+ *  widened until there are no more than `most` cells. */
+function gridOver(min: Vec3, max: Vec3, k: 0 | 1 | 2, cell: number | undefined, side: number, most: number) {
+  const [ua, va] = acrossAxes(k)
+  const du = Math.max(max[ua] - min[ua], 1e-6)
+  const dv = Math.max(max[va] - min[va], 1e-6)
+  let c = cell ?? niceCeil(Math.max(du, dv) / side)
+  let widened = false
+  while (Math.ceil(du / c) * Math.ceil(dv / c) > most) {
+    c = niceCeil(c * 1.01)
+    widened = true
+  }
+  const cols = Math.max(1, Math.ceil(du / c))
+  const rows = Math.max(1, Math.ceil(dv / c))
+  const u0 = (min[ua] + max[ua]) / 2 - (cols * c) / 2
+  const v0 = (min[va] + max[va]) / 2 - (rows * c) / 2
+  return { ua, va, cell: c, cols, rows, u0, v0, widened }
+}
+
+const heightmap: Command<{ box?: { min: Vec3; max: Vec3 }; axis?: AxisName; cell?: number; picture?: boolean }> = {
+  name: 'heightmap',
+  title: 'Map the scan’s heights',
+  description:
+    `Where the scan is first met looking along an axis, over a grid of cells: pocket floors, ledges, a step's height, a face's tilt in one call. axis is the way looked: -z (the default) looks down from above and gives the top surface's z; +z looks up from below and gives the underside's; ±x, ±y likewise. box: the part looked at (the scan's box by default); rays start at its face and stop at the far one. Cells lie on the two other axes in order — x, y for z; y, z for x; x, z for y — as u and v. cell: mm (by default a round size that makes ${HEIGHT_SIDE} cells on the longer side; widened to keep ${HEIGHT_CELLS} cells at most). Returns along, across, cell, origin [u0, v0] (the grid's low corner), cols, rows and grid: rows of heights (mm, 0.01) from the low v up, null where nothing is met — grid[r][c] stands at u0 + (c + ½)·cell, v0 + (r + ½)·cell — with min, max and hit (cells met). picture: true adds the map coloured by height with world coordinates in the margins and a scale. Changes nothing.`,
+  input: obj({
+    box: obj({ min: vec3('The lowest corner, mm.'), max: vec3('The highest corner, mm.') }, ['min', 'max'], 'The part looked at; the scan’s box by default.'),
+    axis: enumOf(AXIS_NAMES, 'The way looked: -z (the default) from above, +z from below, and so on.'),
+    cell: num('The cell’s side, mm.', { exclusiveMinimum: 0 }),
+    picture: bool('Add a picture of the map with a scale.'),
+  }),
+  readOnly: true,
+  returnsFile: true,
+  returnsImage: true,
+  run: async ({ box, axis = '-z', cell, picture }) => {
+    requireScan()
+    const client = commandHost().session.clientRef.current
+    if (!client) throw new CommandError('unavailable', 'The mesh worker is not running.')
+    const b = box ?? (await client.bounds())
+    for (let k = 0; k < 3; k++) if (!(b.min[k] <= b.max[k])) throw new CommandError('invalid_input', 'The box’s min lies past its max.')
+    const k = 'xyz'.indexOf(axis[1]) as 0 | 1 | 2
+    const sign = axis[0] === '+' ? 1 : -1
+    const g = gridOver(b.min, b.max, k, cell, HEIGHT_SIDE, HEIGHT_CELLS)
+    const from = sign > 0 ? b.min[k] : b.max[k]
+    const to = sign > 0 ? b.max[k] : b.min[k]
+    const unit = (i: number, s = 1): Vec3 => [i === 0 ? s : 0, i === 1 ? s : 0, i === 2 ? s : 0]
+    const start = unit(k, from)
+    start[g.ua] = g.u0
+    start[g.va] = g.v0
+    const values = await client.heights({ origin: start, dir: unit(k, sign), u: unit(g.ua), v: unit(g.va), cell: g.cell, cols: g.cols, rows: g.rows, far: Math.abs(to - from) })
+    for (let i = 0; i < values.length; i++) values[i] = from + sign * values[i]
+    let lo = Infinity
+    let hi = -Infinity
+    let hit = 0
+    const grid: (number | null)[][] = []
+    for (let r = 0; r < g.rows; r++) {
+      const row: (number | null)[] = []
+      for (let c = 0; c < g.cols; c++) {
+        const v = values[r * g.cols + c]
+        if (Number.isNaN(v)) {
+          row.push(null)
+          continue
+        }
+        hit++
+        lo = Math.min(lo, v)
+        hi = Math.max(hi, v)
+        row.push(roundTo(v, 2))
+      }
+      grid.push(row)
+    }
+    const names = 'xyz'
+    const out = {
+      axis,
+      along: names[k],
+      across: [names[g.ua], names[g.va]],
+      cell: g.cell,
+      ...(g.widened ? { note: `cell widened to ${g.cell} mm to keep ${HEIGHT_CELLS} cells at most` } : {}),
+      origin: [roundTo(g.u0, 3), roundTo(g.v0, 3)],
+      cols: g.cols,
+      rows: g.rows,
+      hit,
+      min: hit ? roundTo(lo, 3) : null,
+      max: hit ? roundTo(hi, 3) : null,
+      grid,
+    }
+    if (!picture) return out
+    if (typeof OffscreenCanvas === 'undefined') throw new CommandError('unavailable', 'A picture of the height map needs the browser.')
+    const { heightPicturePng } = await import('../../app/heightPicture')
+    const png = await heightPicturePng({
+      values,
+      cols: g.cols,
+      rows: g.rows,
+      u0: g.u0,
+      v0: g.v0,
+      cell: g.cell,
+      uName: names[g.ua].toUpperCase(),
+      vName: names[g.va].toUpperCase(),
+      title: `${names[k].toUpperCase()} first met looking ${axis} — cell ${g.cell} mm`,
+      low: hit ? lo : 0,
+      high: hit ? hi : 1,
+    })
+    return { ...out, file: { name: `heightmap-${axis.replace('+', 'p').replace('-', 'm')}.png`, mimeType: 'image/png', bytes: png.bytes }, width: png.width, height: png.height }
+  },
+}
+
+/** A scan's checks: how many vertices the noise is read on, how many rims
+ *  are named, and how many cells a side the thickness is read over. */
+const QA_NOISE_SAMPLE = 4000
+const QA_RIMS = 4
+const QA_SIDE = 60
+const QA_SAMPLE = 60_000
+/** Faces this far out of parallel are worth a note, degrees. */
+const QA_TILT_NOTE = 0.2
+
+const qa: Command<{ axis?: 'x' | 'y' | 'z' | Vec3 }> = {
+  name: 'qa',
+  title: 'Check the scan before modelling',
+  description:
+    'One call before modelling, to know what the scan will and will not give: rims — the open edges of its holes (count, total length, the longest few with length, centre and size, mm); noise — the median scatter of small plane fits round a sample of vertices (mm; near 0 is a CAD tessellation) and its 90th percentile; thickness through the part along axis (x, y, z or a direction; by default the alignment’s z when the part is aligned, else the way most of the surface faces — a plate’s faces) over a grid — p5, p50, p95 (mm), and on the cells near the median (the main faces) the thickness’s linear trend as tiltDeg, how far apart faces that should be parallel are, with the way it thickens and its run from end to end; faces gives each face’s own tilt off square to the axis (topDeg, bottomDeg), so a lean of the whole part shows apart from faces out of parallel. notes: what looks wrong, plainly. Changes nothing.',
+  input: obj({ axis: oneOf([enumOf(['x', 'y', 'z'], 'A world axis.'), vec3('A direction, any length.')], 'The thickness axis; see above.') }),
+  readOnly: true,
+  run: async ({ axis }) => {
+    requireScan()
+    const client = commandHost().session.clientRef.current
+    if (!client) throw new CommandError('unavailable', 'The mesh worker is not running.')
+    const { rims, noise } = await client.scanQa(QA_NOISE_SAMPLE, QA_RIMS)
+    // The scan's points and normals, spread evenly: the box across the axis
+    // and the way most of it faces come off them.
+    const inf = Infinity
+    const sample = await client.query({ min: [-inf, -inf, -inf], max: [inf, inf, inf], limit: QA_SAMPLE })
+    let d: Vec3 | null
+    let axisFrom: string
+    if (Array.isArray(axis)) {
+      const l = Math.hypot(...axis)
+      if (!(l > 0)) throw new CommandError('invalid_input', 'axis: give a direction, not a zero vector.')
+      d = [axis[0] / l, axis[1] / l, axis[2] / l]
+      axisFrom = 'given'
+    } else if (axis || useStore.getState().appliedAlignment) {
+      const k = 'xyz'.indexOf(axis ?? 'z')
+      d = [k === 0 ? 1 : 0, k === 1 ? 1 : 0, k === 2 ? 1 : 0]
+      axisFrom = axis ? 'given' : 'the alignment’s z'
+    } else {
+      d = dominantFacing(sample.normals)
+      axisFrom = 'the way most of the surface faces'
+      if (!d) throw new CommandError('failed', 'The scan has too few points to read a thickness axis off — give axis.')
+      // Pointing the way of its largest component, so +z stays +z.
+      const big = [0, 1, 2].reduce((m, i) => (Math.abs(d![i]) > Math.abs(d![m]) ? i : m), 0)
+      if (d[big] < 0) d = [-d[0], -d[1], -d[2]]
+    }
+    const [u, v] = orthoBasis(d)
+    const dot = (p: Float32Array, i: number, a: Vec3) => p[i] * a[0] + p[i + 1] * a[1] + p[i + 2] * a[2]
+    const lo = [Infinity, Infinity, Infinity]
+    const hi = [-Infinity, -Infinity, -Infinity]
+    for (let i = 0; i + 2 < sample.positions.length; i += 3) {
+      const s = [dot(sample.positions, i, u), dot(sample.positions, i, v), dot(sample.positions, i, d)]
+      for (let k = 0; k < 3; k++) {
+        lo[k] = Math.min(lo[k], s[k])
+        hi[k] = Math.max(hi[k], s[k])
+      }
+    }
+    const cell = niceCeil(Math.max(hi[0] - lo[0], hi[1] - lo[1], 1e-6) / QA_SIDE)
+    const cols = Math.max(1, Math.ceil((hi[0] - lo[0]) / cell))
+    const rows = Math.max(1, Math.ceil((hi[1] - lo[1]) / cell))
+    const u0 = (lo[0] + hi[0]) / 2 - (cols * cell) / 2
+    const v0 = (lo[1] + hi[1]) / 2 - (rows * cell) / 2
+    const pad = 0.01 * (hi[2] - lo[2]) + 0.1
+    const far = hi[2] - lo[2] + 2 * pad
+    const at = (w: number): Vec3 => [u0 * u[0] + v0 * v[0] + w * d![0], u0 * u[1] + v0 * v[1] + w * d![1], u0 * u[2] + v0 * v[2] + w * d![2]]
+    const neg: Vec3 = [-d[0], -d[1], -d[2]]
+    const top = await client.heights({ origin: at(hi[2] + pad), dir: neg, u, v, cell, cols, rows, far })
+    const bottom = await client.heights({ origin: at(lo[2] - pad), dir: d, u, v, cell, cols, rows, far })
+    const us: number[] = []
+    const vs: number[] = []
+    const ts: number[] = []
+    const tops: number[] = []
+    const bottoms: number[] = []
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const i = r * cols + c
+        const tTop = hi[2] + pad - top[i]
+        const tBottom = lo[2] - pad + bottom[i]
+        const t = tTop - tBottom
+        if (!(t > 0)) continue
+        us.push(u0 + (c + 0.5) * cell)
+        vs.push(v0 + (r + 0.5) * cell)
+        ts.push(t)
+        tops.push(tTop)
+        bottoms.push(tBottom)
+      }
+    }
+    const v3 = (x: readonly number[]) => x.map((y) => roundTo(y, 2))
+    const axisName = d[0] === 1 ? 'x' : d[1] === 1 ? 'y' : d[2] === 1 ? 'z' : `[${v3(d).join(', ')}]`
+    const notes: string[] = []
+    const out: Record<string, unknown> = {
+      rims: { count: rims.count, total: roundTo(rims.total, 1), largest: rims.largest.map((r) => ({ length: roundTo(r.length, 1), at: v3(r.at), size: roundTo(r.size, 1) })) },
+      noise: { median: roundTo(noise.median, 4), p90: roundTo(noise.p90, 4), sampled: noise.sampled },
+    }
+    if (rims.count > 0) {
+      const l = rims.largest[0]
+      notes.push(`${rims.count} open rim${rims.count === 1 ? '' : 's'}, ${roundTo(rims.total, 1)} mm in all — the longest ${roundTo(l.length, 1)} mm round [${v3(l.at).join(', ')}]: the scan has holes there; fits and sections near them see less surface.`)
+    }
+    if (noise.median > 0.03) notes.push(`Noisy surface: ${roundTo(noise.median, 3)} mm median scatter — read sizes from fits over large patches, not single points.`)
+    else if (noise.median < 1e-4) notes.push('The surface has no noise — a CAD tessellation, not a scan: read its numbers exactly.')
+    if (ts.length < 12) {
+      out.thickness = { axis: d.map((x) => roundTo(x, 4)), axisFrom, cells: ts.length }
+      notes.push(`Thickness along ${axisName}: too few rays went through the part to read it.`)
+      return { ...out, notes }
+    }
+    const sorted = [...ts].sort((a, b) => a - b)
+    const pct = (q: number) => sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))]
+    const p50 = pct(0.5)
+    // The main faces: the thickness most cells share, and the cells near it
+    // — wide enough for a lean of a degree or two across the part, narrow
+    // enough to leave a step of another thickness out.
+    const near = (t: number) => Math.max(0.3, 0.06 * t)
+    let mode = p50
+    let most = 0
+    for (let i = 0; i < ts.length; i += Math.max(1, Math.floor(ts.length / 400))) {
+      const w = near(ts[i]) / 2
+      let n = 0
+      for (const t of ts) if (Math.abs(t - ts[i]) <= w) n++
+      if (n > most) {
+        most = n
+        mode = ts[i]
+      }
+    }
+    const main = ts.map((t, i) => (Math.abs(t - mode) <= near(mode) ? i : -1)).filter((i) => i >= 0)
+    const pick = (a: number[]) => main.map((i) => a[i])
+    const trend = robustPlane(pick(us), pick(vs), pick(ts))
+    const thickness: Record<string, unknown> = { axis: d.map((x) => roundTo(x, 4)), axisFrom, cells: ts.length, p5: roundTo(pct(0.05), 3), p50: roundTo(p50, 3), p95: roundTo(pct(0.95), 3) }
+    if (trend) {
+      const slope = Math.hypot(trend.b, trend.c)
+      const tiltDeg = (Math.atan(slope) * 180) / Math.PI
+      const dir: Vec3 = slope > 0 ? ([0, 1, 2].map((i) => (trend.b * u[i] + trend.c * v[i]) / slope) as Vec3) : [0, 0, 0]
+      // The run of the trend across the main cells, along the way it rises.
+      const along = main.map((i) => (slope > 0 ? (us[i] * trend.b + vs[i] * trend.c) / slope : 0))
+      const lo = Math.min(...along)
+      const hi = Math.max(...along)
+      const mean = trend.a + (trend.b * pick(us).reduce((s, x) => s + x, 0) + trend.c * pick(vs).reduce((s, x) => s + x, 0)) / main.length
+      const midAlong = along.reduce((s, x) => s + x, 0) / along.length
+      const from = mean - slope * (midAlong - lo)
+      const to = mean + slope * (hi - midAlong)
+      Object.assign(thickness, { tiltDeg: roundTo(tiltDeg, 3), thickensToward: v3(dir), run: [roundTo(from, 3), roundTo(to, 3)], over: roundTo(hi - lo, 1) })
+      const ft = robustPlane(pick(us), pick(vs), pick(tops))
+      const fb = robustPlane(pick(us), pick(vs), pick(bottoms))
+      const deg = (f: { b: number; c: number } | null) => (f ? roundTo((Math.atan(Math.hypot(f.b, f.c)) * 180) / Math.PI, 3) : null)
+      // The faces fitted each on its own, their worst cells left out apart.
+      thickness.faces = { topDeg: deg(ft), bottomDeg: deg(fb) }
+      if (tiltDeg >= QA_TILT_NOTE) {
+        notes.push(`Faces across ${axisName} that should be parallel are ${roundTo(tiltDeg, 2)}° apart: the part thickens from ${roundTo(from, 2)} to ${roundTo(to, 2)} mm over ${roundTo(hi - lo, 0)} mm toward [${v3(dir).join(', ')}]. A scan merge or alignment error, or a real taper — decide before modelling to one thickness, which misses by up to ${roundTo(Math.abs(to - from) / 2, 2)} mm.`)
+      }
+    }
+    if (pct(0.95) - pct(0.05) > 0.3 * p50) notes.push(`Thickness along ${axisName} varies from ${roundTo(pct(0.05), 2)} to ${roundTo(pct(0.95), 2)} mm (p5–p95): steps, pockets or bosses — scan.heightmap shows where.`)
+    out.thickness = thickness
+    return { ...out, notes }
+  },
+}
+
+export const scanCommands = [open, nearest, query, fitSurface, draft, heightmap, qa]

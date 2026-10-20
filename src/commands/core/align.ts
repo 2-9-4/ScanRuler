@@ -4,8 +4,9 @@
 // back. Each is set up in the panel's alignment box and confirmed, as a
 // person does it — the elements, dimensions and sections move with the part.
 
-import { ALIGN_PICK_COUNT, type AxisDir } from '../../core/alignment'
-import type { Rigid } from '../../core/deviation/rigid'
+import { ALIGN_PICK_COUNT, axisIndex, type AxisDir } from '../../core/alignment'
+import { rigidApply, type Rigid } from '../../core/deviation/rigid'
+import { roundTo } from '../../core/round'
 import type { Vec3 } from '../../core/types'
 import { alignCenterOf, alignmentPreview, useStore, type AlignSlot } from '../../state/store'
 import { commandHost } from '../host'
@@ -94,6 +95,53 @@ const applied = (step: Rigid, detail: Detail | undefined, extra: Record<string, 
   }
 }
 
+/** Which coordinates the origin sets: those the datums leave open — a plane
+ *  owns the one along its normal, an axis or a line the two across it (as
+ *  core/alignment zeroes them). */
+function originCoords(input: { primary?: Slot; primaryAxis?: AxisDir; secondary?: Slot; secondaryAxis?: AxisDir }): number[] {
+  const owned = new Set<number>()
+  const own = (slot: Slot | undefined, axis: AxisDir, pickedPlane: boolean) => {
+    if (!slot) return
+    const kind = 'element' in slot ? measuredElement(slot.element).kind : pickedPlane ? 'plane' : 'line'
+    const k = axisIndex(axis)
+    for (const i of kind === 'plane' ? [k] : [0, 1, 2].filter((i) => i !== k)) owned.add(i)
+  }
+  own(input.primary, input.primaryAxis ?? 'z-', true)
+  own(input.secondary, input.secondaryAxis ?? 'x+', false)
+  return [0, 1, 2].filter((i) => !owned.has(i))
+}
+
+/** Where the origin's point stands before the alignment: an element's
+ *  centre, or the point given. */
+function originPoint(origin: Slot): Vec3 | null {
+  if ('point' in origin) return origin.point
+  if ('points' in origin) return origin.points[0] ?? null
+  const fit = measuredElement(origin.element).fit as { center?: Vec3 } | null
+  return fit?.center ?? null
+}
+
+/** What the origin did: the coordinates it set and where its point now
+ *  stands, with a note when the datums kept it off zero. */
+function originReport(input: Parameters<typeof originCoords>[0] & { origin?: Slot }, before: Vec3 | null, step: Rigid) {
+  if (!input.origin) return {}
+  const set = originCoords(input)
+  const names = set.map((i) => 'xyz'[i])
+  if (!before) return { origin: { set: names } }
+  const out = new Float64Array(3)
+  rigidApply(step, before[0], before[1], before[2], out)
+  const at = Array.from(out, (v) => roundTo(v, 4))
+  const off = [0, 1, 2].filter((i) => !set.includes(i) && Math.abs(out[i]) > 1e-3)
+  return {
+    origin: {
+      set: names,
+      at,
+      ...(off.length
+        ? { note: `The datums own ${off.map((i) => 'xyz'[i]).join(' and ')}: the origin point stands at ${off.map((i) => `${'xyz'[i]} ${at[i]}`).join(', ')}. To put it at 0, 0, 0, call align.datum again with origin alone (the same place) — that moves the datums off zero along those axes.` }
+        : {}),
+    },
+  }
+}
+
 const datum: Command<{
   primary?: Slot
   primaryAxis?: AxisDir
@@ -105,7 +153,7 @@ const datum: Command<{
   name: 'datum',
   title: 'Align the part to datums',
   description:
-    'A 3-2-1 alignment, as the panel’s alignment box sets it up: primary levels the part — a plane (or 3 points on a face) whose outward normal becomes primaryAxis (default z-, the face the part stands on facing down); secondary turns it — a line, axis or plane (or 2 points along an edge) laid along secondaryAxis (default x+); origin is the zero point — a point, sphere or circle (or 1 point). Each is an element by id or name, or points on the scan in mm. An origin alone moves the part without turning it. Everything measured moves with the part. Returns the transform applied — the whole alignment the part carries, when it was aligned before — and how many elements moved with it. One undo step.',
+    'A 3-2-1 alignment, as the panel’s alignment box sets it up: primary levels the part — a plane (or 3 points on a face) whose outward normal becomes primaryAxis (default z-, the face the part stands on facing down); secondary turns it — a line, axis or plane (or 2 points along an edge) laid along secondaryAxis (default x+); origin is the zero point — a point, sphere or circle (or 1 point). Each is an element by id or name, or points on the scan in mm. Each datum zeroes the coordinates it owns (a plane the one along its normal, an axis or line the two across it); the origin sets only the coordinates they leave open — with a plane and a line, the one along the line. An origin alone moves the part without turning it, all three coordinates. Everything measured moves with the part. Returns the transform applied — the whole alignment the part carries, when it was aligned before — how many elements moved with it, and with an origin which coordinates it set and where its point now stands (a note when that is off zero). One undo step.',
   input: obj({
     primary: slotSchema('levelling', 3, 'they span the face'),
     primaryAxis: enumOf(AXES, 'The axis the primary’s outward normal becomes — default z-.'),
@@ -127,7 +175,9 @@ const datum: Command<{
       if (input.secondary) await fillSlot('secondary', input.secondary)
       if (input.secondaryAxis) useStore.getState().setAlignmentAxis('secondary', input.secondaryAxis)
       if (input.origin) await fillSlot('origin', input.origin)
-      return applied(await applyOpenBox(), input.detail)
+      const before = input.origin ? originPoint(input.origin) : null
+      const step = await applyOpenBox()
+      return applied(step, input.detail, originReport(input, before, step))
     } finally {
       closeBox()
     }

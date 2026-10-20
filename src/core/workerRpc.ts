@@ -5,6 +5,9 @@
 export class WorkerRpc {
   private worker: Worker | null = null
   private pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>()
+  /** Settles once every request sent so far has been answered or let go —
+   *  where a later request's time limit starts. */
+  private before: Promise<void> = Promise.resolve()
   dead = false
   onFailure: ((message: string) => void) | null = null
 
@@ -47,16 +50,38 @@ export class WorkerRpc {
     this.onFailure?.(message)
   }
 
-  request<T>(message: { requestId: number }, transfer: Transferable[] = []): Promise<T> {
+  /** Ask the worker; resolves with its answer. With `limitMs`, a request not
+   *  answered that long after the ones sent before it were — a worker runs
+   *  them one at a time, so the clock starts when it can get to this one —
+   *  is let go: it rejects saying which request it was, and an answer that
+   *  comes later is dropped. */
+  request<T>(message: { requestId: number }, transfer: Transferable[] = [], limitMs?: number): Promise<T> {
     if (this.dead || !this.worker) return Promise.reject(new Error(`${this.name} is unavailable. Retry the operation.`))
-    return new Promise<T>((resolve, reject) => {
-      this.pending.set(message.requestId, { resolve: (value) => resolve(value as T), reject })
+    const id = message.requestId
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const answer = new Promise<T>((resolve, reject) => {
+      this.pending.set(id, { resolve: (value) => resolve(value as T), reject })
       try { this.worker!.postMessage(message, transfer) }
       catch (error) {
-        this.pending.delete(message.requestId)
+        this.pending.delete(id)
         reject(error instanceof Error ? error : new Error(String(error)))
       }
     })
+    const settled = answer.then(() => {}, () => {})
+    if (limitMs !== undefined) {
+      void this.before.then(() => {
+        if (!this.pending.has(id)) return
+        timer = setTimeout(() => {
+          const entry = this.pending.get(id)
+          if (!entry) return
+          this.pending.delete(id)
+          const what = (message as { type?: unknown }).type
+          entry.reject(new Error(`${this.name} did not answer${typeof what === 'string' ? ` the "${what}" request` : ''} in ${limitMs / 1000} s; it was let go.`))
+        }, limitMs)
+      })
+    }
+    this.before = Promise.all([this.before, settled]).then(() => {})
+    return answer.finally(() => clearTimeout(timer))
   }
 
   post(message: unknown): void { this.worker?.postMessage(message) }

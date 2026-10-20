@@ -28,6 +28,45 @@ export interface SectionPictureInput {
   frame?: { at: Vec2; size: number }
   width?: number
   height?: number
+  /** Which world direction each of the sheet's axes runs along — see
+   *  sheetAxes. Drawn in the margins; on an axis that runs along a world
+   *  axis, the grid's values are that world coordinate. */
+  axes?: { u: SheetAxis; v: SheetAxis }
+}
+
+/** One of a sheet's axes against the world's: the world axis it runs
+ *  nearest, signed ("+X", "−Z"), how far off that it turns, degrees, and —
+ *  when it runs along it — the world coordinate at the sheet's 0. */
+export interface SheetAxis {
+  axis: string
+  offDeg: number
+  /** The world coordinate at the sheet's 0, when offDeg is 0. */
+  at0?: number
+}
+
+/** Turns under this are none: the sheet's axis runs along the world's. */
+const ALONG_DEG = 0.01
+
+/** Which world axis each of a sheet's axes runs along, or nearly. */
+export function sheetAxes(origin: readonly number[], basisU: readonly number[], basisV: readonly number[]): { u: SheetAxis; v: SheetAxis } {
+  const one = (b: readonly number[]): SheetAxis => {
+    let k = 0
+    for (let i = 1; i < 3; i++) if (Math.abs(b[i]) > Math.abs(b[k])) k = i
+    const len = Math.hypot(b[0], b[1], b[2]) || 1
+    const offDeg = (Math.acos(Math.min(1, Math.abs(b[k]) / len)) * 180) / Math.PI
+    const axis = `${b[k] < 0 ? '−' : '+'}${'XYZ'[k]}`
+    return offDeg < ALONG_DEG ? { axis, offDeg: 0, at0: origin[k] } : { axis, offDeg: Math.round(offDeg * 100) / 100 }
+  }
+  return { u: one(basisU), v: one(basisV) }
+}
+
+/** The value a grid line at `t` on a sheet's axis is labelled with: the
+ *  world coordinate there when the axis runs along a world axis, the
+ *  sheet's own otherwise. */
+function tickValue(axis: SheetAxis | undefined, t: number): number {
+  const v = !axis || axis.at0 === undefined ? t : axis.at0 + (axis.axis.startsWith('−') ? -t : t)
+  // A hair off zero, or −0, prints as −0.
+  return Math.abs(v) < 1e-9 ? 0 : v
 }
 
 /** How a scan point reads against the outlines: on them within the
@@ -218,7 +257,7 @@ export function drawSectionPicture(ctx: Ctx, input: SectionPictureInput, model: 
     ctx.stroke()
     ctx.textAlign = 'center'
     ctx.textBaseline = 'top'
-    ctx.fillText((k * step).toFixed(decimals), x, 2)
+    ctx.fillText(tickValue(input.axes?.u, k * step).toFixed(decimals), x, 2)
   }
   for (let k = Math.ceil((top - H * u) / step); k * step <= top; k++) {
     const y = Math.round(Y(k * step)) + 0.5
@@ -229,7 +268,25 @@ export function drawSectionPicture(ctx: Ctx, input: SectionPictureInput, model: 
     ctx.stroke()
     ctx.textAlign = 'left'
     ctx.textBaseline = 'middle'
-    ctx.fillText((k * step).toFixed(decimals), 2, y)
+    ctx.fillText(tickValue(input.axes?.v, k * step).toFixed(decimals), 2, y)
+  }
+
+  // Which world direction runs across and up, in the margins: the grid's
+  // values are that world coordinate where the sheet runs along it.
+  if (input.axes) {
+    const name = (a: SheetAxis) => (a.offDeg === 0 ? `${a.axis[1]} (world)` : `≈ ${a.axis}, ${a.offDeg}° off — sheet mm`)
+    const across = `→ ${input.axes.u.offDeg === 0 ? input.axes.u.axis : name(input.axes.u)}${input.axes.u.offDeg === 0 ? ` — values are ${input.axes.u.axis[1]}` : ''}`
+    const up = `↑ ${input.axes.v.offDeg === 0 ? input.axes.v.axis : name(input.axes.v)}${input.axes.v.offDeg === 0 ? ` — values are ${input.axes.v.axis[1]}` : ''}`
+    ctx.font = `bold ${fontPx}px ${FONT}`
+    for (const [text, x, y, align] of [[across, W - 8, H - 8, 'right'], [up, 8 * fontPx, 2 * fontPx + 12, 'left']] as const) {
+      const w = ctx.measureText(text).width
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'
+      ctx.fillRect(align === 'right' ? x - w - 4 : x - 4, y - fontPx - 2, w + 8, fontPx + 6)
+      ctx.fillStyle = '#20252c'
+      ctx.textAlign = align
+      ctx.textBaseline = 'bottom'
+      ctx.fillText(text, x, y)
+    }
   }
 
   // The outlines, then the scan over them: the points off the outlines
@@ -324,4 +381,38 @@ export async function sectionPicturePng(input: SectionPictureInput, title: strin
   drawSectionPicture(ctx, input, model, title)
   const blob = await canvas.convertToBlob({ type: 'image/png' })
   return { bytes: new Uint8Array(await blob.arrayBuffer()), model }
+}
+
+/** Several pictures side by side as one PNG, `cols` to a row, each tile
+ *  drawn at its own input's size (they are meant to share one) and named
+ *  by its title in its corner. Needs OffscreenCanvas — a browser. */
+export async function sectionSheetsPng(
+  tiles: readonly { input: SectionPictureInput; title: string }[],
+  cols: number,
+): Promise<{ bytes: Uint8Array; models: SectionPictureModel[]; width: number; height: number }> {
+  const models = tiles.map((t) => sectionPictureModel(t.input))
+  const tw = Math.max(...models.map((m) => m.frame.width))
+  const th = Math.max(...models.map((m) => m.frame.height))
+  const rows = Math.ceil(tiles.length / cols)
+  const canvas = new OffscreenCanvas(tw * cols, th * rows)
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('This browser gave no canvas to draw the sections on.')
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  tiles.forEach((t, i) => {
+    const x = (i % cols) * tw
+    const y = Math.floor(i / cols) * th
+    ctx.save()
+    ctx.translate(x, y)
+    ctx.beginPath()
+    ctx.rect(0, 0, tw, th)
+    ctx.clip()
+    drawSectionPicture(ctx, t.input, models[i], t.title)
+    ctx.restore()
+    ctx.strokeStyle = '#8a929c'
+    ctx.lineWidth = 1
+    ctx.strokeRect(x + 0.5, y + 0.5, tw - 1, th - 1)
+  })
+  const blob = await canvas.convertToBlob({ type: 'image/png' })
+  return { bytes: new Uint8Array(await blob.arrayBuffer()), models, width: canvas.width, height: canvas.height }
 }

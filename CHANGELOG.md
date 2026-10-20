@@ -5,6 +5,111 @@ bar and the imprint is the entry it belongs to; the `.scanruler` projects it
 saves carry the same number as `appVersion`. How a release is cut is in the
 README under "Releases".
 
+## 0.6.2 — 2026-10-20
+
+- **A scan checked before modelling** (2026-10-19). `scan.qa` gives in one
+  call the scan's open rims, its noise, and how thick the part is along an
+  axis: how far faces that should be parallel are apart and which way the
+  part thickens, with notes on what looks wrong. A plate scanned with its
+  faces 1.3° apart now says so at the start.
+- **Heights in one call** (2026-10-19). `scan.heightmap` gives the first
+  surface met looking along an axis over a grid: a small grid of heights,
+  empty where nothing is hit, and on request a picture coloured by height
+  with a scale. Looking up from below reads ceilings and the underside.
+- **Several cuts in one picture** (2026-10-19). `section.render` takes
+  `offsets`: up to nine parallel cuts side by side, on one frame and scale,
+  each labelled with its offset.
+- **Fits that know which surface is meant** (2026-10-19). `element.fit`
+  takes `side` (the inside of a bore or cup, or the outside of a boss),
+  `radius` (a range), `axis` (a direction guess) and `within` (a box). A
+  seed near a rim no longer takes the wrong surface, and a fit that finds
+  none as asked names the radii it saw. `align.datum` says which
+  coordinates its origin set, and where the origin point stands when the
+  datums own the rest.
+- **Nothing waits for good** (2026-10-19). A command that has not finished
+  after 10 minutes, or its own limit, is given up on with the error code
+  `timeout`: its undo step ends and the next command runs. A worker request
+  can carry a time limit that starts once the requests ahead of it are
+  answered. `session.state` says which command is running, since when and
+  for how long.
+- **scanruler-mcp: status that says what holds it** (2026-10-19).
+  `scanruler_status` says when the tools a chat was given are no longer the
+  ones the page offers (`tools.stale`, with what was added or removed —
+  start a new chat). A server copy with no jobs says when it started and
+  that an earlier copy's jobs are not known. A call dropped because the
+  page or the server copy holding the link went away says the change may
+  still have been made, and to read `session_state` before running it
+  again.
+
+- **Deviation pictures say what they painted** (2026-10-19). A full-part
+  picture in the Deviation workspace could come out grey with nothing to
+  say why — the map switch is kept in projects and no command could read or
+  set it. `deviation.settings { show }` switches the map, the state reports
+  it (`settings.show`), and `view.render` there answers `map` (the side,
+  colour map and range painted) or `map: null` with `mapWhy` (switch off, no
+  map measured, the reference side not measured, the reference put away, a
+  split view, readings that do not fit the scan), and `mapNote` when the
+  reference drawn over the scan dulls the colours. Renders and other
+  commands wait for the map on the reference as they do for the scan's.
+- **A plane cut for a picture alone has a sheet you can read**
+  (2026-10-19). `section.render { plane }` laid its cut on any two
+  directions square to the normal, from the point given: on the ZX plane
+  u ran along −Z and v along −X, so a frame read off a section came out
+  empty. It now lays the cut as a sketch on that plane has it — zero at the
+  world origin's foot, u along the next coordinate axis round — so on a
+  coordinate plane [u, v] are world coordinates.
+- **scanruler-mcp: every picture in a batch is a file** (2026-10-19). A
+  render inside `scanruler_batch` without a `path` lost its picture; it is
+  now written to the output folder under a numbered name, and the call's
+  result names it.
+
+- **The deviation map on the reference** (2026-10-19). The map on the scan
+  says where the scan stands off the reference, and nothing where the scan
+  has no surface: reference material the part has not — a boss the part
+  lacks — shows at best where it meets the wall, and reference surface
+  nothing was scanned at never shows. The Deviation workspace now reads it
+  the other way round too: the view bar's **On reference** key paints the
+  reference by its distance to the scan, positive where the reference
+  stands outside it, grey where no scan stands behind it, a reading past
+  the search distance in the cap of its end. The reference is cut finer
+  for it (`core/deviation/onReference.ts`: each triangle in rows about the
+  spacing apart, so a long sliver costs its area, not its length), each
+  vertex read off scan surface that faces its way and lies square under
+  it — the far skin of a thin wall and the rim of a hole in the scan are no
+  evidence. Measured on asking, kept beside the scan's map, gone with the
+  alignment. For agents: `deviation.settings { on: "scan" | "reference" }`,
+  the state's `onReference` (the share of the reference's area the scan
+  stands behind, within tolerance, past the search distance and with no
+  scan behind it, and the readings' statistics), and `deviation.hotspots
+  { on: "reference" }` — its patches, `far` by side and `noScan`, the
+  reference with no scan behind it, in patches.
+- **Draft read off the scan** (2026-10-19). `scan.draft { pull, box?,
+  nearDeg? }` gathers the scan's walls that run near a pull direction into
+  patches, each with the angle it leans off the pull (positive lets go
+  along it, negative is a back draft), its standard error and spread, area
+  and which way it faces; walls are parted where the way they face jumps,
+  so a box's four sides are four patches and a boss's round side one
+  (`core/fit/draft.ts`).
+- **Several views in one picture** (2026-10-19). `view.render { views }`
+  takes two to six standard views, each fitted and named in its corner,
+  laid side by side in one PNG — one look for an agent in place of four.
+- **Pictures written and not shown** (2026-10-19). scanruler-mcp's picture
+  tools take `inline: false` with `path`: the picture is written to the
+  file and the answer says where, without the image — for the pictures an
+  agent only delivers.
+- **A section's picture names its world axes** (2026-10-19).
+  `section.render` labels the grid in world coordinates where the sheet's
+  u or v runs along a world axis, names the world direction across and up
+  in the margins, and answers `axes` (per sheet axis the world axis it
+  runs nearest, how far off it turns, the world coordinate at its 0).
+
+- **scanruler-mcp 0.3.0** (2026-10-19) — the version for what the server
+  gained since 0.2.0, the copy on npm: ScanRuler headless in the server
+  (`--engine`, `--headless`), the compact tool list (`--tools compact`),
+  batches that stand or fall whole, long changes as jobs, the trace of a
+  run (`--trace`), and the tab's command list as of 0.6.1 for the tools it
+  lists before a tab has connected.
+
 ## 0.6.1 — 2026-10-18
 
 - **A probe of the tab hidden for real** (2026-10-18).

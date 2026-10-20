@@ -19,6 +19,8 @@ import { mmPerUnit, type MeshUnits } from './meshUnits'
 import type { StepInfo } from './parsers/step'
 import type { SectionCut } from './section/slice'
 import type { AxialWindow, ElementKind, FitOutput, FitSettings, Vec3 } from './types'
+import type { FitGuide } from './fit/guide'
+import type { RayGrid } from './geometry/scanQa'
 import type { WorkerRequest, WorkerResponse } from './workerProtocol'
 
 export interface LoadedMesh {
@@ -52,6 +54,17 @@ export interface DeviationResult {
   directions: Int8Array
   suggestedRange: number
   suggestedMaxDistance: number
+}
+
+/** The reference cut finer and read against the scan — see
+ *  deviation/onReference.ts. */
+export interface ReferenceDeviationResult {
+  positions: Float32Array
+  normals: Float32Array
+  indices: Uint32Array
+  parent: Uint32Array
+  spacing: number
+  values: Float32Array
 }
 
 export interface ThicknessResult {
@@ -209,6 +222,7 @@ export class MeshWorkerClient {
     seeds: number[],
     settings: FitSettings,
     window?: AxialWindow,
+    guide?: FitGuide,
   ): Promise<FitOutput> {
     const requestId = this.nextId++
     const res = await this.request<Extract<WorkerResponse, { type: 'fit-ok' }>>({
@@ -218,6 +232,7 @@ export class MeshWorkerClient {
       seeds,
       settings,
       window,
+      ...(guide ? { guide } : {}),
     })
     return res.result
   }
@@ -302,6 +317,13 @@ export class MeshWorkerClient {
     return this.request<DeviationResult>({ type: 'deviate', requestId, transform, facingDeg })
   }
 
+  /** The reference read against the scan under this alignment — or `mesh`,
+   *  given in the reference's frame, in its place. */
+  async deviateReference(transform: Rigid, facingDeg: number | null, spacing: number, mesh?: { positions: Float32Array; indices: Uint32Array }): Promise<ReferenceDeviationResult> {
+    const requestId = this.nextId++
+    return this.request<ReferenceDeviationResult>({ type: 'deviate-reference', requestId, transform, facingDeg, spacing, ...(mesh ? { mesh } : {}) })
+  }
+
   /** Wall thickness at every scan vertex. Every setting here shapes the search
    *  itself, so changing any of them means asking again. */
   async thickness(settings: ThicknessRequest): Promise<ThicknessResult> {
@@ -366,6 +388,20 @@ export class MeshWorkerClient {
   }
 
   /** The scan's mean curvature at every vertex, 1/mm, convex positive. */
+  /** The first scan surface along an axis over a grid — see geometry/scanQa. */
+  async heights(grid: RayGrid): Promise<Float32Array> {
+    const requestId = this.nextId++
+    return (await this.request<Extract<WorkerResponse, { type: 'heights-ok' }>>({ type: 'heights', requestId, grid })).values
+  }
+
+  /** The scan's open rims (the `rims` longest) and its noise over `sample`
+   *  vertices. */
+  async scanQa(sample: number, rims: number): Promise<Omit<Extract<WorkerResponse, { type: 'scan-qa-ok' }>, 'type' | 'requestId'>> {
+    const requestId = this.nextId++
+    const { rims: r, noise } = await this.request<Extract<WorkerResponse, { type: 'scan-qa-ok' }>>({ type: 'scan-qa', requestId, sample, rims })
+    return { rims: r, noise }
+  }
+
   async curvature(): Promise<Float32Array> {
     const requestId = this.nextId++
     const res = await this.request<Extract<WorkerResponse, { type: 'curvature-ok' }>>({ type: 'curvature', requestId })

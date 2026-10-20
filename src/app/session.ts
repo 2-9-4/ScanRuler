@@ -7,7 +7,7 @@
 // viewport — every scene call in it is optional.
 
 import type { RefObject } from 'react'
-import type { MeshWorkerClient } from '../core/workerClient'
+import type { MeshWorkerClient, ReferenceDeviationResult } from '../core/workerClient'
 import type { ScanMaps } from '../plugins/api'
 import type { SceneManager } from '../viewer/SceneManager'
 import { deviationWorkspace } from './deviationWorkspace'
@@ -60,6 +60,10 @@ export function createSession({
     // immediately rather than going back to the worker.
     thickness: ref<Float32Array | null>(null),
     thicknessRgb: ref<Uint8Array | null>(null),
+    // The map the other way round, on the reference cut finer: its own
+    // mesh, a reading per vertex of it, and the colours painted from them.
+    referenceMap: ref<ReferenceDeviationResult | null>(null),
+    referenceRgb: ref<Uint8Array | null>(null),
   }
   // The direction each reading of a deviation map was taken along, for
   // playing the map as motion (core/deviation/deflection.ts) — keyed by the
@@ -75,6 +79,8 @@ export function createSession({
     sceneRef,
     deviation: maps.deviation,
     deviationRgb: maps.deviationRgb,
+    referenceMap: maps.referenceMap,
+    referenceRgb: maps.referenceRgb,
     fieldDirections,
     sources,
     imports,
@@ -97,7 +103,7 @@ export function createSession({
   /** Start what keeps itself in step with the stores — a centroid measuring
    *  itself, the sections' cuts. The returned function stops it. */
   const watch = () => {
-    const stops = [measure.watch(), sections.watch()]
+    const stops = [measure.watch(), sections.watch(), deviation.watch()]
     return () => stops.forEach((stop) => stop())
   }
 

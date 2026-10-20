@@ -649,7 +649,7 @@ export default function App() {
 
   hostVerbs.current = { openScan: openFile, openReference: openNominal, runFit, runDeviation, runThickness, clearPreview, swapScan, remapScan, remeasureScan }
 
-  useProjectHistory({ clientRef, sceneRef, elementScope, deviation, deviationRgb,
+  useProjectHistory({ clientRef, sceneRef, elementScope, deviation, deviationRgb, referenceMap: maps.referenceMap, referenceRgb: maps.referenceRgb,
     thickness, thicknessRgb, imports, sources, runFit, runDeviation, runThickness, swapScan, remeasureScan })
 
   /** Whichever map the workspace is showing, at a point on the scan:
@@ -1185,6 +1185,8 @@ export default function App() {
     sceneRef,
     deviation,
     deviationRgb,
+    referenceMap: maps.referenceMap,
+    referenceRgb: maps.referenceRgb,
     elementField,
     elementRgb,
     fieldDirections,

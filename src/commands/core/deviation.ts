@@ -7,14 +7,14 @@ import { isDeviationTarget } from '../../core/deviation/elementField'
 import type { Hotspot } from '../../core/deviation/hotspots'
 import { rigidApply } from '../../core/deviation/rigid'
 import type { Vec3 } from '../../core/types'
-import { useDeviation } from '../../state/deviationStore'
+import { useDeviation, type MapSide } from '../../state/deviationStore'
 import { usePrefs } from '../../state/prefsStore'
 import { COLORMAPS, type ColormapId } from '../../core/field/colormap'
 import { useMark } from '../../state/markStore'
 import { useStore } from '../../state/store'
 import { commandHost, requireScene } from '../host'
 import { elementRefSchema, measuredElement, requireScan, type ElementRef } from '../refs'
-import { arr, bytes, enumOf, int, num, obj, oneOf, vec3, type JsonSchema } from '../schema'
+import { arr, bool, bytes, enumOf, int, num, obj, oneOf, vec3, type JsonSchema } from '../schema'
 import { describeDeviation } from '../state'
 import { CommandError, type Command } from '../types'
 import { fileNameSchema, fileOf, lastError, showWorkspace, waitFor } from './common'
@@ -164,11 +164,11 @@ const setTarget: Command<{ element: ElementRef | null; side?: 'outward' | 'inwar
   },
 }
 
-const settings: Command<{ range?: number; maxDistance?: number; bands?: number | null; tolerance?: number; facingDeg?: number | null; colormap?: ColormapId }> = {
+const settings: Command<{ range?: number; maxDistance?: number; bands?: number | null; tolerance?: number; facingDeg?: number | null; colormap?: ColormapId; on?: MapSide; show?: boolean }> = {
   name: 'settings',
   title: 'Set how the deviation is read',
   description:
-    'The deviation map’s reading: range, the colour scale ± mm; maxDistance, how far from the reference a point may be to count, mm; bands, a stepped scale of that many colours or null for smooth; tolerance, ± mm, the share within which the statistics give; facingDeg, how far the reference surface a point is measured against may turn from facing it, degrees, or null for the nearest surface whatever it faces — a change of it measures the map again; colormap, the colour map every deviation map and the live map of the bodies are drawn in — the person’s own choice, kept in the browser and outside the undo, so set it only to read a render by its colours and read settings.colormap for what the ramp shows at −range, 0 and +range and the caps past either end before judging a picture. Returns the deviation state. One undo step.',
+    'The deviation map’s reading: range, the colour scale ± mm; maxDistance, how far from the reference a point may be to count, mm; bands, a stepped scale of that many colours or null for smooth; tolerance, ± mm, the share within which the statistics give; facingDeg, how far the reference surface a point is measured against may turn from facing it, degrees, or null for the nearest surface whatever it faces — a change of it measures the map again; colormap, the colour map every deviation map and the live map of the bodies are drawn in — the person’s own choice, kept in the browser and outside the undo, so set it only to read a render by its colours and read settings.colormap for what the ramp shows at −range, 0 and +range and the caps past either end before judging a picture; on, which surface a map against the reference part is painted on — "scan" (the scan by its distance to the reference, the default) or "reference" (the reference by its distance to the scan, measured the first time it is asked for: positive where the reference stands outside the scan — material the part has not, a boss or a wall the model has and the scan does not — negative where it is short of it, grey where no scan stands behind it, a reading past the search distance in the cap of its end). Read both: the scan’s side finds what the model lacks, the reference’s what the model has that the part has not, and how much of the model no scan supports (onReference.noScanPct in the state). show, the map switch (the view bar’s Map key): false leaves the surface bare to look at its shape, the map still measured and read — the figures, hotspots and pins go on; true paints it again; a project keeps it, so read settings.show in the state when a render comes out uncoloured. view.render pictures the side on screen, and says which map it painted (map) or why none (mapWhy). Returns the deviation state. One undo step.',
   input: obj({
     range: num('Colour scale, ± mm.', { exclusiveMinimum: 0 }),
     maxDistance: num('Search distance, mm.', { exclusiveMinimum: 0 }),
@@ -179,9 +179,11 @@ const settings: Command<{ range?: number; maxDistance?: number; bands?: number |
       COLORMAPS.map((m) => m.id),
       'The colour map: jet (blue inside, green on the surface, red outside) or one of the perceptual ramps.',
     ),
+    on: enumOf(['scan', 'reference'], 'The surface the map is painted on: the scan, or the reference.'),
+    show: bool('The map painted on the part (true) or the surface left bare (false).'),
   }),
   label: () => 'deviation settings',
-  run: async ({ range, maxDistance, bands, tolerance, facingDeg, colormap }) => {
+  run: async ({ range, maxDistance, bands, tolerance, facingDeg, colormap, on, show }) => {
     const { session } = commandHost()
     const d = useDeviation.getState()
     if (colormap !== undefined) usePrefs.getState().setColormap(colormap)
@@ -189,9 +191,14 @@ const settings: Command<{ range?: number; maxDistance?: number; bands?: number |
     if (maxDistance !== undefined) d.setMaxDistance(maxDistance)
     if (bands !== undefined) d.setBands(bands)
     if (tolerance !== undefined) d.setTolerance(tolerance)
+    if (show !== undefined) d.setShowMap(show)
     if (facingDeg !== undefined) {
       session.deviation.setMapFacing(facingDeg)
       await waitFor(() => useDeviation.getState().mapStatus !== 'running', 'the map to be measured again')
+    }
+    if (on !== undefined) {
+      if (on === 'reference' && d.source !== 'reference') throw new CommandError('invalid_state', 'The map is measured against an element — there is no reference part to paint it on.')
+      await session.deviation.setMapOn(on)
     }
     return { deviation: describeDeviation() }
   },
@@ -215,19 +222,21 @@ export function patchFigures(p: { centroid: readonly number[]; min: readonly num
   }
 }
 
-const hotspotsCommand: Command<{ tolerance?: number; patches?: number; grain?: number }> = {
+const hotspotsCommand: Command<{ tolerance?: number; patches?: number; grain?: number; on?: MapSide }> = {
   name: 'hotspots',
   title: 'Where the deviation lies over tolerance',
   description:
-    'The deviation map read as patches: the scan vertices whose deviation lies past the tolerance (the map’s own, under deviation.settings, unless tolerance says otherwise) gathered into connected regions, the largest and farthest first — where the part is off, how large each place is and by how much, instead of one number over the whole part. Each patch: its centre and box in mm (in the frame the scan is measured in — what scan.query { box } and element.fit take), its area, how many vertices, the mean and the extreme deviation and which side (outside the reference or inside), the point of the extreme and the scan vertex there, and a few of its vertices (what element.fit_marked takes). With a map against the reference part the patch’s centre and extreme are given on the reference too (onReference — what the Deviation workspace shows and view.render { frame } takes there). grain is how close two vertices over tolerance have to be to be one patch, three point spacings by default. found and over say how many patches and vertices over tolerance there were in all — within the search distance, the vertices the map draws as a measurement. Then far, the vertices past the search distance, which the map draws bare: read it every time — far.inside is the scan deeper inside the reference than the search distance, where the reference has material the part has not (a hole, a pocket or a slot the model lacks), far.outside the scan further off it, where the part has what the model has not, or scan spray; each with its count and its patches, the largest first, and far.count both together; unmeasured says how many vertices the facing limit left without a reading. Needs a deviation map (deviation.align, or deviation.set_target). Changes nothing.',
+    'The deviation map read as patches: the scan vertices whose deviation lies past the tolerance (the map’s own, under deviation.settings, unless tolerance says otherwise) gathered into connected regions, the largest and farthest first — where the part is off, how large each place is and by how much, instead of one number over the whole part. Each patch: its centre and box in mm (in the frame the scan is measured in — what scan.query { box } and element.fit take), its area, how many vertices, the mean and the extreme deviation and which side (outside the reference or inside), the point of the extreme and the scan vertex there, and a few of its vertices (what element.fit_marked takes). With a map against the reference part the patch’s centre and extreme are given on the reference too (onReference — what the Deviation workspace shows and view.render { frame } takes there). grain is how close two vertices over tolerance have to be to be one patch, three point spacings by default. found and over say how many patches and vertices over tolerance there were in all — within the search distance, the vertices the map draws as a measurement. Then far, the vertices past the search distance, which the map draws bare: read it every time — far.inside is the scan deeper inside the reference than the search distance, where the reference has material the part has not (a hole, a pocket or a slot the model lacks), far.outside the scan further off it, where the part has what the model has not, or scan spray; each with its count and its patches, the largest first, and far.count both together; unmeasured says how many vertices the facing limit left without a reading. Needs a deviation map (deviation.align, or deviation.set_target). on: "reference" reads the map on the reference instead (deviation.settings { on }, measured if it is not yet): the patches are of the reference, in its frame, outside where the reference stands proud of the scan (material the part has not) and inside where it is short of it; far is the reference past the search distance from the scan, by side; and noScan, the reference with no scan behind it, in patches the largest first — surface the model has on no evidence: inferred, unscanned, or not on the part. Changes nothing.',
   input: obj({
     tolerance: num('± mm; the map’s tolerance by default.', { exclusiveMinimum: 0 }),
     patches: int(`How many patches to name; ${HOTSPOT_PATCHES} by default, 50 at most.`, { minimum: 1, maximum: 50 }),
     grain: num('mm — how close two vertices over tolerance have to be to be one patch; three point spacings by default.', { exclusiveMinimum: 0 }),
+    on: enumOf(['scan', 'reference'], 'The map read: on the scan (the default) or on the reference.'),
   }),
   readOnly: true,
-  run: async ({ tolerance, patches = HOTSPOT_PATCHES, grain }) => {
+  run: async ({ tolerance, patches = HOTSPOT_PATCHES, grain, on = 'scan' }) => {
     requireScan()
+    if (on === 'reference') return referenceHotspots(tolerance, patches, grain)
     const d = useDeviation.getState()
     const maps = commandHost().session.maps
     const values = d.source === 'element' ? maps.elementField.current : maps.deviation.current
@@ -294,6 +303,58 @@ const hotspotsCommand: Command<{ tolerance?: number; patches?: number; grain?: n
       unmeasured,
     }
   },
+}
+
+/** The map on the reference read as patches — see hotspotsCommand. */
+export async function referenceHotspots(tolerance: number | undefined, patches: number, grain: number | undefined) {
+  const d = useDeviation.getState()
+  const { session } = commandHost()
+  if (d.source !== 'reference' || !d.align || d.mapStatus !== 'ready') throw new CommandError('invalid_state', 'There is no map against the reference part — deviation.align measures one.')
+  if (d.referenceStatus !== 'ready') await session.deviation.runReferenceMap()
+  const map = session.maps.referenceMap.current
+  if (useDeviation.getState().referenceStatus !== 'ready' || !map) throw new CommandError('invalid_state', `The map on the reference could not be measured${useDeviation.getState().alignMessage ? `: ${useDeviation.getState().alignMessage}` : ''}.`)
+  const { hotspots } = await import('../../core/deviation/hotspots')
+  const { values, positions } = map
+  const tol = tolerance ?? d.tolerance
+  const search = d.maxDistance
+  // The readings lie about the spacing apart, by how the reference was
+  // cut: three of them make a patch's grain unless told.
+  const opts = { limit: patches, grain: grain ?? 3 * map.spacing }
+  const patchOut = (p: Hotspot) => ({ ...patchFigures(p), side: p.extreme > 0 ? 'outside' : 'inside', at: p.at.map(round3) })
+  const report = hotspots(positions, values, tol, { ...opts, only: (i) => Math.abs(values[i]) <= search })
+  let farProud = 0
+  let farShort = 0
+  let noScan = 0
+  for (let i = 0; i < values.length; i++) {
+    const v = values[i]
+    if (Number.isNaN(v)) noScan++
+    else if (v > search) farProud++
+    else if (v < -search) farShort++
+  }
+  const farSide = (proud: boolean, count: number) => {
+    if (count === 0) return { count, found: 0, patches: [] }
+    const r = hotspots(positions, values, search, { ...opts, only: (i) => (values[i] > 0) === proud })
+    return { count, found: r.found, patches: r.patches.map(patchOut) }
+  }
+  // No scan as a field of its own: one where there is none, nothing where
+  // there is.
+  const bare = new Float32Array(values.length)
+  for (let i = 0; i < values.length; i++) bare[i] = Number.isNaN(values[i]) ? 1 : 0
+  const unbacked = noScan > 0 ? hotspots(positions, bare, 0.5, opts) : null
+  const bareOut = (p: Hotspot) => {
+    const { centroid, box, area, count } = patchFigures(p)
+    return { centroid, box, area, count }
+  }
+  return {
+    on: 'reference',
+    tolerance: tol,
+    spacing: round3(map.spacing),
+    over: report.over,
+    found: report.found,
+    patches: report.patches.map(patchOut),
+    far: { searchDistance: search, count: farProud + farShort, outside: farSide(true, farProud), inside: farSide(false, farShort) },
+    noScan: { count: noScan, found: unbacked?.found ?? 0, patches: (unbacked?.patches ?? []).map(bareOut) },
+  }
 }
 
 export const deviationCommands = [openReference, align, measure, setTarget, settings, hotspotsCommand]

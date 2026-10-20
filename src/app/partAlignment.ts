@@ -59,6 +59,9 @@ export function partAlignment({ clientRef, sceneRef, imports, maps, clearPreview
       surfacesMoved()
       maps.deviation.current = null
       maps.deviationRgb.current = null
+      maps.referenceMap.current = null
+      maps.referenceRgb.current = null
+      useDeviation.getState().clearReferenceMap()
       sceneRef.current?.setFieldColors(null)
       useDeviation.getState().clearAlign()
     } finally { useStore.setState({ busy: false }) }

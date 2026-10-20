@@ -9,6 +9,8 @@
 import type { FitSettings, MeshGraph, Torus, TorusFitOutput } from '../types'
 import { FitError } from './errors'
 import { growTorusRegion, seededFit } from './regionGrow'
+import { guidePatch, type FitGuide } from './guide'
+import type { AxialWindow } from '../types'
 import { requireSelection } from './selection'
 import { canonicalTorus, fitTorusClipped, ransacTorus, torusCoverage, torusNormalAlign, torusResidual } from './torus'
 
@@ -63,13 +65,15 @@ const SEED_COS_MAX = Math.cos((32 * Math.PI) / 180)
  *  the robust torus estimate on it, model-guided growing across the whole
  *  round, the clipped best fit. The patch grows when the local
  *  neighbourhood is too small or too flat to place the spine. */
-export function fitTorusFromSeed(g: MeshGraph, seeds: number[], settings: FitSettings): TorusFitOutput {
+export function fitTorusFromSeed(g: MeshGraph, seeds: number[], settings: FitSettings, _window?: AxialWindow, guide?: FitGuide): TorusFitOutput {
+  // A torus takes a box alone of the guide.
+  const within = guide?.within ? { within: guide.within } : undefined
   const fit = seededFit(g, seeds, {
     estimate: (patch, seed) => {
-      const cand = ransacTorus(g.positions, g.normals, patch, { seed })
+      const cand = ransacTorus(g.positions, g.normals, within ? guidePatch(g, patch, within) : patch, { seed })
       return cand && plausible(cand.torus, g) ? cand : null
     },
-    grow: (cand) => growTorusRegion(g, seeds, cand.torus, cand.sigma, cand.inliers.length),
+    grow: (cand) => growTorusRegion(g, within ? cand.inliers : seeds, cand.torus, cand.sigma, cand.inliers.length, within),
     finish: (grown) => {
       const fin = fitTorusClipped(g.positions, grown.region, settings.sigma, grown.model)
       if (!fin || !plausible(fin.torus, g)) return null

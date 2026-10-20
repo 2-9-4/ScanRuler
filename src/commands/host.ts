@@ -85,6 +85,10 @@ export function sessionBusy(): string | null {
   if (d.nominalBusy) return 'the reference is being read'
   if (d.alignStatus === 'running') return 'the scan is being aligned to the reference'
   if (d.mapStatus === 'running') return 'the deviation map is being measured'
+  // Measured on its own after the scan's — on asking, or as soon as the
+  // scan's lands while the map is read on the reference — and not awaited
+  // by whatever set it off: a picture taken before it lands is bare.
+  if (d.referenceStatus === 'running') return 'the deviation map on the reference is being measured'
   if (useThickness.getState().status === 'running') return 'the wall thickness is being measured'
   if (useFlat.getState().imageBusy) return 'the image is being read'
   if (s.draft?.status === 'fitting' || s.elements.some((e) => e.status === 'fitting')) return 'an element is being fitted'

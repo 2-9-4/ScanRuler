@@ -22,6 +22,8 @@ import type { JsonSchema } from './schema'
  *    surface, a file that would not read)
  *  - `unavailable` — needs what this session lacks, such as the viewport
  *  - `not_implemented` — named in the contract, not built yet
+ *  - `timeout` — the command did not finish in its time and was given up
+ *    on; it may have changed the session in part
  *  - `internal` — a fault of the app's own
  */
 export type CommandErrorCode =
@@ -34,6 +36,7 @@ export type CommandErrorCode =
   | 'failed'
   | 'unavailable'
   | 'not_implemented'
+  | 'timeout'
   | 'internal'
 
 export class CommandError extends Error {
@@ -65,6 +68,10 @@ export interface FileOut {
 export interface CommandContext {
   /** A line on what the command is doing, for whoever is waiting on it. */
   progress(text: string): void
+  /** Aborted once the command has run past its time (Command.timeoutMs)
+   *  and its caller was answered `timeout`: a long command that looks at it
+   *  between its steps stops rather than change the session further. */
+  signal?: AbortSignal
 }
 
 export interface Command<I = Record<string, unknown>> {
@@ -99,6 +106,10 @@ export interface Command<I = Record<string, unknown>> {
    *  app run headless offers it (src/headless/engine.ts). Off by default:
    *  a command is marked once it has been run so. */
   headless?: boolean
+  /** How long a run may take before its caller is answered `timeout` and
+   *  the commands after it run — COMMAND_TIMEOUT_MS (registry.ts) unless
+   *  set. */
+  timeoutMs?: number
   /** The undo step's name for this input; the title otherwise. */
   label?(input: I): string
   run(input: I, ctx: CommandContext): Promise<unknown>

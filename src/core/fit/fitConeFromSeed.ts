@@ -5,9 +5,10 @@
 // the report — the radius at the middle and at both ends read off the taper,
 // the half-angle in degrees, the arc of the surface the scan covers.
 
-import type { Cone, ConeFit, FitBase, FitSettings, MeshGraph } from '../types'
-import { coneAxisFromNormals, fitConeClipped, fitConeOnAxis, ransacCone } from './cone'
+import type { AxialWindow, Cone, ConeFit, FitBase, FitSettings, MeshGraph } from '../types'
+import { coneAxisFromNormals, coneResidual, fitConeClipped, fitConeOnAxis, ransacCone } from './cone'
 import { FitError } from './errors'
+import { axisAgrees, guidedEstimate, guidedSeeds, guideRefusal, hasGuide, judgeRound, type FitGuide, type GuideSeen } from './guide'
 import { axialExtents } from './extents'
 import { growConeRegion, seededFit } from './regionGrow'
 import { requireSelection } from './selection'
@@ -42,6 +43,20 @@ function coneReport(
   }
 }
 
+/** The cone's outward surface normal at a point, for a guide's side. */
+function coneOutward(c: Cone) {
+  const cos = Math.cos(c.phi)
+  const sin = Math.sin(c.phi)
+  return (x: number, y: number, z: number): [number, number, number] | null => {
+    const qx = x - c.px, qy = y - c.py, qz = z - c.pz
+    const t = qx * c.ax + qy * c.ay + qz * c.az
+    const wx = qx - t * c.ax, wy = qy - t * c.ay, wz = qz - t * c.az
+    const rho = Math.hypot(wx, wy, wz)
+    if (!(rho > 1e-12)) return null
+    return [(cos * wx) / rho - sin * c.ax, (cos * wy) / rho - sin * c.ay, (cos * wz) / rho - sin * c.az]
+  }
+}
+
 /** Full auto-fit pipeline from a single user click — the cylinder's pipeline
  *  with the cone estimators plugged in:
  *  1. BFS a local patch around the seed,
@@ -55,10 +70,34 @@ export function fitConeFromSeed(
   g: MeshGraph,
   seeds: number[],
   settings: FitSettings,
+  _window?: AxialWindow,
+  guide?: FitGuide,
 ): ConeFit & { region: Uint32Array } {
+  const guided = hasGuide(guide) ? guide : null
+  const seen: GuideSeen[] = []
   const fit = seededFit(g, seeds, {
-    estimate: (patch, seed) => ransacCone(g.positions, g.normals, patch, { seed }),
-    grow: (cand) => growConeRegion(g, seeds, cand.cone, cand.sigma, cand.inliers.length),
+    estimate: (patch, seed) =>
+      guided
+        ? guidedEstimate(
+            g,
+            patch,
+            guided,
+            (p) => ransacCone(g.positions, g.normals, p, { seed }),
+            (c) =>
+              !axisAgrees(guided, [c.cone.ax, c.cone.ay, c.cone.az])
+                ? { radius: c.cone.r, why: 'axis off' }
+                : judgeRound(g, guided, c.cone.r, c.inliers, coneOutward(c.cone), true),
+            (c, v) => {
+              const j = v * 3
+              return Math.abs(coneResidual(c.cone, g.positions[j], g.positions[j + 1], g.positions[j + 2])) <= Math.max(3 * c.sigma, 0.01 * c.cone.r)
+            },
+            seen,
+          )
+        : ransacCone(g.positions, g.normals, patch, { seed }),
+    grow: (cand) => {
+      const from = guided ? guidedSeeds(g, cand.inliers, guided, coneOutward(cand.cone)) : seeds
+      return from.length ? growConeRegion(g, from, cand.cone, cand.sigma, cand.inliers.length, guided ?? undefined) : null
+    },
     finish: (grown) => {
       const fin = fitConeClipped(g.positions, grown.region, grown.model, settings.sigma)
       if (!fin) return null
@@ -76,10 +115,20 @@ export function fitConeFromSeed(
       // Under ~30° of arc the circle through the points is barely curved, so
       // the radius and the axis position are guesses.
       if (!(report.coverage >= 29)) return null
+      if (guided) {
+        const no = !axisAgrees(guided, report.axis)
+          ? { radius: report.radius, why: 'axis off' }
+          : judgeRound(g, guided, report.radius, grown.region, coneOutward(c), false)
+        if (no) {
+          seen.push(no)
+          return null
+        }
+      }
       return coneOutput(report, fin, grown.region)
     },
   })
   if (fit) return fit
+  if (guided) throw new FitError(guideRefusal('cone', guided, seen))
   throw new FitError(
     "Couldn't fit a cone at this point — try clicking in the middle of the tapered surface, away from its edges.",
   )

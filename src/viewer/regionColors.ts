@@ -103,6 +103,14 @@ export class RegionColors {
     return this.owner !== null
   }
 
+  /** Whether the scan wears a measured map: 'painted'; 'unfit' when one was
+   *  handed over whose readings are not one a scan vertex, and the surface
+   *  was left as the elements paint it; null with none. */
+  get fieldState(): 'painted' | 'unfit' | null {
+    if (!this.fieldColors) return null
+    return this.colors && this.fieldColors.length === this.scanVertices * 3 ? 'painted' : 'unfit'
+  }
+
   /** How many vertices the marking currently covers. */
   get paintCount(): number {
     return this.count

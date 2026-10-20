@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { SNAPSHOT } from '../src/mcp.js'
-import { agentJson, bytesProperty, imageContent, inputFor, saveFileResult, toolFor, toolName, timingsIn, waitIn } from '../src/tools.js'
+import { agentJson, batchedPicture, bytesProperty, imageContent, inputFor, saveFileResult, toolFor, toolName, timingsIn, waitIn } from '../src/tools.js'
 
 const command = (name) => SNAPSHOT.find((c) => c.name === name)
 
@@ -104,5 +104,28 @@ test('a picture comes back as an image, and is written to a file only when asked
   const saved = await imageContent(result, { path: 'pics' }, { cwd: dir, outDir: '/elsewhere' })
   assert.equal(JSON.parse(saved[0].text).file.path, join(dir, 'pics'))
   assert.deepEqual([...(await readFile(join(dir, 'pics')))], [...png])
+  // Written and not shown: the text alone, saying where.
+  const quiet = await imageContent(result, { path: 'quiet.png', inline: false }, { cwd: dir, outDir: dir })
+  assert.equal(quiet.length, 1)
+  assert.equal(JSON.parse(quiet[0].text).file.path, join(dir, 'quiet.png'))
+  assert.deepEqual([...(await readFile(join(dir, 'quiet.png')))], [...png])
+  // inline: false without a path still shows it — there is nowhere else.
+  assert.equal((await imageContent(result, { inline: false }, { cwd: dir, outDir: dir }))[1].type, 'image')
   assert.equal(await imageContent({ file: { name: 'a.step', mimeType: 'model/step', bytes: png } }, {}, { cwd: dir, outDir: dir }), null)
+})
+
+test('a picture in a batch, where it cannot be shown, is written to a file all the same', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'scanruler-mcp-'))
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47])
+  const result = { file: { name: 'part-view.png', mimeType: 'image/png', bytes: png }, width: 200, height: 100 }
+  const first = await batchedPicture(result, {}, { cwd: '/elsewhere', outDir: dir })
+  assert.deepEqual(first, { file: { name: 'part-view.png', mimeType: 'image/png', size: 4, path: join(dir, 'part-view.png') }, width: 200, height: 100 })
+  assert.deepEqual([...(await readFile(first.file.path))], [...png])
+  // Numbered past one already there: no render is written over.
+  assert.equal((await batchedPicture(result, {}, { cwd: dir, outDir: dir })).file.path, join(dir, 'part-view-2.png'))
+  assert.equal((await batchedPicture(result, {}, { cwd: dir, outDir: dir })).file.path, join(dir, 'part-view-3.png'))
+  // A path given is where it goes, as a direct call's.
+  assert.equal((await batchedPicture(result, { path: 'mine.png' }, { cwd: dir, outDir: '/elsewhere' })).file.path, join(dir, 'mine.png'))
+  // No picture, nothing written.
+  assert.deepEqual(await batchedPicture({ width: 1 }, {}, { cwd: dir, outDir: dir }), { width: 1 })
 })

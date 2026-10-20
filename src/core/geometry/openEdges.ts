@@ -13,6 +13,8 @@ export interface MeshGap {
   edges: number
   /** The diagonal of the box round its rim, mm. */
   size: number
+  /** The rim's length along its open edges, mm. */
+  length: number
 }
 
 /** The gaps of a welded mesh — rims of open edges joined through their
@@ -59,11 +61,12 @@ export function meshGaps(positions: Float32Array | Float64Array, indices: Uint32
     const rb = find(b)
     if (ra !== rb) parent.set(ra, rb)
   }
-  const groups = new Map<number, { edges: number; vertices: Set<number> }>()
+  const groups = new Map<number, { edges: number; length: number; vertices: Set<number> }>()
   for (const [a, b] of open) {
     const r = find(a)
-    const g = groups.get(r) ?? { edges: 0, vertices: new Set<number>() }
+    const g = groups.get(r) ?? { edges: 0, length: 0, vertices: new Set<number>() }
     g.edges++
+    g.length += Math.hypot(positions[a * 3] - positions[b * 3], positions[a * 3 + 1] - positions[b * 3 + 1], positions[a * 3 + 2] - positions[b * 3 + 2])
     g.vertices.add(a)
     g.vertices.add(b)
     groups.set(r, g)
@@ -82,7 +85,7 @@ export function meshGaps(positions: Float32Array | Float64Array, indices: Uint32
       }
     }
     const n = g.vertices.size
-    gaps.push({ at: [sum[0] / n, sum[1] / n, sum[2] / n], edges: g.edges, size: Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) })
+    gaps.push({ at: [sum[0] / n, sum[1] / n, sum[2] / n], edges: g.edges, size: Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]), length: g.length })
   }
   gaps.sort((a, b) => b.edges - a.edges)
   return gaps.slice(0, maxGaps)

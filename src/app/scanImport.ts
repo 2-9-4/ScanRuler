@@ -62,6 +62,9 @@ export function scanImport({ clientRef, sceneRef, sources, imports, maps, clearP
     // measured on, so the map against one of them goes too.
     maps.deviation.current = null
     maps.deviationRgb.current = null
+    maps.referenceMap.current = null
+    maps.referenceRgb.current = null
+    useDeviation.getState().clearReferenceMap()
     maps.elementField.current = null
     maps.elementRgb.current = null
     // The marked region is vertex indices into the scan being replaced — and

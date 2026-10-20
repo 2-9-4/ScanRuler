@@ -12,6 +12,7 @@ import { round4 } from '../../core/round'
 import { canCutAlong, isWorldAxis, tiltOf, worldPlaneName, type SectionRef } from '../../core/section/frame'
 import type { Vec3 } from '../../core/types'
 import { useDeviation } from '../../state/deviationStore'
+import { usePrefs } from '../../state/prefsStore'
 import { sectionViewFrames, useSectionView } from '../../state/sectionViewStore'
 import { useShell } from '../../state/shellStore'
 import { useStore } from '../../state/store'
@@ -19,7 +20,7 @@ import type { StandardView } from '../../viewer/orthoViewport'
 import type { SceneManager } from '../../viewer/SceneManager'
 import { requireScene, sceneOf, sessionBusy } from '../host'
 import { elementRefSchema, findElement, type ElementRef } from '../refs'
-import { bool, enumOf, int, num, obj, oneOf, vec3, type JsonSchema } from '../schema'
+import { arr, bool, enumOf, int, num, obj, oneOf, vec3, type JsonSchema } from '../schema'
 import { CommandError, type Command } from '../types'
 import { pluginToggleKeys, viewToggles, type ViewToggle } from '../viewToggles'
 import { nextFrame, waitFor } from './common'
@@ -234,15 +235,16 @@ const set: Command<{ view?: StandardView; fit?: boolean; show?: Record<string, b
   },
 }
 
-const render: Command<{ width?: number; height?: number; view?: StandardView; fit?: boolean; show?: Record<string, boolean>; frame?: Frame; section?: SectionAsk }> = {
+const render: Command<{ width?: number; height?: number; view?: StandardView; views?: StandardView[]; fit?: boolean; show?: Record<string, boolean>; frame?: Frame; section?: SectionAsk }> = {
   name: 'render',
   title: 'Picture the view',
   description:
-    'A picture of the 3D view as a PNG — what the person sees in the viewport, without the HTML labels over it (dimension values, names). Give view and/or fit to turn the view first, as view.set does, or frame to frame a box or a place. show puts the scan, the reference, the sections, the elements or the labels on screen or away for the picture alone, by key — { scan: false } pictures what was built on the scan on its own; view.set lists the keys. section cuts everything open for the picture alone, as view.set does. width and height in pixels: the viewport’s own shape at most 800 pixels on its long side by default, enough to check a step by — ask for more (up to 2048) for a picture to keep; one of them alone keeps the viewport’s shape. Waits for the session to settle first. Needs the viewport.',
+    'A picture of the 3D view as a PNG — what the person sees in the viewport, without the HTML labels over it (dimension values, names). Give view and/or fit to turn the view first, as view.set does, or frame to frame a box or a place. show puts the scan, the reference, the sections, the elements or the labels on screen or away for the picture alone, by key — { scan: false } pictures what was built on the scan on its own; view.set lists the keys. section cuts everything open for the picture alone, as view.set does. width and height in pixels: the viewport’s own shape at most 800 pixels on its long side by default, enough to check a step by — ask for more (up to 2048) for a picture to keep; one of them alone keeps the viewport’s shape. views: two to six standard views in one picture, side by side, each fitted and named in its corner — iso, top, bottom and a side as one picture to look at instead of four (width and height are then the whole sheet’s; 1200 px across by default); the view stays at the last. In the Deviation workspace the answer says which map the picture shows — map: { on: "scan" | "reference", colormap, range } — or map: null and mapWhy, why none is painted (the map switch off, no map measured, the surface it is on put away) and what puts it there. With the scan shown, a reference shown with it is drawn over it as a ghost and dulls the colours (mapNote says so): show: { reference: false } gives the clean map. Waits for the session to settle first — a map being measured, on the scan or on the reference, too. Needs the viewport.',
   input: obj({
     width: int('Pixels across, 64 to 2048.', { minimum: 64, maximum: MAX_SIDE }),
     height: int('Pixels down, 64 to 2048.', { minimum: 64, maximum: MAX_SIDE }),
     view: viewSchema,
+    views: arr(viewSchema, 'Several standard views in one picture, each fitted, in this order.', { minItems: 2, maxItems: 6 }),
     fit: fitSchema,
     show: showSchema(),
     frame: frameSchema,
@@ -251,7 +253,8 @@ const render: Command<{ width?: number; height?: number; view?: StandardView; fi
   readOnly: true,
   returnsFile: true,
   returnsImage: true,
-  run: async ({ width, height, view, fit, show, frame, section }) => {
+  run: async ({ width, height, view, views, fit, show, frame, section }) => {
+    if (views && (view || frame)) throw new CommandError('invalid_input', 'Give views, or view and frame — views fits each of its own.')
     // The 3D view is not drawn while the 2D sheet has the screen: a picture
     // of it would be an empty frame, which says nothing and looks like an
     // answer.
@@ -267,7 +270,8 @@ const render: Command<{ width?: number; height?: number; view?: StandardView; fi
         await nextFrame(scene)
       }
       await sectioned(scene, section)
-      return await picture(scene, width, height, view, show)
+      const pictured = views ? await sheetOfViews(scene, views, width, height, show) : await picture(scene, width, height, view, show)
+      return { ...pictured, ...describeMapPainted(scene.mapPainted()) }
     } finally {
       // What was put away or cut for the picture comes back; the frame stays.
       if (Object.keys(before).length > 0) {
@@ -280,6 +284,54 @@ const render: Command<{ width?: number; height?: number; view?: StandardView; fi
       }
     }
   },
+}
+
+/** How many views a sheet of them puts in a row. */
+const SHEET_COLUMNS = [0, 1, 2, 3, 2, 3, 3]
+/** A sheet of views is this wide unless told, pixels. */
+const SHEET_WIDTH = 1200
+
+/** Several standard views as one picture: each turned to and fitted,
+ *  captured at its tile's size, and the tiles laid out in rows, each named
+ *  in its corner. */
+async function sheetOfViews(scene: SceneManager, views: readonly StandardView[], width: number | undefined, height: number | undefined, show: Record<string, boolean> | undefined) {
+  if (typeof OffscreenCanvas === 'undefined' || typeof createImageBitmap === 'undefined') throw new CommandError('unavailable', 'A sheet of views needs the browser.')
+  const cols = SHEET_COLUMNS[views.length]
+  const rows = Math.ceil(views.length / cols)
+  const size = scene.viewSize()
+  const aspect = size.width / size.height
+  const W = Math.min(MAX_SIDE, width ?? (height ? Math.round((height / rows) * aspect * cols) : SHEET_WIDTH))
+  const H = Math.min(MAX_SIDE, height ?? Math.round((W / cols / aspect) * rows))
+  const tw = Math.max(64, Math.floor(W / cols))
+  const th = Math.max(64, Math.floor(H / rows))
+  const canvas = new OffscreenCanvas(tw * cols, th * rows)
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new CommandError('unavailable', 'The browser gave no canvas to lay the views out on.')
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  for (let i = 0; i < views.length; i++) {
+    aim(scene, views[i], true, undefined)
+    await nextFrame(scene)
+    const bytes = await scene.capture(tw, th)
+    const tile = await createImageBitmap(new Blob([bytes as BlobPart], { type: 'image/png' }))
+    const x = (i % cols) * tw
+    const y = Math.floor(i / cols) * th
+    ctx.drawImage(tile, x, y, tw, th)
+    tile.close()
+    ctx.strokeStyle = '#c4c9cf'
+    ctx.strokeRect(x + 0.5, y + 0.5, tw - 1, th - 1)
+    ctx.font = 'bold 14px system-ui, sans-serif'
+    const w = ctx.measureText(views[i]).width
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'
+    ctx.fillRect(x + 6, y + 6, w + 12, 22)
+    ctx.fillStyle = '#20252c'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(views[i], x + 12, y + 17)
+  }
+  const blob = await canvas.convertToBlob({ type: 'image/png' })
+  const bytes = new Uint8Array(await blob.arrayBuffer())
+  const stem = exportStem('scanruler')
+  return { file: { name: `${stem}-views.png`, mimeType: 'image/png', bytes }, width: canvas.width, height: canvas.height, views: [...views], ...(show ? { shown: shownNow(scene) } : {}) }
 }
 
 /** The picture itself: the viewport's shape at the size asked for. */
@@ -298,6 +350,47 @@ async function picture(scene: SceneManager, width: number | undefined, height: n
   const bytes = await scene.capture(w, h)
   const stem = exportStem('scanruler')
   return { file: { name: `${stem}-view.png`, mimeType: 'image/png', bytes }, width: w, height: h, view: view ?? null, ...(show ? { shown: shownNow(scene) } : {}) }
+}
+
+/** What the stage has painted a map on — SceneManager.mapPainted. */
+export type MapPainted = ReturnType<SceneManager['mapPainted']>
+
+/** Which deviation map a picture shows, for its answer — only while the
+ *  Deviation workspace is on screen, where the map is what the part is
+ *  coloured by: { map: { on, colormap, range } } when it is painted, or
+ *  { map: null, mapWhy } saying why it is not and what puts it there.
+ *  Read off the stores for what was asked and off the stage for what was
+ *  drawn, so a map that never reached the stage is not taken for one that
+ *  did. Empty elsewhere. */
+export function describeMapPainted(painted: MapPainted): Record<string, unknown> {
+  if (useShell.getState().workspace !== 'deviation') return {}
+  const d = useDeviation.getState()
+  const none = (mapWhy: string) => ({ map: null, mapWhy })
+  if (!d.showMap) return none('the map switch is off — deviation.settings { show: true } puts it on.')
+  if (d.source === 'element') {
+    if (d.elementStatus !== 'ready') return none('no map against an element is measured — deviation.set_target measures one.')
+  } else {
+    if (!d.nominalName) return none('no reference part is open — deviation.open_reference, then deviation.align.')
+    if (!d.align) return none('the scan is not aligned to the reference — deviation.align aligns it and measures the map.')
+    if (d.mapStatus !== 'ready') return none('no deviation map is measured — deviation.measure measures it under the alignment.')
+  }
+  const onReference = d.source === 'reference' && d.mapOn === 'reference'
+  const unfit = (what: string) => `the map’s readings are not one a vertex of the ${what}, so it was left unpainted — deviation.measure measures it again.`
+  if (onReference) {
+    if (d.referenceStatus !== 'ready') return none(`the map on the reference is not measured${d.alignMessage ? ` (${d.alignMessage})` : ''} — deviation.settings { on: "reference" } measures it.`)
+    if (!d.showNominal) return none('the map is on the reference, which is put away — show: { reference: true }, or deviation.settings { on: "scan" }.')
+    if (d.split) return none('the view is split, the reference in a viewport of its own, which the picture leaves out — the map on it is not in this one.')
+    if (painted.reference === 'unfit') return none(unfit('reference'))
+    if (painted.reference !== 'painted' || !painted.referenceShown) return none('the map on the reference is not on the stage yet.')
+  } else {
+    if (!painted.scanShown) return none(`the map is on the scan, which is put away — show: { scan: true }${d.source === 'reference' ? ', or deviation.settings { on: "reference" }' : ''}.`)
+    if (painted.scan === 'unfit') return none(unfit('scan'))
+    if (painted.scan !== 'painted') return none('the map is not on the stage yet.')
+  }
+  return {
+    map: { on: onReference ? 'reference' : 'scan', colormap: usePrefs.getState().colormap, range: d.range },
+    ...(!onReference && painted.nominalShown && painted.nominalGhost ? { mapNote: 'the reference is drawn over the scan as a ghost, which dulls the colours — show: { reference: false } gives the clean map.' } : {}),
+  }
 }
 
 /** The toggles standing now and whether each is shown — for the readout,

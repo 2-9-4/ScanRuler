@@ -9,6 +9,7 @@
 
 import { evaluateDimensions, dimensionTypeInfo, type EvaluatedDimension } from '../core/dimensions'
 import { deviationStats, type DeviationStats } from '../core/deviation/deviation'
+import { referenceCoverage } from '../core/deviation/onReference'
 import { thicknessStats, type ThicknessStats } from '../core/thickness/thickness'
 import { describeRigid } from '../core/alignment'
 import type { Rigid } from '../core/deviation/rigid'
@@ -162,6 +163,30 @@ export function deviationFigures(): DeviationStats | null {
   return deviationStats(values, d.maxDistance, d.tolerance)
 }
 
+/** The map on the reference, in figures: how far apart its readings lie;
+ *  the share of the reference's area the scan stands behind within the
+ *  search distance, of it within ±tolerance, past the search distance, and
+ *  with no scan behind it; and the readings' statistics within the search
+ *  distance — positive where the reference stands outside the scan. */
+export function referenceFigures() {
+  const d = useDeviation.getState()
+  const map = commandHost().session.maps.referenceMap.current
+  if (d.referenceStatus !== 'ready' || !map) return null
+  const c = referenceCoverage(map, map.values, d.tolerance, d.maxDistance)
+  const share = (a: number) => (c.area > 0 ? Math.round((a / c.area) * 1000) / 10 : 0)
+  const stats = deviationStats(map.values, d.maxDistance, d.tolerance)
+  return {
+    spacing: map.spacing,
+    readings: map.values.length,
+    areaMm2: Math.round(c.area),
+    backedPct: share(c.backed),
+    withinTolerancePct: share(c.withinTolerance),
+    farPct: share(c.far),
+    noScanPct: share(c.noScan),
+    stats,
+  }
+}
+
 /** The figures under the thickness legend, the same way. */
 export function thicknessFigures(): ThicknessStats | null {
   const t = useThickness.getState()
@@ -196,6 +221,9 @@ export function describeDeviation() {
     ...(d.alignMessage ? { alignMessage: d.alignMessage } : {}),
     map: d.source === 'element' ? d.elementStatus : d.mapStatus,
     stats: deviationFigures(),
+    ...(d.source === 'reference'
+      ? { on: d.mapOn, onReference: d.referenceStatus === 'ready' ? referenceFigures() : { map: d.referenceStatus } }
+      : {}),
     target:
       d.targetId !== null
         ? {
@@ -213,6 +241,8 @@ export function describeDeviation() {
       tolerance: d.tolerance,
       facingDeg: d.mapFacingDeg,
       colormap: describeColormap(usePrefs.getState().colormap, d.range),
+      // The map switch: off, nothing is painted, whatever is measured.
+      show: d.showMap,
     },
   }
 }
@@ -335,6 +365,9 @@ export async function sessionState() {
     workspace: publicWorkspace(useShell.getState().workspace),
     busy: sessionBusy(),
     running: running?.name ?? null,
+    // While one runs: since when, and for how long so far — what tells a
+    // command that is working from one that holds the session.
+    ...(running ? { runningSince: new Date(running.since).toISOString(), runningMs: Date.now() - running.since } : {}),
     scan: s.fileName
       ? {
           fileName: s.fileName,

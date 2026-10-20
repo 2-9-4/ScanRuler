@@ -11,6 +11,9 @@ import type { Rigid } from './deviation/rigid'
 import type { StepInfo } from './parsers/step'
 import type { ThicknessMethod } from './thickness/thickness'
 import type { AxialWindow, ElementKind, FitOutput, FitSettings, Vec3 } from './types'
+import type { FitGuide } from './fit/guide'
+import type { RayGrid } from './geometry/scanQa'
+import type { MeshGap } from './geometry/openEdges'
 import type { MeshCentroid } from './geometry/centroid'
 import type { CreaseReport, CreaseSetting } from './geometry/crease'
 import type { SeedPlane, SymmetryPlane } from './symmetry'
@@ -43,6 +46,8 @@ export type WorkerRequest =
       /** Confine the fit to this span of the surface it finds — a cylinder
        *  with an end pulled in. Absent, the whole surface goes in. */
       window?: AxialWindow
+      /** What the surface is known to be — see fit/guide. */
+      guide?: FitGuide
     }
   /** Fit to a surface the user marked by hand: the vertices are the region,
    *  so nothing is searched for or grown. */
@@ -93,6 +98,19 @@ export type WorkerRequest =
        *  nearest surface whatever it faces. */
       facingDeg: number | null
     }
+  /** The map the other way round: the reference — or `mesh`, a mesh in the
+   *  reference's frame — cut finer and read against the scan (see
+   *  deviation/onReference.ts). */
+  | {
+      type: 'deviate-reference'
+      requestId: number
+      /** Takes the scan into the reference's frame, as for 'deviate'. */
+      transform: Rigid
+      facingDeg: number | null
+      /** How far apart the readings are cut to lie, mm. */
+      spacing: number
+      mesh?: { positions: Float32Array; indices: Uint32Array }
+    }
   /** Wall thickness of the scan itself — no reference model involved. The
    *  settings that shape the search travel with the request: all of them
    *  change the measurement, so all of them mean measuring again. */
@@ -138,6 +156,11 @@ export type WorkerRequest =
   /** The scan's vertices inside a box, facing `normal` within its angle if
    *  one is given, at most `limit` of them — see geometry/query. */
   | { type: 'query'; requestId: number; min: Vec3; max: Vec3; normal?: { dir: Vec3; cosLimit: number }; limit: number }
+  /** The first scan surface along a world axis over a grid of rays — see
+   *  geometry/scanQa (firstHits). */
+  | { type: 'heights'; requestId: number; grid: RayGrid }
+  /** Open rims and surface noise — see geometry/scanQa. */
+  | { type: 'scan-qa'; requestId: number; sample: number; rims: number }
   /** The coordinate system the scan itself suggests — its face directions,
    *  the side it stood on, a zero point. See core/autoAlign. Nothing moves:
    *  the answer is a proposal for the alignment editor. */
@@ -209,6 +232,18 @@ export type WorkerResponse =
       suggestedMaxDistance: number
     }
   | {
+      type: 'reference-deviation-ok'
+      requestId: number
+      positions: Float32Array
+      normals: Float32Array
+      indices: Uint32Array
+      parent: Uint32Array
+      spacing: number
+      /** Signed mm per vertex, positive where the reference stands outside
+       *  the scan; NaN where no scan is behind it. */
+      values: Float32Array
+    }
+  | {
       type: 'thickness-ok'
       requestId: number
       values: Float32Array
@@ -229,6 +264,9 @@ export type WorkerResponse =
   /** The vertices kept, with their positions and normals gathered, how many
    *  matched before the limit, and the stride the limit thinned them by. */
   | { type: 'query-ok'; requestId: number; vertices: Uint32Array; positions: Float32Array; normals: Float32Array; matched: number; step: number }
+  /** Per ray, the coordinate of its first hit along the axis, NaN for none. */
+  | { type: 'heights-ok'; requestId: number; values: Float32Array }
+  | { type: 'scan-qa-ok'; requestId: number; rims: { count: number; total: number; largest: MeshGap[] }; noise: { median: number; p90: number; sampled: number } }
   /** A plugin's answer. */
   | { type: 'plugin-ok'; requestId: number; result: unknown }
   | { type: 'error'; requestId: number; message: string }

@@ -192,9 +192,10 @@ picture — `view_render` and `flat_render`.
   wrong, so the model can try again with corrected arguments. A client that
   lets the model call a tool it was not given can call them directly too.
 - The tools that return a picture are listed so the model calls them
-  directly and sees the picture. In a batch a picture comes back as text
-  only, written to a file when the call gives `path`. A tab that connects
-  with another picture tool has the client list the tools again.
+  directly and sees the picture. In a batch a picture is not shown: it is
+  written to a file, the call's `path` or a new file in the output folder
+  (`--out`), and the call's result names it. A tab that connects with
+  another picture tool has the client list the tools again.
 
 **LM Studio**: add `--tools` and `compact` to the server's arguments as two
 separate entries. In `mcp.json`:

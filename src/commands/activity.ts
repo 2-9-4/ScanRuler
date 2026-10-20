@@ -8,8 +8,9 @@
 import { create } from 'zustand'
 
 interface ActivityState {
-  /** The command changing the session right now, for the status strip. */
-  running: { name: string; title: string } | null
+  /** The command changing the session right now, for the status strip, and
+   *  when it started (ms since the epoch). */
+  running: { name: string; title: string; since: number } | null
   /** Its latest progress line. */
   progress: string | null
 }

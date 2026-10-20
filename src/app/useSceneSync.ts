@@ -6,6 +6,8 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { creationMethod, takesSurface } from '../core/elements/construct'
 import { translationToOrigin } from '../core/alignment'
+import type { ReferenceDeviationResult } from '../core/workerClient'
+import { referenceScale } from '../core/deviation/onReference'
 import { isDeviationTarget } from '../core/deviation/elementField'
 import { isExtendable } from '../core/elements/extend'
 import { drawnFit } from '../core/elements/assumed'
@@ -60,6 +62,8 @@ export function useSceneSync({
   sceneRef,
   deviation,
   deviationRgb,
+  referenceMap,
+  referenceRgb,
   elementField,
   elementRgb,
   fieldDirections,
@@ -72,6 +76,10 @@ export function useSceneSync({
   sceneRef: RefObject<SceneManager | null>
   deviation: RefObject<Float32Array | null>
   deviationRgb: RefObject<Uint8Array | null>
+  /** The map the other way round, on the reference cut finer, and its
+   *  colours — see core/deviation/onReference.ts. */
+  referenceMap: RefObject<ReferenceDeviationResult | null>
+  referenceRgb: RefObject<Uint8Array | null>
   /** The deviation from a fitted element, held beside the one from a reference
    *  part so switching between them loses neither. */
   elementField: RefObject<Float32Array | null>
@@ -676,6 +684,17 @@ export function useSceneSync({
   const thickScaleShown = workspace === 'thickness' ? thickScale : null
   // A plugin's workspace paints its own map, when it has one.
   const pluginFieldVersion = plugin?.fieldVersion
+  // The map on the reference: which surface the map is read on, and the
+  // finer reference it is painted on, put on the stage as each lands.
+  const mapOn = useDeviation((s) => s.mapOn)
+  const referenceVersion = useDeviation((s) => s.referenceVersion)
+  const referenceReady = useDeviation((s) => s.referenceStatus === 'ready')
+  useEffect(() => {
+    const scene = sceneRef.current
+    if (!scene) return
+    const map = referenceReady ? referenceMap.current : null
+    scene.setReferenceMap(map)
+  }, [referenceVersion, referenceReady])
   const pluginRef = useRef(plugin)
   pluginRef.current = plugin
   /** Whichever map this workspace is showing: its values, and the scale they
@@ -684,6 +703,11 @@ export function useSceneSync({
    *  deviation from a reference part and a deviation from an element are the
    *  same signed millimetres read the same way. */
   const shownField = () => {
+    if (workspace === 'deviation' && source === 'reference' && mapOn === 'reference') {
+      const values = referenceMap.current?.values
+      if (!values) return null
+      return { values, rgb: referenceRgb, scale: referenceScale(range, maxDistance, bands), onReference: true }
+    }
     if (workspace === 'deviation') {
       const values = source === 'element' ? elementField.current : deviation.current
       if (!values) return null
@@ -710,7 +734,8 @@ export function useSceneSync({
     const scene = sceneRef.current
     if (!scene) return
 
-    // Colour the scan from whichever map this workspace is showing.
+    // Colour the scan from whichever map this workspace is showing — or the
+    // reference, when the map is read on it, the scan left bare.
     const showing = workspace === 'deviation' && !showMap ? null : shownField()
     if (!showing) {
       scene.setFieldColors(null)
@@ -724,10 +749,15 @@ export function useSceneSync({
       rgbRef.current = rgb
     }
     paintField(values, scale, colormapById(colormap), rgb)
-    scene.setFieldColors(rgb)
+    if ('onReference' in showing) {
+      scene.setFieldColors(null)
+      scene.setReferenceMapColors(rgb)
+    } else scene.setFieldColors(rgb)
   }, [
     workspace,
     source,
+    mapOn,
+    referenceVersion,
     mapVersion,
     elementVersion,
     range,
@@ -765,6 +795,8 @@ export function useSceneSync({
     maxDistance,
     bands,
     toleranceRead,
+    mapOn,
+    referenceVersion,
     thickVersion,
     thickScaleShown,
     thickLimitRead,
@@ -796,10 +828,13 @@ export function useSceneSync({
     // Measuring against an element there is no reference part in the question at
     // all, so one that happens to be loaded stays off the stage.
     const onDev = workspace === 'deviation' && source === 'reference'
-    scene.setNominalVisible(onDev && nominalReady && showNominal && !split)
+    // Read on the reference, the map is drawn in the reference's place.
+    const mapOnReference = onDev && mapOn === 'reference' && referenceReady && showMap && nominalReady && showNominal && !split
+    scene.setReferenceMapVisible(mapOnReference)
+    scene.setNominalVisible(onDev && nominalReady && showNominal && !split && !mapOnReference)
     scene.setNominalGhost(!onDev || showScan)
     scene.setScanVisible(workspace === 'deviation' ? showScan : !pluginHidesScan && !scanKeyHides)
-  }, [workspace, source, showNominal, showScan, nominalReady, split, pluginHidesScan, scanKeyHides])
+  }, [workspace, source, showNominal, showScan, nominalReady, split, pluginHidesScan, scanKeyHides, mapOn, referenceReady, referenceVersion, showMap])
 
   // Which mouse buttons orbit, pan and zoom. Held in the store rather than the
   // scene so the settings dialog can show it and remember it.

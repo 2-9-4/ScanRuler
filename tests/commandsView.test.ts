@@ -10,8 +10,14 @@ import { listCommands, registerCommands } from '../src/commands/registry'
 import { obj } from '../src/commands/schema'
 import type { Command } from '../src/commands/types'
 import { pluginToggleKeys, registerViewToggles, viewToggles, type ViewToggle } from '../src/commands/viewToggles'
+import type { AlignResult } from '../src/core/deviation/align'
+import { useDeviation } from '../src/state/deviationStore'
+import { usePrefs } from '../src/state/prefsStore'
+import { useShell } from '../src/state/shellStore'
 import { useStore } from '../src/state/store'
-import { refused, run, startHeadless, undoLabels, type Headless } from './commandKit'
+import { refused, resetStores, run, startHeadless, undoLabels, type Headless } from './commandKit'
+// After the kit, which loads the commands in the order the app does.
+import { describeMapPainted, type MapPainted } from '../src/commands/core/view'
 
 let headless: Headless
 beforeAll(async () => {
@@ -64,11 +70,71 @@ describe('the view', () => {
     expect(pluginToggleKeys()).toEqual([])
   })
 
-  it('lists view.render, flat.render and section.render as the commands that answer with a picture', () => {
+  it('lists view.render, flat.render, section.render and scan.heightmap as the commands that answer with a picture', () => {
     const pictures = listCommands().filter((c) => c.returnsImage)
-    expect(pictures.map((c) => c.name)).toEqual(['flat.render', 'section.render', 'view.render'])
+    expect(pictures.map((c) => c.name)).toEqual(['flat.render', 'scan.heightmap', 'section.render', 'view.render'])
     for (const p of pictures) expect(p).toMatchObject({ readOnly: true, returnsFile: true })
     expect(listCommands().find((c) => c.name === 'view.set')).toMatchObject({ readOnly: true, returnsImage: false })
+  })
+})
+
+describe('the map a picture of the Deviation workspace shows', () => {
+  // The stage as SceneManager.mapPainted reads it: the map on the scan,
+  // both models drawn, the reference solid.
+  const stage = (over: Partial<MapPainted> = {}): MapPainted => ({ scan: 'painted', scanShown: true, reference: null, referenceShown: false, nominalShown: false, nominalGhost: false, ...over })
+  const mapped = () => {
+    resetStores()
+    useShell.getState().setWorkspace('deviation')
+    useDeviation.setState({ source: 'reference', nominalName: 'nominal.stl', align: {} as AlignResult, mapStatus: 'ready', range: 0.5, showNominal: false })
+  }
+
+  it('says nothing outside the Deviation workspace', () => {
+    resetStores()
+    expect(describeMapPainted(stage())).toEqual({})
+  })
+
+  it('names the map painted on the scan, and the ghost over it', () => {
+    mapped()
+    expect(describeMapPainted(stage())).toEqual({ map: { on: 'scan', colormap: usePrefs.getState().colormap, range: 0.5 } })
+    const ghosted = describeMapPainted(stage({ nominalShown: true, nominalGhost: true }))
+    expect(ghosted.map).toMatchObject({ on: 'scan' })
+    expect(ghosted.mapNote).toMatch(/reference: false/)
+  })
+
+  it('says why no map is painted, and what puts one there', () => {
+    mapped()
+    const why = (painted = stage()) => {
+      const r = describeMapPainted(painted)
+      expect(r.map).toBeNull()
+      return String(r.mapWhy)
+    }
+    useDeviation.setState({ showMap: false })
+    expect(why()).toMatch(/switch is off.*show: true/)
+    useDeviation.setState({ showMap: true, mapStatus: 'idle' })
+    expect(why()).toMatch(/deviation\.measure/)
+    useDeviation.setState({ align: null })
+    expect(why()).toMatch(/deviation\.align/)
+    useDeviation.setState({ align: {} as AlignResult, mapStatus: 'ready' })
+    expect(why(stage({ scanShown: false }))).toMatch(/scan, which is put away/)
+    expect(why(stage({ scan: 'unfit' }))).toMatch(/not one a vertex of the scan/)
+    expect(why(stage({ scan: null }))).toMatch(/not on the stage/)
+    useDeviation.setState({ source: 'element', elementStatus: 'idle' })
+    expect(why()).toMatch(/deviation\.set_target/)
+  })
+
+  it('reads the map on the reference off the reference', () => {
+    mapped()
+    useDeviation.setState({ mapOn: 'reference', referenceStatus: 'idle' })
+    const onRef = stage({ scan: null, reference: 'painted', referenceShown: true })
+    expect(describeMapPainted(onRef).mapWhy).toMatch(/not measured.*on: "reference"/)
+    useDeviation.setState({ referenceStatus: 'ready' })
+    expect(describeMapPainted(onRef).mapWhy).toMatch(/reference, which is put away/)
+    useDeviation.setState({ showNominal: true, split: true })
+    expect(describeMapPainted(onRef).mapWhy).toMatch(/split/)
+    useDeviation.setState({ split: false })
+    expect(describeMapPainted({ ...onRef, reference: 'unfit' }).mapWhy).toMatch(/not one a vertex of the reference/)
+    expect(describeMapPainted(onRef)).toEqual({ map: { on: 'reference', colormap: usePrefs.getState().colormap, range: 0.5 } })
+    resetStores()
   })
 })
 

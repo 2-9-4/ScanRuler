@@ -7,7 +7,9 @@
 // Running one: the input is checked against the command's schema; a command
 // that changes the session waits for the one before it, is refused while
 // the session is busy with something else, and runs as one step of the
-// undo history under its label. Read-only commands run at once.
+// undo history under its label. Read-only commands run at once. One that
+// runs past its time is given up on — its caller answered `timeout` — and
+// the next runs.
 
 import { historyAsync } from '../state/historyStore'
 import { commandGuard, useCommandActivity } from './activity'
@@ -70,12 +72,45 @@ export function runsHeadless(name: string): boolean {
 
 // ---- Running ----------------------------------------------------------------
 
+/** How long a command may run, unless it says otherwise (Command.timeoutMs),
+ *  before its caller is answered `timeout` and the queue moves on — longer
+ *  than any build or measurement that is going well takes. */
+export const COMMAND_TIMEOUT_MS = 10 * 60_000
+
 let queue: Promise<unknown> = Promise.resolve()
 
 const asCommandError = (e: unknown): CommandError =>
   e instanceof CommandError
     ? e
     : new CommandError('failed', e instanceof Error ? e.message : String(e))
+
+/** A command's run raced against its time. Past it, the run is told to stop
+ *  (ctx.signal) and let go — whatever it does after is nobody's answer —
+ *  and the caller is answered `timeout`, so that what waits on it, the
+ *  history step and the queue, moves on. */
+function limited<T>(name: string, ms: number, abort: AbortController, run: () => Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      const e = new CommandError(
+        'timeout',
+        `${name} did not finish in ${ms / 1000} s and was given up on. It may have changed the session in part — read session.state (history.undo says the last step) before running it again.`,
+      )
+      abort.abort(e)
+      reject(e)
+    }, ms)
+  })
+  let ran: Promise<T>
+  try {
+    ran = run()
+  } catch (e) {
+    ran = Promise.reject(e)
+  }
+  // Let go past its time, it may still fail later: heard here, not as an
+  // unhandled rejection.
+  ran.catch(() => {})
+  return Promise.race([ran, late]).finally(() => clearTimeout(timer))
+}
 
 /**
  * Run a command by name. Resolves with its result; rejects with a
@@ -93,8 +128,9 @@ export function runCommand(
   if (errors.length) return Promise.reject(new CommandError('invalid_input', errors.join('; ')))
   const args = (input ?? {}) as Record<string, unknown>
   if (command.readOnly) {
-    const ctx: CommandContext = { progress: (text) => onProgress?.(text) }
-    return command.run(args, ctx).catch((e) => Promise.reject(asCommandError(e)))
+    const abort = new AbortController()
+    const ctx: CommandContext = { progress: (text) => onProgress?.(text), signal: abort.signal }
+    return limited(name, command.timeoutMs ?? COMMAND_TIMEOUT_MS, abort, () => command.run(args, ctx)).catch((e) => Promise.reject(asCommandError(e)))
   }
   const job = queue.then(() => execute(name, command, args, onProgress))
   queue = job.catch(() => {})
@@ -109,18 +145,24 @@ async function execute(
 ): Promise<unknown> {
   const busy = commandGuard().busy()
   if (busy) throw new CommandError('busy', `The session is busy — ${busy}. Try again once it has finished.`)
+  const abort = new AbortController()
   const ctx: CommandContext = {
     progress: (text) => {
-      useCommandActivity.setState({ progress: text })
+      // A run let go past its time says nothing more to the strip.
+      if (!abort.signal.aborted) useCommandActivity.setState({ progress: text })
       onProgress?.(text)
     },
+    signal: abort.signal,
   }
-  useCommandActivity.setState({ running: { name, title: command.title }, progress: null })
+  // Raced inside the history step, so that the step ends — and the history
+  // takes changes again — when the command is given up on.
+  const run = () => limited(name, command.timeoutMs ?? COMMAND_TIMEOUT_MS, abort, () => command.run(input, ctx))
+  useCommandActivity.setState({ running: { name, title: command.title, since: Date.now() }, progress: null })
   try {
-    if (command.history === false) return await command.run(input, ctx)
+    if (command.history === false) return await run()
     let result: unknown
     await historyAsync(`Agent: ${command.label?.(input) ?? command.title.toLowerCase()}`, async () => {
-      result = await command.run(input, ctx)
+      result = await run()
     })
     return result
   } catch (e) {

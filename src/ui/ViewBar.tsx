@@ -82,6 +82,9 @@ export function ViewBar({
   const setSplit = useDeviation((s) => s.setSplit)
   const showMap = useDeviation((s) => s.showMap)
   const setShowMap = useDeviation((s) => s.setShowMap)
+  const mapOn = useDeviation((s) => s.mapOn)
+  const setMapOn = useDeviation((s) => s.setMapOn)
+  const referenceRunning = useDeviation((s) => s.referenceStatus === 'running')
   const nominalName = useDeviation((s) => s.nominalName)
   const nominalBusy = useDeviation((s) => s.nominalBusy)
   const hasMap = useDeviation((s) =>
@@ -253,6 +256,23 @@ export function ViewBar({
               <Icon name="colourPlot" size={16} />
               Colour plot
             </button>
+            {onReference && (
+              <button
+                className={mapOn === 'reference' ? 'on' : undefined}
+                data-test="toggle-map-on-reference"
+                aria-pressed={mapOn === 'reference'}
+                disabled={!hasMap}
+                onClick={() => setMapOn(mapOn === 'reference' ? 'scan' : 'reference')}
+                title={
+                  hasMap
+                    ? 'Paint the map on the reference instead of the scan: the reference coloured by its distance to the scan. It shows reference material the scan does not have, and grey where no scan stands behind the reference.'
+                    : 'Nothing measured yet — the map on the reference comes with the map'
+                }
+              >
+                <Icon name="colourPlot" size={16} />
+                {referenceRunning ? 'On reference…' : 'On reference'}
+              </button>
+            )}
           </div>
         )}
         {sideKeys}

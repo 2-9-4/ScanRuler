@@ -10,15 +10,16 @@ import { unitsLabel, type MeshUnits } from '../core/meshUnits'
 import { meshUnitsFor } from '../state/unitsPromptStore'
 import type { ImportQueue } from './importQueue'
 import { prepareNominal, runImport, type PreparedNominal } from './imports'
-import type { MeshWorkerClient } from '../core/workerClient'
+import type { MeshWorkerClient, ReferenceDeviationResult } from '../core/workerClient'
 import type { SceneManager } from '../viewer/SceneManager'
 import { useStore } from '../state/store'
 import { clearHistory } from '../state/historyStore'
-import { useDeviation } from '../state/deviationStore'
+import { useDeviation, type MapSide } from '../state/deviationStore'
 import { rigidToColumnMajor } from '../core/deviation/rigid'
 import { useMark } from '../state/markStore'
 import { buildDeviationReport, buildElementReport } from '../core/deviation/report'
 import type { DeviationStats } from '../core/deviation/deviation'
+import { DEFAULT_REFERENCE_FACING_DEG } from '../core/deviation/onReference'
 import { detectMaterialSide } from '../core/deviation/elementField'
 import { targetFitOf } from './useElementField'
 import type { SourceFiles } from './project'
@@ -33,6 +34,8 @@ export function deviationWorkspace({
   sceneRef,
   deviation,
   deviationRgb,
+  referenceMap,
+  referenceRgb,
   fieldDirections,
   sources,
   imports,
@@ -41,13 +44,24 @@ export function deviationWorkspace({
   sceneRef: RefObject<SceneManager | null>
   deviation: RefObject<Float32Array | null>
   deviationRgb: RefObject<Uint8Array | null>
+  referenceMap: RefObject<ReferenceDeviationResult | null>
+  referenceRgb: RefObject<Uint8Array | null>
   /** The direction each map's readings were taken along, keyed by the map. */
   fieldDirections: WeakMap<Float32Array, Int8Array>
   imports: ImportQueue
   sources: RefObject<SourceFiles>
 }) {
+  /** The map on the reference is let go of with the scan's: measured under
+   *  an alignment, it is gone with it. */
+  const dropReferenceMap = () => {
+    referenceMap.current = null
+    referenceRgb.current = null
+    useDeviation.getState().clearReferenceMap()
+  }
+
   const commitNominal = (prepared: PreparedNominal | null) => {
     deviation.current = null
+    dropReferenceMap()
     deviationRgb.current = null
     sources.current.reference = prepared?.source ?? null
     sceneRef.current?.setFieldColors(null)
@@ -122,12 +136,72 @@ export function deviationWorkspace({
       fieldDirections.set(result.values, result.directions)
       useDeviation.getState().resolveMap(result.suggestedRange, result.suggestedMaxDistance)
       useStore.getState().setStatus('Deviation measured.')
+      // Read on the reference, the reference's map is measured with it.
+      if (useDeviation.getState().mapOn === 'reference') await runReferenceMap()
     } catch (e) {
       if (!current()) return
       // The alignment the map was measured under is still good — only the
       // measurement refused.
       useDeviation.getState().failMap(e instanceof Error ? e.message : String(e))
       useStore.getState().setStatus('')
+    }
+  }
+
+  /** The map the other way round: the reference cut finer and read against
+   *  the scan under the alignment in hand — see core/deviation/onReference.
+   *  The readings lie about a tenth of the colour range apart, at least a
+   *  quarter and at most two millimetres, and a large reference opens it. */
+  const runReferenceMap = async () => {
+    const client = clientRef.current
+    const dev = useDeviation.getState()
+    if (!client || !dev.align || dev.source !== 'reference' || dev.referenceStatus === 'running') return
+    triedUnder = dev.align
+    const { scanVersion, nominalVersion } = client
+    const align = dev.align
+    const current = () => scanVersion === client.scanVersion && nominalVersion === client.nominalVersion && useDeviation.getState().align === align
+    dev.beginReferenceMap()
+    try {
+      const spacing = Math.min(2, Math.max(0.25, dev.tolerance * 2))
+      const result = await client.deviateReference(align.transform, DEFAULT_REFERENCE_FACING_DEG, spacing)
+      if (!current()) return
+      referenceMap.current = result
+      referenceRgb.current = null
+      useDeviation.getState().resolveReferenceMap()
+      useStore.getState().setStatus('Deviation measured on the reference.')
+    } catch (e) {
+      if (!current()) return
+      useDeviation.getState().failReferenceMap(e instanceof Error ? e.message : String(e))
+      useStore.getState().setStatus('')
+    }
+  }
+
+  /** The alignment the map on the reference was last measured under, or
+   *  tried under: a map that refused is not asked for again under it. */
+  let triedUnder: unknown = null
+
+  /** The map on the reference measured whenever it is asked for and not
+   *  there — the view bar's key sets the store alone. The returned function
+   *  stops watching. */
+  const watch = () =>
+    useDeviation.subscribe((d) => {
+      if (d.mapOn !== 'reference' || d.source !== 'reference' || d.mapStatus !== 'ready' || d.referenceStatus !== 'idle' || !d.align || d.align === triedUnder) return
+      void runReferenceMap()
+    })
+
+  /** Paint the map on the scan or on the reference, the reference's
+   *  measured the first time it is asked for. */
+  const setMapOn = async (side: MapSide) => {
+    useDeviation.getState().setMapOn(side)
+    const dev = useDeviation.getState()
+    if (side === 'reference' && dev.align && dev.referenceStatus !== 'ready') {
+      if (dev.referenceStatus === 'running') await new Promise<void>((done) => {
+        const stop = useDeviation.subscribe((d) => {
+          if (d.referenceStatus === 'running') return
+          stop()
+          done()
+        })
+      })
+      else await runReferenceMap()
     }
   }
 
@@ -216,6 +290,7 @@ export function deviationWorkspace({
       useDeviation.getState().resolveAlign(result)
       stopPicking()
       deviation.current = null
+      dropReferenceMap()
       sceneRef.current?.setFieldColors(null)
       useStore
         .getState()
@@ -282,6 +357,7 @@ export function deviationWorkspace({
       // marked stays marked, ready for another pass.
       useMark.getState().setGesture(null)
       deviation.current = null
+      dropReferenceMap()
       sceneRef.current?.setFieldColors(null)
       useStore
         .getState()
@@ -303,6 +379,7 @@ export function deviationWorkspace({
   const handleRevertLocal = () => {
     useDeviation.getState().revertToGlobal()
     deviation.current = null
+    dropReferenceMap()
     sceneRef.current?.setFieldColors(null)
     useStore.getState().setStatus('Back to the global best fit — re-measuring the deviation.')
     void runDeviation()
@@ -377,6 +454,9 @@ export function deviationWorkspace({
     startPicking,
     stopPicking,
     runDeviation,
+    runReferenceMap,
+    setMapOn,
+    watch,
     setMapFacing,
     runLocalAlign,
     selectTarget,

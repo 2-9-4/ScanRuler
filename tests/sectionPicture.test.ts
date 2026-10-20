@@ -5,7 +5,7 @@
 // drawing needs a browser; e2e checks it.
 
 import { describe, expect, it } from 'vitest'
-import { Gap, sectionPictureModel } from '../src/app/sectionPicture'
+import { Gap, sectionPictureModel, sheetAxes } from '../src/app/sectionPicture'
 import type { SectionOutline } from '../src/commands/sectionLayers'
 
 /** A 20 × 20 square outline about the origin. */
@@ -76,5 +76,23 @@ describe('a piece’s label', () => {
     const { halfway } = await import('../src/app/sectionPicture')
     expect(halfway([[0, 0], [10, 0]])).toEqual([5, 0])
     expect(halfway([[0, 0], [2, 0], [2, 8]])).toEqual([2, 3])
+  })
+})
+
+describe('which world axes a sheet shows', () => {
+  it('names a sheet along the world axes, with the world coordinate at its 0', () => {
+    // A YZ sheet at x = 10, u along −Y.
+    const a = sheetAxes([10, 3, -2], [0, -1, 0], [0, 0, 1])
+    expect(a.u).toEqual({ axis: '−Y', offDeg: 0, at0: 3 })
+    expect(a.v).toEqual({ axis: '+Z', offDeg: 0, at0: -2 })
+  })
+
+  it('names the nearest world axis of a turned sheet, and how far it turns', () => {
+    const t = (5 * Math.PI) / 180
+    const a = sheetAxes([0, 0, 0], [Math.cos(t), Math.sin(t), 0], [-Math.sin(t), Math.cos(t), 0])
+    expect(a.u.axis).toBe('+X')
+    expect(a.u.offDeg).toBeCloseTo(5, 2)
+    expect(a.u.at0).toBeUndefined()
+    expect(a.v.axis).toBe('+Y')
   })
 })

@@ -259,6 +259,11 @@ export class SceneManager {
   private other: SlotLayout | null = null
   private editedShown = false
   private nominalMesh: THREE.Mesh | null = null
+  /** The deviation map on the reference — see setReferenceMap — and
+   *  whether its colours were laid on it: 'unfit' when they were not one a
+   *  vertex of it. */
+  private referenceMapMesh: THREE.Mesh | null = null
+  private referenceMapColored: 'painted' | 'unfit' | null = null
   /** The plane a tool cuts the part open at — see setSlicePlane — its cap's
    *  colour, and whether the cut is closed with one (setSliceCapped). */
   private slice: SectionFrame | null = null
@@ -2151,6 +2156,7 @@ export class SceneManager {
 
   clearNominal(): void {
     this.disposeNominal()
+    this.setReferenceMap(null)
     this.invalidate()
   }
 
@@ -2266,6 +2272,74 @@ export class SceneManager {
   setNominalVisible(visible: boolean): void {
     if (this.nominalMesh) this.nominalMesh.visible = visible
     this.invalidate()
+  }
+
+  /** The deviation map on the reference: the reference cut finer
+   *  (core/deviation/onReference.ts), a colour per vertex of it, drawn in
+   *  the reference's place while shown. Null takes it away. */
+  setReferenceMap(mesh: { positions: Float32Array; normals: Float32Array; indices: Uint32Array } | null): void {
+    this.referenceMapColored = null
+    if (this.referenceMapMesh) {
+      this.referenceMapMesh.geometry.dispose()
+      ;(this.referenceMapMesh.material as THREE.Material).dispose()
+      this.scene.remove(this.referenceMapMesh)
+      this.referenceMapMesh = null
+    }
+    if (mesh) {
+      const geometry = new THREE.BufferGeometry()
+      geometry.setAttribute('position', new THREE.BufferAttribute(mesh.positions, 3))
+      geometry.setAttribute('normal', new THREE.BufferAttribute(mesh.normals, 3))
+      geometry.setAttribute('color', new THREE.BufferAttribute(new Uint8Array(mesh.positions.length).fill(160), 3, true))
+      geometry.setIndex(new THREE.BufferAttribute(mesh.indices, 1))
+      geometry.computeBoundingBox()
+      geometry.computeBoundingSphere()
+      // Matte, whatever the scheme's finish: a CAD face square to the view
+      // takes the whole highlight, and a map is read by its colours.
+      const material = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, side: THREE.DoubleSide, roughness: 1, metalness: 0 })
+      this.referenceMapMesh = new THREE.Mesh(geometry, material)
+      this.referenceMapMesh.visible = false
+      this.referenceMapMesh.renderOrder = 1
+      this.scene.add(this.referenceMapMesh)
+    }
+    this.invalidate()
+  }
+
+  /** The colours of the map on the reference, three bytes a vertex of its
+   *  finer mesh. */
+  setReferenceMapColors(colors: Uint8Array): void {
+    const attr = this.referenceMapMesh?.geometry.getAttribute('color') as THREE.BufferAttribute | undefined
+    if (!attr) return
+    if (attr.array.length !== colors.length) {
+      this.referenceMapColored = 'unfit'
+      return
+    }
+    this.referenceMapColored = 'painted'
+    ;(attr.array as Uint8Array).set(colors)
+    attr.needsUpdate = true
+    this.invalidate()
+  }
+
+  /** The map on the reference drawn — and the reference itself not, under
+   *  it — or put away. */
+  setReferenceMapVisible(visible: boolean): void {
+    if (this.referenceMapMesh) this.referenceMapMesh.visible = visible
+    this.invalidate()
+  }
+
+  /** What a measured map is painted on now, as the stage draws it — for
+   *  an answer that says what a picture shows: the scan's colours (see
+   *  RegionColors.fieldState) and whether the scan is drawn; the map on
+   *  the reference, its colours, and whether it is drawn; and whether the
+   *  reference itself is drawn, a ghost or solid. */
+  mapPainted(): { scan: 'painted' | 'unfit' | null; scanShown: boolean; reference: 'painted' | 'unfit' | null; referenceShown: boolean; nominalShown: boolean; nominalGhost: boolean } {
+    return {
+      scan: this.regions.fieldState,
+      scanShown: this.scanShown(),
+      reference: this.referenceMapColored,
+      referenceShown: Boolean(this.referenceMapMesh?.visible),
+      nominalShown: this.nominalShown(),
+      nominalGhost: this.nominalGhost,
+    }
   }
 
   setScanVisible(visible: boolean): void {

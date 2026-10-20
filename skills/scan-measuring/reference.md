@@ -20,7 +20,7 @@ Example: `{}`
 **`scanruler_wait`** `{ for?: "page" | "idle" | "job", job?, timeoutSeconds? }` — until a page is connected (default), until it is also idle, or until a job is done — then `{ job, tool, state, ms, result }` or `{ …, error: { code, message } }`, `state: "running"` if the time ran out. 120 s by default, 600 at most.
 Example: `{ for: "job", job: "j7" }`
 
-**`scanruler_batch`** `{ calls: [{ tool, arguments? }], stopOnError?, rollback?, timings?, wait? }` — up to 200 calls in order (not the server's own four). Answers `{ results: [{ tool, ok, result } | { tool, ok: false, error }], ran, of }`, and when stopped `stopped` and `failed: { index, tool, error }`; with `rollback` (default true) the changes made before the refused call are undone and listed in `undone`, newest first; `rollback: false` keeps them; `stopOnError: false` runs every call and reports each. `timings: true` adds each result's `ms` and the batch's total_ms. A picture comes back as its text, written to a file only if its call gave `path`.
+**`scanruler_batch`** `{ calls: [{ tool, arguments? }], stopOnError?, rollback?, timings?, wait? }` — up to 200 calls in order (not the server's own four). Answers `{ results: [{ tool, ok, result } | { tool, ok: false, error }], ran, of }`, and when stopped `stopped` and `failed: { index, tool, error }`; with `rollback` (default true) the changes made before the refused call are undone and listed in `undone`, newest first; `rollback: false` keeps them; `stopOnError: false` runs every call and reports each. `timings: true` adds each result's `ms` and the batch's total_ms. A picture is not shown in a batch: it is written to a file — the call's `path`, or a new file in the server's output folder — and its result's `file.path` says where.
 Example: `{ calls: [{ tool: "element_fit", arguments: { kind: "cylinder", at: { point: [20, 0, 5] } } }, { tool: "element_fit", arguments: { kind: "cylinder", at: { point: [-20, 0, 5] } } }, { tool: "dimension_add", arguments: { refs: ["Cylinder 1", "Cylinder 2"] } }] }`
 
 ### Session and history
@@ -154,7 +154,7 @@ Example: `{ path: "C:/parts/bracket.step" }`
 **`deviation_align`** `{ mode?: "auto" | "points" | "local", pairs?: [{ scan, reference }, …], vertices?, searchDistance?, wait? }` — rigid best fit, no scale; answers RMS, points matched, transform and the map's statistics.
 Example: `{ mode: "local", vertices: [1023, 1024, 1090, 1102], searchDistance: 0.5 }`
 
-**`deviation_settings`** `{ range?, maxDistance?, bands?, tolerance?, facingDeg?, colormap?: "jet" | "viridis" | "magma" | "plasma" | "inferno" | "cividis" | "mako" | "rocket" | "turbo", wait? }` — answers the deviation state with `settings.colormap` (the ramp at −range, 0, +range, the caps, the unmeasured grey).
+**`deviation_settings`** `{ range?, maxDistance?, bands?, tolerance?, facingDeg?, colormap?: "jet" | "viridis" | "magma" | "plasma" | "inferno" | "cividis" | "mako" | "rocket" | "turbo", show?, wait? }` — answers the deviation state with `settings.colormap` (the ramp at −range, 0, +range, the caps, the unmeasured grey) and `settings.show`, the map switch: `show: false` leaves the surface bare, the map still measured; a project keeps it.
 Example: `{ tolerance: 0.1, range: 0.3, maxDistance: 1.5 }`
 
 **`deviation_measure`** `{ wait? }` — measures the map again under the alignment in hand.
@@ -176,7 +176,7 @@ Example: `{}`
 
 ### Pictures
 
-**`view_render`** `{ view?: "iso" | "top" | "bottom" | "front" | "rear" | "left" | "right", fit?, frame?: { min, max } | { at, size }, show?: { scan?, reference?, sections?, elements?, labels? }, section?: true | false | { across, offset?, flip? }, width?, height?, path? }` — a PNG of the viewport, 800 px on the long side by default, up to 2048; waits for the session to settle.
+**`view_render`** `{ view?: "iso" | "top" | "bottom" | "front" | "rear" | "left" | "right", fit?, frame?: { min, max } | { at, size }, show?: { scan?, reference?, sections?, elements?, labels? }, section?: true | false | { across, offset?, flip? }, width?, height?, path? }` — a PNG of the viewport, 800 px on the long side by default, up to 2048; waits for the session to settle. In the Deviation workspace the answer says what is painted: `map: { on, colormap, range }`, or `map: null` and `mapWhy` (switch off, no map, the surface it is on put away — and what puts it there); `mapNote` when the reference ghost over the scan dulls the colours — `show: { reference: false }` for the clean map.
 Example: `{ view: "iso", width: 1400, path: "C:/scans/out/iso.png" }`
 
 **`view_set`** `{ view?, fit?, frame?, show?, section? }` — the same, kept; answers every show key standing now. Not an undo step.

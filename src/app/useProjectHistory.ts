@@ -15,7 +15,7 @@ import { useThickness } from '../state/thicknessStore'
 import { identityRigid, rigidCompose, rigidInvert, type Rigid } from '../core/deviation/rigid'
 import type { SourceFiles } from './project'
 import type { ScanSource } from './scanSwap'
-import type { MeshWorkerClient } from '../core/workerClient'
+import type { MeshWorkerClient, ReferenceDeviationResult } from '../core/workerClient'
 import type { SceneManager } from '../viewer/SceneManager'
 import type { ImportQueue } from './importQueue'
 import type { ElementKind } from '../core/types'
@@ -27,6 +27,8 @@ export function useProjectHistory(options: {
   elementScope: RefObject<Uint32Array | null>
   deviation: RefObject<Float32Array | null>
   deviationRgb: RefObject<Uint8Array | null>
+  referenceMap: RefObject<ReferenceDeviationResult | null>
+  referenceRgb: RefObject<Uint8Array | null>
   thickness: RefObject<Float32Array | null>
   thicknessRgb: RefObject<Uint8Array | null>
   imports: ImportQueue
@@ -102,6 +104,9 @@ export function useProjectHistory(options: {
           if (moved || refaced || (patch.deviation && patch.deviation.align !== previous.deviation.align)) {
             o.deviation.current = null
             o.deviationRgb.current = null
+            o.referenceMap.current = null
+            o.referenceRgb.current = null
+            useDeviation.getState().clearReferenceMap()
             const d = useDeviation.getState()
             useDeviation.setState({ alignStatus: d.align ? 'done' : 'idle', mapStatus: 'idle', stats: null, histogram: null, mapVersion: d.mapVersion + 1 })
             if (d.align) await o.runDeviation()

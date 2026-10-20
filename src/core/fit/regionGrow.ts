@@ -10,11 +10,12 @@
 
 import type { Cone, Cylinder, MeshGraph, Plane, Sphere, Torus } from '../types'
 import { acquireStamps } from '../geometry/scratch'
-import { coneNormalAlign, coneResidual, fitConeClipped } from './cone'
+import { coneNormalAlign, coneNormalSigned, coneResidual, fitConeClipped } from './cone'
 import { cylinderResidual, fitCylinderClipped } from './cylinder'
 import { fitPlaneClipped, planeResidual } from './plane'
 import { fitSphereClipped } from './sphere'
 import { fitTorusClipped, torusNormalAlign, torusResidual } from './torus'
+import { inBox, type FitGuide } from './guide'
 
 /** Vertices whose fit uses a strided subsample beyond this size; the region
  *  itself is still complete, only the per-round solve is capped. */
@@ -138,6 +139,9 @@ interface GrowSpec<T> {
   residual: (m: T, x: number, y: number, z: number) => number
   /** |cos| between the vertex normal and the model's surface normal there. */
   align: (m: T, x: number, y: number, z: number, nx: number, ny: number, nz: number) => number
+  /** The same cosine signed: positive where the vertex normal points away
+   *  from the axis or centre (a convex surface), for a guide's side. */
+  signed?: (m: T, x: number, y: number, z: number, nx: number, ny: number, nz: number) => number
   refit: (
     positions: Float32Array,
     idx: Uint32Array,
@@ -243,8 +247,13 @@ function growRegion<T>(
   initSigma: number,
   initCount: number,
   spec: GrowSpec<T>,
+  guide?: FitGuide,
 ): GrowResult<T> | null {
   const { positions, normals } = g
+  // A side asks for the signed test: a vertex whose normal faces the wrong
+  // way — the outside of a cup grown from its inside — does not join.
+  const signed = spec.signed
+  const sideSign = guide?.side && signed ? (guide.side === 'outside' ? 1 : -1) : 0
   let model = init
   let sigma = Math.max(initSigma, 1e-6)
   let prev = Math.max(initCount, 50)
@@ -278,9 +287,11 @@ function growRegion<T>(
         const res = spec.residual(model, x, y, z)
         // NaN (undefined residual) fails this test, as it should.
         if (!(Math.abs(res) <= band)) continue
-        if (spec.align(model, x, y, z, normals[j], normals[j + 1], normals[j + 2]) < spec.cosMax) {
-          continue
-        }
+        const a = sideSign
+          ? sideSign * signed!(model, x, y, z, normals[j], normals[j + 1], normals[j + 2])
+          : spec.align(model, x, y, z, normals[j], normals[j + 1], normals[j + 2])
+        if (a < spec.cosMax) continue
+        if (guide?.within && !inBox(guide, x, y, z)) continue
         stamp[nb] = gen
         queue.push(nb)
         if (queue.length >= cap) {
@@ -334,6 +345,11 @@ const SPHERE_SPEC: GrowSpec<Sphere> = {
     const d = Math.sqrt(dx * dx + dy * dy + dz * dz)
     return Math.abs((dx * nx + dy * ny + dz * nz) / d)
   },
+  signed: (s, x, y, z, nx, ny, nz) => {
+    const dx = x - s.cx, dy = y - s.cy, dz = z - s.cz
+    const d = Math.sqrt(dx * dx + dy * dy + dz * dz)
+    return d > 1e-12 ? (dx * nx + dy * ny + dz * nz) / d : 0
+  },
   refit: (positions, idx) => {
     const fit = fitSphereClipped(positions, idx, 3)
     return fit && { model: fit.sphere, sigma: fit.sigma }
@@ -347,8 +363,9 @@ export function growSphereRegion(
   init: Sphere,
   initSigma: number,
   initCount: number,
+  guide?: FitGuide,
 ): GrowResult<Sphere> | null {
-  return growRegion(g, seeds, init, initSigma, initCount, SPHERE_SPEC)
+  return growRegion(g, seeds, init, initSigma, initCount, SPHERE_SPEC, guide)
 }
 
 /** Grow the cylindrical surface around the seed. The region is free to run
@@ -360,24 +377,27 @@ export function growCylinderRegion(
   init: Cylinder,
   initSigma: number,
   initCount: number,
+  guide?: FitGuide,
 ): GrowResult<Cylinder> | null {
+  const radial = (c: Cylinder, x: number, y: number, z: number, nx: number, ny: number, nz: number) => {
+    const qx = x - c.px, qy = y - c.py, qz = z - c.pz
+    const t = qx * c.ax + qy * c.ay + qz * c.az
+    const wx = qx - t * c.ax, wy = qy - t * c.ay, wz = qz - t * c.az
+    const rho = Math.sqrt(wx * wx + wy * wy + wz * wz)
+    if (!(rho > 1e-12)) return 0
+    return (wx * nx + wy * ny + wz * nz) / rho
+  }
   return growRegion(g, seeds, init, initSigma, initCount, {
     cosMax: COS_CYLINDER_MAX,
     band: (c, sigma) => Math.max(3.5 * sigma, 0.004 * c.r),
     residual: (c, x, y, z) => cylinderResidual(c, x, y, z),
-    align: (c, x, y, z, nx, ny, nz) => {
-      const qx = x - c.px, qy = y - c.py, qz = z - c.pz
-      const t = qx * c.ax + qy * c.ay + qz * c.az
-      const wx = qx - t * c.ax, wy = qy - t * c.ay, wz = qz - t * c.az
-      const rho = Math.sqrt(wx * wx + wy * wy + wz * wz)
-      if (!(rho > 1e-12)) return 0
-      return Math.abs((wx * nx + wy * ny + wz * nz) / rho)
-    },
+    align: (c, x, y, z, nx, ny, nz) => Math.abs(radial(c, x, y, z, nx, ny, nz)),
+    signed: radial,
     refit: (positions, idx, c) => {
       const fit = fitCylinderClipped(positions, idx, c, 3)
       return fit && { model: fit.cylinder, sigma: fit.sigma }
     },
-  })
+  }, guide)
 }
 
 /** Grow the toroidal surface around the seed — a fillet's round, a bend.
@@ -389,6 +409,7 @@ export function growTorusRegion(
   init: Torus,
   initSigma: number,
   initCount: number,
+  guide?: FitGuide,
 ): GrowResult<Torus> | null {
   return growRegion(g, seeds, init, initSigma, initCount, {
     cosMax: COS_CYLINDER_MAX,
@@ -399,7 +420,7 @@ export function growTorusRegion(
       const fit = fitTorusClipped(positions, idx, 3, t)
       return fit && { model: fit.torus, sigma: fit.sigma }
     },
-  })
+  }, guide)
 }
 
 /** Grow the conical surface around the seed. Same shape of spec as the
@@ -412,17 +433,19 @@ export function growConeRegion(
   init: Cone,
   initSigma: number,
   initCount: number,
+  guide?: FitGuide,
 ): GrowResult<Cone> | null {
   return growRegion(g, seeds, init, initSigma, initCount, {
     cosMax: COS_CONE_MAX,
     band: (c, sigma) => Math.max(3.5 * sigma, 0.004 * c.r),
     residual: coneResidual,
     align: coneNormalAlign,
+    signed: coneNormalSigned,
     refit: (positions, idx, c) => {
       const fit = fitConeClipped(positions, idx, c, 3)
       return fit && { model: fit.cone, sigma: fit.sigma }
     },
-  })
+  }, guide)
 }
 
 /** Grow the flat surface around the seed. A plane has no size of its own, so
@@ -433,6 +456,7 @@ export function growPlaneRegion(
   init: Plane,
   initSigma: number,
   initCount: number,
+  guide?: FitGuide,
 ): GrowResult<Plane> | null {
   const floor = 2e-4 * g.bboxDiag
   return growRegion(g, seeds, init, initSigma, initCount, {
@@ -444,5 +468,5 @@ export function growPlaneRegion(
       const fit = fitPlaneClipped(positions, idx, 3)
       return fit && { model: fit.plane, sigma: fit.sigma }
     },
-  })
+  }, guide)
 }
