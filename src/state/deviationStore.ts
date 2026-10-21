@@ -62,6 +62,10 @@ interface DeviationState extends ProbeSlice {
    *  The chord tolerance is a systematic term in every reading taken against a
    *  curved face of it, so it belongs on screen next to the triangle count. */
   nominalStep: StepInfo | null
+  /** The reference was made by the app from the session's own work — not a
+   *  file the person chose — and goes with the scan it was made on: another
+   *  scan opened lets it go, where a file opened as the reference is kept. */
+  nominalFromSession: boolean
 
   alignStatus: AlignStatus
   align: AlignResult | null
@@ -194,8 +198,11 @@ interface DeviationState extends ProbeSlice {
     vertices: number,
     triangles: number,
     step?: StepInfo | null,
+    fromSession?: boolean,
   ) => void
   nominalFailed: () => void
+  /** The reference let go of, with nothing in its place. */
+  clearNominal: () => void
   beginAlign: () => void
   resolveAlign: (r: AlignResult) => void
   /** A stop has been asked for; the fit itself is still unwinding. */
@@ -206,7 +213,10 @@ interface DeviationState extends ProbeSlice {
   failAlign: (message: string) => void
   failLocal: (message: string) => void
   failMap: (message: string) => void
-  clearAlign: () => void
+  /** Back to no alignment and no map. `keepSearch` leaves the search
+   *  distance as it stands, the user's or the automatic one — for a
+   *  reference that only replaces one made from the same work. */
+  clearAlign: (keepSearch?: boolean) => void
   startMarking: () => void
   stopMarking: () => void
   setLocalMaxDistance: (d: number) => void
@@ -297,6 +307,7 @@ export const useDeviation = create<DeviationState>()((set, get) => ({
   nominalVertices: 0,
   nominalBusy: false,
   nominalStep: null,
+  nominalFromSession: false,
 
   // The pinned readings and their actions, shared with the thickness store.
   ...probeSlice(set),
@@ -405,23 +416,27 @@ export const useDeviation = create<DeviationState>()((set, get) => ({
   beginNominalLoad: (name) =>
     set({ nominalBusy: true, nominalName: name, nominalStep: null, ...CLEARED }),
 
-  finishNominalLoad: (nominalName, nominalVertices, nominalTriangles, step = null) =>
+  finishNominalLoad: (nominalName, nominalVertices, nominalTriangles, step = null, fromSession = false) =>
     set({
       nominalBusy: false,
       nominalName,
       nominalVertices,
       nominalTriangles,
       nominalStep: step,
+      nominalFromSession: fromSession,
       showNominal: true,
     }),
 
-  nominalFailed: () =>
+  nominalFailed: () => get().clearNominal(),
+
+  clearNominal: () =>
     set({
       nominalBusy: false,
       nominalName: null,
       nominalVertices: 0,
       nominalTriangles: 0,
       nominalStep: null,
+      nominalFromSession: false,
     }),
 
   // Showing the reference again for the duration: the whole point of streaming
@@ -468,7 +483,7 @@ export const useDeviation = create<DeviationState>()((set, get) => ({
   // the alignment it was measured under.
   failMap: (alignMessage) => set({ mapStatus: 'idle', alignMessage }),
 
-  clearAlign: () => set({ ...CLEARED }),
+  clearAlign: (keepSearch = false) => set((s) => ({ ...CLEARED, ...(keepSearch ? { maxDistanceAuto: s.maxDistanceAuto } : {}) })),
 
   // Opening the tools arms nothing: the camera keeps its buttons until a
   // gesture is picked, and picking one is one click. The tools themselves are

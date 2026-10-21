@@ -5,6 +5,90 @@ bar and the imprint is the entry it belongs to; the `.scanruler` projects it
 saves carry the same number as `appVersion`. How a release is cut is in the
 README under "Releases".
 
+## 0.6.3 — 2026-10-21
+
+- **Sections measure as planes** (2026-10-20). A dimension takes a section
+  as the plane it was cut on, in its dropdowns and by a click on its cut on
+  the part. So a distance or an angle can be read off a cut put square
+  through a rim, where there is no flat face to fit. Removing the section
+  takes its dimensions with it. Tolerances keep to fitted planes, since a
+  cut has no surface to read a form off. `dimension.add` takes a section by
+  id or name.
+- **Centres on the 2D sheet** (2026-10-20). Every circle and arc wears a
+  cross at its centre.
+  - A pick snaps to the centre of a circle, an arc or a point within reach
+    before it snaps to an edge. Alt places it freely, as before.
+  - New circle construction, **Through centers**: the best-fit circle
+    through the centres of three or more holes. That gives a bolt circle's
+    pitch diameter, and its form says how far the holes stray from it.
+  - A construction or a 2D dimension takes its elements by a click on the
+    sheet, a hole by its edge or its centre. A second click lets one go.
+
+- **The scan's flat faces in one call** (2026-10-20). `scan.segment` finds
+  the planar regions of a scan, largest first, each with its plane, σ,
+  area, box and the regions it meets with the angle between them. On a
+  700 000-vertex scan it takes about a third of a second. `symmetric` pairs
+  mirror twins across a plane. `mark` leaves one region's points marked,
+  and `element.fit_marked { marked: true }` fits them without sending the
+  list.
+- **A fitted plane says what it covers** (2026-10-20). `element.fit`
+  answers the region it grew over (area, box, and for a plane how far its
+  normals stray). A plane whose region spans two surfaces warns, saying
+  where the second one lies, at what angle and how far off. Before, a box
+  over two facets gave one plane, quietly. `mark: true` leaves the region's
+  points marked.
+- **Height maps square onto any face** (2026-10-20). `scan.heightmap`
+  takes `plane` in place of `axis`: a fitted plane, a coordinate plane, or
+  one given by a point and a normal, gridded in the plane's own u and v as
+  a sketch on it has them.
+  - `of: "deviation"` reads the deviation map where each ray lands.
+  - `of: "relief"` reads the height less the surface around it, so icons,
+    grooves and lettering stand out of a face that leans or curves.
+  - `levels: true` gathers the heights into levels, each with its area
+    (a button's tiers, a pocket's floor).
+  - `grid: false` gives a finer picture without the numbers.
+- **The deviation map as data** (2026-10-20). `deviation.export` writes a
+  signed distance per scan vertex, or per sample on the reference, as
+  binary PLY, NumPy .npy or CSV. Its share within tolerance is the one the
+  state gives.
+- **Section pictures that read like a drawing** (2026-10-20).
+  - `section.render` takes `up` ("x", "y" or "z") to turn its sheet so
+    that axis runs up: a side view with Z up.
+  - Its grid falls on round world values on a section's sheet too.
+  - On a sheet of several cuts, the titles and margin values no longer run
+    into each other or into the scale bar.
+- **Pictures that keep their shading** (2026-10-20). A picture of the 3D
+  view is lit from a little above and left of the camera, with more fill,
+  so a face square to the camera keeps its shading instead of going white.
+  The screen's own lighting is unchanged.
+- **The session says what it holds** (2026-10-20).
+  - `session.state.project` tells whether the project has changes not yet
+    saved (`unsaved`), as the top bar does, and counts the work it holds
+    (`holds`).
+  - A refusal to replace the session names that work, the project and
+    whether it is saved.
+  - Opening another scan says which reference part it kept
+    (`referenceKept`). A reference made from the session's own work goes
+    with it (`referenceDropped`).
+- **Comparable deviation runs** (2026-10-20).
+  - A reference made from the session's own work keeps the search distance
+    as it was set, by hand or automatic. Before, every such load switched
+    it back to automatic.
+  - On a large reference, the readings on the reference open to a spacing
+    that a small edit does not change, and the state says why it opened
+    (`spacingOpened`).
+- **align.datum says what a plane does** (2026-10-20). The description now
+  says that a plane given as secondary puts its normal on the axis, and
+  that points are used as given, not snapped to the scan.
+- **scanruler-mcp: arriving at someone else's work** (2026-10-20).
+  - `scanruler_status` shows what the page holds: the scan, the project,
+    whether it is unsaved, and its work counted.
+  - `scan_open`, `project_load` and `session_reset` take `saveTo`: the
+    session is saved as a project file first, then replaced, in one call.
+  - The new `scanruler_write` writes a .md, .txt, .csv or .json file
+    beside the scan, kept to the folders the server opened a scan or
+    project from. A report needs no other file access.
+
 ## 0.6.2 — 2026-10-20
 
 - **A scan checked before modelling** (2026-10-19). `scan.qa` gives in one

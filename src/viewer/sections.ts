@@ -79,6 +79,8 @@ export class SectionOverlay {
     sheet: THREE.MeshBasicMaterial
     border: THREE.LineBasicMaterial
   }[] = []
+  /** The finished cuts on screen, for cutNear. */
+  private cuts: { id: number; points: Float32Array }[] = []
   /** The sheets alone, for the ray test — built once with the planes. */
   private worldMeshes: THREE.Mesh[] = []
   private worldCleanup: (() => void)[] = []
@@ -135,6 +137,7 @@ export class SectionOverlay {
     this.group.clear()
     this.group.visible = visible
     this.ctx.invalidate()
+    this.cuts = visible ? items.flatMap((item) => (item.cut ? [{ id: item.id, points: item.cut.points }] : [])) : []
     if (!visible) return
     for (const item of items) {
       // On the surface it was cut from, and hidden with it: a section on the
@@ -152,6 +155,43 @@ export class SectionOverlay {
       this.group.add(label)
       this.cleanup.push(() => label.element.remove())
     }
+  }
+
+  /**
+   * The finished section whose cut passes nearest the ray, within `reach` of
+   * it (world units), and how far along the ray that is — or null. A cut is
+   * a curve a few pixels wide lying on the scan, too thin for a ray to meet,
+   * so the test is the distance from the ray: the projection is parallel, so
+   * that is the distance on screen. Nothing further along the ray than
+   * `maxDepth` counts — where the scan is met, give or take its scatter: a
+   * cut on the far side of the part is drawn hidden and must not take the
+   * click.
+   */
+  cutNear(ray: THREE.Ray, reach: number, maxDepth = Infinity): { id: number; depth: number } | null {
+    if (!this.group.visible || this.cuts.length === 0) return null
+    this.group.updateWorldMatrix(true, false)
+    const m = this.group.matrixWorld
+    const p = new THREE.Vector3()
+    const d = new THREE.Vector3()
+    let best: { id: number; depth: number } | null = null
+    let bestSq = reach * reach
+    for (const cut of this.cuts) {
+      const n = cut.points.length / 3
+      // A long cut is thinned for the test: its points lie closer together
+      // than any reach a hand can hold a pointer to.
+      const step = Math.max(1, Math.floor(n / 20000))
+      for (let i = 0; i < n; i += step) {
+        p.fromArray(cut.points, i * 3).applyMatrix4(m)
+        const t = d.subVectors(p, ray.origin).dot(ray.direction)
+        if (t > maxDepth) continue
+        const sq = d.lengthSq() - t * t
+        if (sq <= bestSq && (best === null || sq < bestSq || t < best.depth)) {
+          bestSq = sq
+          best = { id: cut.id, depth: t }
+        }
+      }
+    }
+    return best
   }
 
   /** The section being made: its plane through the part, and its cut drawn

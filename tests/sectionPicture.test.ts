@@ -5,7 +5,7 @@
 // drawing needs a browser; e2e checks it.
 
 import { describe, expect, it } from 'vitest'
-import { Gap, sectionPictureModel, sheetAxes } from '../src/app/sectionPicture'
+import { Gap, gridLines, sectionPictureModel, sheetAxes } from '../src/app/sectionPicture'
 import type { SectionOutline } from '../src/commands/sectionLayers'
 
 /** A 20 × 20 square outline about the origin. */
@@ -94,5 +94,20 @@ describe('which world axes a sheet shows', () => {
     expect(a.u.offDeg).toBeCloseTo(5, 2)
     expect(a.u.at0).toBeUndefined()
     expect(a.v.axis).toBe('+Y')
+  })
+})
+
+describe('the grid’s lines', () => {
+  it('fall on round world values on a sheet whose 0 is not one', () => {
+    // A section's sheet: its 0 at the part's centre, X 3.7 — u along +X.
+    const along = sheetAxes([3.7, 0, 0], [1, 0, 0], [0, 1, 0]).u
+    const lines = gridLines(along, -10, 10, 5)
+    expect(lines.map((l) => l.value)).toEqual([-5, 0, 5, 10])
+    for (const l of lines) expect(l.at + 3.7).toBeCloseTo(l.value, 9)
+    // Along −X the sheet runs the other way: the values fall as u grows.
+    const back = sheetAxes([3.7, 0, 0], [-1, 0, 0], [0, 1, 0]).u
+    for (const l of gridLines(back, -10, 10, 5)) expect(3.7 - l.at).toBeCloseTo(l.value, 9)
+    // An axis off the world's counts sheet mm.
+    expect(gridLines({ axis: '+X', offDeg: 3 }, -4, 4, 2).map((l) => [l.at, l.value])).toEqual([[-4, -4], [-2, -2], [0, 0], [2, 2], [4, 4]])
   })
 })

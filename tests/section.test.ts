@@ -15,6 +15,7 @@ import {
 import {
   describeCut,
   frameKey,
+  frameTurnedUp,
   sectionFrameAlong,
   sectionFrameFrom,
   sectionRefName,
@@ -382,5 +383,32 @@ describe('the sketch frame on a plane', () => {
     expect(f.basisU[0]).toBeCloseTo(0, 12)
     expect(f.basisU[1]).toBeCloseTo(1, 12)
     expect(f.basisU[2]).toBeCloseTo(0, 12)
+  })
+})
+
+describe('a picture’s sheet turned up', () => {
+  const close = (a: Vec3, b: Vec3) => a.forEach((x, k) => expect(x).toBeCloseTo(b[k], 12))
+
+  it('puts Z up a side plane, + running right, seen from the side that gives it', () => {
+    // The ZX plane's sketch sheet has u = Z, v = X; Z up makes it CAD's
+    // front view: X right, seen from −Y.
+    const front = frameTurnedUp(sketchFrameOn({ origin: [4, 3, 2], normal: [0, 1, 0] })!, 'z')!
+    close(front.basisU, [1, 0, 0])
+    close(front.basisV, [0, 0, 1])
+    close(front.normal, [0, -1, 0])
+    close(front.origin, [0, 3, 0])
+    // The YZ plane, seen from +X: Y right.
+    const right = frameTurnedUp(sketchFrameOn({ origin: [7, 0, 0], normal: [1, 0, 0] })!, 'z')!
+    close(right.basisU, [0, 1, 0])
+    close(right.basisV, [0, 0, 1])
+    close(right.normal, [1, 0, 0])
+  })
+
+  it('lays the axis into a leaning plane as near as it goes, and refuses one along the normal', () => {
+    const t = Math.PI / 6
+    const lean = frameTurnedUp({ origin: [0, 0, 0], normal: [0, Math.cos(t), Math.sin(t)], basisU: [1, 0, 0], basisV: [0, -Math.sin(t), Math.cos(t)] }, 'z')!
+    close(lean.basisV, [0, -Math.sin(t), Math.cos(t)])
+    close(lean.basisU, [1, 0, 0])
+    expect(frameTurnedUp(sketchFrameOn({ origin: [0, 0, 0], normal: [0, 0, 1] })!, 'z')).toBeNull()
   })
 })

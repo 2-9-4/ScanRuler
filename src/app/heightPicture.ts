@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // A height map as a picture: the grid's cells coloured by the height the
-// scan was first met at, cells where nothing was met left pale, the two
-// axes across ruled in millimetres (world coordinates) at the margins, and
-// a scale beside it — pocket floors, ledges and a tilt read at a glance.
+// scan was first met at — or by the deviation or the relief there — cells
+// with nothing left pale, the two axes across ruled in millimetres (world
+// coordinates, or a plane's own) at the margins, and a scale beside it —
+// pocket floors, ledges and a tilt read at a glance.
 // The drawing needs OffscreenCanvas — a browser.
 
 import { colormapById, rampColor } from '../core/field/colormap'
@@ -23,6 +24,11 @@ export interface HeightPictureInput {
   title: string
   low: number
   high: number
+  /** The colour map, viridis unless given — a deviation is drawn in the
+   *  workspace's. */
+  colormap?: string
+  /** What a pale cell means: "no hit" unless given. */
+  bare?: string
 }
 
 const FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif'
@@ -41,7 +47,7 @@ export async function heightPicturePng(p: HeightPictureInput): Promise<{ bytes: 
   if (!ctx) throw new Error('This browser gave no canvas to draw the height map on.')
   ctx.fillStyle = '#ffffff'
   ctx.fillRect(0, 0, W, H)
-  const map = colormapById('viridis')
+  const map = colormapById(p.colormap ?? 'viridis')
   const rgb: [number, number, number] = [0, 0, 0]
   const span = p.high - p.low || 1
   // Cells: row 0 at the bottom, as +v runs up.
@@ -126,7 +132,7 @@ export async function heightPicturePng(p: HeightPictureInput): Promise<{ bytes: 
   ctx.fillStyle = '#eceef1'
   ctx.fillRect(sx, MARGIN.top + mh + 8, sw, 10)
   ctx.fillStyle = '#4a5260'
-  ctx.fillText('no hit', sx + sw + 4, MARGIN.top + mh + 13)
+  ctx.fillText(p.bare ?? 'no hit', sx + sw + 4, MARGIN.top + mh + 13)
 
   const blob = await canvas.convertToBlob({ type: 'image/png' })
   return { bytes: new Uint8Array(await blob.arrayBuffer()), width: W, height: H }

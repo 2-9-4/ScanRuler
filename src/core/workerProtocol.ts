@@ -19,6 +19,7 @@ import type { CreaseReport, CreaseSetting } from './geometry/crease'
 import type { SeedPlane, SymmetryPlane } from './symmetry'
 import type { AutoAlignResult } from './autoAlign'
 import type { ScanSpot } from './geometry/nearest'
+import type { PlaneRegionReport, Segmentation, SegmentOptions } from './fit/segment'
 
 export type WorkerRequest =
   /** `crease` says whether the scan's sharp edges are to be drawn sharp —
@@ -143,6 +144,12 @@ export type WorkerRequest =
    *  by less than `maxAngleDeg` — a region for a surface fit, see
    *  fit/regionGrow floodByNormal. Capped at `limit` vertices. */
   | { type: 'flood'; requestId: number; seed: number; maxAngleDeg: number; limit?: number }
+  /** What a grown region holds — its area and box, and given the plane's
+   *  normal its normals' spread and whether it is two surfaces. See
+   *  fit/segment planeRegionReport. */
+  | { type: 'plane-region'; requestId: number; vertices: Uint32Array; normal?: Vec3; seed?: number }
+  /** The scan's flat regions, the largest first — see fit/segment. */
+  | { type: 'segment'; requestId: number; options: SegmentOptions }
   /** The scan's mean curvature at every vertex, 1/mm, convex positive, for
    *  colouring the scan by it. See geometry/curvature. */
   | { type: 'curvature'; requestId: number }
@@ -157,8 +164,9 @@ export type WorkerRequest =
    *  one is given, at most `limit` of them — see geometry/query. */
   | { type: 'query'; requestId: number; min: Vec3; max: Vec3; normal?: { dir: Vec3; cosLimit: number }; limit: number }
   /** The first scan surface along a world axis over a grid of rays — see
-   *  geometry/scanQa (firstHits). */
-  | { type: 'heights'; requestId: number; grid: RayGrid }
+   *  geometry/scanQa (firstHits); with `corners`, the triangle each ray met
+   *  and the hit's weights on its corners too (firstHitsAt). */
+  | { type: 'heights'; requestId: number; grid: RayGrid; corners?: boolean }
   /** Open rims and surface noise — see geometry/scanQa. */
   | { type: 'scan-qa'; requestId: number; sample: number; rims: number }
   /** The coordinate system the scan itself suggests — its face directions,
@@ -239,6 +247,8 @@ export type WorkerResponse =
       indices: Uint32Array
       parent: Uint32Array
       spacing: number
+      /** The spacing asked for, before a large reference opened it. */
+      wanted: number
       /** Signed mm per vertex, positive where the reference stands outside
        *  the scan; NaN where no scan is behind it. */
       values: Float32Array
@@ -257,6 +267,8 @@ export type WorkerResponse =
   | { type: 'centroid-ok'; requestId: number; result: MeshCentroid }
   | { type: 'symmetry-ok'; requestId: number; result: SymmetryPlane }
   | { type: 'flood-ok'; requestId: number; vertices: Uint32Array }
+  | { type: 'plane-region-ok'; requestId: number; result: PlaneRegionReport }
+  | { type: 'segment-ok'; requestId: number; result: Segmentation }
   | { type: 'curvature-ok'; requestId: number; values: Float32Array }
   | { type: 'auto-align-ok'; requestId: number; result: AutoAlignResult }
   | { type: 'nearest-ok'; requestId: number; result: ScanSpot }
@@ -264,8 +276,9 @@ export type WorkerResponse =
   /** The vertices kept, with their positions and normals gathered, how many
    *  matched before the limit, and the stride the limit thinned them by. */
   | { type: 'query-ok'; requestId: number; vertices: Uint32Array; positions: Float32Array; normals: Float32Array; matched: number; step: number }
-  /** Per ray, the coordinate of its first hit along the axis, NaN for none. */
-  | { type: 'heights-ok'; requestId: number; values: Float32Array }
+  /** Per ray, the coordinate of its first hit along the axis, NaN for none;
+   *  asked for, the corners and weights of where it landed. */
+  | { type: 'heights-ok'; requestId: number; values: Float32Array; corners?: Uint32Array; weights?: Float32Array }
   | { type: 'scan-qa-ok'; requestId: number; rims: { count: number; total: number; largest: MeshGap[] }; noise: { median: number; p90: number; sampled: number } }
   /** A plugin's answer. */
   | { type: 'plugin-ok'; requestId: number; result: unknown }

@@ -58,8 +58,16 @@ export function scanImport({ clientRef, sceneRef, sources, imports, maps, clearP
     clearPreview()
     // A different scan invalidates the alignment and the map measured under
     // it, and its wall thickness along with them; the reference geometry
-    // itself is still perfectly good. The elements go with the scan they were
-    // measured on, so the map against one of them goes too.
+    // itself is still perfectly good — but for one the app made from the
+    // session's own work, which goes with the work it was made from (the
+    // worker was told so with the scan, by whoever opened it). The elements
+    // go with the scan they were measured on, so the map against one of them
+    // goes too.
+    if (useDeviation.getState().nominalFromSession) {
+      sceneRef.current?.clearNominal()
+      sources.current.reference = null
+      useDeviation.getState().clearNominal()
+    }
     maps.deviation.current = null
     maps.deviationRgb.current = null
     maps.referenceMap.current = null
@@ -115,7 +123,8 @@ export function scanImport({ clientRef, sceneRef, sources, imports, maps, clearP
       const crease = creaseSetting(useStore.getState())
       const prepared = await prepareScan(client, sceneRef.current, file, crease, undefined, read)
       try {
-        await client.commitImport({ scan: prepared.id })
+        // A reference made from the session's work goes with the scan.
+        await client.commitImport({ scan: prepared.id, ...(useDeviation.getState().nominalFromSession ? { nominal: null } : {}) })
         commitScan(prepared)
         const mesh = prepared.mesh
         const creaseWord = mesh.crease.skipped === 'budget' ? ` ${creaseNote(mesh.crease, crease)}` : ''

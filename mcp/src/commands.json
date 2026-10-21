@@ -46,7 +46,7 @@
   {
     "name": "align.datum",
     "title": "Align the part to datums",
-    "description": "A 3-2-1 alignment, as the panel’s alignment box sets it up: primary levels the part — a plane (or 3 points on a face) whose outward normal becomes primaryAxis (default z-, the face the part stands on facing down); secondary turns it — a line, axis or plane (or 2 points along an edge) laid along secondaryAxis (default x+); origin is the zero point — a point, sphere or circle (or 1 point). Each is an element by id or name, or points on the scan in mm. Each datum zeroes the coordinates it owns (a plane the one along its normal, an axis or line the two across it); the origin sets only the coordinates they leave open — with a plane and a line, the one along the line. An origin alone moves the part without turning it, all three coordinates. Everything measured moves with the part. Returns the transform applied — the whole alignment the part carries, when it was aligned before — how many elements moved with it, and with an origin which coordinates it set and where its point now stands (a note when that is off zero). One undo step.",
+    "description": "A 3-2-1 alignment, as the panel’s alignment box sets it up: primary levels the part — a plane (or 3 points on a face) whose outward normal becomes primaryAxis (default z-, the face the part stands on facing down); secondary turns it — a line or an axis (or 2 points along an edge) laid along secondaryAxis (default x+), or a plane, whose outward NORMAL goes on secondaryAxis, not along it (a side wall as secondary with x+ ends up facing x+), turned square to the primary; origin is the zero point — a point, sphere or circle (or 1 point). Each is an element by id or name, or points in mm: points are used as given, not snapped to the scan (an origin point is the zero exactly where it is; scan.nearest puts a point on the surface first). Each datum zeroes the coordinates it owns (a plane the one along its normal, an axis or line the two across it); the origin sets only the coordinates they leave open — with a plane and a line, the one along the line. An origin alone moves the part without turning it, all three coordinates. Everything measured moves with the part. Returns the transform applied — the whole alignment the part carries, when it was aligned before — how many elements moved with it, and with an origin which coordinates it set and where its point now stands (a note when that is off zero). One undo step.",
     "input": {
       "type": "object",
       "properties": {
@@ -178,7 +178,7 @@
             "z+",
             "z-"
           ],
-          "description": "The axis the secondary runs along — default x+."
+          "description": "The axis the secondary runs along — a plane’s normal, for a plane — default x+."
         },
         "origin": {
           "oneOf": [
@@ -332,6 +332,37 @@
     },
     "readOnly": false,
     "returnsFile": false,
+    "returnsImage": false
+  },
+  {
+    "name": "deviation.export",
+    "title": "Export the deviation as data",
+    "description": "The deviation map as a file of readings, for working on it elsewhere: side \"scan\" (the default) a reading per scan vertex — its place in the frame the scan is measured in (what scan.query gives) and its signed distance from the reference part, or from the element deviation.set_target measures against; side \"reference\" a reading per sample of the map on the reference (deviation.settings { on: \"reference\" } — measured if it is not yet), in the reference’s frame, positive where the reference stands outside the scan. format: ply (the default; binary, float x, y, z, deviation and uchar measured), npy (an N × 4 float32 array x, y, z, d, for numpy.load) or csv (x,y,z,d, for a spreadsheet). The distance is NaN (\"nan\" in the CSV) where there is no reading; a reading past the search distance is kept as it is — the map draws it bare and the statistics leave it out, so measured is 0 on it (PLY), and in the others |d| ≤ searchDistance says it counts. Returns the file and the figures to check it by: readings, measured, withinTolerance and withinTolerancePct (of the measured, ± tolerance — on the scan’s side what the deviation state’s stats give; on the reference’s, by reading, where the state gives it by area), tolerance and searchDistance. Changes nothing.",
+    "input": {
+      "type": "object",
+      "properties": {
+        "side": {
+          "type": "string",
+          "enum": [
+            "scan",
+            "reference"
+          ],
+          "description": "The readings: per scan vertex (the default), or per sample on the reference."
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "ply",
+            "npy",
+            "csv"
+          ],
+          "description": "ply (the default), npy or csv."
+        }
+      },
+      "additionalProperties": false
+    },
+    "readOnly": true,
+    "returnsFile": true,
     "returnsImage": false
   },
   {
@@ -572,7 +603,7 @@
   {
     "name": "dimension.add",
     "title": "Add a dimension",
-    "description": "Measure between elements, or a size or tolerance of one, as the panel’s dimension box does. refs are the elements by id or name. Without type, the type follows the elements as clicking them in the viewport does — two spheres or points give their centre distance, two planes their distance, a plane and an axis their distance, and so on. With type, it is one of: dist-point-point (From, To); dist-point-axis (Point, Axis); dist-point-plane (Point, Plane); dist-axis-axis (Axis A, Axis B); dist-axis-plane (Axis, Plane); dist-plane-plane (From, To); angle-axis-axis (Axis A, Axis B); angle-axis-plane (Axis, Plane); angle-plane-plane (Plane A, Plane B); size-diameter (Feature); form-flatness (Plane); form-cylindricity (Cylinder); form-circularity (Circle); form-sphericity (Sphere); orient-parallelism (Feature, Datum); orient-perpendicularity (Feature, Datum); orient-angularity (Feature, Datum); loc-coaxiality (Feature, Datum axis). anchor, for two spheres: center (default), gap or span. limit holds the value to a ceiling or a nominal ± band. Returns the dimension with its value (mm or degrees, finer than the panel shows it), the formatted value the panel shows, and the verdict. One undo step.",
+    "description": "Measure between elements, or a size or tolerance of one, as the panel’s dimension box does. refs are the elements by id or name — a section by its id or name counts as the plane it was cut on. Without type, the type follows the elements as clicking them in the viewport does — two spheres or points give their centre distance, two planes their distance, a plane and an axis their distance, and so on. With type, it is one of: dist-point-point (From, To); dist-point-axis (Point, Axis); dist-point-plane (Point, Plane); dist-axis-axis (Axis A, Axis B); dist-axis-plane (Axis, Plane); dist-plane-plane (From, To); angle-axis-axis (Axis A, Axis B); angle-axis-plane (Axis, Plane); angle-plane-plane (Plane A, Plane B); size-diameter (Feature); form-flatness (Plane); form-cylindricity (Cylinder); form-circularity (Circle); form-sphericity (Sphere); orient-parallelism (Feature, Datum); orient-perpendicularity (Feature, Datum); orient-angularity (Feature, Datum); loc-coaxiality (Feature, Datum axis). anchor, for two spheres: center (default), gap or span. limit holds the value to a ceiling or a nominal ± band. Returns the dimension with its value (mm or degrees, finer than the panel shows it), the formatted value the panel shows, and the verdict. One undo step.",
     "input": {
       "type": "object",
       "properties": {
@@ -1011,7 +1042,7 @@
   {
     "name": "element.fit",
     "title": "Fit an element",
-    "description": "Fit an element on the scan where the panel would take a click: a plane, sphere, cylinder, cone or torus grows its surface from the place given and is best-fitted to it; a point is the place itself; a circle goes through three or more places. `at` is one place, or a list — a feature seen in patches can be seeded on each. A place is { vertex } (a scan vertex), { point: [x, y, z] } (the nearest scan vertex to a point, mm, in the current frame), or { screen } / { candidate } (not available yet). A seed near an edge can land on the wrong surface (a cup’s underside for its inside): say what is sought — side, radius, axis, within — and surfaces that do not match are passed over; a fit that finds none is refused with the radii it saw. Returns the element with its fit and the seed actually used (vertex and point), so a recipe can be replayed on another scan. One undo step.",
+    "description": "Fit an element on the scan where the panel would take a click: a plane, sphere, cylinder, cone or torus grows its surface from the place given and is best-fitted to it; a point is the place itself; a circle goes through three or more places. `at` is one place, or a list — a feature seen in patches can be seeded on each. A place is { vertex } (a scan vertex), { point: [x, y, z] } (the nearest scan vertex to a point, mm, in the current frame), or { screen } / { candidate } (not available yet). A seed near an edge can land on the wrong surface (a cup’s underside for its inside): say what is sought — side, radius, axis, within — and surfaces that do not match are passed over; a fit that finds none is refused with the radii it saw. Returns the element with its fit and the seed actually used (vertex and point), so a recipe can be replayed on another scan; a surface also the region it grew to — region { area (mm²), box } and, a plane’s, normalSpreadDeg (95 % of its normals lie within it) — and a plane a warning when its points look like two surfaces, with region.second naming where the other lies. mark: true leaves the region’s points marked for element.fit_marked { marked: true }. One undo step.",
     "input": {
       "type": "object",
       "properties": {
@@ -1239,6 +1270,10 @@
           "additionalProperties": false,
           "description": "The surface stays inside this box."
         },
+        "mark": {
+          "type": "boolean",
+          "description": "Leave the region the surface grew to marked, for element.fit_marked { marked: true }."
+        },
         "sigma": {
           "type": "integer",
           "enum": [
@@ -1337,7 +1372,7 @@
   {
     "name": "element.fit_marked",
     "title": "Fit an element to a marked surface",
-    "description": "Fit a plane, sphere, cylinder, cone or torus to exactly the scan vertices given — a surface marked by hand in the panel, with no search for the surface. The element keeps the marking as its recipe. Returns the element. One undo step.",
+    "description": "Fit a plane, sphere, cylinder, cone or torus to exactly the scan vertices given — a surface marked by hand in the panel, with no search for the surface — or, with marked: true in place of vertices, to the points the last element.fit { mark: true } or scan.segment { mark } left marked. The element keeps the marking as its recipe. Returns the element. One undo step.",
     "input": {
       "type": "object",
       "properties": {
@@ -1360,6 +1395,10 @@
           },
           "description": "The scan vertices of the surface.",
           "minItems": 3
+        },
+        "marked": {
+          "type": "boolean",
+          "description": "The points left marked, in place of vertices."
         },
         "sigma": {
           "type": "integer",
@@ -1447,8 +1486,7 @@
         }
       },
       "required": [
-        "kind",
-        "vertices"
+        "kind"
       ],
       "additionalProperties": false
     },
@@ -1944,7 +1982,7 @@
   {
     "name": "flat.fit",
     "title": "Fit a 2D element",
-    "description": "Make a 2D element on the sheet as its tool does — kind point, line, circle, arc or spline, by a method of that kind: point: flat-point-pick (pick), flat-point-midpoint (construct), flat-point-intersect (construct), flat-point-center (construct); line: flat-line-pick (pick), flat-line-seed (seed), flat-line-edge (edge); circle: flat-circle-pick (pick), flat-circle-seed (seed), flat-circle-edge (edge); arc: flat-arc-pick (pick), flat-arc-edge (edge); spline: flat-spline-pick (pick). A pick method takes points, the places clicked — each snapped to the nearest detected edge within reach unless snap: false, and the answer’s picks say where each landed and on which chain. A seed method takes one place on a detected edge and grows along it; an edge method a place on an edge, taken whole. The edge methods also take chains — whole edge chains by number (flat.edges, flat.render) — and box, every edge point inside it (of those chains only, with both); the kind’s edge method is the default then. A construct method takes refs, other 2D elements by id or name. Returns the element with its fit. One undo step.",
+    "description": "Make a 2D element on the sheet as its tool does — kind point, line, circle, arc or spline, by a method of that kind: point: flat-point-pick (pick), flat-point-midpoint (construct), flat-point-intersect (construct), flat-point-center (construct); line: flat-line-pick (pick), flat-line-seed (seed), flat-line-edge (edge); circle: flat-circle-pick (pick), flat-circle-seed (seed), flat-circle-edge (edge), flat-circle-centers (construct); arc: flat-arc-pick (pick), flat-arc-edge (edge); spline: flat-spline-pick (pick). A pick method takes points, the places clicked — each snapped to the nearest detected edge within reach unless snap: false, and the answer’s picks say where each landed and on which chain. A seed method takes one place on a detected edge and grows along it; an edge method a place on an edge, taken whole. The edge methods also take chains — whole edge chains by number (flat.edges, flat.render) — and box, every edge point inside it (of those chains only, with both); the kind’s edge method is the default then. A construct method takes refs, other 2D elements by id or name. Returns the element with its fit. One undo step.",
     "input": {
       "type": "object",
       "properties": {
@@ -2805,7 +2843,7 @@
   {
     "name": "scan.heightmap",
     "title": "Map the scan’s heights",
-    "description": "Where the scan is first met looking along an axis, over a grid of cells: pocket floors, ledges, a step's height, a face's tilt in one call. axis is the way looked: -z (the default) looks down from above and gives the top surface's z; +z looks up from below and gives the underside's; ±x, ±y likewise. box: the part looked at (the scan's box by default); rays start at its face and stop at the far one. Cells lie on the two other axes in order — x, y for z; y, z for x; x, z for y — as u and v. cell: mm (by default a round size that makes 40 cells on the longer side; widened to keep 1600 cells at most). Returns along, across, cell, origin [u0, v0] (the grid's low corner), cols, rows and grid: rows of heights (mm, 0.01) from the low v up, null where nothing is met — grid[r][c] stands at u0 + (c + ½)·cell, v0 + (r + ½)·cell — with min, max and hit (cells met). picture: true adds the map coloured by height with world coordinates in the margins and a scale. Changes nothing.",
+    "description": "Where the scan is first met looking along an axis, or square onto a plane, over a grid of cells: pocket floors, ledges, a step's height, a face's tilt, a pad's tiers, an icon on a key in one call. axis is the way looked: -z (the default) looks down from above and gives the top surface's z; +z looks up from below and gives the underside's; ±x, ±y likewise. Cells lie on the two other axes in order — x, y for z; y, z for x; x, z for y — as u and v. plane, in place of axis: a plane element (id or name; its normal turned to the side the scan is not, so it looks at the face it was fitted on), a coordinate plane \"XY\", \"YZ\", \"ZX\", or any other — a face of a model, say — as { origin, normal, u? }; the map then looks down the normal onto it, height is the distance from the plane along the normal, and u, v are the plane's own, laid as a sketch on that plane has them (section.render { plane } draws the same sheet) — u seeds its direction; flip turns the plane over. The answer's plane gives its frame in world: a cell's point is origin + u·U + v·V + height·normal. box: the part looked at, the scan's box by default; rays start at its face and stop at the far one. With plane, box is in the plane's frame: min and max are [u, v, height], and by default it takes in the whole scan. of: height (the default); deviation — the scan's signed deviation where each ray lands (the map deviation.align or deviation.set_target measured, read off the triangle met), null where the map has no reading within its search distance; relief — the height less the surface round it (at each cell a plane fitted to its neighbours, weighed by a Gaussian smooth mm wide, three cells by default; make it about the width of what is looked for): icons, grooves, lettering and parting lines stand out of a face that curves or leans, positive proud and negative sunk. cell: mm (by default a round size that makes 40 cells on the longer side; widened to keep 1600 cells at most — and 160 and 25600 when the numbers are not returned). Returns along, across, cell, origin [u0, v0] (the grid's low corner), cols, rows and grid: rows of values (mm; heights to 0.01, deviation and relief to 0.001) from the low v up, null where there is none — grid[r][c] stands at u0 + (c + ½)·cell, v0 + (r + ½)·cell — with min, max, hit (cells met) and valued (cells with a value). levels: true returns, in place of the grid, the values gathered into levels — a pad's tiers, a pocket's floor, the face round them — the largest first (12 at most): each its height (the median), sigma, range, cells, area (mm²), sharePct of the cells with a value, and box ([u, v] min and max); two levels lie at least gap apart (mm; three times the cell-to-cell noise by default, 0.02 at least), and unassigned counts the cells in none (walls, edges). grid: true keeps the grid as well, false leaves it out and returns the picture. picture: true adds the map coloured by its values with coordinates in the margins and a scale (a deviation in the workspace's colour map over its range); needs the browser. Changes nothing.",
     "input": {
       "type": "object",
       "properties": {
@@ -2817,7 +2855,7 @@
               "items": {
                 "type": "number"
               },
-              "description": "The lowest corner, mm.",
+              "description": "The lowest corner, mm — [u, v, height] with plane.",
               "minItems": 3,
               "maxItems": 3
             },
@@ -2826,7 +2864,7 @@
               "items": {
                 "type": "number"
               },
-              "description": "The highest corner, mm.",
+              "description": "The highest corner, mm — [u, v, height] with plane.",
               "minItems": 3,
               "maxItems": 3
             }
@@ -2836,7 +2874,7 @@
             "max"
           ],
           "additionalProperties": false,
-          "description": "The part looked at; the scan’s box by default."
+          "description": "The part looked at; the scan’s box by default. In the plane’s frame with plane."
         },
         "axis": {
           "type": "string",
@@ -2850,9 +2888,97 @@
           ],
           "description": "The way looked: -z (the default) from above, +z from below, and so on."
         },
+        "plane": {
+          "oneOf": [
+            {
+              "oneOf": [
+                {
+                  "type": "integer",
+                  "description": "The element’s id.",
+                  "minimum": 1
+                },
+                {
+                  "type": "string",
+                  "description": "The element’s name, as the list shows it — \"Sphere 1\".",
+                  "minLength": 1
+                }
+              ],
+              "description": "A plane element, or a coordinate plane \"XY\", \"YZ\", \"ZX\"."
+            },
+            {
+              "type": "object",
+              "properties": {
+                "origin": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "description": "A point on the plane, mm.",
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                "normal": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "description": "Its normal: the side looked from.",
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                "u": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "description": "A direction for u, flattened into the plane; a sketch’s by default.",
+                  "minItems": 3,
+                  "maxItems": 3
+                }
+              },
+              "required": [
+                "origin",
+                "normal"
+              ],
+              "additionalProperties": false
+            }
+          ],
+          "description": "Look square onto this plane instead of along an axis: heights along its normal, cells in its own u, v."
+        },
+        "flip": {
+          "type": "boolean",
+          "description": "With plane: look from its other side."
+        },
+        "of": {
+          "type": "string",
+          "enum": [
+            "height",
+            "deviation",
+            "relief"
+          ],
+          "description": "What the cells hold: height (the default), deviation (the map’s, where the ray lands) or relief (height less the surface round it)."
+        },
+        "smooth": {
+          "type": "number",
+          "description": "relief: the smoothing’s width (a Gaussian’s sigma), mm; three cells by default.",
+          "exclusiveMinimum": 0
+        },
         "cell": {
           "type": "number",
           "description": "The cell’s side, mm.",
+          "exclusiveMinimum": 0
+        },
+        "grid": {
+          "type": "boolean",
+          "description": "The grid of numbers: returned unless levels is asked for; false returns the picture alone."
+        },
+        "levels": {
+          "type": "boolean",
+          "description": "Gather the values into levels with their areas, the largest first, in place of the grid."
+        },
+        "gap": {
+          "type": "number",
+          "description": "levels: the least gap between two levels, mm.",
           "exclusiveMinimum": 0
         },
         "picture": {
@@ -2955,7 +3081,7 @@
   {
     "name": "scan.open",
     "title": "Open a scan",
-    "description": "Open a mesh as the scan to measure — STL, PLY or OBJ — in place of the one there is; everything measured on the old one goes with it, so it refuses while the session holds measurements unless discard is true. Returns the scan: name, units, vertex and triangle counts, its bounding box (min and max corners), the box’s centre and its diagonal (size), in millimetres. Not undoable: a new scan starts a new history.",
+    "description": "Open a mesh as the scan to measure — STL, PLY or OBJ — in place of the one there is; everything measured on the old one goes with it, so it refuses while the session holds measurements unless discard is true — the refusal names what the session holds. A reference part opened from a file stays, its alignment and maps gone (referenceKept names it); one the app made from the session’s own work goes with that work (referenceDropped). Returns the scan: name, units, vertex and triangle counts, its bounding box (min and max corners), the box’s centre and its diagonal (size), in millimetres. Not undoable: a new scan starts a new history.",
     "input": {
       "type": "object",
       "properties": {
@@ -3131,6 +3257,98 @@
     "returnsImage": false
   },
   {
+    "name": "scan.segment",
+    "title": "Find the scan’s flat regions",
+    "description": "The scan’s planar regions, found all at once: grown from the flattest places outward, a vertex joining while its normal lies within maxDeg of the region’s plane (15° by default) and it lies inside the region’s noise band; each vertex goes to one region; a region rougher than maxRms off its plane (mm, 0.05 by default) or smaller than minArea (mm², by default a square 2 % of the scan’s diagonal on a side) is given back. box: only the scan inside it. The largest first, at most limit (20); each with id (1 is the largest), normal (out of the part), point (its centroid, on the plane), sigma (RMS off the plane, mm), area (mm²), box, vertices (a count) and neighbours: the regions it meets across an edge or its rounding, each { id, deg } with the angle between their normals. symmetric: a plane element, or \"XY\", \"YZ\", \"ZX\" — each region gets mirror { id, deg, mm }: its twin across that plane (\"self\" when it straddles it), how far their planes differ in angle once mirrored and in place. mark: a region’s id leaves its points marked — element.fit_marked { marked: true } fits to them; with the same options it reuses the last run. Returns found (regions in all), considered and claimed (vertices looked at and held by regions). Changes nothing.",
+    "input": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "plane"
+          ],
+          "description": "What to find; plane, the default and for now the only one."
+        },
+        "box": {
+          "type": "object",
+          "properties": {
+            "min": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "description": "The lowest corner, mm.",
+              "minItems": 3,
+              "maxItems": 3
+            },
+            "max": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "description": "The highest corner, mm.",
+              "minItems": 3,
+              "maxItems": 3
+            }
+          },
+          "required": [
+            "min",
+            "max"
+          ],
+          "additionalProperties": false,
+          "description": "Only the scan inside this box."
+        },
+        "minArea": {
+          "type": "number",
+          "description": "mm².",
+          "minimum": 0
+        },
+        "maxRms": {
+          "type": "number",
+          "description": "mm.",
+          "exclusiveMinimum": 0
+        },
+        "maxDeg": {
+          "type": "number",
+          "description": "Degrees.",
+          "exclusiveMinimum": 0,
+          "maximum": 60
+        },
+        "limit": {
+          "type": "integer",
+          "description": "How many regions are listed; 20 by default.",
+          "minimum": 1,
+          "maximum": 200
+        },
+        "symmetric": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "description": "The element’s id.",
+              "minimum": 1
+            },
+            {
+              "type": "string",
+              "description": "The element’s name, as the list shows it — \"Sphere 1\".",
+              "minLength": 1
+            }
+          ],
+          "description": "Pair regions mirrored across this plane: a plane element, or \"XY\", \"YZ\", \"ZX\"."
+        },
+        "mark": {
+          "type": "integer",
+          "description": "Leave this region’s points marked, by its id.",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "readOnly": true,
+    "returnsFile": false,
+    "returnsImage": false
+  },
+  {
     "name": "section.cut",
     "title": "Cut a section",
     "description": "Cut the scan with a plane and keep the cut as a section, measured in the 2D workspace (flat) — where it is put on the sheet. across is what the plane is taken across: an element with a direction (a plane, cylinder, cone, line or circle) by id or name, or a coordinate plane \"XY\", \"YZ\" or \"ZX\", which is laid through the part’s centre. offset slides the plane along its normal, mm — from the element, or for a coordinate plane the coordinate itself. Returns the section: its plane and how many chains the cut has. One undo step.",
@@ -3231,7 +3449,7 @@
   {
     "name": "section.render",
     "title": "Picture a section",
-    "description": "A picture of a section as a PNG, for checking a slice against what was built on it: the scan’s cut as points on the section’s sheet ([u, v] mm as section.get gives them, +u right, +v up), a grid ruled in millimetres with its values at the top and left margins — world coordinates where the sheet’s u or v runs along a world axis, sheet mm otherwise — the world direction across and up named in the margins (axes in the answer: per sheet axis the world axis it runs nearest, offDeg and, along it, at0, the world coordinate at the sheet’s 0), a scale bar, and over it what the workspaces’ layers draw — a model’s cut by the section’s plane as outlines, a sketch’s pieces on the section with their ids. Every scan point within ten tolerances of an outline is read against it: on it within ± tolerance (grey), or off it (red), outside the outline or inside it; points with no outline near are pale. The answer gives gap: points (the cut’s), read, over (red), outside and inside (of a closed outline — inside is scan within the model’s material, so the model stands proud there; outside, the model is short), max and rms (mm) and overBox (the sheet box round the red, to frame the next look); layers: each layer drawn by key, its outlines and pieces counted; map: picture pixel (column c, row r from the top) is the sheet place [left + c·unitsPerPx, top − r·unitsPerPx]. section names a section; or plane { origin, normal } cuts the scan there for the picture alone — no section is made, and the sheet is a sketch’s on that plane: zero at the world origin’s foot, u along the coordinate axis next round from the normal (YZ: u = Y, v = Z; ZX: u = Z, v = X; XY: u = X, v = Y), so on a coordinate plane [u, v] are world coordinates (the answer’s sheet gives them). A section’s own sheet counts from the part’s centre instead. offsets: 2 to 9 cuts in one picture — the section’s or plane’s slid along its normal by each, mm — side by side, each tile labelled with its offset, all on one frame and scale (the square round every cut unless frame is given); the answer gives per tile its offset, origin and gap, and map.tile and map.cols (map holds for each tile from its own corner). frame { at: [u, v], size } looks at a square of the sheet; everything by default. tolerance: the Deviation workspace’s by default. layers: the keys to draw; every one by default, [] for the scan alone. 800 px on the long side by default, up to 2048. Needs the browser. Changes nothing.",
+    "description": "A picture of a section as a PNG, for checking a slice against what was built on it: the scan’s cut as points on the section’s sheet ([u, v] mm as section.get gives them, +u right, +v up), a grid ruled in millimetres with its values at the top and left margins — world coordinates where the sheet’s u or v runs along a world axis, sheet mm otherwise — the world direction across and up named in the margins (axes in the answer: per sheet axis the world axis it runs nearest, offDeg and, along it, at0, the world coordinate at the sheet’s 0), a scale bar, and over it what the workspaces’ layers draw — a model’s cut by the section’s plane as outlines, a sketch’s pieces with their ids where the sketch lies in that plane, whatever it was drawn on. Every scan point within ten tolerances of an outline is read against it: on it within ± tolerance (grey), or off it (red), outside the outline or inside it; points with no outline near are pale. The answer gives gap: points (the cut’s), read, over (red), outside and inside (of a closed outline — inside is scan within the model’s material, so the model stands proud there; outside, the model is short), max and rms (mm) and overBox (the sheet box round the red, to frame the next look); layers: each layer drawn by key, its outlines and pieces counted; map: picture pixel (column c, row r from the top) is the sheet place [left + c·unitsPerPx, top − r·unitsPerPx]. section names a section; or plane { origin, normal } cuts the scan there for the picture alone — no section is made, and the sheet is a sketch’s on that plane: zero at the world origin’s foot, u along the coordinate axis next round from the normal (YZ: u = Y, v = Z; ZX: u = Z, v = X; XY: u = X, v = Y), so on a coordinate plane [u, v] are world coordinates (the answer’s sheet gives them). A section’s own sheet counts from the part’s centre instead. up: \"x\", \"y\" or \"z\" turns the picture’s sheet in its plane so that world axis runs up it — a side view with Z up: v is that axis laid into the plane, u the direction square to it running + to the right, the plane seen from whichever side gives that (the ZX plane with up \"z\": u = X, v = Z, seen from −Y, as a front view; a section’s sheet keeps its zero) — and everything the picture says in [u, v] (frame, map, overBox, axes) is then on that turned sheet, which the answer gives as sheet. Without up the sheet lies as above. offsets: 2 to 9 cuts in one picture — the section’s or plane’s slid along its normal by each, mm — side by side, each tile labelled with its offset, all on one frame and scale (the square round every cut unless frame is given); the answer gives per tile its offset, origin and gap, and map.tile and map.cols (map holds for each tile from its own corner). frame { at: [u, v], size } looks at a square of the sheet; everything by default. tolerance: the Deviation workspace’s by default. layers: the keys to draw; every one by default, [] for the scan alone. 800 px on the long side by default, up to 2048. Needs the browser. Changes nothing.",
     "input": {
       "type": "object",
       "properties": {
@@ -3287,6 +3505,15 @@
           "description": "Several parallel cuts in one picture: mm along the normal from the section or plane.",
           "minItems": 2,
           "maxItems": 9
+        },
+        "up": {
+          "type": "string",
+          "enum": [
+            "x",
+            "y",
+            "z"
+          ],
+          "description": "The world axis that runs up the picture; the sheet as it lies by default."
         },
         "frame": {
           "type": "object",
@@ -3366,7 +3593,7 @@
   {
     "name": "session.state",
     "title": "Read the session",
-    "description": "The whole session as JSON: the app and its plugins, the workspace on screen, whether it is busy, the scan (file, units, vertex and triangle counts, bounding box, centre, size, applied alignment), every element with its fit, every dimension with its value, limit and verdict, the sections, what is open in the panels, the deviation, wall thickness and 2D Measure state with their statistics, the guided hint for the next step, and the undo history. Lengths in millimetres, angles in degrees. Read it before acting and after.",
+    "description": "The whole session as JSON: the app and its plugins, the project (its name; unsaved — whether it has changes not saved since it was last saved or opened, as the top bar’s \"Unsaved changes\" says, null with no page; holds — the work a new scan or project would replace, counted by what it is), the workspace on screen, whether it is busy, the scan (file, units, vertex and triangle counts, bounding box, centre, size, applied alignment), every element with its fit, every dimension with its value, limit and verdict, the sections, what is open in the panels, the deviation, wall thickness and 2D Measure state with their statistics, the guided hint for the next step, and the undo history. Lengths in millimetres, angles in degrees. Read it before acting and after.",
     "input": {
       "type": "object",
       "properties": {},
@@ -3511,7 +3738,7 @@
   {
     "name": "view.render",
     "title": "Picture the view",
-    "description": "A picture of the 3D view as a PNG — what the person sees in the viewport, without the HTML labels over it (dimension values, names). Give view and/or fit to turn the view first, as view.set does, or frame to frame a box or a place. show puts the scan, the reference, the sections, the elements or the labels on screen or away for the picture alone, by key — { scan: false } pictures what was built on the scan on its own; view.set lists the keys. section cuts everything open for the picture alone, as view.set does. width and height in pixels: the viewport’s own shape at most 800 pixels on its long side by default, enough to check a step by — ask for more (up to 2048) for a picture to keep; one of them alone keeps the viewport’s shape. views: two to six standard views in one picture, side by side, each fitted and named in its corner — iso, top, bottom and a side as one picture to look at instead of four (width and height are then the whole sheet’s; 1200 px across by default); the view stays at the last. In the Deviation workspace the answer says which map the picture shows — map: { on: \"scan\" | \"reference\", colormap, range } — or map: null and mapWhy, why none is painted (the map switch off, no map measured, the surface it is on put away) and what puts it there. With the scan shown, a reference shown with it is drawn over it as a ghost and dulls the colours (mapNote says so): show: { reference: false } gives the clean map. Waits for the session to settle first — a map being measured, on the scan or on the reference, too. Needs the viewport.",
+    "description": "A picture of the 3D view as a PNG — what the person sees in the viewport, without the HTML labels over it (dimension values, names), and lit from a little above and left of the camera with more fill than the screen, so a face square to the camera keeps its shading. Give view and/or fit to turn the view first, as view.set does, or frame to frame a box or a place. show puts the scan, the reference, the sections, the elements or the labels — or what a workspace adds — on screen or away for the picture alone, by key, and back as they were after it — { scan: false } pictures what was built on the scan on its own; view.set lists the keys. section cuts everything open for the picture alone, as view.set does. width and height in pixels: the viewport’s own shape at most 800 pixels on its long side by default, enough to check a step by — ask for more (up to 2048) for a picture to keep; one of them alone keeps the viewport’s shape. views: two to six standard views in one picture, side by side, each fitted and named in its corner — iso, top, bottom and a side as one picture to look at instead of four (width and height are then the whole sheet’s; 1200 px across by default); the view stays at the last. In the Deviation workspace the answer says which map the picture shows — map: { on: \"scan\" | \"reference\", colormap, range } — or map: null and mapWhy, why none is painted (the map switch off, no map measured, the surface it is on put away) and what puts it there. With the scan shown, a reference shown with it is drawn over it as a ghost and dulls the colours (mapNote says so): show: { reference: false } gives the clean map. Waits for the session to settle first — a map being measured, on the scan or on the reference, too. Needs the viewport.",
     "input": {
       "type": "object",
       "properties": {

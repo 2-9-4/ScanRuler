@@ -60,13 +60,32 @@ export function sheetAxes(origin: readonly number[], basisU: readonly number[], 
   return { u: one(basisU), v: one(basisV) }
 }
 
-/** The value a grid line at `t` on a sheet's axis is labelled with: the
- *  world coordinate there when the axis runs along a world axis, the
- *  sheet's own otherwise. */
+/** The value a place `t` on a sheet's axis is labelled with: the world
+ *  coordinate there when the axis runs along a world axis, the sheet's own
+ *  otherwise — and back. */
 function tickValue(axis: SheetAxis | undefined, t: number): number {
-  const v = !axis || axis.at0 === undefined ? t : axis.at0 + (axis.axis.startsWith('−') ? -t : t)
-  // A hair off zero, or −0, prints as −0.
-  return Math.abs(v) < 1e-9 ? 0 : v
+  return !axis || axis.at0 === undefined ? t : axis.at0 + (axis.axis.startsWith('−') ? -t : t)
+}
+
+function tickPlace(axis: SheetAxis | undefined, value: number): number {
+  return !axis || axis.at0 === undefined ? value : (axis.axis.startsWith('−') ? -1 : 1) * (value - axis.at0)
+}
+
+/** The grid's lines across a stretch of a sheet's axis, `from` to `to`:
+ *  one at every round value of what they are labelled with — the world
+ *  coordinate, where the axis runs along a world axis, so the lines fall
+ *  on round world values on a section's sheet too, whose 0 lies at the
+ *  part's centre — each with its place on the sheet (at) and its value. */
+export function gridLines(axis: SheetAxis | undefined, from: number, to: number, step: number): { at: number; value: number }[] {
+  const a = tickValue(axis, from)
+  const b = tickValue(axis, to)
+  const out: { at: number; value: number }[] = []
+  for (let k = Math.ceil(Math.min(a, b) / step - 1e-9); k * step <= Math.max(a, b) + 1e-9 * step; k++) {
+    // A hair off zero, or −0, would print as −0.
+    const value = k === 0 ? 0 : k * step
+    out.push({ at: tickPlace(axis, value), value })
+  }
+  return out
 }
 
 /** How a scan point reads against the outlines: on them within the
@@ -233,6 +252,21 @@ const OVER = '#e0301e'
 const OUTLINE = '#1f4fa8'
 const PIECE = '#c47a12'
 
+/** Text broken into lines at its spaces, each no wider than `width`. */
+function wrapText(ctx: Ctx, text: string, width: number): string[] {
+  const lines: string[] = []
+  let line = ''
+  for (const word of text.split(' ')) {
+    const longer = line ? `${line} ${word}` : word
+    if (line && ctx.measureText(longer).width > width) {
+      lines.push(line)
+      line = word
+    } else line = longer
+  }
+  if (line) lines.push(line)
+  return lines
+}
+
 /** The picture drawn into `ctx`, a canvas the frame's size. */
 export function drawSectionPicture(ctx: Ctx, input: SectionPictureInput, model: SectionPictureModel, title: string): void {
   const { left, top, unitsPerPx: u, width: W, height: H } = model.frame
@@ -242,43 +276,74 @@ export function drawSectionPicture(ctx: Ctx, input: SectionPictureInput, model: 
   ctx.fillStyle = '#ffffff'
   ctx.fillRect(0, 0, W, H)
 
-  // The grid, its values at the top and left margins.
+  // Laid out first, so the margins' values keep clear of them: the title
+  // with the reading at the top right, broken into lines to fit — a tile
+  // of several is narrow — and the scale bar at the bottom left.
+  const g = model.gap
+  const heading = `${title} — ±${input.tolerance} mm: ${g.over} of ${g.read} points over (red)${g.over > 0 ? `, up to ${g.max.toFixed(3)} mm` : ''}`
+  ctx.font = `${fontPx}px ${FONT}`
+  const head = wrapText(ctx, heading, W - 24)
+  const headW = Math.max(...head.map((l) => ctx.measureText(l).width))
+  const headH = head.length * (fontPx + 4) + 6
   const step = pictureGridStep(model.frame)
+  const bx = 14
+  const by = H - 14
+  const barLabel = `${step} mm`
+  const barW = Math.max(step / u, ctx.measureText(barLabel).width)
+  const barTop = by - fontPx - 9
+  // The top margin's values: under the title where it reaches across most
+  // of the picture, else along the top, none hidden under the title.
+  const headLeft = W - headW - 16
+  const wideHead = headLeft < W / 2
+  const rowY = wideHead ? headH + 4 : 2
+
+  // The grid on round values of what it is labelled with, the values at
+  // the top and left margins — none under the scale bar, nor in the top
+  // row's way.
   ctx.lineWidth = 1
   ctx.font = `${fontPx - 1}px ${FONT}`
   ctx.fillStyle = '#4a5260'
   const decimals = Math.max(0, -Math.floor(Math.log10(step) + 1e-9))
-  for (let k = Math.ceil(left / step); k * step <= left + W * u; k++) {
-    const x = Math.round(X(k * step)) + 0.5
-    ctx.strokeStyle = k === 0 ? GRID_ZERO : GRID
+  for (const { at, value } of gridLines(input.axes?.u, left, left + W * u, step)) {
+    const x = Math.round(X(at)) + 0.5
+    ctx.strokeStyle = value === 0 ? GRID_ZERO : GRID
     ctx.beginPath()
     ctx.moveTo(x, 0)
     ctx.lineTo(x, H)
     ctx.stroke()
+    const text = value.toFixed(decimals)
+    if (!wideHead && x + ctx.measureText(text).width / 2 > headLeft - 2) continue
     ctx.textAlign = 'center'
     ctx.textBaseline = 'top'
-    ctx.fillText(tickValue(input.axes?.u, k * step).toFixed(decimals), x, 2)
+    ctx.fillText(text, x, rowY)
   }
-  for (let k = Math.ceil((top - H * u) / step); k * step <= top; k++) {
-    const y = Math.round(Y(k * step)) + 0.5
-    ctx.strokeStyle = k === 0 ? GRID_ZERO : GRID
+  for (const { at, value } of gridLines(input.axes?.v, top - H * u, top, step)) {
+    const y = Math.round(Y(at)) + 0.5
+    ctx.strokeStyle = value === 0 ? GRID_ZERO : GRID
     ctx.beginPath()
     ctx.moveTo(0, y)
     ctx.lineTo(W, y)
     ctx.stroke()
+    if (y < rowY + fontPx + 6 || y > barTop - fontPx / 2 - 2) continue
     ctx.textAlign = 'left'
     ctx.textBaseline = 'middle'
-    ctx.fillText(tickValue(input.axes?.v, k * step).toFixed(decimals), 2, y)
+    ctx.fillText(value.toFixed(decimals), 2, y)
   }
 
   // Which world direction runs across and up, in the margins: the grid's
-  // values are that world coordinate where the sheet runs along it.
+  // values are that world coordinate where the sheet runs along it. Up
+  // goes under the title where the title reaches across to it, across
+  // above the scale bar where the two would meet.
   if (input.axes) {
     const name = (a: SheetAxis) => (a.offDeg === 0 ? `${a.axis[1]} (world)` : `≈ ${a.axis}, ${a.offDeg}° off — sheet mm`)
     const across = `→ ${input.axes.u.offDeg === 0 ? input.axes.u.axis : name(input.axes.u)}${input.axes.u.offDeg === 0 ? ` — values are ${input.axes.u.axis[1]}` : ''}`
     const up = `↑ ${input.axes.v.offDeg === 0 ? input.axes.v.axis : name(input.axes.v)}${input.axes.v.offDeg === 0 ? ` — values are ${input.axes.v.axis[1]}` : ''}`
     ctx.font = `bold ${fontPx}px ${FONT}`
-    for (const [text, x, y, align] of [[across, W - 8, H - 8, 'right'], [up, 8 * fontPx, 2 * fontPx + 12, 'left']] as const) {
+    const upX = 8 * fontPx
+    const upY = wideHead ? rowY + 2 * fontPx + 10 : upX + ctx.measureText(up).width + 8 > headLeft ? headH + fontPx + 10 : 2 * fontPx + 12
+    const acrossW = ctx.measureText(across).width
+    const acrossY = W - 8 - acrossW - 4 < bx + barW + 8 ? barTop - 6 : H - 8
+    for (const [text, x, y, align] of [[across, W - 8, acrossY, 'right'], [up, upX, upY, 'left']] as const) {
       const w = ctx.measureText(text).width
       ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'
       ctx.fillRect(align === 'right' ? x - w - 4 : x - 4, y - fontPx - 2, w + 8, fontPx + 6)
@@ -335,25 +400,21 @@ export function drawSectionPicture(ctx: Ctx, input: SectionPictureInput, model: 
     ctx.lineWidth = 1.5
   }
 
-  // A scale bar at the bottom left, and the title with the reading.
-  const bar = pictureGridStep(model.frame)
-  const bx = 14
-  const by = H - 14
-  ctx.fillStyle = '#20252c'
-  ctx.fillRect(bx, by - 3, bar / u, 3)
+  // The scale bar on a ground of its own, and the title.
   ctx.font = `${fontPx}px ${FONT}`
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'
+  ctx.fillRect(bx - 4, barTop, barW + 8, by + 3 - barTop)
+  ctx.fillStyle = '#20252c'
+  ctx.fillRect(bx, by - 3, step / u, 3)
   ctx.textAlign = 'left'
   ctx.textBaseline = 'bottom'
-  ctx.fillText(`${bar} mm`, bx, by - 5)
-  const g = model.gap
-  const line = `${title} — ±${input.tolerance} mm: ${g.over} of ${g.read} points over (red)${g.over > 0 ? `, up to ${g.max.toFixed(3)} mm` : ''}`
+  ctx.fillText(barLabel, bx, by - 5)
   ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'
-  const w = ctx.measureText(line).width
-  ctx.fillRect(W - w - 16, 2, w + 12, fontPx + 8)
+  ctx.fillRect(headLeft, 2, headW + 12, headH)
   ctx.fillStyle = '#20252c'
   ctx.textAlign = 'right'
   ctx.textBaseline = 'top'
-  ctx.fillText(line, W - 8, 6)
+  head.forEach((l, i) => ctx.fillText(l, W - 8, 6 + i * (fontPx + 4)))
 }
 
 /** The point halfway along a polyline. */

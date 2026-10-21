@@ -43,6 +43,7 @@ import {
   useStore,
   type SelectMode,
 } from './state/store'
+import { dimensionRefsOf } from './state/sectionModel'
 import type { GripSide, SceneManager, PickHit } from './viewer/SceneManager'
 import { isCoreSide } from './viewer/extendGrips'
 import { schemeById } from './viewer/navSchemes'
@@ -323,7 +324,7 @@ export default function App() {
     imports,
     maps,
     openScan: (file, units) => hostVerbs.current!.openScan(file, units),
-    openReference: (file, units) => hostVerbs.current!.openReference(file, units),
+    openReference: (file, units, options) => hostVerbs.current!.openReference(file, units, options),
     runFit: (...args) => hostVerbs.current!.runFit(...args),
     runDeviation: () => hostVerbs.current!.runDeviation(),
     runThickness: () => hostVerbs.current!.runThickness(),
@@ -772,6 +773,11 @@ export default function App() {
   const handleElementPick = (id: number, clientX = 0, clientY = 0) => {
     if (commandRunning()) return
     const store = useStore.getState()
+    // A section's cut, clicked while a dimension takes it as a plane.
+    if (store.dimDraft && !store.draft && store.sections.some((sec) => sec.id === id)) {
+      store.selectDimensionElement(id)
+      return
+    }
     const el = store.elements.find((e) => e.id === id)
     if (!el?.fit) return
     // A plugin's workspace takes the click as it will.
@@ -1143,6 +1149,7 @@ export default function App() {
   // Everything the scene is told after a render lives in useSceneSync; the
   // subscriptions here are the ones the JSX below still reads itself.
   const elements = useStore((s) => s.elements)
+  const storeSections = useStore((s) => s.sections)
   const draft = useStore((s) => s.draft)
   const dimDraft = useStore((s) => s.dimDraft)
   const alignDraft = useStore((s) => s.alignDraft)
@@ -1321,7 +1328,7 @@ export default function App() {
     const text = buildSummary(
       store.fileName ?? '',
       store.elements,
-      evaluateDimensions(store.dimensions, store.elements, surfaceSource),
+      evaluateDimensions(store.dimensions, dimensionRefsOf(store.elements, store.sections), surfaceSource),
     )
     void navigator.clipboard?.writeText(text)
   }
@@ -1337,7 +1344,7 @@ export default function App() {
   const fileName = useStore((s) => s.fileName)
   const vertexCountLoaded = useStore((s) => s.vertexCount > 0)
   const draftMode = draft ? creationMethod(draft.kind, draft.method).mode : null
-  const openSlotHint = openSlotHintOf({ draft, draftMode, sectionDraft, alignDraft, dimDraft, elements })
+  const openSlotHint = openSlotHintOf({ draft, draftMode, sectionDraft, alignDraft, dimDraft, elements, sections: storeSections })
   const markCount = useMark((s) => s.count)
   const editingDraft = draft?.editId !== undefined
   const paintHint = paintHintOf({ draft, painting, markGesture, markCount, editingDraft })

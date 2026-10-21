@@ -180,7 +180,7 @@ export function evalSpline(fit: FlatSplineFit, k: number, u: number): Vec2 {
 }
 
 /** The derivative on segment k with respect to u. */
-function evalSplineDerivative(fit: FlatSplineFit, k: number, u: number): Vec2 {
+export function evalSplineDerivative(fit: FlatSplineFit, k: number, u: number): Vec2 {
   const n = fit.points.length
   const p0 = fit.points[k]
   const p1 = fit.points[(k + 1) % n]

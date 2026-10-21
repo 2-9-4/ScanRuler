@@ -381,6 +381,16 @@ describe('sections', () => {
     expect(sheet.origin.map((v) => v + 0)).toEqual([0, 3, 0])
     expect(sheet.basisU).toEqual([0, 0, 1])
     expect(sheet.basisV.map((v) => v + 0)).toEqual([1, 0, 0])
+     // Turned Z up for a side view: X across and Z up, still world
+    // coordinates, the scan's cut laid on the turned sheet.
+    const up = await sheetThrough([5, 3, 2], [0, 1, 0], 'Cut', 'z')
+    expect(up.sheet.basisU.map((v) => v + 0)).toEqual([1, 0, 0])
+    expect(up.sheet.basisV.map((v) => v + 0)).toEqual([0, 0, 1])
+    for (let i = 0; i < flat.length; i += 2) {
+      expect(up.flat[i]).toBeCloseTo(flat[i + 1], 4)
+      expect(up.flat[i + 1]).toBeCloseTo(flat[i], 4)
+    }
+    await expect(sheetThrough([0, 0, 0], [0, 0, 1], 'Cut', 'z')).rejects.toThrow(/no way up/)
   })
 
   it('section.get hands back the chains as polylines, on the sheet and in the world', async () => {

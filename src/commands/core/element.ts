@@ -28,6 +28,8 @@ import {
 import { anyObject, arr, bool, enumOf, int, num, obj, oneOf, str, vec3 } from '../schema'
 import type { FitGuide } from '../../core/fit/guide'
 import { describeElement } from '../state'
+import { requireMarked, setMarked } from '../marked'
+import { roundTo } from '../../core/round'
 import { CommandError, type Command } from '../types'
 import { requireMeasureFree, showWorkspace, waitFor } from './common'
 
@@ -155,11 +157,46 @@ function guideOf(input: { kind: FitKind } & FitGuide): FitGuide | undefined {
   return { ...(side ? { side } : {}), ...(radius ? { radius } : {}), ...(axis ? { axis } : {}), ...(within ? { within } : {}) }
 }
 
-const fit: Command<{ kind: FitKind; at: Location | Location[] } & FitGuide & Finishing> = {
+/** What the region a surface grew to holds, and — a plane's — whether it
+ *  looks like two surfaces, as the answer puts it. */
+async function regionAnswer(kind: FitKind, region: Uint32Array, elementId: number, seed: number) {
+  const client = commandHost().session.clientRef.current
+  if (!client) return {}
+  const el = useStore.getState().elements.find((e) => e.id === elementId)
+  const fit = el?.measured ?? el?.fit
+  const normal = kind === 'plane' && fit?.kind === 'plane' ? fit.normal : undefined
+  const r = await client.planeRegion(region, normal ? { normal, seed } : undefined)
+  const v = (p: readonly number[], places: number) => p.map((x) => roundTo(x, places))
+  const out: { region: Record<string, unknown>; warning?: string } = {
+    region: {
+      area: roundTo(r.area, 1),
+      box: { min: v(r.min, 2), max: v(r.max, 2) },
+      ...(r.normalSpreadDeg !== undefined ? { normalSpreadDeg: roundTo(r.normalSpreadDeg, 2) } : {}),
+    },
+  }
+  const second = r.second
+  if (second && fit?.kind === 'plane') {
+    out.region.second = {
+      share: roundTo(second.share, 3),
+      centroid: v(second.centroid, 3),
+      box: { min: v(second.min, 2), max: v(second.max, 2) },
+      angleDeg: roundTo(second.angleDeg, 2),
+      offset: roundTo(second.offset, 3),
+      rmsTwo: roundTo(second.rmsTwo, 4),
+    }
+    const side = second.offset >= 0 ? 'above' : 'below'
+    out.warning =
+      `two surfaces? ${Math.round(second.share * 100)} % of the region lies on a second plane ${roundTo(second.angleDeg, 2)}° off this one and ${roundTo(Math.abs(second.offset), 3)} mm ${side} it at its centroid [${v(second.centroid, 2).join(', ')}], ` +
+      `box [${v(second.min, 1).join(', ')}]–[${v(second.max, 1).join(', ')}] (σ ${roundTo(fit.sigma, 4)} mm${fit.formError !== undefined ? `, form error ${roundTo(fit.formError, 3)}` : ''}; two planes leave ${roundTo(second.rmsTwo, 4)}) — shrink the box or move the seed.`
+  }
+  return out
+}
+
+const fit: Command<{ kind: FitKind; at: Location | Location[]; mark?: boolean } & FitGuide & Finishing> = {
   name: 'fit',
   title: 'Fit an element',
   description:
-    'Fit an element on the scan where the panel would take a click: a plane, sphere, cylinder, cone or torus grows its surface from the place given and is best-fitted to it; a point is the place itself; a circle goes through three or more places. `at` is one place, or a list — a feature seen in patches can be seeded on each. A place is { vertex } (a scan vertex), { point: [x, y, z] } (the nearest scan vertex to a point, mm, in the current frame), or { screen } / { candidate } (not available yet). A seed near an edge can land on the wrong surface (a cup’s underside for its inside): say what is sought — side, radius, axis, within — and surfaces that do not match are passed over; a fit that finds none is refused with the radii it saw. Returns the element with its fit and the seed actually used (vertex and point), so a recipe can be replayed on another scan. One undo step.',
+    'Fit an element on the scan where the panel would take a click: a plane, sphere, cylinder, cone or torus grows its surface from the place given and is best-fitted to it; a point is the place itself; a circle goes through three or more places. `at` is one place, or a list — a feature seen in patches can be seeded on each. A place is { vertex } (a scan vertex), { point: [x, y, z] } (the nearest scan vertex to a point, mm, in the current frame), or { screen } / { candidate } (not available yet). A seed near an edge can land on the wrong surface (a cup’s underside for its inside): say what is sought — side, radius, axis, within — and surfaces that do not match are passed over; a fit that finds none is refused with the radii it saw. Returns the element with its fit and the seed actually used (vertex and point), so a recipe can be replayed on another scan; a surface also the region it grew to — region { area (mm²), box } and, a plane’s, normalSpreadDeg (95 % of its normals lie within it) — and a plane a warning when its points look like two surfaces, with region.second naming where the other lies. mark: true leaves the region’s points marked for element.fit_marked { marked: true }. One undo step.',
   input: obj(
     {
       kind: enumOf(FIT_KINDS, 'What to fit.'),
@@ -168,6 +205,7 @@ const fit: Command<{ kind: FitKind; at: Location | Location[] } & FitGuide & Fin
       radius: obj({ min: num('mm.', { exclusiveMinimum: 0 }), max: num('mm.', { exclusiveMinimum: 0 }) }, [], 'Sphere, cylinder, cone: the radius range the surface lies in.'),
       axis: vec3('Cylinder, cone: the axis direction, roughly (within 20°).'),
       within: obj({ min: vec3('Lowest corner, mm.'), max: vec3('Highest corner, mm.') }, ['min', 'max'], 'The surface stays inside this box.'),
+      mark: bool('Leave the region the surface grew to marked, for element.fit_marked { marked: true }.'),
       ...finishing,
     },
     ['kind', 'at'],
@@ -180,6 +218,7 @@ const fit: Command<{ kind: FitKind; at: Location | Location[] } & FitGuide & Fin
     const places = Array.isArray(input.at) ? input.at : [input.at]
     if (input.kind === 'point' && places.length !== 1) throw new CommandError('invalid_input', 'A point is one place.')
     if (input.kind === 'circle' && places.length < 3) throw new CommandError('invalid_input', 'A circle needs three places or more.')
+    if (input.mark && (input.kind === 'point' || input.kind === 'circle')) throw new CommandError('invalid_input', `A ${input.kind} is picked, not grown — it has no region to mark.`)
     const spots: ScanSpot[] = []
     for (const at of places) spots.push(await resolveLocation(at))
     const m = commandHost().session.measure
@@ -201,8 +240,13 @@ const fit: Command<{ kind: FitKind; at: Location | Location[] } & FitGuide & Fin
         useStore.getState().setDraftPicks(picks, points)
         await m.runDraftFit(input.kind, picks, guide)
       }
+      // The region goes to the element as it is created; it is read first.
+      const region = input.kind === 'point' || input.kind === 'circle' ? null : m.draftRegion.current
       const id = finishAndCreate(input)
-      return { element: created(id), seeds: spots.map(spotJson) }
+      if (!region) return { element: created(id), seeds: spots.map(spotJson) }
+      const grown = await regionAnswer(input.kind, region, id, spots[0].vertex)
+      const marked = input.mark ? setMarked(region, `element.fit ${useStore.getState().elements.find((e) => e.id === id)?.name ?? id}`) : undefined
+      return { element: created(id), seeds: spots.map(spotJson), ...grown, ...(marked ? { marked } : {}) }
     } finally {
       closeDraft()
     }
@@ -211,32 +255,35 @@ const fit: Command<{ kind: FitKind; at: Location | Location[] } & FitGuide & Fin
 
 // ---- element.fit_marked -------------------------------------------------------
 
-const fitMarked: Command<{ kind: (typeof SURFACE_KINDS)[number]; vertices: number[] } & Finishing> = {
+const fitMarked: Command<{ kind: (typeof SURFACE_KINDS)[number]; vertices?: number[]; marked?: boolean } & Finishing> = {
   name: 'fit_marked',
   title: 'Fit an element to a marked surface',
   description:
-    'Fit a plane, sphere, cylinder, cone or torus to exactly the scan vertices given — a surface marked by hand in the panel, with no search for the surface. The element keeps the marking as its recipe. Returns the element. One undo step.',
+    'Fit a plane, sphere, cylinder, cone or torus to exactly the scan vertices given — a surface marked by hand in the panel, with no search for the surface — or, with marked: true in place of vertices, to the points the last element.fit { mark: true } or scan.segment { mark } left marked. The element keeps the marking as its recipe. Returns the element. One undo step.',
   input: obj(
     {
       kind: enumOf(SURFACE_KINDS, 'What to fit.'),
       vertices: arr(int(undefined, { minimum: 0 }), 'The scan vertices of the surface.', { minItems: 3 }),
+      marked: bool('The points left marked, in place of vertices.'),
       ...finishing,
     },
-    ['kind', 'vertices'],
+    ['kind'],
   ),
   label: ({ kind }) => `fit ${kind} to a marked surface`,
   run: async (input) => {
     requireScan()
     requireMeasureFree()
+    if ((input.vertices === undefined) === !input.marked) throw new CommandError('invalid_input', 'Give vertices, or marked: true — one of them.')
     const count = useStore.getState().vertexCount
-    const bad = input.vertices.find((v) => v >= count)
+    const bad = input.vertices?.find((v) => v >= count)
     if (bad !== undefined) throw new CommandError('invalid_input', `The scan has no vertex ${bad} — it has ${count}.`)
+    const vertices = input.vertices ? Uint32Array.from(input.vertices) : Uint32Array.from(requireMarked().vertices)
     const m = commandHost().session.measure
     showWorkspace('elements')
     try {
       m.startDraft(input.kind)
       if (input.sigma !== undefined) useStore.getState().setDraftSigma(input.sigma)
-      await m.runDraftPaintFit(input.kind, Uint32Array.from(input.vertices))
+      await m.runDraftPaintFit(input.kind, vertices)
       const id = finishAndCreate(input)
       return { element: created(id) }
     } finally {

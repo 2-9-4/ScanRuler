@@ -10,12 +10,12 @@ import type { Element } from '../state/store'
 /** Elements that can fill a reference slot of one of the given roles, minus
  *  any that would close a loop (an edited element and its dependents). `kinds`
  *  narrows further, for slots that need one specific element kind. */
-export function providersFor(
+export function providersFor<T extends Pick<Element, 'id' | 'kind' | 'fit'>>(
   roles: readonly RefRole[],
-  elements: Element[],
+  elements: readonly T[],
   blocked?: ReadonlySet<number>,
   kinds?: readonly ElementKind[],
-): Element[] {
+): T[] {
   return elements.filter(
     (e) =>
       e.fit &&

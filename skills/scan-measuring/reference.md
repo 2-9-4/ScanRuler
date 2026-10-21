@@ -239,7 +239,7 @@ A refusal is `code: message`.
 | **no_scan** "No scan is open" | A scan tool with no scan | `scan_open` |
 | **not_found** | An element, dimension, section, chain, checkpoint or job named does not exist | Read the list the message gives; 2D chain numbers change after edge detection |
 | **invalid_state** "The 3D Measure panel has … — finish or cancel it there first" | The person has something open in the panel | Ask them to finish or cancel it |
-| **invalid_state** "The session holds measurements that … would replace" | `scan_open`, `project_load` or `session_reset` over work | `project_save` first, or `discard: true` |
+| **invalid_state** "The session holds <what> [in the project "…"] … that … would replace" | `scan_open`, `project_load` or `session_reset` over work | `saveTo` on the same call (the session saved there first), `project_save` first, or `discard: true` |
 | **invalid_state** "The 2D workspace is on screen …" | `view_render` while the sheet is shown | `flat_render`, or `workspace_set { workspace: "measure" }` |
 | **invalid_state** "Nothing is on the 2D sheet" | A flat tool with no image or section | `flat_open_image`, or `section_cut` |
 | **invalid_state** "No edges are detected on the sheet" | Edge methods with no edges | `flat_detect_edges` at a higher sensitivity |

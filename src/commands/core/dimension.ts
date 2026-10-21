@@ -13,14 +13,29 @@ import {
   type SphereAnchor,
 } from '../../core/dimensions'
 import type { FitData } from '../../core/types'
-import { useStore } from '../../state/store'
+import { useStore, type Section } from '../../state/store'
+import { dimensionRefsOf, sectionMeasureRefs, type MeasureRef } from '../../state/sectionModel'
 import { elementRefSchema, measuredElement, type ElementRef } from '../refs'
 import { arr, enumOf, int, num, obj, oneOf, str, type JsonSchema } from '../schema'
 import { describeDimension, evaluatedDimensions } from '../state'
 import { CommandError, type Command } from '../types'
 import { requireMeasureFree, showWorkspace } from './common'
+import { findSection } from './section'
 
 const typeIds = () => dimensionTypes().map((t) => t.id)
+
+/** A reference of a dimension: an element, or — where no element answers to
+ *  it — a section, standing in as the plane it was cut on. */
+function dimensionRef(ref: ElementRef): MeasureRef {
+  const { elements, sections } = useStore.getState()
+  const want = typeof ref === 'string' ? ref.trim().toLowerCase() : null
+  const isSection = (sec: Section) => (want === null ? sec.id === ref : sec.name.trim().toLowerCase() === want)
+  const isElement = (e: { id: number; name: string }) => (want === null ? e.id === ref : e.name.trim().toLowerCase() === want)
+  if (!elements.some(isElement) && sections.some(isSection)) {
+    return sectionMeasureRefs(sections).find((r) => r.id === findSection(ref).id)!
+  }
+  return measuredElement(ref)
+}
 
 const limitSchema: JsonSchema = oneOf(
   [
@@ -87,7 +102,7 @@ const add: Command<{
   name: 'add',
   title: 'Add a dimension',
   description:
-    'Measure between elements, or a size or tolerance of one, as the panel’s dimension box does. refs are the elements by id or name. Without type, the type follows the elements as clicking them in the viewport does — two spheres or points give their centre distance, two planes their distance, a plane and an axis their distance, and so on. With type, it is one of: ' +
+    'Measure between elements, or a size or tolerance of one, as the panel’s dimension box does. refs are the elements by id or name — a section by its id or name counts as the plane it was cut on. Without type, the type follows the elements as clicking them in the viewport does — two spheres or points give their centre distance, two planes their distance, a plane and an axis their distance, and so on. With type, it is one of: ' +
     dimensionTypes()
       .map((t) => `${t.id} (${t.slots.map((s) => s.label).join(', ')})`)
       .join('; ') +
@@ -109,7 +124,11 @@ const add: Command<{
     if (input.type !== undefined && !typeIds().includes(input.type)) {
       throw new CommandError('invalid_input', `There is no dimension type "${input.type}" — there are ${typeIds().join(', ')}.`)
     }
-    const els = input.refs.map((ref) => measuredElement(ref))
+    const els = input.refs.map((ref) => dimensionRef(ref))
+    const cut = els.find((e) => e.section)
+    if (cut && input.type !== undefined && dimensionTypeInfo(input.type).family === 'tolerance') {
+      throw new CommandError('invalid_input', `${cut.name} is a section — a tolerance reads a measured surface, and a cut has none. Take it on a fitted plane.`)
+    }
     showWorkspace('elements')
     const before = useStore.getState().nextDimensionId
     try {
@@ -140,7 +159,8 @@ const add: Command<{
       if (input.basic !== undefined) useStore.getState().setDimensionBasic(input.basic)
       // What the Add button is held to: a value to show.
       const dd = useStore.getState().dimDraft!
-      const fits = dd.refs.map((id) => useStore.getState().elements.find((e) => e.id === id)?.fit) as FitData[]
+      const pool = dimensionRefsOf(useStore.getState().elements, useStore.getState().sections)
+      const fits = dd.refs.map((id) => pool.find((e) => e.id === id)?.fit) as FitData[]
       const preview = evaluateDimension(dd.type, fits, { anchor: dd.anchor, basic: dd.basic })
       if (preview.invalid) throw new CommandError('invalid_input', `${dimensionTypeInfo(dd.type).label}: ${preview.invalid}`)
       useStore.getState().commitDimension()

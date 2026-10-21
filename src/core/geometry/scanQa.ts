@@ -47,6 +47,49 @@ export function firstHits(bvh: MeshBVH, grid: RayGrid): Float32Array {
   return out
 }
 
+/** The first hits with where on the scan they landed: per ray its
+ *  distance (NaN for none), the three corners of the triangle it met
+ *  (scan vertex numbers, NO_CORNER for none) and the hit's weight on each
+ *  — what a value kept per vertex, the deviation say, is read at the hit
+ *  by: Σ weight·value over the three. */
+export const NO_CORNER = 0xffffffff
+
+export function firstHitsAt(bvh: MeshBVH, positions: Float32Array, grid: RayGrid): { values: Float32Array; corners: Uint32Array; weights: Float32Array } {
+  const { origin: o, dir, u, v, cell, cols, rows, far } = grid
+  const n = cols * rows
+  const values = new Float32Array(n).fill(Number.NaN)
+  const corners = new Uint32Array(3 * n).fill(NO_CORNER)
+  const weights = new Float32Array(3 * n)
+  const origin = new THREE.Vector3()
+  const ray = new THREE.Ray(origin, new THREE.Vector3(dir[0], dir[1], dir[2]))
+  const tri = new THREE.Triangle()
+  const bary = new THREE.Vector3()
+  const at = (i: number, out: THREE.Vector3) => out.set(positions[3 * i], positions[3 * i + 1], positions[3 * i + 2])
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const a = (c + 0.5) * cell
+      const b = (r + 0.5) * cell
+      origin.set(o[0] + a * u[0] + b * v[0], o[1] + a * u[1] + b * v[1], o[2] + a * u[2] + b * v[2])
+      const hit = bvh.raycastFirst(ray, THREE.DoubleSide, 0, far)
+      if (!hit || !hit.face) continue
+      const k = r * cols + c
+      values[k] = hit.distance
+      const { a: ia, b: ib, c: ic } = hit.face
+      at(ia, tri.a)
+      at(ib, tri.b)
+      at(ic, tri.c)
+      if (!tri.getBarycoord(hit.point, bary)) bary.set(1 / 3, 1 / 3, 1 / 3)
+      corners[3 * k] = ia
+      corners[3 * k + 1] = ib
+      corners[3 * k + 2] = ic
+      weights[3 * k] = bary.x
+      weights[3 * k + 1] = bary.y
+      weights[3 * k + 2] = bary.z
+    }
+  }
+  return { values, corners, weights }
+}
+
 /** The direction most of a surface faces, either way along it — a plate's
  *  faces: the leading eigenvector of Σ n·nᵀ over the normals given, then
  *  again over the normals within 20° of it, so the sides fall out. */

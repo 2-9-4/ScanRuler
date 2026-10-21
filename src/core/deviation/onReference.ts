@@ -46,11 +46,34 @@ export const DEFAULT_REFERENCE_FACING_DEG = 60
 /** The most triangles a reference is cut into; past it the spacing opens. */
 export const MAX_SAMPLE_TRIANGLES = 2_000_000
 
+/** The finest and the coarsest the readings are cut to lie apart for a
+ *  tolerance, mm. */
+export const MIN_SAMPLE_SPACING = 0.25
+export const MAX_SAMPLE_SPACING = 2
+
+/** The spacing wanted for a tolerance of ±`tolerance`: twice it, so a
+ *  patch over tolerance is a few readings across, but no finer than a
+ *  quarter of a millimetre and no coarser than two. */
+export function wantedSpacing(tolerance: number): number {
+  return Math.min(MAX_SAMPLE_SPACING, Math.max(MIN_SAMPLE_SPACING, tolerance * 2))
+}
+
+/** Where the spacing opens, it opens onto one of these, times a power of
+ *  ten — preferred numbers about an eighth apart: a reference edited a
+ *  little — a face moved, a hole added — has a little more or less area,
+ *  and keeps the spacing it had, so the maps before and after are read
+ *  alike. */
+const OPEN_STEPS = [1, 1.1, 1.25, 1.4, 1.6, 1.8, 2, 2.2, 2.5, 2.8, 3.2, 3.6, 4, 4.5, 5, 5.6, 6.3, 7.1, 8, 9, 10]
+
 /** The spacing a reference of this area is cut to: `wanted`, opened as far
- *  as keeps it under MAX_SAMPLE_TRIANGLES. Cut to about s, a triangle
- *  holds about s²/2 of area. */
+ *  as keeps it under MAX_SAMPLE_TRIANGLES, onto the next of OPEN_STEPS.
+ *  Cut to about s, a triangle holds about s²/2 of area. */
 export function sampleSpacing(area: number, wanted: number): number {
-  return Math.max(wanted, Math.sqrt((2 * area) / MAX_SAMPLE_TRIANGLES))
+  const needed = Math.sqrt((2 * area) / MAX_SAMPLE_TRIANGLES)
+  if (needed <= wanted) return wanted
+  const decade = 10 ** Math.floor(Math.log10(needed))
+  const step = OPEN_STEPS.find((s) => s * decade >= needed * (1 - 1e-9))!
+  return Number((step * decade).toPrecision(6))
 }
 
 /** A mesh's surface area, mm². */

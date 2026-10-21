@@ -5,7 +5,9 @@
 // keeps a million-point scan snapping at pointer rates.
 
 import type { EdgeChains } from './edges'
-import type { Vec2 } from './types'
+import { flatRefPoint } from './refs'
+import type { FlatFit, Vec2 } from './types'
+import { distToSegment2 } from './vec2'
 
 const CELL = 32
 
@@ -157,6 +159,76 @@ export function snapPick(
 ): Vec2 {
   if (snap === alt || !index) return px
   return index.nearest(px[0], px[1], radiusPx) ?? px
+}
+
+/** The centre nearest `at` within `reach` — of a circle or an arc, or a
+ *  point element — or null; all in document units. What a pick snaps to
+ *  ahead of an edge: a bolt circle is picked through the holes' centres,
+ *  and a datum's origin put on a bore's. */
+export function nearestCenter(at: Vec2, fits: Iterable<FlatFit>, reach: number): Vec2 | null {
+  let best: Vec2 | null = null
+  let bestSq = reach * reach
+  for (const fit of fits) {
+    const c = flatRefPoint(fit)
+    if (!c) continue
+    const d = (c[0] - at[0]) ** 2 + (c[1] - at[1]) ** 2
+    if (d <= bestSq) {
+      bestSq = d
+      best = c
+    }
+  }
+  return best
+}
+
+/** How far `at` lies from a fit, as a click on the sheet is judged: from a
+ *  point, from a line's drawn segment, and from a circle or an arc either
+ *  at its rim or at its centre — a hole is taken by a click on its edge or
+ *  on the cross in the middle. A spline is never clicked into a reference. */
+export function distanceToFit(fit: FlatFit, at: Vec2): number {
+  switch (fit.kind) {
+    case 'point':
+      return Math.hypot(at[0] - fit.at[0], at[1] - fit.at[1])
+    case 'line': {
+      const h = fit.length / 2
+      const a: Vec2 = [fit.center[0] - fit.dir[0] * h, fit.center[1] - fit.dir[1] * h]
+      const b: Vec2 = [fit.center[0] + fit.dir[0] * h, fit.center[1] + fit.dir[1] * h]
+      return distToSegment2(at, a, b)
+    }
+    case 'circle':
+    case 'arc': {
+      const d = Math.hypot(at[0] - fit.center[0], at[1] - fit.center[1])
+      let onRim = true
+      if (fit.kind === 'arc') {
+        const turn = 2 * Math.PI
+        const from = Math.atan2(at[1] - fit.center[1], at[0] - fit.center[0]) - fit.start
+        onRim = ((from % turn) + turn) % turn <= fit.sweep
+      }
+      return Math.min(d, onRim ? Math.abs(d - fit.radius) : Infinity)
+    }
+    case 'spline':
+      return Infinity
+  }
+}
+
+/** The element a click at `at` lands on — the nearest within `reach`, all
+ *  in document units, among those `takes` allows — or null. */
+export function elementNear<T extends { fit: FlatFit | null }>(
+  at: Vec2,
+  elements: readonly T[],
+  reach: number,
+  takes: (el: T) => boolean = () => true,
+): T | null {
+  let best: T | null = null
+  let bestD = reach
+  for (const el of elements) {
+    if (!el.fit || !takes(el)) continue
+    const d = distanceToFit(el.fit, at)
+    if (d <= bestD) {
+      bestD = d
+      best = el
+    }
+  }
+  return best
 }
 
 /** Edge points thinned to a sane count before they join a draft — a long

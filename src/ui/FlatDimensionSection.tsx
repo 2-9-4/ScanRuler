@@ -69,6 +69,10 @@ export function FlatDimensionSection({
           </p>
           <p>Distances and angles between elements never change under an alignment.</p>
           <p>
+            Fill a slot from its dropdown, or click the element on the sheet — a circle or an arc
+            by its edge or by the cross at its center, which is the point it measures from.
+          </p>
+          <p>
             <b>Add dimension</b> leaves the box open for the next one of the same type, its
             slots empty; <b>Cancel</b> or <b>Esc</b> closes it.
           </p>

@@ -19,7 +19,7 @@ import { rigidToColumnMajor } from '../core/deviation/rigid'
 import { useMark } from '../state/markStore'
 import { buildDeviationReport, buildElementReport } from '../core/deviation/report'
 import type { DeviationStats } from '../core/deviation/deviation'
-import { DEFAULT_REFERENCE_FACING_DEG } from '../core/deviation/onReference'
+import { DEFAULT_REFERENCE_FACING_DEG, wantedSpacing } from '../core/deviation/onReference'
 import { detectMaterialSide } from '../core/deviation/elementField'
 import { targetFitOf } from './useElementField'
 import type { SourceFiles } from './project'
@@ -28,6 +28,16 @@ import type { SourceFiles } from './project'
  *  same tools, and so the same instruction, whichever workspace offered them. */
 export const PICK_MARK_TOOL_STATUS =
   'Pick a marking tool in the panel — Window, Brush or Lasso — then drag on the scan.'
+
+/** How a reference comes in. `fromSession`: the app made it from the
+ *  session's own work rather than the person choosing a file — another
+ *  comparison of the same work, most likely, read best under the settings
+ *  the last one was read under — so the search distance stands as it is,
+ *  and the reference goes with the scan it was made on when another scan is
+ *  opened. A file the person opens starts the search distance over. */
+export interface ReferenceOptions {
+  fromSession?: boolean
+}
 
 export function deviationWorkspace({
   clientRef,
@@ -59,18 +69,18 @@ export function deviationWorkspace({
     useDeviation.getState().clearReferenceMap()
   }
 
-  const commitNominal = (prepared: PreparedNominal | null) => {
+  const commitNominal = (prepared: PreparedNominal | null, options: ReferenceOptions = {}) => {
     deviation.current = null
     dropReferenceMap()
     deviationRgb.current = null
     sources.current.reference = prepared?.source ?? null
     sceneRef.current?.setFieldColors(null)
-    useDeviation.getState().clearAlign()
+    useDeviation.getState().clearAlign(!!prepared && !!options.fromSession)
     sceneRef.current?.setAlignment(null)
     if (prepared) {
       prepared.view.commit()
       const { mesh, source } = prepared
-      useDeviation.getState().finishNominalLoad(source.name, mesh.vertexCount, mesh.triangleCount, mesh.step ?? null)
+      useDeviation.getState().finishNominalLoad(source.name, mesh.vertexCount, mesh.triangleCount, mesh.step ?? null, !!options.fromSession)
     } else {
       sceneRef.current?.clearNominal()
       useDeviation.getState().nominalFailed()
@@ -81,7 +91,7 @@ export function deviationWorkspace({
   /** An STL is asked about first — what units it is in — unless `units` is
    *  given: a file the instrument wrote itself, in millimetres like
    *  everything it holds. A question dismissed leaves the file unopened. */
-  const openNominal = async (file: File, units?: MeshUnits): Promise<void> => {
+  const openNominal = async (file: File, units?: MeshUnits, options: ReferenceOptions = {}): Promise<void> => {
     const read = units ?? (await meshUnitsFor(file.name))
     if (!read) return
     await runImport(imports,
@@ -91,7 +101,7 @@ export function deviationWorkspace({
       const prepared = await prepareNominal(client, sceneRef.current, file, read)
       try {
         await client.commitImport({ nominal: prepared.id })
-        commitNominal(prepared)
+        commitNominal(prepared, options)
         sceneRef.current?.frameAll()
         const mesh = prepared.mesh
         // A STEP reference is a conversion, and how good a conversion decides
@@ -149,8 +159,8 @@ export function deviationWorkspace({
 
   /** The map the other way round: the reference cut finer and read against
    *  the scan under the alignment in hand — see core/deviation/onReference.
-   *  The readings lie about a tenth of the colour range apart, at least a
-   *  quarter and at most two millimetres, and a large reference opens it. */
+   *  The readings lie about twice the tolerance apart, at least a quarter
+   *  and at most two millimetres, and a large reference opens it. */
   const runReferenceMap = async () => {
     const client = clientRef.current
     const dev = useDeviation.getState()
@@ -161,7 +171,7 @@ export function deviationWorkspace({
     const current = () => scanVersion === client.scanVersion && nominalVersion === client.nominalVersion && useDeviation.getState().align === align
     dev.beginReferenceMap()
     try {
-      const spacing = Math.min(2, Math.max(0.25, dev.tolerance * 2))
+      const spacing = wantedSpacing(dev.tolerance)
       const result = await client.deviateReference(align.transform, DEFAULT_REFERENCE_FACING_DEG, spacing)
       if (!current()) return
       referenceMap.current = result

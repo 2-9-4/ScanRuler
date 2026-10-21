@@ -106,7 +106,7 @@ test('every call path gets its line: direct, own, batch entries, queued jobs, th
     assert.equal(start.backend, 'page')
     assert.equal(start.tools, 'full')
     const list = lines.find((l) => l.ev === 'list')
-    assert.equal(list.tools, COMMANDS.length + 4)
+    assert.equal(list.tools, COMMANDS.length + 5)
     assert.ok(list.bytes > 500)
 
     const calls = lines.filter((l) => l.ev === 'call')

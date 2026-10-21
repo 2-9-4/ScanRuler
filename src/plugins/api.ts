@@ -11,6 +11,7 @@
 // file, and a plugin's part in it is whatever it registers there.
 
 import type { ComponentType, ReactNode, RefObject } from 'react'
+import type { ReferenceOptions } from '../app/deviationWorkspace'
 import type { ImportQueue } from '../app/importQueue'
 import type { SourceFiles } from '../app/project'
 import type { ScanSource } from '../app/scanSwap'
@@ -100,8 +101,10 @@ export interface PluginHost {
   maps: ScanMaps
   /** Open a file as the scan — asking its units first unless given. */
   openScan(file: File, units?: MeshUnits): Promise<void>
-  /** Open a file as the Deviation workspace's reference part. */
-  openReference(file: File, units?: MeshUnits): Promise<void>
+  /** Open a file as the Deviation workspace's reference part — one the
+   *  plugin made from the session's work with `fromSession` (see
+   *  ReferenceOptions). */
+  openReference(file: File, units?: MeshUnits, options?: ReferenceOptions): Promise<void>
   /** Fit an element again, from its recipe. */
   runFit(id: number, kind: ElementKind, seeds: number[], selection?: Uint32Array, regionsOnly?: boolean): Promise<void>
   /** Measure the deviation map again, under the alignment in hand. */

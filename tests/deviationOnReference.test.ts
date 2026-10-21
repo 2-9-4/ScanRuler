@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest'
 import { identityRigid } from '../src/core/deviation/rigid'
 import { NominalSurface } from '../src/core/deviation/surface'
-import { meshArea, readReference, referenceCoverage, sampleSpacing, subdivideForMap } from '../src/core/deviation/onReference'
+import { MAX_SAMPLE_TRIANGLES, meshArea, readReference, referenceCoverage, sampleSpacing, subdivideForMap, wantedSpacing } from '../src/core/deviation/onReference'
 
 type Quad = [number, number, number][]
 
@@ -58,9 +58,21 @@ describe('the reference cut finer', () => {
     expect(fine.indices.length / 3).toBeLessThan(2000)
   })
 
-  it('opens the spacing on a large reference', () => {
+  it('opens the spacing on a large reference, in steps a small edit does not cross', () => {
     expect(sampleSpacing(100, 0.5)).toBe(0.5)
-    expect(sampleSpacing(10_000_000, 0.5)).toBeCloseTo(Math.sqrt(10), 6)
+    // √10 = 3.162…, opened to the next twentieth of a millimetre.
+    expect(sampleSpacing(10_000_000, 0.5)).toBe(3.2)
+    // A face moved, a hole added: the area a percent apart, the spacing the same.
+    expect(sampleSpacing(10_100_000, 0.5)).toBe(3.2)
+    expect(sampleSpacing(9_900_000, 0.5)).toBe(3.2)
+    // Still under the triangle budget.
+    expect((2 * 10_000_000) / sampleSpacing(10_000_000, 0.5) ** 2).toBeLessThanOrEqual(MAX_SAMPLE_TRIANGLES)
+  })
+
+  it('wants twice the tolerance, within a quarter and two millimetres', () => {
+    expect(wantedSpacing(0.1)).toBe(0.25)
+    expect(wantedSpacing(0.3)).toBe(0.6)
+    expect(wantedSpacing(5)).toBe(2)
   })
 })
 

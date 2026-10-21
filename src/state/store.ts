@@ -78,7 +78,7 @@ import type {
 } from '../core/types'
 import { blockedRefs, defaultMethod, dependentsOf, type DimensionDraft, type Draft, draftFromElement, type Element, elementColor, evalConstructDraft, freshCounters, freshDraft, keptOf, nextPointPick, reevaluateConstructions, type SelectMode, transformSource, withoutRegion } from './elementModel'
 import { type AlignDraft, type AlignmentProposal, alignSlotPicks, withSlotPicks, withSlotRef } from './alignModel'
-import { type Section, type SectionDraft, sectionDraftReady, settleSectionDraft } from './sectionModel'
+import { dimensionRefsOf, type Section, type SectionDraft, sectionDraftReady, settleSectionDraft } from './sectionModel'
 export { type Section, type SectionDraft, sectionDraftColorOf, sectionDraftReady } from './sectionModel'
 export { alignCenterOf, type AlignDraft, alignmentPreview, type AlignmentProposal, type AlignPreview, alignSlotPicks } from './alignModel'
 export { blockedRefs, type DimensionDraft, type Draft, draftColorOf, draftHolds, type Element, orientedDraft, picksItsPoints, type SelectMode } from './elementModel'
@@ -1241,11 +1241,27 @@ export const useStore = create<AppState>()((set, get) => ({
     return id
   },
 
+  // A dimension taken from the section goes with it, as one on a deleted
+  // element does.
   removeSection: (id) =>
-    set((s) => ({
-      sections: s.sections.filter((sec) => sec.id !== id),
-      sectionDraft: s.sectionDraft?.editId === id ? null : s.sectionDraft,
-    })),
+    set((s) => {
+      const dimensions = s.dimensions.some((d) => d.refs.includes(id))
+        ? s.dimensions.filter((d) => !d.refs.includes(id))
+        : s.dimensions
+      const dd = s.dimDraft
+      const editGone = dd?.editId !== undefined && !dimensions.some((d) => d.id === dd.editId)
+      return {
+        sections: s.sections.filter((sec) => sec.id !== id),
+        sectionDraft: s.sectionDraft?.editId === id ? null : s.sectionDraft,
+        dimensions,
+        dimDraft:
+          !dd || editGone
+            ? null
+            : dd.refs.includes(id)
+              ? { ...dd, refs: dd.refs.map((r) => (r === id ? null : r)) }
+              : dd,
+      }
+    }),
 
   toggleSectionVisible: (id) =>
     set((s) => ({
@@ -1492,20 +1508,23 @@ export const useStore = create<AppState>()((set, get) => ({
     set((s) => {
       const dd = s.dimDraft
       if (!dd) return {}
-      const el = s.elements.find((e) => e.id === id)
+      const family = dimensionTypeInfo(dd.type).family
+      // A section stands in as the plane it was cut on — for a dimension
+      // only: a tolerance reads a surface, and a cut has none.
+      const pool = family === 'dimension' ? dimensionRefsOf(s.elements, s.sections) : s.elements
+      const el = pool.find((e) => e.id === id)
       if (!el?.fit) return {}
       // Clicking an element that is already a reference takes it out again.
       if (dd.refs.includes(id)) {
         return { dimDraft: { ...dd, refs: dd.refs.map((r) => (r === id ? null : r)) } }
       }
-      const family = dimensionTypeInfo(dd.type).family
       // What is already selected, in slot order — plus the new element. The
       // pick joins the selection while some type of the family can seat them
       // all (a second plane after a flatness makes a parallelism); otherwise
       // it replaces the last pick, so the first reference stays the anchor
       // of the measurement.
       const held = dd.refs.flatMap((r) => {
-        const ref = r !== null ? s.elements.find((e) => e.id === r) : undefined
+        const ref = r !== null ? pool.find((e) => e.id === r) : undefined
         return ref ? [{ id: ref.id, kind: ref.kind }] : []
       })
       const pick = { id, kind: el.kind }

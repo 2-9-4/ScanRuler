@@ -2,7 +2,7 @@
 // The MCP server end to end, with a real MCP client over an in-memory
 // transport and a fake page on a real socket.
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
@@ -76,7 +76,7 @@ test('before a page connects: the app’s tools are listed, status says how to c
   assert.ok(names.includes('scanruler_wait'))
   assert.ok(names.includes('scanruler_open'))
   assert.ok(names.includes('scan_open'))
-  assert.equal(tools.length, SNAPSHOT.length + 4)
+  assert.equal(tools.length, SNAPSHOT.length + 5)
   assert.ok(!names.includes('scanruler_tools'), 'listed in full, the tools need no catalogue')
   assert.equal((await call('scanruler_tools')).text, 'unknown_command: There is no tool scanruler_tools.')
   const status = await call('scanruler_status')
@@ -170,6 +170,72 @@ test('with a page: tools run on it — files read from paths and written to path
   page.page.close()
 })
 
+test('a session someone left: the status says what it holds, scan_open with saveTo keeps it, and a report goes beside the scan', async () => {
+  const own = await serve()
+  const on = (name, args) => call(name, args, own.client)
+  const folder = join(dir, 'sigma')
+  await mkdir(folder, { recursive: true })
+  await writeFile(join(folder, 'sigma.stl'), Buffer.alloc(84))
+  let held = true
+  const page = await fakePage(own.port, {
+    token: TOKEN,
+    answer: (name, input) => {
+      if (name === 'session.state') return { busy: null, running: null, scan: held ? { fileName: 'other.stl' } : null, project: { name: held ? 'Their housing' : null, unsaved: held, holds: held ? { features: 12, notes: 3 } : {} } }
+      if (name === 'project.save') {
+        if (!held) throw { code: 'failed', message: 'There is nothing to save yet — no scan, image or work.' }
+        return { file: { name: 'Their housing.scanruler', mimeType: 'application/zip', bytes: new Uint8Array([0x50, 0x4b, 3, 4]) }, status: 'Project saved.' }
+      }
+      if (name === 'scan.open') {
+        if (held && !input.discard) throw { code: 'invalid_state', message: 'The session holds 12 features.' }
+        held = false
+        return { scan: { fileName: input.name } }
+      }
+      throw { code: 'invalid_input', message: `${name} refused.` }
+    },
+  })
+  try {
+    assert.equal((await on('scanruler_wait', { timeoutSeconds: 5 })).json.connected, true)
+    const before = await on('scanruler_status')
+    assert.deepEqual(before.json.session, { scan: 'other.stl', project: 'Their housing', unsaved: true, features: 12, notes: 3 })
+
+    // Nowhere to write a report yet: no scan was opened from a folder.
+    const early = await on('scanruler_write', { path: 'report.md', text: '# Sigma' })
+    assert.equal(early.error, true)
+    assert.match(early.text, /^invalid_state: .*scan_open/)
+
+    const schema = (await own.client.listTools()).tools.find((t) => t.name === 'scan_open').inputSchema
+    assert.ok(schema.properties.saveTo, 'a tool that replaces the session takes saveTo')
+    const opened = await on('scan_open', { path: join(folder, 'sigma.stl'), saveTo: join(dir, 'kept') })
+    assert.equal(opened.error, false, opened.text)
+    assert.equal(opened.json.savedTo, join(dir, 'kept'))
+    assert.deepEqual([...(await readFile(join(dir, 'kept')))], [0x50, 0x4b, 3, 4], 'the project as it was')
+    const runs = page.page.runs.map((r) => r.name)
+    assert.deepEqual(runs.slice(runs.indexOf('project.save')), ['project.save', 'scan.open'], 'saved, then opened')
+    assert.equal(page.page.runs.find((r) => r.name === 'scan.open').input.discard, true)
+    assert.equal(page.page.runs.find((r) => r.name === 'scan.open').input.saveTo, undefined, 'the page is not told the path')
+    assert.deepEqual((await on('scanruler_status')).json.session, { scan: null, unsaved: false })
+
+    // With nothing to save, the open goes on.
+    const again = await on('scan_open', { path: join(folder, 'sigma.stl'), saveTo: join(dir, 'empty.scanruler') })
+    assert.equal(again.json.savedTo, null)
+
+    // The report, beside the scan — and nowhere else.
+    const wrote = await on('scanruler_write', { path: 'report.md', text: '# Sigma\n\nRMS 0.067 mm' })
+    assert.deepEqual(wrote.json, { path: join(folder, 'report.md'), size: 21 })
+    assert.equal(await readFile(join(folder, 'report.md'), 'utf8'), '# Sigma\n\nRMS 0.067 mm')
+    assert.equal((await on('scanruler_write', { path: 'out/readings.csv', text: 'a,b' })).json.path, join(folder, 'out', 'readings.csv'), 'a folder under it')
+    assert.equal((await on('scanruler_write', { path: join(dir, 'beside-the-project.txt'), text: 'x' })).error, false, 'the folder a project was saved into')
+    for (const [path, why] of [['report.exe', /only \.md/], ['../escape.md', /"\.\."/], [join(tmpdir(), 'elsewhere.md'), /outside/]]) {
+      const refused = await on('scanruler_write', { path, text: 'x' })
+      assert.equal(refused.error, true, path)
+      assert.match(refused.text, why)
+    }
+  } finally {
+    page.page.close()
+    await own.close()
+  }
+})
+
 test('scanruler_open opens the paired page when none comes back by itself, and leaves a connected one be', async () => {
   for (let i = 0; link.connected && i < 100; i++) await new Promise((resolve) => setTimeout(resolve, 20))
   assert.equal(link.connected, false)
@@ -202,12 +268,12 @@ test('scanruler_open opens the paired page when none comes back by itself, and l
   opener = async () => false
 })
 
-const OWN = ['scanruler_batch', 'scanruler_open', 'scanruler_status', 'scanruler_tools', 'scanruler_wait']
+const OWN = ['scanruler_batch', 'scanruler_open', 'scanruler_status', 'scanruler_tools', 'scanruler_wait', 'scanruler_write']
 /** The tools listed in compact mode beside the server's own: the commands
  *  that return a picture, by their flag. */
 const pictures = (commands) => commands.filter((c) => c.returnsImage).map(toolName)
 
-test('compact: the five and the picture tools listed, the rest read through scanruler_tools as the full list would give them', async () => {
+test('compact: the six and the picture tools listed, the rest read through scanruler_tools as the full list would give them', async () => {
   const compact = await serve({ tools: 'compact' })
   const on = (name, args) => call(name, args, compact.client)
   try {
@@ -215,7 +281,7 @@ test('compact: the five and the picture tools listed, the rest read through scan
     const { tools } = await compact.client.listTools()
     const shown = pictures(SNAPSHOT)
     assert.ok(shown.length > 0, 'the app has commands that return a picture')
-    assert.deepEqual(tools.map((t) => t.name).sort(), [...OWN, ...shown].sort(), 'each picture command, and nothing else beyond the five')
+    assert.deepEqual(tools.map((t) => t.name).sort(), [...OWN, ...shown].sort(), 'each picture command, and nothing else beyond the six')
     for (const name of shown) assert.deepEqual(tools.find((t) => t.name === name), full.find((t) => t.name === name), `${name} as the full list gives it`)
 
     // The list: every command, a line each.

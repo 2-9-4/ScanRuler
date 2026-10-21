@@ -20,6 +20,8 @@ import { CommandError, type Command } from '../types'
 import { fileNameSchema, fileOf, lastError, showWorkspace, waitFor } from './common'
 import { unitsSchema } from './scan'
 import { round3 } from '../../core/round'
+import { deviationFileBytes, isMeasured, type DeviationFormat } from '../../core/deviation/exportDeviation'
+import { exportStem } from '../../app/exports'
 
 const nullable = (schema: JsonSchema, description: string): JsonSchema =>
   oneOf([schema, { type: 'null', description: 'Off.' }], description)
@@ -357,4 +359,69 @@ export async function referenceHotspots(tolerance: number | undefined, patches: 
   }
 }
 
-export const deviationCommands = [openReference, align, measure, setTarget, settings, hotspotsCommand]
+const exportCommand: Command<{ side?: MapSide; format?: DeviationFormat }> = {
+  name: 'export',
+  title: 'Export the deviation as data',
+  description:
+    'The deviation map as a file of readings, for working on it elsewhere: side "scan" (the default) a reading per scan vertex — its place in the frame the scan is measured in (what scan.query gives) and its signed distance from the reference part, or from the element deviation.set_target measures against; side "reference" a reading per sample of the map on the reference (deviation.settings { on: "reference" } — measured if it is not yet), in the reference’s frame, positive where the reference stands outside the scan. format: ply (the default; binary, float x, y, z, deviation and uchar measured), npy (an N × 4 float32 array x, y, z, d, for numpy.load) or csv (x,y,z,d, for a spreadsheet). The distance is NaN ("nan" in the CSV) where there is no reading; a reading past the search distance is kept as it is — the map draws it bare and the statistics leave it out, so measured is 0 on it (PLY), and in the others |d| ≤ searchDistance says it counts. Returns the file and the figures to check it by: readings, measured, withinTolerance and withinTolerancePct (of the measured, ± tolerance — on the scan’s side what the deviation state’s stats give; on the reference’s, by reading, where the state gives it by area), tolerance and searchDistance. Changes nothing.',
+  input: obj({
+    side: enumOf(['scan', 'reference'], 'The readings: per scan vertex (the default), or per sample on the reference.'),
+    format: enumOf(['ply', 'npy', 'csv'], 'ply (the default), npy or csv.'),
+  }),
+  readOnly: true,
+  returnsFile: true,
+  run: async ({ side = 'scan', format = 'ply' }) => {
+    requireScan()
+    const d = useDeviation.getState()
+    const { session } = commandHost()
+    let positions: Float32Array
+    let values: Float32Array
+    let what: string
+    if (side === 'reference') {
+      if (d.source !== 'reference' || !d.align || d.mapStatus !== 'ready') throw new CommandError('invalid_state', 'There is no map against the reference part — deviation.align measures one.')
+      if (d.referenceStatus !== 'ready') await session.deviation.runReferenceMap()
+      const map = session.maps.referenceMap.current
+      if (useDeviation.getState().referenceStatus !== 'ready' || !map) throw new CommandError('invalid_state', 'The map on the reference could not be measured.')
+      positions = map.positions
+      values = map.values
+      what = `the reference${d.nominalName ? ` ${d.nominalName}` : ''} by its distance to the scan, a reading per sample ${round3(map.spacing)} mm apart`
+    } else {
+      const maps = session.maps
+      const map = d.source === 'element' ? maps.elementField.current : maps.deviation.current
+      const ready = d.source === 'element' ? d.elementStatus === 'ready' : d.mapStatus === 'ready'
+      if (!ready || !map) throw new CommandError('invalid_state', 'There is no deviation map to export — deviation.align measures one against the reference part, deviation.set_target one against an element.')
+      const client = session.clientRef.current
+      if (!client) throw new CommandError('unavailable', 'The mesh worker is not running.')
+      const n = useStore.getState().vertexCount
+      const all = await client.query({ min: [-Infinity, -Infinity, -Infinity], max: [Infinity, Infinity, Infinity], limit: n })
+      if (all.positions.length !== map.length * 3) throw new CommandError('internal', `The map has ${map.length} readings and the scan ${all.positions.length / 3} vertices.`)
+      positions = all.positions
+      values = map
+      what = d.source === 'element' ? 'the scan by its distance to an element, a reading per vertex' : 'the scan by its distance to the reference, a reading per vertex'
+    }
+    const search = d.maxDistance
+    const tolerance = d.tolerance
+    let measured = 0
+    let within = 0
+    for (const v of values) {
+      if (!isMeasured(v, search)) continue
+      measured++
+      if (Math.abs(v) <= tolerance) within++
+    }
+    const bytes = deviationFileBytes({ positions, values, searchDistance: search, what }, format)
+    const mimeType = format === 'csv' ? 'text/csv' : 'application/octet-stream'
+    return {
+      side,
+      format,
+      readings: values.length,
+      measured,
+      withinTolerance: within,
+      withinTolerancePct: measured ? Math.round((within / measured) * 1000) / 10 : 0,
+      tolerance,
+      searchDistance: search,
+      file: { name: `${exportStem()}-deviation-${side}.${format}`, mimeType, bytes },
+    }
+  },
+}
+
+export const deviationCommands = [openReference, align, measure, setTarget, settings, hotspotsCommand, exportCommand]

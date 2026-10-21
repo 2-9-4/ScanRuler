@@ -14,6 +14,7 @@ import {
 } from '../core/dimensions'
 import type { FitData } from '../core/types'
 import { draftHolds, useStore } from '../state/store'
+import { dimensionRefsOf } from '../state/sectionModel'
 import { usePulse } from '../app/useHints'
 import { surfaceSource, useSurfaces } from '../app/surfaces'
 import { ValueWindow } from './DroValue'
@@ -59,6 +60,10 @@ export function DimensionSection({
 }) {
   const fileName = useStore((s) => s.fileName)
   const elements = useStore((s) => s.elements)
+  const sections = useStore((s) => s.sections)
+  // What a dimension can be taken from: the elements, and the sections as
+  // the planes they were cut on.
+  const refs = useMemo(() => dimensionRefsOf(elements, sections), [elements, sections])
   const dimensions = useStore((s) => s.dimensions)
   const dimDraft = useStore((s) => s.dimDraft)
   // An element box with work in it stands the key down, as it does the row
@@ -90,9 +95,9 @@ export function DimensionSection({
   // arriving or moving is a change of what is read too.
   const surfaceVersion = useSurfaces((s) => s.version)
   const evaluated = useMemo(
-    () => evaluateDimensions(own, elements, surfaceSource),
+    () => evaluateDimensions(own, refs, surfaceSource),
     // Runs on the listed dependencies only, not on everything it reads.
-    [own, elements, surfaceVersion],
+    [own, refs, surfaceVersion],
   )
 
   // Live preview of the dimension being built.
@@ -102,7 +107,7 @@ export function DimensionSection({
   const ownDraft = dimDraft !== null && dimInfo?.family === 'dimension'
   let dimPreview: DimensionValue | null = null
   if (dimDraft && dimInfo && dimDraft.refs.every((r) => r !== null)) {
-    const fits = dimDraft.refs.map((id) => elements.find((e) => e.id === id)?.fit)
+    const fits = dimDraft.refs.map((id) => refs.find((e) => e.id === id)?.fit)
     dimPreview = fits.every((f): f is FitData => f !== undefined)
       ? evaluateDimension(dimDraft.type, fits, { anchor: dimDraft.anchor })
       : {
@@ -149,12 +154,12 @@ export function DimensionSection({
           <button
             className={pulseNew ? 'block pulse' : 'block'}
             data-test="new-dimension"
-            disabled={elements.every((e) => !e.fit) || dimDraft !== null || draftBusy}
+            disabled={refs.every((e) => !e.fit) || dimDraft !== null || draftBusy}
             onClick={() => startDimension('dist-point-point')}
           >
             New dimension
           </button>
-          {elements.every((e) => !e.fit) && fileName && (
+          {refs.every((e) => !e.fit) && fileName && (
             <p className="hint">Create at least one element first, then measure between them.</p>
           )}
         </>
@@ -198,7 +203,7 @@ export function DimensionSection({
               <RefSelect
                 key={i}
                 label={slot.label}
-                options={providersFor(slot.roles, elements, undefined, slot.kinds)}
+                options={providersFor(slot.roles, refs, undefined, slot.kinds)}
                 value={dimDraft.refs[i]}
                 testId={`dim-ref-${i}`}
                 picking={dimDraft.pickSlot === i}

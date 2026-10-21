@@ -12,7 +12,8 @@ import { creationMethod, type CreationMethod } from '../core/elements/construct'
 import { elementKindInfo } from '../core/elements/kinds'
 import type { FitData } from '../core/types'
 import type { MarkGesture } from '../state/markStore'
-import { alignSlotPicks, picksItsPoints, sectionDraftReady, type AlignDraft, type DimensionDraft, type Draft, type Element, type SectionDraft } from '../state/store'
+import { alignSlotPicks, picksItsPoints, sectionDraftReady, type AlignDraft, type DimensionDraft, type Draft, type Element, type Section, type SectionDraft } from '../state/store'
+import { dimensionRefsOf } from '../state/sectionModel'
 import { markChipText } from '../ui/MarkTools'
 
 type DraftMode = CreationMethod['mode'] | null
@@ -27,6 +28,8 @@ export function openSlotHintOf(s: {
   alignDraft: AlignDraft | null
   dimDraft: DimensionDraft | null
   elements: readonly Element[]
+  /** The sections, which a dimension takes as planes. */
+  sections?: readonly Section[]
 }): string | null {
   const { draft, draftMode, sectionDraft, alignDraft, dimDraft, elements } = s
   if (!draft && sectionDraft) {
@@ -68,7 +71,8 @@ export function openSlotHintOf(s: {
   if (draft || !dimDraft) return null
   const empty = dimDraft.refs.findIndex((r) => r === null)
   if (empty < 0) {
-    const fits = dimDraft.refs.map((id) => elements.find((e) => e.id === id)?.fit)
+    const refs = dimensionRefsOf(elements, s.sections ?? [])
+    const fits = dimDraft.refs.map((id) => refs.find((e) => e.id === id)?.fit)
     const ok =
       fits.every((f): f is FitData => f !== undefined) &&
       !evaluateDimension(dimDraft.type, fits, { anchor: dimDraft.anchor, basic: dimDraft.basic })

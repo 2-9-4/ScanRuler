@@ -330,6 +330,9 @@ export class SceneManager {
   /** While on, a click resolves to the element under the cursor (overlay
    *  shape or painted region) before falling back to a plain surface pick. */
   private elementPickEnabled = false
+  /** Whether a click on a finished section's cut picks it — see
+   *  setSectionPickEnabled. */
+  private sectionPickEnabled = false
   /** The only elements a click may resolve to, or null for any. The others
    *  are not there for the pick: a click on one goes through it to the scan
    *  beneath — a point slot of a construction that asks for a point takes a
@@ -1815,12 +1818,17 @@ export class SceneManager {
     const hits = this.raycaster.intersectObjects(targets, false)
     const only = this.elementPickOnly
     const offered = (id: unknown): id is number => typeof id === 'number' && (!only || only.has(id))
+    // A section's cut, where sections are on offer: in front of whatever the
+    // ray meets first, or on the scan there to within its scatter.
+    const section = this.sectionAt(hits.find((h) => h.object === this.mesh)?.distance)
     for (const hit of hits) {
+      if (section && section.depth <= hit.distance) return section.id
       if (hit.object !== this.mesh) {
         const id = hit.object.userData.elementId
         if (offered(id)) return id
         continue
       }
+      if (section) return section.id
       // On the scan the element is the owner of the nearest triangle corner.
       // Bare scan ends the search: it occludes whatever is behind it.
       if (hit.faceIndex === undefined || hit.faceIndex === null || !this.regions.ready) return null
@@ -1853,7 +1861,26 @@ export class SceneManager {
       }
       return null
     }
-    return null
+    return section?.id ?? null
+  }
+
+  /** The section cut under the pick ray while sections are on offer — see
+   *  setSectionPickEnabled — within a hand's reach of it on screen and not
+   *  further along the ray than the scan is met there, give or take the
+   *  cut's own lift off the surface. */
+  private sectionAt(scanDistance: number | undefined): { id: number; depth: number } | null {
+    if (!this.sectionPickEnabled) return null
+    const reach = 8 * this.viewport.worldPerPixel()
+    const slack = Math.max(3 * reach, this.modelRadius * 0.01)
+    return this.sections.cutNear(this.raycaster.ray, reach, scanDistance === undefined ? Infinity : scanDistance + slack)
+  }
+
+  /** Offer the finished sections to element picking, as the planes they
+   *  were cut on — for a dimension being assembled. */
+  setSectionPickEnabled(enabled: boolean): void {
+    if (this.sectionPickEnabled === enabled) return
+    this.sectionPickEnabled = enabled
+    this.hoverDirty = true
   }
 
   /** Make the given elements read as selected: their translucent shells get

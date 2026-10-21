@@ -5,7 +5,7 @@
 // the pending fit, then create / save, undo, cancel. Renders nothing
 // without a draft.
 
-import { collectsEdgePoints, flatMethod, flatMethodsForKind } from '../core/flat/construct'
+import { collectsEdgePoints, flatMethod, flatMethodsForKind, flatSlotLabel, flatSlotRole } from '../core/flat/construct'
 import { datumFrame, fitInFrame } from '../core/flat/datum'
 import { FLAT_KIND_LABELS, flatPicksNeeded } from '../core/flat/elements'
 import { FLAT_ROLE_PROVIDERS } from '../core/flat/refs'
@@ -80,6 +80,13 @@ export function FlatDraftEditor() {
                 ? `${minPicks - picks} more point${minPicks - picks === 1 ? '' : 's'} to go — spread them along the ${noun}. Pins can be dragged.`
                 : `More points refine the fit, drag a pin to move it, or ${saveWord}.`
 
+  // The slots a construction shows: its own, and for a repeating one, one
+  // empty slot more once those are filled — where the next centre goes.
+  const slotCount = method.repeat
+    ? Math.max(method.slots?.length ?? 0, draft.refs.length + (draft.refs.every((r) => r !== null) ? 1 : 0))
+    : (method.slots?.length ?? 0)
+  const slotRows = Array.from({ length: slotCount }, (_, i) => i)
+
   const status = draft.fit ? 'ready' : draft.error ? 'failed' : 'empty'
   const primary = draft.fit ? formatFlatPrimary(fitInFrame(draft.fit, frame), unit) : ''
 
@@ -139,22 +146,25 @@ export function FlatDraftEditor() {
         {pickHint}
       </p>
 
-      {method.slots?.map((slot, i) => (
-        <RefSelect
-          key={slot.label + i}
-          label={slot.label}
-          options={elements.filter(
-            (el) =>
-              el.fit &&
-              !blocked.has(el.id) &&
-              FLAT_ROLE_PROVIDERS[slot.role].includes(el.kind) &&
-              !draft.refs.some((r, j) => j !== i && r === el.id),
-          )}
-          value={draft.refs[i] ?? null}
-          testId={`flat-draft-slot-${i}`}
-          onChange={(id) => setDraftRef(i, id)}
-        />
-      ))}
+      {slotRows.map((i) => {
+        const role = flatSlotRole(method, i)!
+        return (
+          <RefSelect
+            key={i}
+            label={flatSlotLabel(method, i)}
+            options={elements.filter(
+              (el) =>
+                el.fit &&
+                !blocked.has(el.id) &&
+                FLAT_ROLE_PROVIDERS[role].includes(el.kind) &&
+                !draft.refs.some((r, j) => j !== i && r === el.id),
+            )}
+            value={draft.refs[i] ?? null}
+            testId={`flat-draft-slot-${i}`}
+            onChange={(id) => setDraftRef(i, id)}
+          />
+        )
+      })}
 
       <div className="dro">
         <div className="dro-label">

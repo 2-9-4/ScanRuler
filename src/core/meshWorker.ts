@@ -35,6 +35,7 @@ import { sliceMesh } from './section/slice'
 import { meshCentroid } from './geometry/centroid'
 import { trianglesWithin } from './geometry/region'
 import { floodByNormal } from './fit/regionGrow'
+import { planeRegionReport, segmentPlanes } from './fit/segment'
 import { meanCurvature } from './geometry/curvature'
 import { scanSpot } from './geometry/nearest'
 import { boundsOf } from './geometry/bounds'
@@ -45,7 +46,7 @@ import { workerPlugins } from './workerPlugins'
 import type { WorkerContext } from './workerPluginApi'
 import type { MeshBVH } from 'three-mesh-bvh'
 import { reply } from './workerRpc'
-import { firstHits, localNoise, scanRims } from './geometry/scanQa'
+import { firstHits, firstHitsAt, localNoise, scanRims } from './geometry/scanQa'
 
 let graph: MeshGraph | null = null
 /** How far from the reference the scan is looked for, as a fraction of the
@@ -447,6 +448,26 @@ function handle(msg: Exclude<WorkerRequest, { type: 'align-abort' }>): void {
     return
   }
 
+  if (msg.type === 'plane-region' || msg.type === 'segment') {
+    if (!graph) {
+      post({ type: 'error', requestId: msg.requestId, message: 'No model loaded.' })
+      return
+    }
+    try {
+      if (msg.type === 'plane-region') {
+        checkVertices(msg.vertices, graph.vertexCount)
+        const result = planeRegionReport(graph, msg.vertices, msg.normal ? { normal: msg.normal, seed: msg.seed } : undefined)
+        post({ type: 'plane-region-ok', requestId: msg.requestId, result })
+      } else {
+        const result = segmentPlanes(graph, msg.options)
+        post({ type: 'segment-ok', requestId: msg.requestId, result }, [result.vertices.buffer, result.offsets.buffer])
+      }
+    } catch (e) {
+      post({ type: 'error', requestId: msg.requestId, message: errorText(e) })
+    }
+    return
+  }
+
   if (msg.type === 'nearest') {
     if (!graph) {
       post({ type: 'error', requestId: msg.requestId, message: 'No model loaded.' })
@@ -494,8 +515,13 @@ function handle(msg: Exclude<WorkerRequest, { type: 'align-abort' }>): void {
     try {
       if (msg.type === 'heights') {
         if (!scanSolid) scanSolid = buildSolidIndex(graph.positions, graph.indices)
-        const values = firstHits(scanSolid, msg.grid)
-        post({ type: 'heights-ok', requestId: msg.requestId, values }, [values.buffer])
+        if (msg.corners) {
+          const { values, corners, weights } = firstHitsAt(scanSolid, graph.positions, msg.grid)
+          post({ type: 'heights-ok', requestId: msg.requestId, values, corners, weights }, [values.buffer, corners.buffer, weights.buffer])
+        } else {
+          const values = firstHits(scanSolid, msg.grid)
+          post({ type: 'heights-ok', requestId: msg.requestId, values }, [values.buffer])
+        }
       } else {
         const rims = scanRims(graph.positions, graph.indices, msg.rims)
         post({ type: 'scan-qa-ok', requestId: msg.requestId, rims, noise: localNoise(graph, msg.sample) })
@@ -720,7 +746,7 @@ function handle(msg: Exclude<WorkerRequest, { type: 'align-abort' }>): void {
         },
       })
       post(
-        { type: 'reference-deviation-ok', requestId: msg.requestId, ...samples, values },
+        { type: 'reference-deviation-ok', requestId: msg.requestId, ...samples, wanted: msg.spacing, values },
         [samples.positions.buffer, samples.normals.buffer, samples.indices.buffer, samples.parent.buffer, values.buffer],
       )
     } catch (e) {

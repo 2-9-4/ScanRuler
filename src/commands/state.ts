@@ -9,7 +9,7 @@
 
 import { evaluateDimensions, dimensionTypeInfo, type EvaluatedDimension } from '../core/dimensions'
 import { deviationStats, type DeviationStats } from '../core/deviation/deviation'
-import { referenceCoverage } from '../core/deviation/onReference'
+import { MAX_SAMPLE_SPACING, MAX_SAMPLE_TRIANGLES, MIN_SAMPLE_SPACING, referenceCoverage } from '../core/deviation/onReference'
 import { thicknessStats, type ThicknessStats } from '../core/thickness/thickness'
 import { describeRigid } from '../core/alignment'
 import type { Rigid } from '../core/deviation/rigid'
@@ -24,9 +24,11 @@ import { sheetFrame, sheetScale } from '../app/flatSheet'
 import { useHistory, historyBlocked } from '../state/historyStore'
 import { useShell, type Workspace } from '../state/shellStore'
 import { draftHolds, useStore, type Element, type Section } from '../state/store'
+import { dimensionRefsOf } from '../state/sectionModel'
 import { useThickness } from '../state/thicknessStore'
 import { plugins } from '../plugins/registry'
 import { surfaceSource } from '../app/surfaces'
+import { projectUnsaved, sessionHolds } from '../app/project'
 import { hintNow } from '../app/useHints'
 import { APP_VERSION } from '../version'
 import { commandHost, sessionBusy, type FlatSheetView } from './host'
@@ -136,7 +138,7 @@ export function describeDimension({ dim, title, value, verdict }: EvaluatedDimen
 /** Every dimension of the session, evaluated as the panel evaluates them. */
 export const evaluatedDimensions = () => {
   const s = useStore.getState()
-  return evaluateDimensions(s.dimensions, s.elements, surfaceSource)
+  return evaluateDimensions(s.dimensions, dimensionRefsOf(s.elements, s.sections), surfaceSource)
 }
 
 export function describeSection(sec: Section) {
@@ -175,8 +177,10 @@ export function referenceFigures() {
   const c = referenceCoverage(map, map.values, d.tolerance, d.maxDistance)
   const share = (a: number) => (c.area > 0 ? Math.round((a / c.area) * 1000) / 10 : 0)
   const stats = deviationStats(map.values, d.maxDistance, d.tolerance)
+  const spacing = referenceSpacing()
   return {
     spacing: map.spacing,
+    ...(spacing?.opened ? { spacingOpened: spacing.opened } : {}),
     readings: map.values.length,
     areaMm2: Math.round(c.area),
     backedPct: share(c.backed),
@@ -184,6 +188,27 @@ export function referenceFigures() {
     farPct: share(c.far),
     noScanPct: share(c.noScan),
     stats,
+  }
+}
+
+/** How far apart the readings of the map on the reference lie, mm, and by
+ *  what rule: twice the tolerance it was measured under, within a quarter
+ *  and two millimetres — opened past that on a reference too large to cut
+ *  so fine, which `opened` says. Two maps read at one spacing are read
+ *  alike. Null with no map on the reference. */
+export function referenceSpacing(): { mm: number; wanted: number; rule: string; opened?: string } | null {
+  const d = useDeviation.getState()
+  const map = commandHost().session.maps.referenceMap.current
+  if (d.referenceStatus !== 'ready' || !map) return null
+  const wanted = map.wanted ?? map.spacing
+  const rule = `twice the tolerance, within ${MIN_SAMPLE_SPACING}–${MAX_SAMPLE_SPACING} mm`
+  if (map.spacing <= wanted) return { mm: map.spacing, wanted, rule }
+  const area = Math.round(referenceCoverage(map, map.values, d.tolerance, d.maxDistance).area)
+  return {
+    mm: map.spacing,
+    wanted,
+    rule,
+    opened: `from ${wanted} mm: the reference’s ${area.toLocaleString('en-US')} mm² cut ${wanted} mm apart would be more than ${MAX_SAMPLE_TRIANGLES.toLocaleString('en-US')} triangles`,
   }
 }
 
@@ -361,7 +386,9 @@ export async function sessionState() {
   const running = useCommandActivity.getState().running
   return {
     app: { name: 'ScanRuler', version: APP_VERSION, plugins: plugins().map((p) => p.id), viewport: session.sceneRef.current !== null },
-    project: { name: s.projectName },
+    // unsaved: changes since the project was last saved or opened, as the
+    // top bar says it; holds: the work a replace would lose, counted.
+    project: { name: s.projectName, unsaved: projectUnsaved(), holds: sessionHolds() },
     workspace: publicWorkspace(useShell.getState().workspace),
     busy: sessionBusy(),
     running: running?.name ?? null,

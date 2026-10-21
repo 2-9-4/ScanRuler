@@ -14,6 +14,7 @@ import { elementCommands } from './core/element'
 import { exportCommands, projectCommands } from './core/files'
 import { flatCommands } from './core/flat'
 import { scanCommands } from './core/scan'
+import { segmentCommands } from './core/segment'
 import { sectionCommands } from './core/section'
 import { historyCommands, reportCommands, sessionCommands, workspaceCommands } from './core/session'
 import { thicknessCommands } from './core/thickness'
@@ -30,7 +31,7 @@ export function registerCoreCommands(): void {
   registered = true
   registerCommands('session', sessionCommands)
   registerCommands('workspace', workspaceCommands)
-  registerCommands('scan', scanCommands)
+  registerCommands('scan', [...scanCommands, ...segmentCommands])
   registerCommands('element', elementCommands)
   registerCommands('dimension', dimensionCommands)
   registerCommands('align', alignCommands)

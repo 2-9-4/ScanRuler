@@ -11,7 +11,7 @@ import { referenceScale } from '../core/deviation/onReference'
 import { isDeviationTarget } from '../core/deviation/elementField'
 import { isExtendable } from '../core/elements/extend'
 import { drawnFit } from '../core/elements/assumed'
-import { evaluateDimensions, pinNotes, type EvaluatedDimension } from '../core/dimensions'
+import { dimensionTypeInfo, evaluateDimensions, pinNotes, type EvaluatedDimension } from '../core/dimensions'
 import { liftFlatFit } from '../core/section/lift'
 import { surfaceSource, useSurfaces } from './surfaces'
 import {
@@ -23,6 +23,7 @@ import {
   useStore,
   orientedDraft,
 } from '../state/store'
+import { dimensionRefsOf } from '../state/sectionModel'
 import type {
   SceneManager,
   OverlayAngle,
@@ -245,6 +246,7 @@ export function useSceneSync({
   // user created between them.
   const elements = useStore((s) => s.elements)
   const dimensions = useStore((s) => s.dimensions)
+  const sections = useStore((s) => s.sections)
   // A tolerance on a plane reads the plane's surface: when that arrives or
   // moves, its pin is out of date though nothing in the store has changed.
   const surfaceVersion = useSurfaces((s) => s.version)
@@ -332,7 +334,7 @@ export function useSceneSync({
     // arc at their hinge.
     const rows = evaluateDimensions(
       dimensions.filter((d) => d.visible !== false && d.id !== editingDimensionId),
-      elements,
+      dimensionRefsOf(elements, sections),
       surfaceSource,
     ).filter((r) => !r.value.invalid)
     const verdictOf = (r: EvaluatedDimension) => ({
@@ -403,6 +405,7 @@ export function useSceneSync({
   }, [
     elements,
     dimensions,
+    sections,
     surfaceVersion,
     elementsWorkspace,
     showElements,
@@ -422,7 +425,6 @@ export function useSceneSync({
   // The sections, drawn on the part in the measure workspace like the
   // elements — and put away with them elsewhere. The one open for editing is
   // drawn by its preview instead.
-  const sections = useStore((s) => s.sections)
   const editingSectionId = sectionDraft?.editId
   // What was measured on each section's sheet comes with it, stood up in its
   // plane — read off the flat store wherever the sheet is, on the 2D stage or
@@ -639,6 +641,17 @@ export function useSceneSync({
   useEffect(() => {
     sceneRef.current?.setElementPickEnabled(wantsElementPicks)
   }, [wantsElementPicks])
+  // A dimension takes a section as the plane it was cut on, so the cuts on
+  // the part are on offer too — a tolerance reads a surface, and keeps to
+  // the elements.
+  const wantsSectionPicks =
+    elementsWorkspace &&
+    draft === null &&
+    dimDraft !== null &&
+    dimensionTypeInfo(dimDraft.type).family === 'dimension'
+  useEffect(() => {
+    sceneRef.current?.setSectionPickEnabled(wantsSectionPicks)
+  }, [wantsSectionPicks])
   // A point slot waiting for a click on the scan takes a point element too —
   // a sphere's centre, a point measured before. Only those are clickable
   // then; a click on any other element goes through it to the scan, where

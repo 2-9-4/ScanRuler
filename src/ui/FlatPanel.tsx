@@ -384,7 +384,8 @@ export function FlatPanel({
               <p>
                 An element is <b>picked</b>, by clicking the points it runs through — with{' '}
                 <b>Snap to edge</b> on, every click and drag lands on the nearest detected edge
-                at subpixel, and <b>Alt</b> inverts that for one pick; any pin can be dragged
+                at subpixel — or on the center of a circle, an arc or a point when one is within
+                reach — and <b>Alt</b> inverts that for one pick; any pin can be dragged
                 afterwards; <b>fitted to an edge</b> from one click on it, the way a fit from a
                 click works on the scan — the line or circle grows along the detected edge from
                 the point you clicked and stops where the edge bends away, at a corner or into a
@@ -392,7 +393,9 @@ export function FlatPanel({
                 rim takes the hole; <b>fitted to an edge region</b>, by clicking a detected edge
                 to take all of it or dragging a box over it and letting every edge point inside
                 feed the fit; or <b>constructed</b> from elements you already have — a midpoint, a
-                circle's center, the intersection of two lines.
+                circle's center, the intersection of two lines, the circle through the centers of
+                a bolt pattern. A construction's sources are clicked on the sheet or chosen in the
+                box.
               </p>
               <p>
                 Which of those a kind offers appears as <i>Created</i> once you choose it.

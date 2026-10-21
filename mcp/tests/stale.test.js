@@ -63,8 +63,8 @@ test('the status says the tools the client holds are stale until it lists them a
   try {
     const s = await status()
     assert.equal(s.tools.stale, true)
-    assert.equal(s.tools.listed, 6)
-    assert.equal(s.tools.now, 7)
+    assert.equal(s.tools.listed, 7)
+    assert.equal(s.tools.now, 8)
     assert.deepEqual(s.tools.added, ['demo_added'])
     assert.equal(s.tools.removed, undefined)
     assert.match(s.tools.note, /start a new chat to get the current tools/)

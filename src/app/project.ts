@@ -80,6 +80,60 @@ export function sessionIsDirty(): boolean {
   )
 }
 
+/** What the session holds that replacing it would lose, counted by what it
+ *  is — the app's own work and each section's, { elements: 3, features:
+ *  12 } — only what there is. The work sessionIsDirty asks about. */
+export function sessionHolds(): Record<string, number> {
+  const s = useStore.getState()
+  const f = useFlat.getState()
+  const out: Record<string, number> = {}
+  const add = (what: string, n: number) => {
+    if (n > 0) out[what] = (out[what] ?? 0) + n
+  }
+  add('elements', s.elements.length)
+  add('dimensions', s.dimensions.length)
+  add('sections', s.sections.length)
+  // The 2D sheets, the one in hand and those put aside, as one count.
+  for (const sheet of [f, ...Object.values(f.sheets)]) {
+    add('sheetItems', sheet.elements.length + sheet.dimensions.length + sheet.counts.length + sheet.notes.length)
+  }
+  for (const p of projectSections()) {
+    const held = p.holds?.()
+    if (held) for (const [what, n] of Object.entries(held)) add(what, n)
+    else if (p.holdsWork?.()) add(p.key, 1)
+  }
+  return out
+}
+
+/** What a count of sessionHolds is called, in words: "3 elements",
+ *  "1 item on the 2D sheet"; a section's own key spelt out as words. */
+export function holdsWords(holds: Record<string, number>): string[] {
+  const NAMED: Record<string, [string, string]> = {
+    sheetItems: ['item on the 2D sheet', 'items on the 2D sheet'],
+  }
+  return Object.entries(holds).map(([what, n]) => {
+    const [one, many] = NAMED[what] ?? (() => {
+      const words = what.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase()
+      return [words.replace(/s$/, ''), words]
+    })()
+    return `${n} ${n === 1 ? one : many}`
+  })
+}
+
+/** Whether the session has changes not saved since it was last saved or
+ *  opened — the top bar's "Unsaved changes" — as whoever watches for them
+ *  (useRecovery) says; null where nothing does, as with no page. */
+let unsavedProbe: (() => boolean) | null = null
+
+export function watchUnsaved(probe: () => boolean): () => void {
+  unsavedProbe = probe
+  return () => {
+    if (unsavedProbe === probe) unsavedProbe = null
+  }
+}
+
+export const projectUnsaved = (): boolean | null => (unsavedProbe ? unsavedProbe() : null)
+
 /** True when there is anything to save as a project: a scan, an image, or
  *  a plugin's work — or a part kept from the project opened last. */
 export function projectHasContent(sources: SourceFiles): boolean {

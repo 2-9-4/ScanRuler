@@ -179,8 +179,8 @@ tools and 25k tokens of schema in the open-source build, over a hundred and
 frontier model takes that in its stride. A local model with a 128k window
 runs out of room within a few tool rounds, and picks less reliably among so
 many. For such a model, start the server with `--tools compact` (or set
-`SCANRULER_MCP_TOOLS=compact`). It then lists seven tools, about 3k tokens:
-the server's four, `scanruler_tools`, and the tab's tools that return a
+`SCANRULER_MCP_TOOLS=compact`). It then lists eight tools, about 3k tokens:
+the server's five, `scanruler_tools`, and the tab's tools that return a
 picture — `view_render` and `flat_render`.
 
 - `scanruler_tools` with no arguments lists the tab's tools, a name and a
@@ -231,7 +231,7 @@ or `args = ["-y", "scanruler-mcp", "--tools", "compact"]` in
 | `--app <url>` | The ScanRuler address the pairing link opens. |
 | `--engine <file>` | Run ScanRuler headless in the server, from an engine built with `npm run build:engine` — no tab. Also `SCANRULER_ENGINE`. |
 | `--headless` | The same, with the engine built in the checkout the server is part of. |
-| `--tools <mode>` | `full`, the default: every command the tab offers is a tool. `compact`: the server's five and the tab's tools that return a picture; the rest are read through `scanruler_tools` and run through `scanruler_batch` — see *Small local models*. Also `SCANRULER_MCP_TOOLS`. |
+| `--tools <mode>` | `full`, the default: every command the tab offers is a tool. `compact`: the server's own and the tab's tools that return a picture; the rest are read through `scanruler_tools` and run through `scanruler_batch` — see *Small local models*. Also `SCANRULER_MCP_TOOLS`. |
 | `--trace <dir>` | Write a line per tool call — tool, ms, bytes each way, error, whether the tab was hidden — into a new file in `<dir>`, for measuring a run; off unless given. `scripts/trace-summary.mjs` in the ScanRuler repository sums a run up. Also `SCANRULER_MCP_TRACE`. |
 | `--trace-args` | With `--trace`, each call's arguments too; otherwise only their size. |
 | `--pair` | Print the port, the token and the pairing link, and exit. |
@@ -250,15 +250,19 @@ with more commands lists more. Before a tab is there it is the list of the
 last tab that connected, which the server keeps in its config folder
 (`tools.json`), or, the first time, the app's own; a client that lists the
 tools once, when it starts, sees them all that way, and one that listens is
-told when the list changes. Four more are the server's: `scanruler_status`
-(is a tab connected, which version, how to pair one), `scanruler_open` (open
-ScanRuler in the default browser, paired, and wait for it), `scanruler_wait`
-(until a tab is connected, or also idle) and `scanruler_batch` (several of
-the tab's tools in one call, in order — a run of `scan_nearest` or
-`element_fit` calls — each answer in its place, stopped at the first refused
-unless told to go on). With `--tools compact` only the tab's tools that
-return a picture are listed; the rest are read through a fifth of the
-server's own, `scanruler_tools` — see *Small local models*.
+told when the list changes. Five more are the server's: `scanruler_status`
+(is a tab connected, which version, how to pair one, and what the tab's
+session holds — its scan, project, unsaved changes and work counted),
+`scanruler_open` (open ScanRuler in the default browser, paired, and wait
+for it), `scanruler_wait` (until a tab is connected, or also idle),
+`scanruler_batch` (several of the tab's tools in one call, in order — a run
+of `scan_nearest` or `element_fit` calls — each answer in its place, stopped
+at the first refused unless told to go on) and `scanruler_write` (a text
+file — `.md`, `.txt`, `.csv` or `.json`, a report say — written in the folder
+the server last opened a scan or a project from, and nowhere else). With
+`--tools compact` only the tab's tools that return a picture are listed; the
+rest are read through a sixth of the server's own, `scanruler_tools` — see
+*Small local models*.
 
 - **Places on the scan** are `{ "point": [x, y, z] }` in millimetres — the
   scan vertex nearest it is taken — or `{ "vertex": n }`. `scan_query` reads
@@ -270,6 +274,10 @@ server's own, `scanruler_tools` — see *Small local models*.
   the server reads it and streams it to the tab. The exports and
   `project_save` take an optional `path` — a file, or a folder for the name
   ScanRuler gives it — and the server writes the file there and returns where.
+  A tool that replaces the session (`scan_open`, `project_load`,
+  `session_reset`) takes `saveTo`: the session is saved as a project file
+  there first, then replaced — one call to keep what a tab someone left
+  holds.
 - **Pictures.** `view_render` comes back as an image the agent sees — the
   3D view as the tab shows it, after `view_set` has turned it if asked — and
   is written to a file only when the call gives `path`. `show` puts the

@@ -1113,8 +1113,10 @@ export class FlatScene {
   }
 
   /** The polyline a fit draws as: a segment, a full circle, an arc. A point
-   *  draws as a cross sized off the sheet. */
-  private fitPolyline(fit: FlatFit): Vec2[][] {
+   *  draws as a cross sized off the sheet. A measured circle or arc wears a
+   *  cross at its centre too — the point it stands for in a dimension, and
+   *  what a pick snaps to — kept inside the smallest bore. */
+  private fitPolyline(fit: FlatFit, centerMark = true): Vec2[][] {
     if (fit.kind === 'line') {
       const [cx, cy] = fit.center
       const [dx, dy] = fit.dir
@@ -1135,7 +1137,20 @@ export class FlatScene {
         const a = start + (sweep * i) / steps
         pts.push([fit.center[0] + fit.radius * Math.cos(a), fit.center[1] + fit.radius * Math.sin(a)])
       }
-      return [pts]
+      if (!centerMark) return [pts]
+      const s = Math.min(Math.max(this.sheetDiag() * 0.006, 1e-6), fit.radius * 0.4)
+      const [x, y] = fit.center
+      return [
+        pts,
+        [
+          [x - s, y],
+          [x + s, y],
+        ],
+        [
+          [x, y - s],
+          [x, y + s],
+        ],
+      ]
     }
     if (fit.kind === 'spline') return [splinePolyline(fit)]
     // A cross for a point, sized off the sheet so it stays visible at the
@@ -1220,8 +1235,9 @@ export class FlatScene {
     this.elementCleanup = []
     this.elementGroup.clear()
     for (const item of items) {
-      this.addPolylines(this.elementGroup, this.elementCleanup, this.fitPolyline(item.fit), item.color, 0.95, 0.15, item.width)
-      // A sketch's pieces carry no readings: they are drawn without a tag.
+      // A sketch's pieces carry no readings: they are drawn without a tag,
+      // and without a centre mark.
+      this.addPolylines(this.elementGroup, this.elementCleanup, this.fitPolyline(item.fit, item.label !== false), item.color, 0.95, 0.15, item.width)
       if (item.label === false) continue
       this.addLabel(
         this.elementGroup,

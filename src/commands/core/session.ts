@@ -17,7 +17,7 @@ const state: Command = {
   name: 'state',
   title: 'Read the session',
   description:
-    'The whole session as JSON: the app and its plugins, the workspace on screen, whether it is busy, the scan (file, units, vertex and triangle counts, bounding box, centre, size, applied alignment), every element with its fit, every dimension with its value, limit and verdict, the sections, what is open in the panels, the deviation, wall thickness and 2D Measure state with their statistics, the guided hint for the next step, and the undo history. Lengths in millimetres, angles in degrees. Read it before acting and after.',
+    'The whole session as JSON: the app and its plugins, the project (its name; unsaved — whether it has changes not saved since it was last saved or opened, as the top bar’s "Unsaved changes" says, null with no page; holds — the work a new scan or project would replace, counted by what it is), the workspace on screen, whether it is busy, the scan (file, units, vertex and triangle counts, bounding box, centre, size, applied alignment), every element with its fit, every dimension with its value, limit and verdict, the sections, what is open in the panels, the deviation, wall thickness and 2D Measure state with their statistics, the guided hint for the next step, and the undo history. Lengths in millimetres, angles in degrees. Read it before acting and after.',
   input: obj({}),
   readOnly: true,
   headless: true,

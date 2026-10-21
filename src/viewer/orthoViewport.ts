@@ -27,6 +27,20 @@ import type { ViewTheme } from './viewThemes'
  *  was drift, not intent. */
 const FRAME_MARGIN = 1.08
 
+/** How a picture of the view (capture) is lit, beside the screen: the key
+ *  a share weaker and lifted over the camera's shoulder, up and to the
+ *  left, by these shares of the line of sight — about 25° — and the fill
+ *  that much stronger. A key on the line of sight puts the whole of its
+ *  light, and the whole of a glossy finish's highlight, on every face
+ *  square to the camera at once: on the screen a turn of the part sweeps
+ *  it off, in a still picture of a standard view such a face is a white
+ *  sheet. Lit from off the line it keeps its shading, and faces at other
+ *  angles read apart. */
+const PICTURE_KEY_SHARE = 0.8
+const PICTURE_KEY_UP = 0.4
+const PICTURE_KEY_LEFT = 0.25
+const PICTURE_FILL_MORE = 0.3
+
 /** The named camera poses: the six axis-aligned views and the three-quarter
  *  one, keyed the way PrusaSlicer keys them (0 iso, 1 top, 2 bottom, 3 front,
  *  4 rear, 5 left, 6 right). Z up throughout, the pose a part standing on the
@@ -711,7 +725,8 @@ export class OrthoViewport {
    * The view as it stands, drawn once at `width` × `height` pixels into a
    * PNG — a picture of the part for someone who cannot see the screen. The
    * camera keeps where it looks and its zoom; a turn under way is landed
-   * first. The labels are HTML laid over the canvas and are not in it, nor
+   * first. It is lit a little otherwise than the screen: see
+   * PICTURE_KEY_SHARE. The labels are HTML laid over the canvas and are not in it, nor
    * is a viewport laid over this one. The canvas is back at its own size
    * before the picture is encoded: the bitmap is copied as toBlob is called.
    */
@@ -733,14 +748,27 @@ export class OrthoViewport {
     this.camera.right = h * aspect
     this.camera.left = -h * aspect
     this.camera.updateProjectionMatrix()
-    this.keyLight.position.copy(this.camera.position)
+    this.camera.updateMatrixWorld(true)
+    // Lit for a still picture — see PICTURE_KEY_SHARE — and back as the
+    // scheme has it once drawn.
+    const key = this.keyLight.intensity
+    const fill = this.ambientLight.intensity
+    const toCamera = new THREE.Vector3().subVectors(this.camera.position, this.controls.target)
+    const reach = toCamera.length()
+    const right = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 0)
+    const up = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 1)
+    this.keyLight.position.copy(this.controls.target).add(toCamera).addScaledVector(up, PICTURE_KEY_UP * reach).addScaledVector(right, -PICTURE_KEY_LEFT * reach)
     this.keyLight.target.position.copy(this.controls.target)
+    this.keyLight.intensity = key * PICTURE_KEY_SHARE
+    this.ambientLight.intensity = fill + PICTURE_FILL_MORE
     this.renderer.setViewport(0, 0, width, height)
     this.renderer.render(this.scene, this.camera)
     this.opts.onAfterRender?.(width, height)
     const blob = new Promise<Blob>((resolve, reject) =>
       canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('The view could not be encoded as a PNG.'))), 'image/png'),
     )
+    this.keyLight.intensity = key
+    this.ambientLight.intensity = fill
     this.renderer.setPixelRatio(ratio)
     this.resize()
     return blob

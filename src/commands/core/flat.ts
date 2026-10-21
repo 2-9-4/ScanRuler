@@ -301,7 +301,8 @@ const fit: Command<{
     try {
       if (m.mode === 'construct') {
         const slots = m.slots ?? []
-        if ((refs ?? []).length !== slots.length) throw new CommandError('invalid_input', `${m.label} takes ${slots.length} source element${slots.length === 1 ? '' : 's'}.`)
+        const given = (refs ?? []).length
+        if (m.repeat ? given < slots.length : given !== slots.length) throw new CommandError('invalid_input', `${m.label} takes ${m.repeat ? `${slots.length} or more` : slots.length} source element${slots.length === 1 ? '' : 's'}.`)
         refs!.forEach((ref, slot) => useFlat.getState().setDraftRef(slot, findFlatElement(ref).id))
       } else if (byEdges) {
         const collected = edgePointsOf(edges!, chains, box)

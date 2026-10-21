@@ -14,6 +14,7 @@ import { dimHolds } from '../state/historyStore'
 import { useDeviation } from '../state/deviationStore'
 import { useThickness } from '../state/thicknessStore'
 import { projectSections } from './projectSections'
+import { watchUnsaved } from './project'
 import { useShell } from '../state/shellStore'
 import { ProjectClient } from '../core/project/projectClient'
 import { RecoveryStorage, type CheckpointInfo } from './recoveryStorage'
@@ -62,14 +63,28 @@ export function useRecovery(capture: () => Snapshot, blocked: () => boolean, ope
     }
     void db.list().then((available) => { if (!disposed) update({ available }) }, reportError)
 
+    // What was last found, for a question asked while the session is busy.
+    let dirty = false
     const inspect = () => {
       if (disposed || callbacks.current.blocked()) return null
       const current = cache.inspect()
       const { signature } = current
       hadContent.current ||= current.hasContent
-      update({ dirty: (hadContent.current && signature !== saved.current) || hasDraft() })
+      dirty = (hadContent.current && signature !== saved.current) || hasDraft()
+      update({ dirty })
       return current
     }
+    // The same flag for the session's readout (session.state's
+    // project.unsaved), found as it is asked for rather than when the
+    // throttled look next comes round.
+    const unwatchUnsaved = watchUnsaved(() => {
+      try {
+        inspect()
+      } catch (error) {
+        reportError(error)
+      }
+      return dirty
+    })
     const checkpoint = async () => {
       if (!pending || writing || disposed) return
       try {
@@ -133,6 +148,7 @@ export function useRecovery(capture: () => Snapshot, blocked: () => boolean, ope
     window.addEventListener('beforeunload', beforeUnload)
     return () => {
       disposed = true
+      unwatchUnsaved()
       clearTimeout(timer)
       clearInterval(interval)
       unsub.forEach((fn) => fn())

@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // The MCP side: the tools an agent lists and calls. Each of the page's
-// commands is a tool (tools.js); four more are this server's own —
+// commands is a tool (tools.js); five more are this server's own —
 // scanruler_status, to see whether a ScanRuler page is connected and how to
 // connect one; scanruler_open, to open one in the user's browser, paired;
-// scanruler_wait, to wait for it or for it to be idle; and scanruler_batch,
-// to run several of the page's tools in one call. In compact mode, for a
+// scanruler_wait, to wait for it or for it to be idle; scanruler_batch, to
+// run several of the page's tools in one call; and scanruler_write, to
+// write a text file — a report — next to the scan. In compact mode, for a
 // model with a small context window, the page's tools are not listed but
 // for those that return a picture, which a batch cannot show — it writes
 // the picture to a file and gives its text: a
@@ -14,9 +15,11 @@
 // process with no page, listed in either mode.
 
 import { readFileSync } from 'node:fs'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { dirname, extname, isAbsolute, relative, resolve } from 'node:path'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
-import { agentJson, batchedPicture, imageContent, inputFor, saveFileResult, toolFor, toolName, waitIn } from './tools.js'
+import { absolute, agentJson, batchedPicture, imageContent, inputFor, replacesSession, saveFileResult, toolFor, toolName, waitIn } from './tools.js'
 import { jsonBytes, replyMeasure } from './trace.js'
 
 /** The app's own commands as of this release, so the tools are there before
@@ -92,6 +95,13 @@ const HEADLESS_INSTRUCTIONS = {
 /** How many jobs the server keeps answers of, the oldest finished let go
  *  first. */
 const JOBS_KEPT = 50
+
+/** How long the status waits for the page to say what its session holds,
+ *  ms; past it the status goes without. */
+const SESSION_WITHIN_MS = 3_000
+
+/** The kinds of file scanruler_write writes: text, for a report. */
+const TEXT_KINDS = ['.md', '.txt', '.csv', '.json']
 
 /** A change answered directly that took longer than this has likely
  *  outlived its client's wait (Claude Desktop's is a minute): its answer
@@ -235,6 +245,41 @@ export function createMcpServer({
   const startedAt = new Date().toISOString()
   const noJobs = `None asked of this server copy, which started at ${startedAt}. A change asked of an earlier copy is not known here: session_state says what the page holds.`
 
+  /** What the page's session holds, in brief, for the status: the scan,
+   *  the project's name, whether it has unsaved changes, and its work
+   *  counted — read off session.state, and left out when the page does not
+   *  answer soon. */
+  const sessionBrief = async () => {
+    if (!link.connected) return {}
+    let timer
+    const state = await Promise.race([
+      link.run('session.state', {}).catch(() => null),
+      new Promise((r) => (timer = setTimeout(() => r(null), SESSION_WITHIN_MS))),
+    ])
+    clearTimeout(timer)
+    if (!state || typeof state !== 'object') return {}
+    const project = state.project ?? {}
+    return {
+      session: {
+        scan: state.scan?.fileName ?? null,
+        ...(project.name ? { project: project.name } : {}),
+        unsaved: project.unsaved ?? null,
+        ...(project.holds ?? {}),
+      },
+    }
+  }
+
+  // ---- folders -------------------------------------------------------------
+  // The folders this server opened a scan or a project from, or saved one
+  // into, the latest first: where scanruler_write may write.
+  const folders = []
+  const rememberFolder = (file) => {
+    const folder = dirname(file)
+    const at = folders.indexOf(folder)
+    if (at >= 0) folders.splice(at, 1)
+    folders.unshift(folder)
+  }
+
   const status = () => ({
     backend: headless ? 'headless' : 'page',
     connected: link.connected,
@@ -260,10 +305,10 @@ export function createMcpServer({
     {
       name: 'scanruler_status',
       title: 'ScanRuler connection status',
-      description: 'Whether a ScanRuler page is connected to this agent, which version and plugins it has, whether its tab is hidden (page.hidden), and — when none is — how the user connects one. backend says whether ScanRuler runs in a tab (page) or in this server (headless). jobs lists the latest calls that change the session, newest first, each running, done or failed — a call whose answer you did not get is among them; scanruler_wait { for: "job", job } gives its answer. tools, when there, says the tools you were given are not the ones the page offers now (stale).',
+      description: 'Whether a ScanRuler page is connected to this agent, which version and plugins it has, whether its tab is hidden (page.hidden), and — when none is — how the user connects one. session, with a page, says what it holds: the scan, the project’s name, whether it has changes not saved (unsaved), and its work counted — elements, features, notes … — so a session someone else left is seen before it is replaced (scan_open with saveTo keeps it). backend says whether ScanRuler runs in a tab (page) or in this server (headless). jobs lists the latest calls that change the session, newest first, each running, done or failed — a call whose answer you did not get is among them; scanruler_wait { for: "job", job } gives its answer. tools, when there, says the tools you were given are not the ones the page offers now (stale).',
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true, openWorldHint: false },
-      call: async () => text(status()),
+      call: async () => text({ ...status(), ...(await sessionBrief()) }),
     },
     {
       name: 'scanruler_open',
@@ -331,6 +376,57 @@ export function createMcpServer({
     },
   ]
 
+  // A report beside the scan, written by this server: no grant of the
+  // browser's to save a file, and nowhere but the scan's folder.
+  if (!headless) {
+    own.push({
+      name: 'scanruler_write',
+      title: 'Write a text file beside the scan',
+      description: `Write a text file — a report, notes, a table of readings — next to the scan, as UTF-8: ${TEXT_KINDS.join(', ')} only, and only inside the folder this server last opened a scan or a project from (scan_open, project_load) or saved one into (saveTo), or a folder under it. A relative path is taken in that folder; an absolute one must lie in one of those folders, and a path may not climb out with "..". A file already there is replaced. Returns its path and size in bytes. Refused while this server has opened no scan or project from a folder — then open the scan with scan_open first, or write the file yourself.`,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', minLength: 1, description: `The file: a name in the scan’s folder ("report.md"), a path under it ("report/sigma.md"), or an absolute path in it — ${TEXT_KINDS.join(', ')}.` },
+          text: { type: 'string', description: 'What the file holds, as text.' },
+        },
+        required: ['path', 'text'],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, openWorldHint: false },
+      call: async (args) => {
+        try {
+          return text(await writeText(args?.path, args?.text))
+        } catch (e) {
+          return failure(e)
+        }
+      },
+    })
+  }
+
+  /** scanruler_write's file, kept to the folders a scan or a project came
+   *  from — see its description. */
+  const writeText = async (path, body) => {
+    if (typeof path !== 'string' || path.length === 0) throw { code: 'invalid_input', message: 'path: give the file to write.' }
+    if (typeof body !== 'string') throw { code: 'invalid_input', message: 'text: give what the file holds, as a string.' }
+    const kind = extname(path).toLowerCase()
+    if (!TEXT_KINDS.includes(kind)) throw { code: 'invalid_input', message: `path: only ${TEXT_KINDS.join(', ')} files are written — not "${kind || 'no extension'}".` }
+    if (path.split(/[\\/]/).includes('..')) throw { code: 'invalid_input', message: 'path: ".." is not taken — give a path in the scan’s folder or under it.' }
+    if (folders.length === 0) {
+      throw { code: 'invalid_state', message: 'This server copy has opened no scan or project from a folder, so it has none to write into. Open the scan with scan_open (or a project with project_load) by its path first — its folder is where the file goes — or write the file yourself.' }
+    }
+    const target = isAbsolute(path) ? resolve(path) : resolve(folders[0], path)
+    const inside = (folder) => {
+      const r = relative(folder, target)
+      return r !== '' && !r.startsWith('..') && !isAbsolute(r)
+    }
+    if (!folders.some(inside)) {
+      throw { code: 'invalid_input', message: `path: ${target} is outside the folders a scan or a project was opened from — ${folders.join(', ')}. Give a path in one of them.` }
+    }
+    await mkdir(dirname(target), { recursive: true })
+    await writeFile(target, body, 'utf8')
+    return { path: target, size: Buffer.byteLength(body, 'utf8') }
+  }
+
   let listed = ''
   let listedNames = []
   const definition = ({ call: _call, ...tool }) => tool
@@ -396,8 +492,14 @@ export function createMcpServer({
     }
     try {
       const { input, binaryKey } = await inputFor(command, args, { cwd })
+      // A session kept before it is replaced: saved, then let go.
+      const savedTo = replacesSession(command) && args?.saveTo !== undefined ? await saveSession(String(args.saveTo)) : undefined
+      if (savedTo !== undefined) input.discard = true
       const started = Date.now()
       let result = await link.run(command.name, input, binaryKey, onProgress)
+      // The folder a scan or a project was opened from, for scanruler_write.
+      if (binaryKey && replacesSession(command) && args?.path !== undefined) rememberFolder(absolute(String(args.path), cwd))
+      if (savedTo !== undefined && result && typeof result === 'object' && !Array.isArray(result)) result = { ...result, savedTo }
       if (ms && result && typeof result === 'object' && !Array.isArray(result)) result = { ...result, ms: Date.now() - started }
       const image = command.returnsImage && !batched ? await imageContent(result, args, { cwd, outDir }) : null
       if (image) return { content: image }
@@ -414,6 +516,23 @@ export function createMcpServer({
     }
   }
 
+  /** The session saved as a project file at `path` (a file, or a folder
+   *  for its own name): where it went, or null when the session held
+   *  nothing to save. Throws, saving nothing, when the save fails. */
+  const saveSession = async (path) => {
+    let result
+    try {
+      result = await link.run('project.save', {})
+    } catch (e) {
+      if (/nothing to save/i.test(e?.message ?? '')) return null
+      throw { code: e?.code ?? 'failed', message: `Nothing was replaced: the session could not be saved first — ${e?.message ?? String(e)}` }
+    }
+    const written = await saveFileResult(result, { path }, { cwd, outDir })
+    if (!written?.file?.path) throw { code: 'failed', message: 'Nothing was replaced: project.save gave no file to save.' }
+    rememberFolder(written.file.path)
+    return written.file.path
+  }
+
   // Several of the page's tools in one call — what cuts a run of twenty
   // scan_nearest calls to one round trip. Each answer is the tool's own; a
   // picture comes back as the text beside it, not as an image, and is
@@ -423,7 +542,7 @@ export function createMcpServer({
     name: 'scanruler_batch',
     title: 'Run several ScanRuler tools',
     description:
-      `Run several of the ScanRuler tools in one call, in order, each with its own arguments — a run of scan_nearest, element_fit or section_get calls, say. Returns results, one per call in order: { tool, ok, result } or { tool, ok: false, error: { code, message } }. The first refused stops the rest (stopped says which index) unless stopOnError is false — and then, with rollback (the default), every change the batch made before it is undone, so the batch stands or falls whole: the answer names failed: { index, tool, error } and undone (the steps taken back, newest first). Each call that changes the session is still its own undo step. timings: true gives each call its ms and the batch total_ms, and a change\'s build the steps it played with their ms (result.steps.played). wait: false answers at once with { queued, job }; scanruler_wait { for: "job", job } gives the batch\'s answer. A tool that returns a picture is not shown here: the picture is written to a file — its call’s path, or a new file in ${outDir} — and its result gives that file.path; call the tool directly to see the picture. The server’s own tools (scanruler_status, _open, _wait, _batch) cannot be batched.`,
+      `Run several of the ScanRuler tools in one call, in order, each with its own arguments — a run of scan_nearest, element_fit or section_get calls, say. Returns results, one per call in order: { tool, ok, result } or { tool, ok: false, error: { code, message } }. The first refused stops the rest (stopped says which index) unless stopOnError is false — and then, with rollback (the default), every change the batch made before it is undone, so the batch stands or falls whole: the answer names failed: { index, tool, error } and undone (the steps taken back, newest first). Each call that changes the session is still its own undo step. timings: true gives each call its ms and the batch total_ms, and a change\'s build the steps it played with their ms (result.steps.played). wait: false answers at once with { queued, job }; scanruler_wait { for: "job", job } gives the batch\'s answer. A tool that returns a picture is not shown here: the picture is written to a file — its call’s path, or a new file in ${outDir} — and its result gives that file.path; call the tool directly to see the picture. The server’s own tools (scanruler_status, _open, _wait, _batch, _write) cannot be batched.`,
     inputSchema: {
       type: 'object',
       properties: {

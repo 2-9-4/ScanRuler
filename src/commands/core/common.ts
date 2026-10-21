@@ -4,7 +4,7 @@
 // files in and out.
 
 import type { BuiltFile } from '../../app/exports'
-import { sessionIsDirty } from '../../app/project'
+import { holdsWords, projectUnsaved, sessionHolds, sessionIsDirty } from '../../app/project'
 import { dimHolds } from '../../state/historyStore'
 import { useShell, type Workspace } from '../../state/shellStore'
 import { draftHolds, useStore } from '../../state/store'
@@ -65,14 +65,21 @@ export const discardSchema: JsonSchema = bool(
   'Replace the session even though it holds measurements — they are lost (a project file saved before keeps them). Without it the command refuses when there is work to lose.',
 )
 
-/** Refuse to replace a session holding work unless told to. */
+/** Refuse to replace a session holding work unless told to — naming the
+ *  work, the project it is in and whether it is saved, so whoever is told
+ *  can tell their own work from someone else's. */
 export function requireDiscardable(discard: boolean | undefined, what: string): void {
-  if (!discard && sessionIsDirty()) {
-    throw new CommandError(
-      'invalid_state',
-      `The session holds measurements that ${what} would replace. Save them with project.save, or pass discard: true.`,
-    )
-  }
+  if (discard || !sessionIsDirty()) return
+  const held = holdsWords(sessionHolds())
+  const list = held.length > 1 ? `${held.slice(0, -1).join(', ')} and ${held.at(-1)}` : (held[0] ?? 'work')
+  const name = useStore.getState().projectName
+  const unsaved = projectUnsaved()
+  const project = name ? ` in the project “${name}”` : ''
+  const saved = unsaved === true ? ', with changes not saved,' : unsaved === false ? ', all of it saved,' : ''
+  throw new CommandError(
+    'invalid_state',
+    `The session holds ${list}${project}${saved} that ${what} would replace. Save it with project.save first, or pass discard: true to let it go.`,
+  )
 }
 
 /** A file's name, which says what it is. */

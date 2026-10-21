@@ -36,6 +36,10 @@ export interface FlatMethod {
   hint: string
   minPicks?: number
   slots?: { role: FlatRefRole; label: string }[]
+  /** A construction that takes any number of references past its slots:
+   *  more of the last slot's role, labelled the stem and their number —
+   *  "Center 4", "Center 5". The slots are the least it is built from. */
+  repeat?: { label: string }
 }
 
 export const FLAT_METHODS: readonly FlatMethod[] = [
@@ -126,6 +130,19 @@ export const FLAT_METHODS: readonly FlatMethod[] = [
     minPicks: 12,
   },
   {
+    id: 'flat-circle-centers',
+    kind: 'circle',
+    mode: 'construct',
+    label: 'Through centers',
+    hint: 'The best-fit circle through the centers of three or more holes, arcs or points — a bolt circle. Click each center on the sheet, or choose them below.',
+    slots: [
+      { role: 'point', label: 'Center 1' },
+      { role: 'point', label: 'Center 2' },
+      { role: 'point', label: 'Center 3' },
+    ],
+    repeat: { label: 'Center' },
+  },
+  {
     id: 'flat-arc-pick',
     kind: 'arc',
     mode: 'pick',
@@ -182,6 +199,31 @@ export function flatMethod(id: string): FlatMethod {
   const m = FLAT_METHODS.find((x) => x.id === id)
   if (!m) throw new Error(`Unknown flat method "${id}".`)
   return m
+}
+
+/** The label of reference slot `i` of a construction — past its slots, a
+ *  repeating one's next: "Center 4". */
+export function flatSlotLabel(m: FlatMethod, i: number): string {
+  const slots = m.slots ?? []
+  return i < slots.length ? slots[i].label : `${m.repeat?.label ?? 'Reference'} ${i + 1}`
+}
+
+/** The role reference slot `i` of a construction takes — past its slots,
+ *  a repeating one's last. Null where there is no such slot. */
+export function flatSlotRole(m: FlatMethod, i: number): FlatRefRole | null {
+  const slots = m.slots ?? []
+  if (i < slots.length) return slots[i].role
+  return m.repeat && slots.length > 0 ? slots[slots.length - 1].role : null
+}
+
+/** A construction's references as its draft keeps them: a repeating one's
+ *  close up when one is taken out — the centres after it move up a slot —
+ *  and never run short of its least. A fixed one's stay where they are. */
+export function flatConstructRefs(m: FlatMethod, refs: readonly (number | null)[]): (number | null)[] {
+  if (!m.repeat) return [...refs]
+  const n = m.slots?.length ?? 0
+  const kept = refs.filter((r): r is number => r !== null)
+  return kept.length >= n ? kept : [...kept, ...new Array<null>(n - kept.length).fill(null)]
 }
 
 /** Whether a method's picks are edge points collected off the detected
@@ -260,6 +302,14 @@ export function evaluateFlatConstruction(methodId: string, refs: readonly FlatFi
       const p = flatRefPoint(refs[0])
       if (!p) throw new FitError('The reference must provide a point.')
       return flatPoint(p)
+    }
+    // A bolt circle: the circle fit through the centres, so its form is how
+    // far the holes stray from one pitch circle.
+    case 'flat-circle-centers': {
+      const points = refs.map(flatRefPoint)
+      if (points.some((p) => p === null)) throw new FitError('Every reference must provide a point.')
+      if (points.length < 3) throw new FitError('A circle needs at least three centers.')
+      return fitCirclePoints(points as Vec2[])
     }
     default:
       throw new Error(`"${methodId}" is not a construction.`)

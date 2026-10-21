@@ -56,6 +56,10 @@ export interface ProjectSection<J = unknown> {
   /** Whether the session holds work of the section's worth a warning before
    *  it is replaced. */
   holdsWork?(): boolean
+  /** That work counted by what it is — { features: 12 } — for the session's
+   *  readout and a refusal to replace it to name; a count of none is left
+   *  out. */
+  holds?(): Record<string, number>
   /** Unfinished work in the section's editors, which is not saved but is
    *  worth a warning before the page is left. */
   hasDraft?(): boolean

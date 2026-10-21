@@ -2,9 +2,9 @@
 // Sections — the scan cut by a plane, along an element or a coordinate plane —
 // as the store keeps them, and the draft one is set up in.
 
-import { type CutAxis, frameKey, type SectionFrame, sectionFrameAlong, type SectionRef } from '../core/section/frame'
+import { type CutAxis, frameKey, type SectionFrame, sectionFrameAlong, sectionPlane, type SectionRef } from '../core/section/frame'
 import type { SectionCut } from '../core/section/slice'
-import type { Vec3 } from '../core/types'
+import type { ElementKind, FitData, Vec3 } from '../core/types'
 import { elementColor } from './elementModel'
 
 /**
@@ -59,6 +59,41 @@ export interface SectionDraft {
   message?: string
   editId?: number
   name?: string
+}
+
+/** Something a dimension can take as a reference: a measured element, or a
+ *  section standing in as the plane it was cut on — see sectionPlane. The
+ *  two share one id counter, so an id names one or the other. */
+export interface MeasureRef {
+  id: number
+  name: string
+  kind: ElementKind
+  color: string
+  fit?: FitData
+  /** A section rather than an element. */
+  section?: boolean
+}
+
+/** The sections as planes a dimension can be taken from. A section whose
+ *  cut is still being taken has its frame all the same. */
+export function sectionMeasureRefs(sections: readonly Section[]): MeasureRef[] {
+  return sections.map((sec) => ({
+    id: sec.id,
+    name: sec.name,
+    kind: 'plane' as const,
+    color: sec.color,
+    fit: sectionPlane(sec.frame, sec.cut),
+    section: true,
+  }))
+}
+
+/** Everything a dimension can reference, elements first. Tolerances keep to
+ *  the elements: a section has no surface for a form to be read off. */
+export function dimensionRefsOf(
+  elements: readonly MeasureRef[],
+  sections: readonly Section[],
+): MeasureRef[] {
+  return sections.length === 0 ? [...elements] : [...elements, ...sectionMeasureRefs(sections)]
 }
 
 /** The draft's frame and status, re-derived after any change: ready when the

@@ -166,6 +166,35 @@ export function sketchXAxis(normal: Vec3): Vec3 {
   return next === 0 ? [1, 0, 0] : next === 1 ? [0, 1, 0] : [0, 0, 1]
 }
 
+/** How far off the normal a coordinate axis has to lie to be turned up a
+ *  sheet: its share in the plane, about 6°. */
+const UP_MIN_SHARE = 0.1
+
+/**
+ * A frame turned in its own plane so that a coordinate axis runs up it —
+ * as near as the plane lets it — for a picture of a side view with Z up:
+ * V is the axis flattened into the plane, U the direction square to it
+ * that runs towards the + end of the coordinate axis it lies nearest, and
+ * the normal U × V, the frame's own or its reverse. The plane and the
+ * origin stay; the sheet is seen from whichever side puts that + to the
+ * right, as CAD's front view of the XZ plane has X right and Z up. Null
+ * where the axis lies along the normal and has no way up the sheet. The
+ * frames sections and sketches take are not turned: this is a picture's.
+ */
+export function frameTurnedUp(frame: SectionFrame, up: WorldAxis): SectionFrame | null {
+  const normal = normalize(frame.normal)
+  if (!normal) return null
+  const want = worldAxisDir(up)
+  const flat = addScaled(want, normal, -dot(want, normal))
+  if (Math.hypot(flat[0], flat[1], flat[2]) < UP_MIN_SHARE) return null
+  const basisV = normalize(flat)!
+  let basisU = cross(basisV, normal)
+  let k = 0
+  for (let i = 1; i < 3; i++) if (Math.abs(basisU[i]) > Math.abs(basisU[k])) k = i
+  if (basisU[k] < 0) basisU = [-basisU[0], -basisU[1], -basisU[2]]
+  return { origin: frame.origin, normal: cross(basisU, basisV), basisU, basisV }
+}
+
 /** The axis a frozen frame slides along, given the offset it was taken at —
  *  what an edit works from when the element it was cut along is gone, or has
  *  since been re-fitted somewhere else: the section stays exactly where it
@@ -254,6 +283,45 @@ export function transformFrame(frame: SectionFrame, m: Rigid): SectionFrame {
     basisU: turn(frame.basisU),
     basisV: turn(frame.basisV),
   }
+}
+
+/**
+ * A section as the plane a dimension measures from — a cut is a plane, and
+ * one put square through a rim is often the only plane there is to take a
+ * distance or an angle off. The patch is what the cut covers, so a distance
+ * that lands off the cut is warned about as one off a fitted plane's patch
+ * is. A section has no surface of its own: no residuals, no form error, so
+ * no range either. The normal is the frame's — which side it points to is
+ * the side the sheet is seen from, nothing about the material.
+ */
+export function sectionPlane(
+  frame: SectionFrame,
+  cut?: { points: Float32Array } | null,
+): Extract<FitData, { kind: 'plane' }> {
+  const { origin, normal, basisU, basisV } = frame
+  let center = origin
+  let extentU = 0
+  let extentV = 0
+  const pts = cut?.points
+  if (pts && pts.length >= 3) {
+    let u0 = Infinity
+    let u1 = -Infinity
+    let v0 = Infinity
+    let v1 = -Infinity
+    for (let i = 0; i + 2 < pts.length; i += 3) {
+      const d: Vec3 = [pts[i] - origin[0], pts[i + 1] - origin[1], pts[i + 2] - origin[2]]
+      const u = dot(d, basisU)
+      const v = dot(d, basisV)
+      if (u < u0) u0 = u
+      if (u > u1) u1 = u
+      if (v < v0) v0 = v
+      if (v > v1) v1 = v
+    }
+    center = addScaled(addScaled(origin, basisU, (u0 + u1) / 2), basisV, (v0 + v1) / 2)
+    extentU = (u1 - u0) / 2
+    extentV = (v1 - v0) / 2
+  }
+  return { kind: 'plane', center, normal, basisU, basisV, extentU, extentV, sigma: 0, usedPoints: 0, regionSize: 0 }
 }
 
 /** A string that changes whenever the frame does, to a tenth of a micron —

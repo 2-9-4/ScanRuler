@@ -4,6 +4,7 @@
 import { MESH_UNITS, type MeshUnits } from '../../core/meshUnits'
 import type { Vec3 } from '../../core/types'
 import { useStore } from '../../state/store'
+import { useDeviation } from '../../state/deviationStore'
 import { commandHost } from '../host'
 import { locationSchema, requireScan, resolveLocation, type Location } from '../refs'
 import { arr, bool, bytes, enumOf, int, num, obj, oneOf, vec3 } from '../schema'
@@ -14,6 +15,12 @@ import { scanBounds } from '../state'
 import { CommandError, type Command } from '../types'
 import { discardSchema, fileNameSchema, fileOf, lastError, requireDiscardable } from './common'
 import { roundTo } from '../../core/round'
+import { cellNoise, heightLevels, reliefGrid } from '../../core/geometry/heightGrid'
+import { basePlaneOf } from '../../core/basePlanes'
+import { sketchFrameOn } from '../../core/section/frame'
+import type { PlaneFit } from '../../core/types'
+import { usePrefs } from '../../state/prefsStore'
+import { elementRefSchema, findElement, planeRef, type ElementRef } from '../refs'
 
 export const unitsSchema = enumOf(
   MESH_UNITS.map((u) => u.id),
@@ -40,7 +47,7 @@ const open: Command<{ bytes: Uint8Array; name: string; units?: MeshUnits; discar
   name: 'open',
   title: 'Open a scan',
   description:
-    'Open a mesh as the scan to measure — STL, PLY or OBJ — in place of the one there is; everything measured on the old one goes with it, so it refuses while the session holds measurements unless discard is true. Returns the scan: name, units, vertex and triangle counts, its bounding box (min and max corners), the box’s centre and its diagonal (size), in millimetres. Not undoable: a new scan starts a new history.',
+    'Open a mesh as the scan to measure — STL, PLY or OBJ — in place of the one there is; everything measured on the old one goes with it, so it refuses while the session holds measurements unless discard is true — the refusal names what the session holds. A reference part opened from a file stays, its alignment and maps gone (referenceKept names it); one the app made from the session’s own work goes with that work (referenceDropped). Returns the scan: name, units, vertex and triangle counts, its bounding box (min and max corners), the box’s centre and its diagonal (size), in millimetres. Not undoable: a new scan starts a new history.',
   input: obj(
     {
       bytes: bytes('The file’s contents.'),
@@ -55,11 +62,16 @@ const open: Command<{ bytes: Uint8Array; name: string; units?: MeshUnits; discar
     requireDiscardable(discard, 'opening another scan')
     const { session } = commandHost()
     const before = session.clientRef.current!.scanVersion
+    const reference = useDeviation.getState().nominalName
     await session.scan.openScan(fileOf(data, name), units ?? 'mm')
     if (session.clientRef.current!.scanVersion === before) {
       throw new CommandError('failed', lastError(`${name} could not be opened.`))
     }
-    return { scan: await scanSummary() }
+    const kept = useDeviation.getState().nominalName
+    return {
+      scan: await scanSummary(),
+      ...(kept ? { referenceKept: kept } : reference ? { referenceDropped: reference } : {}),
+    }
   },
 }
 
@@ -285,11 +297,22 @@ const draft: Command<{ pull: Vec3; box?: { min: Vec3; max: Vec3 }; nearDeg?: num
 }
 
 /** The most cells a height map's numbers hold, and how many a side it
- *  aims at unless a cell is given. */
+ *  aims at unless a cell is given; and the same for one that answers
+ *  without its numbers — a picture, or the levels — which may be finer. */
 const HEIGHT_CELLS = 1600
 const HEIGHT_SIDE = 40
+const HEIGHT_CELLS_FINE = 25_600
+const HEIGHT_SIDE_FINE = 160
+/** How many levels an answer names, the largest first. */
+const HEIGHT_LEVELS = 12
+/** The least gap between two levels, mm, however clean the scan. */
+const LEVEL_GAP_MIN = 0.02
+/** How many scan vertices a plane's map looks at for its box and side. */
+const PLANE_SAMPLE = 20_000
 const AXIS_NAMES = ['+x', '-x', '+y', '-y', '+z', '-z'] as const
 type AxisName = (typeof AXIS_NAMES)[number]
+type HeightOf = 'height' | 'deviation' | 'relief'
+type PlaneIn = ElementRef | { origin: Vec3; normal: Vec3; u?: Vec3 }
 
 /** A grid of cells over the box across axis `k`, centred on it: the cell
  *  asked for, or the round size that makes the longer side `side` cells —
@@ -311,74 +334,291 @@ function gridOver(min: Vec3, max: Vec3, k: 0 | 1 | 2, cell: number | undefined, 
   return { ua, va, cell: c, cols, rows, u0, v0, widened }
 }
 
-const heightmap: Command<{ box?: { min: Vec3; max: Vec3 }; axis?: AxisName; cell?: number; picture?: boolean }> = {
+const dot3 = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+const unit = (i: number, s = 1): Vec3 => [i === 0 ? s : 0, i === 1 ? s : 0, i === 2 ? s : 0]
+
+/** The plane a map is read on, as its frame: a coordinate plane by name, a
+ *  plane element (its normal turned to the side the scan is not, so the
+ *  map looks at the face it was fitted on), or a plane given by a point and
+ *  a normal; laid as a sketch on it is (sketchFrameOn), `flip` turning it
+ *  over. */
+function planeFrame(plane: PlaneIn, flip: boolean, sample: Float32Array) {
+  let point: Vec3
+  let normal: Vec3
+  let seedU: Vec3 | undefined
+  let name: string | undefined
+  let element = false
+  if (typeof plane === 'object') {
+    point = plane.origin
+    normal = plane.normal
+    seedU = plane.u
+  } else {
+    const id = planeRef(plane)
+    if (id < 0) {
+      const base = basePlaneOf(id)!
+      point = [0, 0, 0]
+      normal = [...base.normal] as Vec3
+      name = base.name
+    } else {
+      const el = findElement(id)
+      const fit = el.fit as PlaneFit
+      point = fit.center
+      normal = fit.normal
+      name = el.name
+      element = true
+    }
+  }
+  const len = Math.hypot(normal[0], normal[1], normal[2])
+  if (!(len > 1e-9)) throw new CommandError('invalid_input', 'plane.normal: give a direction, not a zero vector.')
+  normal = [normal[0] / len, normal[1] / len, normal[2] / len]
+  if (element) {
+    // Most of the scan lies behind the face a plane was fitted on.
+    const hs: number[] = []
+    for (let i = 0; i + 2 < sample.length; i += 3) hs.push((sample[i] - point[0]) * normal[0] + (sample[i + 1] - point[1]) * normal[1] + (sample[i + 2] - point[2]) * normal[2])
+    hs.sort((a, b) => a - b)
+    if (hs.length && hs[Math.floor(hs.length / 2)] > 0) normal = [-normal[0], -normal[1], -normal[2]]
+  }
+  if (flip) normal = [-normal[0], -normal[1], -normal[2]]
+  const f = sketchFrameOn({ origin: point, normal }, seedU)
+  if (!f) throw new CommandError('invalid_input', 'plane.normal: give a direction, not a zero vector.')
+  return { name, origin: f.origin, u: f.basisU, v: f.basisV, normal: f.normal }
+}
+
+/** The deviation map in hand, per scan vertex, and the search distance
+ *  past which a reading is bare on it. */
+function deviationValues() {
+  const d = useDeviation.getState()
+  const maps = commandHost().session.maps
+  const values = d.source === 'element' ? maps.elementField.current : maps.deviation.current
+  const ready = d.source === 'element' ? d.elementStatus === 'ready' : d.mapStatus === 'ready'
+  if (!ready || !values) throw new CommandError('invalid_state', 'There is no deviation map to read — deviation.align measures one against the reference part, deviation.set_target one against an element.')
+  return { values, search: d.maxDistance, source: d.source, range: d.range }
+}
+
+const heightmap: Command<{
+  box?: { min: Vec3; max: Vec3 }
+  axis?: AxisName
+  plane?: PlaneIn
+  flip?: boolean
+  of?: HeightOf
+  smooth?: number
+  cell?: number
+  grid?: boolean
+  levels?: boolean
+  gap?: number
+  picture?: boolean
+}> = {
   name: 'heightmap',
   title: 'Map the scan’s heights',
   description:
-    `Where the scan is first met looking along an axis, over a grid of cells: pocket floors, ledges, a step's height, a face's tilt in one call. axis is the way looked: -z (the default) looks down from above and gives the top surface's z; +z looks up from below and gives the underside's; ±x, ±y likewise. box: the part looked at (the scan's box by default); rays start at its face and stop at the far one. Cells lie on the two other axes in order — x, y for z; y, z for x; x, z for y — as u and v. cell: mm (by default a round size that makes ${HEIGHT_SIDE} cells on the longer side; widened to keep ${HEIGHT_CELLS} cells at most). Returns along, across, cell, origin [u0, v0] (the grid's low corner), cols, rows and grid: rows of heights (mm, 0.01) from the low v up, null where nothing is met — grid[r][c] stands at u0 + (c + ½)·cell, v0 + (r + ½)·cell — with min, max and hit (cells met). picture: true adds the map coloured by height with world coordinates in the margins and a scale. Changes nothing.`,
+    `Where the scan is first met looking along an axis, or square onto a plane, over a grid of cells: pocket floors, ledges, a step's height, a face's tilt, a pad's tiers, an icon on a key in one call. axis is the way looked: -z (the default) looks down from above and gives the top surface's z; +z looks up from below and gives the underside's; ±x, ±y likewise. Cells lie on the two other axes in order — x, y for z; y, z for x; x, z for y — as u and v. plane, in place of axis: a plane element (id or name; its normal turned to the side the scan is not, so it looks at the face it was fitted on), a coordinate plane "XY", "YZ", "ZX", or any other — a face of a model, say — as { origin, normal, u? }; the map then looks down the normal onto it, height is the distance from the plane along the normal, and u, v are the plane's own, laid as a sketch on that plane has them (section.render { plane } draws the same sheet) — u seeds its direction; flip turns the plane over. The answer's plane gives its frame in world: a cell's point is origin + u·U + v·V + height·normal. box: the part looked at, the scan's box by default; rays start at its face and stop at the far one. With plane, box is in the plane's frame: min and max are [u, v, height], and by default it takes in the whole scan. of: height (the default); deviation — the scan's signed deviation where each ray lands (the map deviation.align or deviation.set_target measured, read off the triangle met), null where the map has no reading within its search distance; relief — the height less the surface round it (at each cell a plane fitted to its neighbours, weighed by a Gaussian smooth mm wide, three cells by default; make it about the width of what is looked for): icons, grooves, lettering and parting lines stand out of a face that curves or leans, positive proud and negative sunk. cell: mm (by default a round size that makes ${HEIGHT_SIDE} cells on the longer side; widened to keep ${HEIGHT_CELLS} cells at most — and ${HEIGHT_SIDE_FINE} and ${HEIGHT_CELLS_FINE} when the numbers are not returned). Returns along, across, cell, origin [u0, v0] (the grid's low corner), cols, rows and grid: rows of values (mm; heights to 0.01, deviation and relief to 0.001) from the low v up, null where there is none — grid[r][c] stands at u0 + (c + ½)·cell, v0 + (r + ½)·cell — with min, max, hit (cells met) and valued (cells with a value). levels: true returns, in place of the grid, the values gathered into levels — a pad's tiers, a pocket's floor, the face round them — the largest first (${HEIGHT_LEVELS} at most): each its height (the median), sigma, range, cells, area (mm²), sharePct of the cells with a value, and box ([u, v] min and max); two levels lie at least gap apart (mm; three times the cell-to-cell noise by default, ${LEVEL_GAP_MIN} at least), and unassigned counts the cells in none (walls, edges). grid: true keeps the grid as well, false leaves it out and returns the picture. picture: true adds the map coloured by its values with coordinates in the margins and a scale (a deviation in the workspace's colour map over its range); needs the browser. Changes nothing.`,
   input: obj({
-    box: obj({ min: vec3('The lowest corner, mm.'), max: vec3('The highest corner, mm.') }, ['min', 'max'], 'The part looked at; the scan’s box by default.'),
+    box: obj({ min: vec3('The lowest corner, mm — [u, v, height] with plane.'), max: vec3('The highest corner, mm — [u, v, height] with plane.') }, ['min', 'max'], 'The part looked at; the scan’s box by default. In the plane’s frame with plane.'),
     axis: enumOf(AXIS_NAMES, 'The way looked: -z (the default) from above, +z from below, and so on.'),
+    plane: oneOf(
+      [
+        elementRefSchema('A plane element, or a coordinate plane "XY", "YZ", "ZX".'),
+        obj({ origin: vec3('A point on the plane, mm.'), normal: vec3('Its normal: the side looked from.'), u: vec3('A direction for u, flattened into the plane; a sketch’s by default.') }, ['origin', 'normal']),
+      ],
+      'Look square onto this plane instead of along an axis: heights along its normal, cells in its own u, v.',
+    ),
+    flip: bool('With plane: look from its other side.'),
+    of: enumOf(['height', 'deviation', 'relief'], 'What the cells hold: height (the default), deviation (the map’s, where the ray lands) or relief (height less the surface round it).'),
+    smooth: num('relief: the smoothing’s width (a Gaussian’s sigma), mm; three cells by default.', { exclusiveMinimum: 0 }),
     cell: num('The cell’s side, mm.', { exclusiveMinimum: 0 }),
+    grid: bool('The grid of numbers: returned unless levels is asked for; false returns the picture alone.'),
+    levels: bool('Gather the values into levels with their areas, the largest first, in place of the grid.'),
+    gap: num('levels: the least gap between two levels, mm.', { exclusiveMinimum: 0 }),
     picture: bool('Add a picture of the map with a scale.'),
   }),
   readOnly: true,
   returnsFile: true,
   returnsImage: true,
-  run: async ({ box, axis = '-z', cell, picture }) => {
+  run: async ({ box, axis, plane, flip = false, of = 'height', smooth, cell, grid, levels = false, gap, picture }) => {
     requireScan()
     const client = commandHost().session.clientRef.current
     if (!client) throw new CommandError('unavailable', 'The mesh worker is not running.')
-    const b = box ?? (await client.bounds())
-    for (let k = 0; k < 3; k++) if (!(b.min[k] <= b.max[k])) throw new CommandError('invalid_input', 'The box’s min lies past its max.')
-    const k = 'xyz'.indexOf(axis[1]) as 0 | 1 | 2
-    const sign = axis[0] === '+' ? 1 : -1
-    const g = gridOver(b.min, b.max, k, cell, HEIGHT_SIDE, HEIGHT_CELLS)
-    const from = sign > 0 ? b.min[k] : b.max[k]
-    const to = sign > 0 ? b.max[k] : b.min[k]
-    const unit = (i: number, s = 1): Vec3 => [i === 0 ? s : 0, i === 1 ? s : 0, i === 2 ? s : 0]
-    const start = unit(k, from)
-    start[g.ua] = g.u0
-    start[g.va] = g.v0
-    const values = await client.heights({ origin: start, dir: unit(k, sign), u: unit(g.ua), v: unit(g.va), cell: g.cell, cols: g.cols, rows: g.rows, far: Math.abs(to - from) })
-    for (let i = 0; i < values.length; i++) values[i] = from + sign * values[i]
+    if (plane !== undefined && axis !== undefined) throw new CommandError('invalid_input', 'Give axis, or plane — one of them.')
+    if (flip && plane === undefined) throw new CommandError('invalid_input', 'flip turns a plane over — give plane.')
+    if (smooth !== undefined && of !== 'relief') throw new CommandError('invalid_input', 'smooth is the relief’s — give of: "relief".')
+    const showGrid = grid ?? !levels
+    const showPicture = picture || grid === false
+    if (box) for (let k = 0; k < 3; k++) if (!(box.min[k] <= box.max[k])) throw new CommandError('invalid_input', 'The box’s min lies past its max.')
+    // Read up front, so a map with nothing to read refuses before it rays.
+    const dev = of === 'deviation' ? deviationValues() : null
+    const side = showGrid ? HEIGHT_SIDE : HEIGHT_SIDE_FINE
+    const most = showGrid ? HEIGHT_CELLS : HEIGHT_CELLS_FINE
+
+    // The grid's frame: start corner, the way the rays run, u and v, and
+    // the height at the start with the way it counts along a ray.
+    let frame: ReturnType<typeof planeFrame> | null = null
+    let g: ReturnType<typeof gridOver>
+    let start: Vec3
+    let dir: Vec3
+    let du: Vec3
+    let dv: Vec3
+    let from: number
+    let sign: number
+    let far: number
+    const names = 'xyz'
+    let k: 0 | 1 | 2 = 2
+    const look = axis ?? '-z'
+    if (plane !== undefined) {
+      const sample = (await client.query({ min: [-Infinity, -Infinity, -Infinity], max: [Infinity, Infinity, Infinity], limit: PLANE_SAMPLE })).positions
+      frame = planeFrame(plane, flip, sample)
+      let lo: Vec3
+      let hi: Vec3
+      if (box) {
+        lo = box.min
+        hi = box.max
+      } else {
+        lo = [Infinity, Infinity, Infinity]
+        hi = [-Infinity, -Infinity, -Infinity]
+        for (let i = 0; i + 2 < sample.length; i += 3) {
+          const d: Vec3 = [sample[i] - frame.origin[0], sample[i + 1] - frame.origin[1], sample[i + 2] - frame.origin[2]]
+          const p: Vec3 = [dot3(d, frame.u), dot3(d, frame.v), dot3(d, frame.normal)]
+          for (let j = 0; j < 3; j++) {
+            lo[j] = Math.min(lo[j], p[j])
+            hi[j] = Math.max(hi[j], p[j])
+          }
+        }
+        if (!Number.isFinite(lo[0])) throw new CommandError('invalid_state', 'The scan has no vertices to map.')
+        // The sample is every k-th vertex: a little room round it for the
+        // ones between.
+        const pad = 0.01 * Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) + 1e-3
+        lo = [lo[0] - pad, lo[1] - pad, lo[2] - pad]
+        hi = [hi[0] + pad, hi[1] + pad, hi[2] + pad]
+      }
+      g = gridOver(lo, hi, 2, cell, side, most)
+      const { origin: o, u, v, normal: n } = frame
+      start = [0, 1, 2].map((j) => o[j] + g.u0 * u[j] + g.v0 * v[j] + hi[2] * n[j]) as Vec3
+      dir = [-n[0], -n[1], -n[2]]
+      du = u
+      dv = v
+      from = hi[2]
+      sign = -1
+      far = hi[2] - lo[2]
+    } else {
+      const b = box ?? (await client.bounds())
+      k = 'xyz'.indexOf(look[1]) as 0 | 1 | 2
+      sign = look[0] === '+' ? 1 : -1
+      g = gridOver(b.min, b.max, k, cell, side, most)
+      from = sign > 0 ? b.min[k] : b.max[k]
+      const to = sign > 0 ? b.max[k] : b.min[k]
+      start = unit(k, from)
+      start[g.ua] = g.u0
+      start[g.va] = g.v0
+      dir = unit(k, sign)
+      du = unit(g.ua)
+      dv = unit(g.va)
+      far = Math.abs(to - from)
+    }
+    const rays = { origin: start, dir, u: du, v: dv, cell: g.cell, cols: g.cols, rows: g.rows, far }
+    let values: Float32Array
+    let heights: Float32Array
+    if (dev) {
+      // The deviation where each ray lands: its triangle's corners weighed
+      // as the hit lies between them, a corner with no reading within the
+      // search distance left out.
+      const hits = await client.heightsAt(rays)
+      if (dev.values.length !== useStore.getState().vertexCount) throw new CommandError('internal', `The map has ${dev.values.length} readings and the scan ${useStore.getState().vertexCount} vertices.`)
+      values = new Float32Array(hits.values.length).fill(Number.NaN)
+      for (let i = 0; i < values.length; i++) {
+        if (Number.isNaN(hits.values[i])) continue
+        let s = 0
+        let w = 0
+        for (let j = 0; j < 3; j++) {
+          const reading = dev.values[hits.corners[3 * i + j]]
+          if (!(Math.abs(reading) <= dev.search)) continue
+          s += hits.weights[3 * i + j] * reading
+          w += hits.weights[3 * i + j]
+        }
+        if (w > 1e-6) values[i] = s / w
+      }
+      for (let i = 0; i < hits.values.length; i++) hits.values[i] = from + sign * hits.values[i]
+      heights = hits.values
+    } else {
+      heights = await client.heights(rays)
+      for (let i = 0; i < heights.length; i++) heights[i] = from + sign * heights[i]
+      values = of === 'relief' ? reliefGrid(heights, g.cols, g.rows, (smooth ?? 3 * g.cell) / g.cell) : heights
+    }
     let lo = Infinity
     let hi = -Infinity
     let hit = 0
-    const grid: (number | null)[][] = []
-    for (let r = 0; r < g.rows; r++) {
-      const row: (number | null)[] = []
-      for (let c = 0; c < g.cols; c++) {
-        const v = values[r * g.cols + c]
-        if (Number.isNaN(v)) {
-          row.push(null)
-          continue
-        }
-        hit++
-        lo = Math.min(lo, v)
-        hi = Math.max(hi, v)
-        row.push(roundTo(v, 2))
-      }
-      grid.push(row)
+    let valued = 0
+    for (let i = 0; i < values.length; i++) {
+      if (!Number.isNaN(heights[i])) hit++
+      const v = values[i]
+      if (Number.isNaN(v)) continue
+      valued++
+      lo = Math.min(lo, v)
+      hi = Math.max(hi, v)
     }
-    const names = 'xyz'
-    const out = {
-      axis,
-      along: names[k],
-      across: [names[g.ua], names[g.va]],
+    const places = of === 'height' ? 2 : 3
+    const out: Record<string, unknown> = {
+      ...(frame
+        ? {
+            plane: {
+              ...(frame.name ? { name: frame.name } : {}),
+              origin: frame.origin.map((x) => roundTo(x, 4)),
+              u: frame.u.map((x) => roundTo(x, 6)),
+              v: frame.v.map((x) => roundTo(x, 6)),
+              normal: frame.normal.map((x) => roundTo(x, 6)),
+            },
+            along: 'normal',
+            across: ['u', 'v'],
+          }
+        : { axis: look, along: names[k], across: [names[g.ua], names[g.va]] }),
+      of,
+      ...(of === 'relief' ? { smooth: roundTo(smooth ?? 3 * g.cell, 4) } : {}),
+      ...(dev ? { source: dev.source, searchDistance: dev.search } : {}),
       cell: g.cell,
-      ...(g.widened ? { note: `cell widened to ${g.cell} mm to keep ${HEIGHT_CELLS} cells at most` } : {}),
+      ...(g.widened ? { note: `cell widened to ${g.cell} mm to keep ${most} cells at most` } : {}),
       origin: [roundTo(g.u0, 3), roundTo(g.v0, 3)],
       cols: g.cols,
       rows: g.rows,
       hit,
-      min: hit ? roundTo(lo, 3) : null,
-      max: hit ? roundTo(hi, 3) : null,
-      grid,
+      valued,
+      min: valued ? roundTo(lo, 3) : null,
+      max: valued ? roundTo(hi, 3) : null,
     }
-    if (!picture) return out
+    if (showGrid) {
+      const rowsOut: (number | null)[][] = []
+      for (let r = 0; r < g.rows; r++) {
+        const row: (number | null)[] = []
+        for (let c = 0; c < g.cols; c++) {
+          const v = values[r * g.cols + c]
+          row.push(Number.isNaN(v) ? null : roundTo(v, places))
+        }
+        rowsOut.push(row)
+      }
+      out.grid = rowsOut
+    }
+    if (levels) {
+      const noise = cellNoise(values, g.cols, g.rows)
+      const found = heightLevels(values, { cols: g.cols, cell: g.cell, u0: g.u0, v0: g.v0 }, gap ?? Math.max(3 * noise, LEVEL_GAP_MIN))
+      out.noise = roundTo(noise, 4)
+      out.gap = roundTo(found.gap, 4)
+      out.levels = found.levels.slice(0, HEIGHT_LEVELS).map((l) => ({
+        height: roundTo(l.height, 3),
+        sigma: roundTo(l.sigma, 4),
+        range: l.range.map((x) => roundTo(x, 3)),
+        cells: l.cells,
+        area: roundTo(l.area, 2),
+        sharePct: roundTo(100 * l.share, 1),
+        box: { min: l.box.min.map((x) => roundTo(x, 3)), max: l.box.max.map((x) => roundTo(x, 3)) },
+      }))
+      if (found.levels.length > HEIGHT_LEVELS) out.moreLevels = found.levels.length - HEIGHT_LEVELS
+      out.unassigned = found.unassigned
+    }
+    if (!showPicture) return out
     if (typeof OffscreenCanvas === 'undefined') throw new CommandError('unavailable', 'A picture of the height map needs the browser.')
     const { heightPicturePng } = await import('../../app/heightPicture')
+    // A deviation in the workspace's own colours over its range; a relief
+    // even about zero; a height from its lowest to its highest.
+    const reach = Math.max(Math.abs(lo), Math.abs(hi)) || 1
+    const [low, high] = !valued ? [0, 1] : dev ? [-dev.range, dev.range] : of === 'relief' ? [-reach, reach] : [lo, hi]
+    const what = of === 'height' ? (frame ? 'Height' : names[k].toUpperCase()) : of === 'deviation' ? 'Deviation' : 'Relief'
     const png = await heightPicturePng({
       values,
       cols: g.cols,
@@ -386,13 +626,17 @@ const heightmap: Command<{ box?: { min: Vec3; max: Vec3 }; axis?: AxisName; cell
       u0: g.u0,
       v0: g.v0,
       cell: g.cell,
-      uName: names[g.ua].toUpperCase(),
-      vName: names[g.va].toUpperCase(),
-      title: `${names[k].toUpperCase()} first met looking ${axis} — cell ${g.cell} mm`,
-      low: hit ? lo : 0,
-      high: hit ? hi : 1,
+      uName: frame ? 'U' : names[g.ua].toUpperCase(),
+      vName: frame ? 'V' : names[g.va].toUpperCase(),
+      title: frame
+        ? `${what} over ${frame.name ?? 'the plane'}, looking down its normal — cell ${g.cell} mm`
+        : `${what} first met looking ${look} — cell ${g.cell} mm`,
+      low,
+      high,
+      ...(dev ? { colormap: usePrefs.getState().colormap, bare: 'no reading' } : {}),
     })
-    return { ...out, file: { name: `heightmap-${axis.replace('+', 'p').replace('-', 'm')}.png`, mimeType: 'image/png', bytes: png.bytes }, width: png.width, height: png.height }
+    const stem = frame ? 'plane' : look.replace('+', 'p').replace('-', 'm')
+    return { ...out, file: { name: `heightmap-${stem}${of === 'height' ? '' : `-${of}`}.png`, mimeType: 'image/png', bytes: png.bytes }, width: png.width, height: png.height }
   },
 }
 

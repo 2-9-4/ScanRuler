@@ -38,6 +38,18 @@ const imagePath = (outDir) => ({
   description: `Also write the picture to a file: a file path, or a folder to write it into under the name ScanRuler gives it. Without it, it is only shown — but in scanruler_batch, which shows no picture, it is written into ${outDir} under a new name.`,
 })
 
+/** The `saveTo` a command that replaces the session takes — one with
+ *  `discard`: the session saved as a project file first (mcp.js). */
+const saveToIn = {
+  type: 'string',
+  minLength: 1,
+  description: 'Save the session as a .scanruler project file here first — a file path, or a folder to save it into under its own name — then go on as with discard: true. If the save fails nothing is replaced. The answer says where it went (savedTo).',
+}
+
+/** Whether a command replaces the session, refusing to over work unless
+ *  told `discard` — what `saveTo` is offered on. */
+export const replacesSession = (command) => command.input?.properties?.discard?.type === 'boolean'
+
 const inlineIn = {
   type: 'boolean',
   description: 'false, with path: the picture is written to the file and not shown — the answer says where. A picture costs far more context than its text; save the ones you only deliver.',
@@ -104,6 +116,10 @@ export function toolFor(command, { outDir }) {
     input.properties.path = outPath(outDir)
     description += ' The file is written to `path`; the result says where and how large it is, not its bytes.'
   }
+  if (replacesSession(command)) {
+    input.properties.saveTo = saveToIn
+    description += ' With `saveTo`, the session is saved as a project file there first (as project_save does), then replaced as with discard: true — one call to keep what a page holds and start anew.'
+  }
   if (!command.readOnly) {
     input.properties.wait = waitIn
     input.properties.timings = timingsIn
@@ -126,6 +142,7 @@ export const absolute = (path, base) => (isAbsolute(path) ? path : resolve(base,
  *  bytes it names. Returns the input and the input field the bytes go in. */
 export async function inputFor(command, args, { cwd }) {
   const input = { ...(args ?? {}) }
+  delete input.saveTo
   const bytesKey = bytesProperty(command)
   if (bytesKey) {
     const file = absolute(String(input.path ?? ''), cwd)

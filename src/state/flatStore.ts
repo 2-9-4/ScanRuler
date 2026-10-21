@@ -11,7 +11,8 @@
 
 import { create } from 'zustand'
 import { distanceCalibration, diameterCalibration } from '../core/flat/calibration'
-import { collectsEdgePoints, flatMethod } from '../core/flat/construct'
+import { collectsEdgePoints, flatConstructRefs, flatMethod, flatSlotRole } from '../core/flat/construct'
+import { FLAT_ROLE_PROVIDERS } from '../core/flat/refs'
 import {
   evaluateFlatElements,
   flatPicksNeeded,
@@ -28,7 +29,7 @@ import {
 import { FitError } from '../core/fit/errors'
 import { growFromSeed } from '../core/flat/grow'
 import type { PixelsPerMm } from '../core/flat/image'
-import { snapPick, snapRadiusPx, thinEdgePoints, type EdgeIndex, type PickMeta } from '../core/flat/snap'
+import { elementNear, nearestCenter, snapPick, snapRadiusPx, thinEdgePoints, type EdgeIndex, type PickMeta } from '../core/flat/snap'
 import { nearestSplineSegment, type HandleEnd } from '../core/flat/spline'
 import type { FlatElementKind, FlatFit, Vec2 } from '../core/flat/types'
 import { PALETTE } from './palette'
@@ -64,6 +65,21 @@ function storeProfiles(profiles: CalibrationProfile[]): void {
   } catch {
     // Storage full or blocked — the profiles still work for this session.
   }
+}
+
+/** The centre a pick at `spot` (document units) snaps to, in image pixels
+ *  like every pick — of a shown circle, arc or point within the snap
+ *  radius — or null. The element being edited is left out: its picks would
+ *  otherwise be drawn onto its own centre. */
+function centerNear(
+  s: Pick<FlatState, 'elements' | 'draft' | 'pxPerMm'>,
+  spot: Vec2,
+  meta: Pick<PickMeta, 'unitsPerScreenPx'>,
+): Vec2 | null {
+  const editId = s.draft?.editId
+  const fits = s.elements.flatMap((e) => (e.visible && e.fit && e.id !== editId ? [e.fit] : []))
+  const at = nearestCenter(spot, fits, 10 * meta.unitsPerScreenPx)
+  return at && docToPx(s, at)
 }
 
 interface FlatState extends SheetState {
@@ -123,6 +139,10 @@ interface FlatState extends SheetState {
   stageClick: (spot: Vec2, meta: PickMeta, edges: EdgeIndex | null) => void
   /** A draft pin dragged to a new spot — snapping the same way a pick does. */
   stageDrag: (index: number, spot: Vec2, meta: PickMeta, edges: EdgeIndex | null) => void
+  /** A click on the sheet while a construction or a dimension is being
+   *  assembled: the element under it fills the next open slot that takes
+   *  it, or comes out of the slot it already holds. */
+  clickSlotElement: (spot: Vec2, meta: PickMeta) => void
   /** One end of a spline draft's tangent handle dragged to a spot on the
    *  sheet (document units): the tangent at that pick is fixed along it.
    *  Never snapped — a tangent is a direction, not a place on an edge. */
@@ -363,8 +383,11 @@ export const useFlat = create<FlatState>()((set, get) => ({
     const s = get()
     const px = docToPx(s, spot)
     const radius = snapRadiusPx(meta, s.pxPerMm?.x ?? 1)
-    const onEdge = snapPick(px, edges, radius, true, meta.alt)
-    const asSet = snapPick(px, edges, radius, s.snapToEdge, meta.alt)
+    // A centre within reach comes before the edge — whenever the pick snaps
+    // at all, by the setting or by Alt.
+    const center = centerNear(s, spot, meta)
+    const onEdge = (!meta.alt && center) || snapPick(px, edges, radius, true, meta.alt)
+    const asSet = (s.snapToEdge !== meta.alt && center) || snapPick(px, edges, radius, s.snapToEdge, meta.alt)
     switch (s.tool.kind) {
       case 'calibrate':
         s.addCalPick(onEdge)
@@ -387,6 +410,13 @@ export const useFlat = create<FlatState>()((set, get) => ({
         return
       case 'none':
         break
+    }
+    // A construction or a dimension being assembled takes the element
+    // clicked — a hole by its rim or its centre — into its next open slot,
+    // as the 3D viewport's do; a click on one already taken lets it go.
+    if (s.draft ? flatMethod(s.draft.method).mode === 'construct' : s.dimDraft !== null) {
+      s.clickSlotElement(spot, meta)
+      return
     }
     if (!s.draft) return
     const mode = flatMethod(s.draft.method).mode
@@ -428,10 +458,44 @@ export const useFlat = create<FlatState>()((set, get) => ({
     s.addDraftPick(asSet)
   },
 
+  clickSlotElement: (spot, meta) => {
+    const s = get()
+    const reach = 10 * meta.unitsPerScreenPx
+    const shown = s.elements.filter((e) => e.visible)
+    if (s.draft) {
+      const m = flatMethod(s.draft.method)
+      const refs = s.draft.refs
+      const blocked = flatBlockedRefs(s.draft.editId, s.elements)
+      // The open slots, in order — for a repeating construction, one past
+      // its last as well.
+      const open = [...refs.keys(), ...(m.repeat ? [refs.length] : [])].filter((i) => refs[i] == null)
+      const fits = (el: FlatElement, i: number) => {
+        const role = flatSlotRole(m, i)
+        return role !== null && FLAT_ROLE_PROVIDERS[role].includes(el.kind)
+      }
+      const el = elementNear(spot, shown, reach, (e) => !blocked.has(e.id) && (refs.includes(e.id) || open.some((i) => fits(e, i))))
+      if (!el) return
+      const used = refs.indexOf(el.id)
+      if (used >= 0) s.setDraftRef(used, null)
+      else s.setDraftRef(open.find((i) => fits(el, i))!, el.id)
+      return
+    }
+    const dd = s.dimDraft
+    if (!dd) return
+    const slots = flatDimensionTypeInfo(dd.type).slots
+    const fits = (el: FlatElement, i: number) => dd.refs[i] === null && FLAT_ROLE_PROVIDERS[slots[i].role].includes(el.kind)
+    const el = elementNear(spot, shown, reach, (e) => dd.refs.includes(e.id) || slots.some((_, i) => fits(e, i)))
+    if (!el) return
+    const used = dd.refs.indexOf(el.id)
+    if (used >= 0) s.setDimRef(used, null)
+    else s.setDimRef(slots.findIndex((_, i) => fits(el, i)), el.id)
+  },
+
   stageDrag: (index, spot, meta, edges) => {
     const s = get()
     const radius = snapRadiusPx(meta, s.pxPerMm?.x ?? 1)
-    s.moveDraftPick(index, snapPick(docToPx(s, spot), edges, radius, s.snapToEdge, meta.alt))
+    const center = s.snapToEdge !== meta.alt ? centerNear(s, spot, meta) : null
+    s.moveDraftPick(index, center ?? snapPick(docToPx(s, spot), edges, radius, s.snapToEdge, meta.alt))
   },
 
   stageHandleDrag: (index, end, spot, meta) => {
@@ -845,8 +909,11 @@ export const useFlat = create<FlatState>()((set, get) => ({
       if (!s.draft) return {}
       if (id !== null && flatBlockedRefs(s.draft.editId, s.elements).has(id)) return {}
       const refs = [...s.draft.refs]
+      // A repeating construction takes a reference past its last slot as
+      // one more; the list closes up again behind a reference taken out.
+      while (refs.length < slot) refs.push(null)
       refs[slot] = id
-      const draft = { ...s.draft, refs }
+      const draft = { ...s.draft, refs: flatConstructRefs(flatMethod(s.draft.method), refs) }
       return { draft: { ...draft, ...evaluateDraft(draft, s.elements, s.pxPerMm) } }
     }),
 
@@ -918,7 +985,7 @@ export const useFlat = create<FlatState>()((set, get) => ({
       let draft = s.draft
       if (draft?.editId === id) draft = null
       else if (draft && draft.refs.includes(id)) {
-        const next = { ...draft, refs: draft.refs.map(dropRef) }
+        const next = { ...draft, refs: flatConstructRefs(flatMethod(draft.method), draft.refs.map(dropRef)) }
         draft = { ...next, ...evaluateDraft(next, elements, s.pxPerMm) }
       }
       return {

@@ -20,6 +20,7 @@ import type { StepInfo } from './parsers/step'
 import type { SectionCut } from './section/slice'
 import type { AxialWindow, ElementKind, FitOutput, FitSettings, Vec3 } from './types'
 import type { FitGuide } from './fit/guide'
+import type { PlaneRegionReport, Segmentation, SegmentOptions } from './fit/segment'
 import type { RayGrid } from './geometry/scanQa'
 import type { WorkerRequest, WorkerResponse } from './workerProtocol'
 
@@ -64,6 +65,9 @@ export interface ReferenceDeviationResult {
   indices: Uint32Array
   parent: Uint32Array
   spacing: number
+  /** The spacing asked for, where `spacing` may have opened past it on a
+   *  large reference. */
+  wanted?: number
   values: Float32Array
 }
 
@@ -363,6 +367,22 @@ export class MeshWorkerClient {
     return res.vertices
   }
 
+  /** What a grown region holds: its area and box, and with the plane's
+   *  normal the spread of its normals and whether it is two surfaces — see
+   *  fit/segment. The vertex list is copied, not transferred. */
+  async planeRegion(vertices: Uint32Array, plane?: { normal: Vec3; seed?: number }): Promise<PlaneRegionReport> {
+    const requestId = this.nextId++
+    const res = await this.request<Extract<WorkerResponse, { type: 'plane-region-ok' }>>({ type: 'plane-region', requestId, vertices, ...(plane ? { normal: plane.normal, seed: plane.seed } : {}) })
+    return res.result
+  }
+
+  /** The scan's flat regions, the largest first, with every region's
+   *  vertices — see fit/segment. */
+  async segment(options: SegmentOptions): Promise<Segmentation> {
+    const requestId = this.nextId++
+    return (await this.request<Extract<WorkerResponse, { type: 'segment-ok' }>>({ type: 'segment', requestId, options })).result
+  }
+
   /** A place on the scan named without a click: the vertex asked for, or
    *  the one nearest the point — see geometry/nearest. */
   async nearest(at: { vertex: number } | { point: Vec3 }): Promise<ScanSpot> {
@@ -392,6 +412,15 @@ export class MeshWorkerClient {
   async heights(grid: RayGrid): Promise<Float32Array> {
     const requestId = this.nextId++
     return (await this.request<Extract<WorkerResponse, { type: 'heights-ok' }>>({ type: 'heights', requestId, grid })).values
+  }
+
+  /** The same, with the triangle each ray met: its corners (scan vertex
+   *  numbers) and the hit's weight on each, three per ray. */
+  async heightsAt(grid: RayGrid): Promise<{ values: Float32Array; corners: Uint32Array; weights: Float32Array }> {
+    const requestId = this.nextId++
+    const res = await this.request<Extract<WorkerResponse, { type: 'heights-ok' }>>({ type: 'heights', requestId, grid, corners: true })
+    if (!res.corners || !res.weights) throw new Error('The mesh worker gave no corners with the heights.')
+    return { values: res.values, corners: res.corners, weights: res.weights }
   }
 
   /** The scan's open rims (the `rims` longest) and its noise over `sample`
