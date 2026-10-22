@@ -3,7 +3,13 @@ import * as THREE from 'three'
 import type { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { OrthoNavigator } from '../src/viewer/orthoNav'
-import { isSpaceMouse, spaceMouseAxis, type SpaceMouseMotion } from '../src/viewer/spaceMouse'
+import {
+  isSpaceMouse,
+  spaceMouseAxis,
+  spaceMouseReverseOf,
+  spaceMouseSpeedOf,
+  type SpaceMouseMotion,
+} from '../src/viewer/spaceMouse'
 
 describe('SpaceMouse device match', () => {
   it('takes the ids Chrome and Edge give 3Dconnexion pucks', () => {
@@ -36,6 +42,22 @@ describe('SpaceMouse axis', () => {
 
   it('reads a missing axis as at rest', () => {
     expect(spaceMouseAxis(undefined)).toBe(0)
+  })
+})
+
+describe('SpaceMouse tuning as stored', () => {
+  it('reads a speed within its range, 1 for anything else', () => {
+    expect(spaceMouseSpeedOf('0.5')).toBe(0.5)
+    expect(spaceMouseSpeedOf('9')).toBe(2)
+    expect(spaceMouseSpeedOf('0')).toBe(0.25)
+    expect(spaceMouseSpeedOf(null)).toBe(1)
+    expect(spaceMouseSpeedOf('fast')).toBe(1)
+  })
+
+  it('reads reversed axes, dropping what it does not know', () => {
+    expect(spaceMouseReverseOf('rz,tx,nope,tx')).toEqual(['tx', 'rz'])
+    expect(spaceMouseReverseOf('')).toEqual([])
+    expect(spaceMouseReverseOf(null)).toEqual([])
   })
 })
 
@@ -112,9 +134,10 @@ describe('SpaceMouse routing', () => {
     expect(m.dt).toBeCloseTo(0.016)
     expect(m.ty).toBe(1)
     expect(m.rz).toBeGreaterThan(0)
-    // Roll is not read, and does not leak into the tilt.
+    // Roll is read, and does not leak into the tilt.
+    expect(m.ry).toBe(-1)
     expect(m.rx).toBe(0)
-    expect(Object.keys(m).sort()).toEqual(['dt', 'rx', 'rz', 'tx', 'ty', 'tz'])
+    expect(Object.keys(m).sort()).toEqual(['dt', 'rx', 'ry', 'rz', 'tx', 'ty', 'tz'])
     // A stalled tab does not fling the view.
     tick(5000)
     expect(sm.readSpaceMouse(view, true)!.dt).toBe(0.1)
@@ -187,7 +210,45 @@ describe('SpaceMouse routing', () => {
     fire('gamepaddisconnected', first)
     expect(sm.spaceMouseAttached()).toBe(true)
     tick()
-    expect(sm.readSpaceMouse(view, true)?.tx).toBe(1)
+    expect(sm.readSpaceMouse(view, true)?.tx).toBe(-1)
+  })
+
+  it('moves the part with the hand: a slide right or a tilt forward moves the camera the other way', () => {
+    sm.listenForSpaceMouse()
+    plugIn()
+    const view = {}
+    puck.axes = [1, 0, 1, 1, 0, 1]
+    tick()
+    const m = sm.readSpaceMouse(view, true)!
+    expect(m.tx).toBe(-1)
+    expect(m.rx).toBe(-1)
+    // Down on the cap pans the camera up, so the part goes down with it.
+    expect(m.tz).toBe(1)
+    expect(m.rz).toBe(1)
+  })
+
+  it("reverses the axes the operator asks for, and scales all six by the speed", () => {
+    sm.listenForSpaceMouse()
+    plugIn()
+    const view = {}
+    sm.tuneSpaceMouse({ speed: 0.5, reversed: ['tx', 'ry'] })
+    puck.axes = [1, 1, 1, 1, 1, 1]
+    tick()
+    const m = sm.readSpaceMouse(view, true)!
+    expect([m.tx, m.ty, m.tz, m.rx, m.ry, m.rz]).toEqual([0.5, 0.5, 0.5, -0.5, -0.5, 0.5])
+    sm.tuneSpaceMouse({ speed: 1, reversed: [] })
+    tick()
+    expect(sm.readSpaceMouse(view, true)!.tx).toBe(-1)
+  })
+
+  it('tells its watchers when a puck attaches and when it goes', () => {
+    const seen: (string | null)[] = []
+    sm.watchSpaceMouse(() => seen.push(sm.spaceMouseName()))
+    sm.listenForSpaceMouse()
+    plugIn()
+    puck.connected = false
+    fire('gamepaddisconnected', puck)
+    expect(seen).toEqual([puck.id, null])
   })
 })
 
@@ -200,7 +261,7 @@ describe('SpaceMouse flying the camera', () => {
   let controls: { target: THREE.Vector3; update: () => void }
   let nav: OrthoNavigator
 
-  const motion = (m: Partial<SpaceMouseMotion>): SpaceMouseMotion => ({ dt: 0.1, tx: 0, ty: 0, tz: 0, rx: 0, rz: 0, ...m })
+  const motion = (m: Partial<SpaceMouseMotion>): SpaceMouseMotion => ({ dt: 0.1, tx: 0, ty: 0, tz: 0, rx: 0, ry: 0, rz: 0, ...m })
 
   beforeEach(() => {
     now = 1000
@@ -267,6 +328,14 @@ describe('SpaceMouse flying the camera', () => {
     expect(camera.position.y).toBeLessThan(before.y)
     // The up vector turns with the camera: the free orbit has no world up.
     expect(camera.up.dot(camera.getWorldDirection(new THREE.Vector3()))).toBeCloseTo(0)
+  })
+
+  it('rolls about the line of sight, which stays put', () => {
+    nav.stepSpaceMouse(motion({ ry: 1 }))
+    expect(camera.getWorldDirection(new THREE.Vector3()).z).toBeCloseTo(-1)
+    // The camera turns clockwise about its line of sight, so its up leans to +X.
+    expect(camera.up.x).toBeGreaterThan(0.2)
+    expect(camera.up.angleTo(new THREE.Vector3(0, 1, 0))).toBeCloseTo(0.24)
   })
 
   it('lets the pivot go once the puck has settled', () => {

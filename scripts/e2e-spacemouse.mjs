@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // End-to-end check of the SpaceMouse: drives the real app in headless Chrome
 // with a stand-in puck behind navigator.getGamepads, and confirms the puck
-// pans, zooms and turns the main view, holds the wheel off while it moves, and
-// passes from the 3D view hidden behind the 2D workspace to the sheet and back.
+// pans, zooms, turns and rolls the main view the way the part should follow
+// the hand, shows its settings only once attached and reverses an axis from
+// them, holds the wheel off while it moves, and passes from the 3D view hidden
+// behind the 2D workspace to the sheet and back.
 //
 // Prereqs: dev server running (npm run dev), Chrome installed. Reads the
 // camera through the development hook, window.__scanruler.
@@ -75,11 +77,13 @@ const camera = () =>
     const vp = window.__scanruler.scene().viewport
     const cam = vp.camera
     const dir = cam.getWorldDirection(cam.position.clone())
+    cam.updateMatrixWorld()
     return {
       pos: cam.position.toArray(),
       target: vp.controls.target.toArray(),
       dir: dir.toArray(),
       up: cam.up.toArray(),
+      right: cam.position.clone().setFromMatrixColumn(cam.matrixWorld, 0).toArray(),
       zoom: cam.zoom,
       marker: vp.nav.pivotMarker.visible,
     }
@@ -101,9 +105,29 @@ await page.evaluate(() => {
 await sleep(250)
 check(dist((await camera()).pos, start.pos) < 1e-9, 'a puck the browser has not reported is not read')
 
+const puckSettings = async () => {
+  await click(page, '[data-test="open-settings"]')
+  await page.waitForSelector('[data-test="settings-modal"]')
+  const shown = await page.evaluate(() => {
+    const el = document.querySelector('[data-test="spacemouse-status"]')
+    return el ? el.textContent : null
+  })
+  return shown
+}
+const closeSettings = async () => {
+  await page.keyboard.press('Escape')
+  await page.waitForFunction(() => !document.querySelector('[data-test="settings-modal"]'))
+}
+check((await puckSettings()) === null, 'no SpaceMouse settings before a puck has attached')
+await closeSettings()
+
 await touch()
 await sleep(50)
 check(connected.length === 1, `the puck connects on its first touch (${connected[0] ?? 'no message'})`)
+const status = await puckSettings()
+check(/Connected: SpaceMouse Compact/.test(status ?? ''), `the SpaceMouse settings show once it attaches (${status})`)
+await closeSettings()
+await page.mouse.move(...mid)
 
 // ---- pan --------------------------------------------------------------------
 let before = await camera()
@@ -112,6 +136,7 @@ let after = await camera()
 const moved = after.pos.map((v, i) => v - before.pos[i])
 const targetMoved = after.target.map((v, i) => v - before.target[i])
 check(dist(moved, [0, 0, 0]) > 1, `slide pans the view (${dist(moved, [0, 0, 0]).toFixed(1)} mm)`)
+check(dot(moved, before.right) < 0, 'a slide to the right moves the camera left: the part goes with the hand')
 check(dist(moved, targetMoved) < 1e-6, 'the camera and its target pan together')
 check(Math.abs(dot(moved, before.dir)) < 1e-6 * dist(moved, [0, 0, 0]) + 1e-9, 'the pan stays in the screen plane')
 check(after.zoom === before.zoom && dist(after.dir, before.dir) < 1e-9, 'a slide neither zooms nor turns')
@@ -120,11 +145,11 @@ check(after.zoom === before.zoom && dist(after.dir, before.dir) < 1e-9, 'a slide
 before = after
 await hold([0, 1, 0, 0, 0, 0])
 after = await camera()
-check(after.zoom > before.zoom * 1.3, `pushing forward zooms in (${before.zoom.toFixed(2)} → ${after.zoom.toFixed(2)})`)
+check(after.zoom > before.zoom * 1.3, `pulling the cap towards you zooms in (${before.zoom.toFixed(2)} → ${after.zoom.toFixed(2)})`)
 before = after
 await hold([0, -1, 0, 0, 0, 0])
 after = await camera()
-check(after.zoom < before.zoom, 'pulling back zooms out')
+check(after.zoom < before.zoom, 'pushing it away zooms out')
 
 // ---- the wheel is held off while the puck moves -----------------------------
 before = await camera()
@@ -164,6 +189,27 @@ check(turned > 0.3, `tilt and twist turn the part (${((turned * 180) / Math.PI).
 check(Math.abs(dot(after.up, after.dir) - dot(before.up, before.dir)) < 1e-6, 'up turns with the camera: the free orbit')
 await sleep(300)
 check(!(await camera()).marker, 'the pivot marker goes once the puck settles')
+
+before = await camera()
+await hold([0, 0, 0, 0, 0.6, 0], 200)
+after = await camera()
+check(dist(after.dir, before.dir) < 1e-6, 'roll keeps the line of sight')
+const rolled = Math.acos(Math.min(1, dot(before.up, after.up)))
+check(rolled > 0.1, `roll turns the part about the line of sight (${((rolled * 180) / Math.PI).toFixed(0)}°)`)
+await sleep(300)
+
+// ---- an axis reversed in the settings ---------------------------------------
+await puckSettings()
+await click(page, '[data-test="spacemouse-reverse-tx"]')
+await closeSettings()
+await page.mouse.move(...mid)
+before = await camera()
+await hold([1, 0, 0, 0, 0, 0])
+after = await camera()
+check(dot(after.pos.map((v, i) => v - before.pos[i]), before.right) > 0, 'reversed in the settings, the same slide pans the other way')
+await puckSettings()
+await click(page, '[data-test="spacemouse-reverse-tx"]')
+await closeSettings()
 
 // ---- the 2D workspace takes the puck, and gives it back ---------------------
 await click(page, '[data-test=workspace-flat]')

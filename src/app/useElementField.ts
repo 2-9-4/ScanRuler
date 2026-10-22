@@ -25,17 +25,21 @@ import { useStore, type Element } from '../state/store'
 import type { SceneManager } from '../viewer/SceneManager'
 
 /** The scan's vertices and normals as the viewport holds them — the same buffers
- *  the elements were fitted in, which is why no alignment comes into this. */
+ *  the elements were fitted in, which is why no alignment comes into this.
+ *  Its own vertices only: past them the render arrays carry the copies its
+ *  sharp edges were split into for shading (core/geometry/crease.ts), and a
+ *  map with a reading for each copy is one the scan refuses to paint. */
 function scanArrays(
   scene: SceneManager | null,
 ): { positions: Float32Array; normals: Float32Array } | null {
   const geometry = scene?.scanGeometry()
   const positions = geometry?.getAttribute('position')
   const normals = geometry?.getAttribute('normal')
-  if (!positions || !normals) return null
+  if (!scene || !positions || !normals) return null
+  const own = scene.scanVertexCount() * 3
   return {
-    positions: positions.array as Float32Array,
-    normals: normals.array as Float32Array,
+    positions: (positions.array as Float32Array).subarray(0, own),
+    normals: (normals.array as Float32Array).subarray(0, own),
   }
 }
 

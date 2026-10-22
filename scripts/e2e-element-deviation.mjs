@@ -159,6 +159,11 @@ check(Math.abs(flat.min) < 0.02 && Math.abs(flat.max) < 0.02, 'a flat face maps 
 const colouredOnFace = await colouredFraction(page)
 console.log(`coloured stage: ${(colouredOnFace * 100).toFixed(1)} %`)
 check(colouredOnFace > 0.01, 'the map is painted on the part')
+// The coloured fraction alone is met by the other plane's shell. A cube's
+// sharp edges split its vertices for shading, and the map must still fit the
+// scan's own vertices, not the copies too.
+const painted = await page.evaluate(() => window.__scanruler.scene().mapPainted().scan)
+check(painted === 'painted', `the scan itself wears the map (${painted})`)
 
 // ---- what bounds the measurement -------------------------------------------
 // Reach far enough to find the underside of the cube, which lies squarely

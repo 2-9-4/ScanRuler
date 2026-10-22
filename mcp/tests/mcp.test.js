@@ -162,6 +162,14 @@ test('with a page: tools run on it — files read from paths and written to path
   assert.equal(all.json.results[2].error.code, 'invalid_input')
   assert.equal(all.json.results[3].ok, true)
   assert.equal((await call('scanruler_batch', { calls: [] })).error, true)
+  // A run a script wrote, read from its file: by the command's own name too.
+  await writeFile(join(dir, 'calls.json'), JSON.stringify({ steps: [{ name: 'session.state', input: {} }, { tool: 'session_state' }] }))
+  const fromFile = await call('scanruler_batch', { file: 'calls.json' })
+  assert.equal(fromFile.error, false)
+  assert.equal(fromFile.json.ran, 2)
+  assert.deepEqual(fromFile.json.results.map((r) => r.tool), ['session_state', 'session_state'])
+  assert.equal((await call('scanruler_batch', { file: 'no-such.json' })).error, true)
+  assert.equal((await call('scanruler_batch', { file: 'calls.json', calls: [{ tool: 'session_state' }] })).error, true)
 
   assert.ok(listChanged >= 1, 'the client is told the list changed')
   const { tools } = await client.listTools()

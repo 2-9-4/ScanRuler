@@ -57,7 +57,7 @@ export function StatusStrip() {
         § <span className="btxt">IMPRINT</span>
       </button>
       <a href="https://www.cnckitchen.com" target="_blank" rel="noreferrer">
-        LOCAL ONLY · FILES NEVER LEAVE YOUR BROWSER
+        LOCAL ONLY<span className="ltxt"> · FILES NEVER LEAVE YOUR BROWSER</span>
       </a>
     </footer>
   )

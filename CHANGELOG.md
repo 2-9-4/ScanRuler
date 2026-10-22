@@ -5,6 +5,37 @@ bar and the imprint is the entry it belongs to; the `.scanruler` projects it
 saves carry the same number as `appVersion`. How a release is cut is in the
 README under "Releases".
 
+## Unreleased
+
+- **Deviation from a fitted element** (2026-10-22). The colour map is back on
+  the scan. Since sharp edges became the default in 0.4.5, any scan with an
+  edge sharper than the "Sharp from" angle was measured over the extra
+  copies of its vertices made for shading as well. The scan refused that
+  map and stayed bare, while the histogram and the report still showed
+  results. The "matched" count and the statistics also counted those copies,
+  and now count each vertex once.
+
+- **SpaceMouse** (2026-10-22). The puck now moves the part the way the
+  3Dconnexion driver does: sliding it left or right and tilting it forward
+  or back no longer go the wrong way, and rolling it turns the part about the
+  line of sight, which it did not before. The browser reads the puck without
+  the driver, so the driver's own settings never reached the app; Settings
+  now has a SpaceMouse speed and a switch to reverse each of the six axes.
+  These only show once a SpaceMouse has been connected in that browser.
+
+- **On a phone** (2026-10-21). The page no longer zooms: a pinch away from
+  the 3D view used to zoom the whole page out and leave the app stuck in a
+  corner of the window. A pinch on the view still zooms the part. The top bar
+  scrolls sideways when it does not fit, a phone held upright puts the view
+  on top and the panel beneath it, and a phone held sideways gets a lower top
+  bar.
+
+- **A batch from a file** (2026-10-21). `scanruler_batch { file }` runs the
+  calls a script wrote to a JSON file, so a long generated run never passes
+  through the conversation. The file holds `[{ tool, arguments }]`, or
+  `[{ name, input }]` by the command's own name, as a list or under `calls`
+  or `steps`. A relative path is taken from the server's folder.
+
 ## 0.6.3 — 2026-10-21
 
 - **Sections measure as planes** (2026-10-20). A dimension takes a section

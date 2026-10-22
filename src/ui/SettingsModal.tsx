@@ -7,6 +7,7 @@
 // are not here: those change with the job in hand and live on the view bar,
 // in the corner of the stage.
 
+import { useSyncExternalStore } from 'react'
 import { COLORMAPS, colormapById, cssRgb, legendGradient } from '../core/field/colormap'
 import { CREASE_ANGLE_DEG, CREASE_ANGLE_MAX, CREASE_ANGLE_MIN, CREASE_ANGLE_STEP, type CreaseMode } from '../core/geometry/crease'
 import { MESH_UNITS, type MeshUnits } from '../core/meshUnits'
@@ -16,8 +17,27 @@ import { UI_THEMES, usePrefs } from '../state/prefsStore'
 import { useStore } from '../state/store'
 import { LINE_MAX, LINE_MIN, LINE_STEP } from '../viewer/lineWidths'
 import { SCHEMES, schemeById } from '../viewer/navSchemes'
+import {
+  SPACE_MOUSE_SPEED_MAX,
+  SPACE_MOUSE_SPEED_MIN,
+  SPACE_MOUSE_SPEED_STEP,
+  spaceMouseName,
+  watchSpaceMouse,
+  type SpaceMouseAxisId,
+} from '../viewer/spaceMouse'
 import { VIEW_THEMES, themeById } from '../viewer/viewThemes'
 import { useDismiss } from './useDismiss'
+
+/** The puck's six motions by 3Dconnexion's names, in the order its trainer
+ *  walks through them. */
+const PUCK_AXES: { id: SpaceMouseAxisId; label: string }[] = [
+  { id: 'tx', label: 'Pan left/right' },
+  { id: 'tz', label: 'Pan up/down' },
+  { id: 'ty', label: 'Zoom' },
+  { id: 'rx', label: 'Tilt' },
+  { id: 'rz', label: 'Spin' },
+  { id: 'ry', label: 'Roll' },
+]
 
 export function SettingsModal() {
   const open = usePrefs((s) => s.settingsOpen)
@@ -55,6 +75,12 @@ export function SettingsModal() {
   const agentToken = usePrefs((s) => s.agentToken)
   const setAgentToken = usePrefs((s) => s.setAgentToken)
   const link = useAgentLink()
+  const puck = useSyncExternalStore(watchSpaceMouse, spaceMouseName)
+  const puckSeen = usePrefs((s) => s.spaceMouseSeen)
+  const puckSpeed = usePrefs((s) => s.spaceMouseSpeed)
+  const setPuckSpeed = usePrefs((s) => s.setSpaceMouseSpeed)
+  const puckReverse = usePrefs((s) => s.spaceMouseReverse)
+  const setPuckReversed = usePrefs((s) => s.setSpaceMouseReversed)
 
   // Escape closes it. Captured, like the imprint's, so the workspace's own
   // Escape handling — which would discard the draft behind the dialog — never
@@ -212,10 +238,64 @@ export function SettingsModal() {
           <small className="navhint">{scheme.hint}</small>
           <small>
             A <b>3Dconnexion SpaceMouse</b> works beside any of these, in Chrome and Edge: push or
-            pull the puck to zoom, slide it to pan, tilt and twist it to turn the part. It connects
+            pull the puck to zoom, slide it to pan, tilt, twist and roll it to turn the part. It connects
             the first time you touch it, and drives the view the mouse was last over.
           </small>
         </div>
+        {(puck !== null || puckSeen) && (
+          <>
+            <div className="setting" data-test="spacemouse-settings">
+              <label htmlFor="puckspeed">SpaceMouse speed</label>
+              <div className="range">
+                <input
+                  id="puckspeed"
+                  data-test="spacemouse-speed"
+                  type="range"
+                  min={SPACE_MOUSE_SPEED_MIN}
+                  max={SPACE_MOUSE_SPEED_MAX}
+                  step={SPACE_MOUSE_SPEED_STEP}
+                  value={puckSpeed}
+                  onChange={(e) => setPuckSpeed(Number(e.target.value))}
+                />
+                <output htmlFor="puckspeed">{puckSpeed.toFixed(2)}×</output>
+              </div>
+              <small data-test="spacemouse-status">
+                {puck !== null ? (
+                  <>
+                    Connected: <b>{puck.replace(/\s*\(.*\)$/, '')}</b>.
+                  </>
+                ) : (
+                  <>Not connected — touch the puck to connect it.</>
+                )}
+              </small>
+            </div>
+            <div className="setting puckaxes-row">
+              <span>Reverse</span>
+              <div className="puckaxes" role="group" aria-label="Reverse SpaceMouse axes">
+                {PUCK_AXES.map((a) => {
+                  const on = puckReverse.includes(a.id)
+                  return (
+                    <button
+                      key={a.id}
+                      type="button"
+                      data-test={`spacemouse-reverse-${a.id}`}
+                      className={on ? 'on' : undefined}
+                      aria-pressed={on}
+                      onClick={() => setPuckReversed(a.id, !on)}
+                    >
+                      {a.label}
+                    </button>
+                  )
+                })}
+              </div>
+              <small>
+                By default the puck moves the part, the way the 3Dconnexion driver does. The browser
+                reads the puck directly, so the driver's own speed and reversed axes do not reach
+                here; set them here instead.
+              </small>
+            </div>
+          </>
+        )}
 
         <h3>Files</h3>
         <label className="checkrow settings-check">

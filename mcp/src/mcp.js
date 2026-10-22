@@ -15,7 +15,7 @@
 // process with no page, listed in either mode.
 
 import { readFileSync } from 'node:fs'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, extname, isAbsolute, relative, resolve } from 'node:path'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
@@ -550,7 +550,7 @@ export function createMcpServer({
           type: 'array',
           minItems: 1,
           maxItems: 200,
-          description: 'The calls, in order.',
+          description: 'The calls, in order — or give file instead.',
           items: {
             type: 'object',
             properties: {
@@ -561,23 +561,47 @@ export function createMcpServer({
             additionalProperties: false,
           },
         },
+        file: { type: 'string', minLength: 1, description: `A JSON file of the calls, read here in place of calls: [{ tool, arguments }], or [{ name, input }] by the command's own name (scan.open), or either under "calls" or "steps". For a long run a script wrote, which then need not pass through the conversation. A relative path is taken from ${cwd}.` },
         stopOnError: { type: 'boolean', description: 'Stop at the first refused call (the default), or run every call and report each.' },
         rollback: { type: 'boolean', description: 'When the batch stops at a refused call, undo what it changed before it (the default) — or leave those changes standing (false).' },
         timings: { type: 'boolean', description: 'Each call’s ms, the batch’s total_ms, and the steps a change’s build played with their ms.' },
         wait: waitIn,
       },
-      required: ['calls'],
       additionalProperties: false,
     },
     annotations: { readOnlyHint: false, openWorldHint: false },
     call: async (args, ctx) => {
-      const calls = Array.isArray(args?.calls) ? args.calls : []
-      if (calls.length === 0) return failure({ code: 'invalid_input', message: 'calls: give at least one call.' })
+      let calls = Array.isArray(args?.calls) ? args.calls : []
+      if (args?.file !== undefined) {
+        if (calls.length > 0) return failure({ code: 'invalid_input', message: 'Give calls or file, not both.' })
+        const read = await callsFromFile(String(args.file))
+        if (read.error) return failure({ code: 'invalid_input', message: read.error })
+        calls = read.calls
+      }
+      if (calls.length === 0) return failure({ code: 'invalid_input', message: 'calls: give at least one call (or a file of them).' })
       if (ctx) ctx.fields.calls = calls.length
       const job = startJob('scanruler_batch', () => runBatch(calls, args, ctx), ctx, args?.wait === false)
       return args?.wait === false ? text({ queued: true, job: job.job, tool: 'scanruler_batch' }) : job.done
     },
   })
+
+  /** A batch's calls read from a JSON file — { tool, arguments } as the
+   *  batch takes them, or { name, input } by the command's own name, a
+   *  list or one under "calls" or "steps". */
+  const callsFromFile = async (file) => {
+    const path = absolute(file, cwd)
+    let data
+    try {
+      data = JSON.parse(await readFile(path, 'utf8'))
+    } catch (e) {
+      return { error: `file: ${path} could not be read as JSON (${e instanceof Error ? e.message : String(e)}).` }
+    }
+    const list = Array.isArray(data) ? data : Array.isArray(data?.calls) ? data.calls : Array.isArray(data?.steps) ? data.steps : null
+    if (!list) return { error: `file: ${path} holds no list of calls — a list, or one under "calls" or "steps".` }
+    const calls = list.map((c) => (c && typeof c === 'object' && typeof c.name === 'string' && c.tool === undefined ? { tool: toolName({ name: c.name }), arguments: c.input ?? {} } : c))
+    if (calls.some((c) => !c || typeof c !== 'object' || typeof c.tool !== 'string')) return { error: `file: every call in ${path} needs a tool (or a name).` }
+    return { calls }
+  }
 
   /** The batch's calls run in order — see scanruler_batch. */
   const runBatch = async (calls, args, ctx = null) => {

@@ -4,7 +4,14 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- The page never zooms: on a phone a pinch belongs to the 3D viewport,
+         and a page zoomed by one left the instrument stuck in a corner of
+         the window. maximum-scale also keeps iOS from zooming in on a
+         focused field and staying there. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
     <title>ScanRuler by CNC Kitchen</title>
     <meta
       name="description"

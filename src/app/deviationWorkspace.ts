@@ -405,9 +405,12 @@ export function deviationWorkspace({
       dev.setTarget(null)
       return
     }
-    const geometry = sceneRef.current?.scanGeometry()
-    const positions = geometry?.getAttribute('position')?.array as Float32Array | undefined
-    const normals = geometry?.getAttribute('normal')?.array as Float32Array | undefined
+    // The scan's own vertices, without the shading copies past them.
+    const scene = sceneRef.current
+    const own = (scene?.scanVertexCount() ?? 0) * 3
+    const geometry = scene?.scanGeometry()
+    const positions = (geometry?.getAttribute('position')?.array as Float32Array | undefined)?.subarray(0, own)
+    const normals = (geometry?.getAttribute('normal')?.array as Float32Array | undefined)?.subarray(0, own)
     dev.setTarget(
       id,
       positions && normals

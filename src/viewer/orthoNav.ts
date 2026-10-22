@@ -111,6 +111,7 @@ export class OrthoNavigator {
   private tmp2 = new THREE.Vector3()
   private q1 = new THREE.Quaternion()
   private q2 = new THREE.Quaternion()
+  private q3 = new THREE.Quaternion()
   private pickNdc = new THREE.Vector2()
   /** The canvas rect, asked of the layout engine at most once per frame:
    *  getBoundingClientRect can force a layout pass, and setPickRay runs for
@@ -699,12 +700,13 @@ export class OrthoNavigator {
    *
    * The mouse's three gestures at BumpMesh's speeds, each scaled to what is on
    * screen so it feels the same at every zoom: slide pans in the screen plane,
-   * push and pull zoom about the screen centre, tilt and twist turn the part.
-   * The turn is the free orbit the mouse turns with, about the screen's own
-   * horizontal and vertical with `up` carried along, where BumpMesh turns a
-   * Z-up turntable: a turntable about world Z would fight a view the mouse has
-   * tipped over, and the two have to hand a pose back and forth. A sheet does
-   * not turn: in planar mode tilt and twist do nothing.
+   * push and pull zoom about the screen centre, tilt, roll and twist turn the
+   * part. The turn is the free orbit the mouse turns with, about the screen's
+   * own horizontal and vertical and the line of sight, with `up` carried
+   * along, where BumpMesh turns a Z-up turntable: a turntable about world Z
+   * would fight a view the mouse has tipped over, and the two have to hand a
+   * pose back and forth. A sheet does not turn: in planar mode the turns do
+   * nothing.
    *
    * The turn pivots on what the screen centre is on (centrePivot), taken on its
    * first frame and held until the puck settles — the mouse's orbit about the
@@ -714,7 +716,7 @@ export class OrthoNavigator {
    */
   stepSpaceMouse(m: SpaceMouseMotion | null): void {
     const now = performance.now()
-    const turning = m !== null && (m.rx !== 0 || m.rz !== 0) && !this.planar
+    const turning = m !== null && (m.rx !== 0 || m.ry !== 0 || m.rz !== 0) && !this.planar
     if (this.puckPivot && !turning && now - this.puckTurned > PUCK_SETTLE_MS) {
       this.puckPivot = null
       // A mouse orbit under way keeps its own marker.
@@ -753,7 +755,10 @@ export class OrthoNavigator {
       const turn = PUCK_TURN_RAD_PER_S * m.dt
       this.q1.setFromAxisAngle(this.up, m.rz * turn)
       this.q2.setFromAxisAngle(this.right, m.rx * turn)
-      this.q1.premultiply(this.q2)
+      // The line of sight, into the screen.
+      this.tmp.crossVectors(this.up, this.right)
+      this.q3.setFromAxisAngle(this.tmp, m.ry * turn)
+      this.q1.premultiply(this.q2).premultiply(this.q3)
       this.swingAbout(this.puckPivot, this.q1)
     }
     // Moved by a pan, re-sized after a zoom.

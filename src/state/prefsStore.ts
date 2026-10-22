@@ -20,6 +20,14 @@ import {
   SHEET_LINE_DEFAULT,
   clampLineWidth,
 } from '../viewer/lineWidths'
+import {
+  spaceMouseAttached,
+  spaceMouseReverseOf,
+  spaceMouseSpeedOf,
+  tuneSpaceMouse,
+  watchSpaceMouse,
+  type SpaceMouseAxisId,
+} from '../viewer/spaceMouse'
 
 /** Light or dark chassis, or whichever the operating system is set to. */
 export type UiTheme = 'light' | 'dark' | 'system'
@@ -42,6 +50,9 @@ const ASK_STL_UNITS_KEY = 'scanruler.askstlunits'
 const AGENT_LINK_KEY = 'scanruler.agentlink'
 const AGENT_PORT_KEY = 'scanruler.agentport'
 const AGENT_TOKEN_KEY = 'scanruler.agenttoken'
+const SPACE_MOUSE_SPEED_KEY = 'scanruler.spacemouse.speed'
+const SPACE_MOUSE_REVERSE_KEY = 'scanruler.spacemouse.reverse'
+const SPACE_MOUSE_SEEN_KEY = 'scanruler.spacemouse.seen'
 
 /** The port the agent's local server listens on unless told otherwise — the
  *  one scanruler-mcp uses by default. */
@@ -124,6 +135,14 @@ interface PrefsState {
   agentPort: number
   /** The token it was started with, which the page presents. */
   agentToken: string
+  /** SpaceMouse speed, times the default. */
+  spaceMouseSpeed: number
+  /** SpaceMouse axes that move the other way from the default. */
+  spaceMouseReverse: SpaceMouseAxisId[]
+  /** Whether a SpaceMouse has been attached in this browser. Its settings
+   *  only show once one has, and keep showing on later visits, before the
+   *  puck is touched — the browser only reports one after that. */
+  spaceMouseSeen: boolean
   settingsOpen: boolean
   setUiTheme: (theme: UiTheme) => void
   setColormap: (id: ColormapId) => void
@@ -137,6 +156,8 @@ interface PrefsState {
   setAgentLink: (on: boolean) => void
   setAgentPort: (port: number) => void
   setAgentToken: (token: string) => void
+  setSpaceMouseSpeed: (speed: number) => void
+  setSpaceMouseReversed: (axis: SpaceMouseAxisId, reversed: boolean) => void
   openSettings: (open: boolean) => void
 }
 
@@ -156,6 +177,9 @@ export const usePrefs = create<PrefsState>()((set) => {
     agentLink: read(AGENT_LINK_KEY) === '1',
     agentPort: agentPortOf(read(AGENT_PORT_KEY)),
     agentToken: read(AGENT_TOKEN_KEY) ?? '',
+    spaceMouseSpeed: spaceMouseSpeedOf(read(SPACE_MOUSE_SPEED_KEY)),
+    spaceMouseReverse: spaceMouseReverseOf(read(SPACE_MOUSE_REVERSE_KEY)),
+    spaceMouseSeen: read(SPACE_MOUSE_SEEN_KEY) === '1',
     settingsOpen: false,
 
     setUiTheme: (theme) => {
@@ -213,8 +237,35 @@ export const usePrefs = create<PrefsState>()((set) => {
       write(AGENT_TOKEN_KEY, agentToken)
       set({ agentToken })
     },
+    setSpaceMouseSpeed: (speed) => {
+      const spaceMouseSpeed = spaceMouseSpeedOf(speed)
+      write(SPACE_MOUSE_SPEED_KEY, String(spaceMouseSpeed))
+      set({ spaceMouseSpeed })
+    },
+    setSpaceMouseReversed: (axis, reversed) =>
+      set((s) => {
+        const spaceMouseReverse = spaceMouseReverseOf(
+          [...s.spaceMouseReverse.filter((a) => a !== axis), ...(reversed ? [axis] : [])].join(','),
+        )
+        write(SPACE_MOUSE_REVERSE_KEY, spaceMouseReverse.join(','))
+        return { spaceMouseReverse }
+      }),
     openSettings: (settingsOpen) => set({ settingsOpen }),
   }
+})
+
+// The puck reads its speed and reversed axes from here, at load and on every
+// change; and the first puck attached in this browser is remembered, so its
+// settings show from then on.
+const tune = (s: PrefsState): void => tuneSpaceMouse({ speed: s.spaceMouseSpeed, reversed: s.spaceMouseReverse })
+tune(usePrefs.getState())
+usePrefs.subscribe((s, prev) => {
+  if (s.spaceMouseSpeed !== prev.spaceMouseSpeed || s.spaceMouseReverse !== prev.spaceMouseReverse) tune(s)
+})
+watchSpaceMouse(() => {
+  if (!spaceMouseAttached() || usePrefs.getState().spaceMouseSeen) return
+  write(SPACE_MOUSE_SEEN_KEY, '1')
+  usePrefs.setState({ spaceMouseSeen: true })
 })
 
 // The stylesheet reads the theme off the root element — `data-theme` is what
