@@ -6,7 +6,7 @@
 // project, which says for itself what it holds; a plain scan or image dropped
 // on the same button goes where it would have gone from its workspace.
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { useStore } from '../state/store'
 import { useFlat } from '../state/flatStore'
 import { usePrefs } from '../state/prefsStore'
@@ -95,6 +95,57 @@ function ProjectName() {
   )
 }
 
+/** How many of its folds the bar takes — see the top bar in styles.css —
+ *  when everything spelled out does not fit its row. */
+const FOLDS = 5
+
+/** Folds the bar just as far as its row needs, and marks the ends with keys
+ *  scrolled out of sight ('start', 'end' or both) for the fade that says
+ *  there is more that way. Measured rather than set by window width, since
+ *  what the bar holds varies: the plugins' tabs, a part chip, the agent chip.
+ *  It measures with nothing squeezed (see .top.measuring), so the words go
+ *  before the part's name is cut to an ellipsis. Written to
+ *  the bar directly, so a fit costs no render; it runs after every render of
+ *  the bar — a chip coming or going changes the row and not the bar — and
+ *  whenever the bar's own width changes. */
+function useFit(ref: RefObject<HTMLElement | null>) {
+  const fit = useRef(() => {})
+  fit.current = () => {
+    const el = ref.current
+    if (!el) return
+    el.classList.add('measuring')
+    for (let fold = 0; ; fold++) {
+      el.dataset.fold = Array.from({ length: fold }, (_, i) => i + 1).join(' ')
+      if (fold === FOLDS || el.scrollWidth <= el.clientWidth) break
+    }
+    el.classList.remove('measuring')
+    markEnds(el)
+  }
+  useLayoutEffect(() => fit.current())
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const onScroll = () => markEnds(el)
+    el.addEventListener('scroll', onScroll, { passive: true })
+    // The web fonts arriving widen every word.
+    document.fonts?.ready.then(() => fit.current())
+    if (typeof ResizeObserver === 'undefined') return () => el.removeEventListener('scroll', onScroll)
+    const observer = new ResizeObserver(() => fit.current())
+    observer.observe(el)
+    return () => {
+      observer.disconnect()
+      el.removeEventListener('scroll', onScroll)
+    }
+  }, [ref])
+}
+
+function markEnds(el: HTMLElement) {
+  const over = el.scrollWidth - el.clientWidth
+  const ends = [el.scrollLeft > 1 && 'start', el.scrollLeft < over - 1 && 'end'].filter(Boolean).join(' ')
+  if (ends) el.dataset.hidden = ends
+  else delete el.dataset.hidden
+}
+
 export function TopBar({
   onNewProject,
   onSaveProject,
@@ -123,6 +174,8 @@ export function TopBar({
   const agentLink = usePrefs((s) => s.agentLink)
   const agent = useAgentLink()
   const openRef = useRef<HTMLInputElement>(null)
+  const barRef = useRef<HTMLElement>(null)
+  useFit(barRef)
 
   const onLoad = (file: File | undefined) => {
     if (file) {
@@ -144,7 +197,7 @@ export function TopBar({
   }
 
   return (
-    <header className="top">
+    <header className="top" ref={barRef}>
       <div className="brandmark">SR</div>
       {/* The version rides in the caption, and in the tooltip for the narrow
           layouts that drop the caption: a bug report needs the number, and
@@ -168,12 +221,13 @@ export function TopBar({
             data-test={`workspace-${w.id}`}
             aria-selected={workspace === w.id}
             className={workspace === w.id ? 'on' : undefined}
-            title={w.title}
+            title={`${w.label}\n${w.title}`}
+            aria-label={w.label}
             disabled={picking}
             onClick={() => setWorkspace(w.id)}
           >
             <Icon name={w.icon} size={16} />
-            {w.label}
+            <span className="wtxt">{w.label}</span>
           </button>
         ))}
       </div>
@@ -198,7 +252,9 @@ export function TopBar({
           onClick={() => openSettings(true)}
         >
           <span className="agentlamp" />
-          Agent: {agent.status === 'connected' ? 'connected' : agent.status === 'refused' ? 'turned away' : 'listening'}
+          <span className="btxt">
+            Agent: {agent.status === 'connected' ? 'connected' : agent.status === 'refused' ? 'turned away' : 'listening'}
+          </span>
         </button>
       )}
       <span className="project-save-status" data-test="project-save-status"
@@ -223,7 +279,7 @@ export function TopBar({
         title="Start a new project: the scan, the reference and the image closed, every measurement and every workspace's work let go, the name taken off — after asking, when there are changes not saved"
       >
         <Icon name="newProject" size={16} />
-        New<span className="btxt ptxt"> Project</span>
+        <span className="btxt">New<span className="ptxt"> Project</span></span>
       </button>
       <button
         className="ghost withicon"
@@ -233,7 +289,7 @@ export function TopBar({
         title={`Save the scan, the reference, the image and every measurement as one .${PROJECT_EXTENSION} file`}
       >
         <Icon name="save" size={16} />
-        Save<span className="btxt ptxt"> Project</span>
+        <span className="btxt">Save<span className="ptxt"> Project</span></span>
       </button>
       <button
         className="ghost withicon"
@@ -243,7 +299,7 @@ export function TopBar({
         title={`Open a .${PROJECT_EXTENSION} project — or a plain scan or image to start fresh`}
       >
         <Icon name="load" size={16} />
-        Load<span className="btxt ptxt"> Project</span>
+        <span className="btxt">Load<span className="ptxt"> Project</span></span>
       </button>
       {/* What is set once and left — the chassis, the colour mode, the mouse
           controls, the line weights, the hints. Beside the project keys

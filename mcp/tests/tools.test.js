@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { SNAPSHOT } from '../src/mcp.js'
-import { agentJson, batchedPicture, bytesProperty, imageContent, inputFor, saveFileResult, toolFor, toolName, timingsIn, waitIn } from '../src/tools.js'
+import { agentJson, batchedPicture, bytesProperty, imageContent, inputFor, saveFileResult, toolFor, toolName, timingsIn, waitIn, writeNew } from '../src/tools.js'
 
 const command = (name) => SNAPSHOT.find((c) => c.name === name)
 
@@ -79,8 +79,32 @@ test('the path is read into the bytes, and a returned file written where asked',
   assert.equal(await readFile(join(dir, 'part-elements.step'), 'utf8'), 'AB')
   const named = await saveFileResult(result, { path: 'out/x.step' }, { cwd: dir, outDir: dir })
   assert.equal(named.file.path, join(dir, 'out', 'x.step'))
+  // A folder takes the file under its own name — numbered past the one
+  // written there before, never over it; a file path given is replaced.
   const intoFolder = await saveFileResult(result, { path: dir }, { cwd: dir, outDir: '/elsewhere' })
-  assert.equal(intoFolder.file.path, join(dir, 'part-elements.step'))
+  assert.equal(intoFolder.file.path, join(dir, 'part-elements-2.step'))
+  assert.equal((await saveFileResult(result, {}, { cwd: dir, outDir: dir })).file.path, join(dir, 'part-elements-3.step'))
+  assert.equal((await saveFileResult(result, { path: 'renders/' }, { cwd: dir, outDir: dir })).file.path, join(dir, 'renders', 'part-elements.step'), 'a path ending in a separator is a folder')
+  const other = { file: { ...result.file, bytes: new Uint8Array([67]) } }
+  assert.equal((await saveFileResult(other, { path: 'out/x.step' }, { cwd: dir, outDir: dir })).file.path, join(dir, 'out', 'x.step'))
+  assert.equal(await readFile(join(dir, 'out', 'x.step'), 'utf8'), 'C')
+})
+
+test('pictures written at once each get a file of their own', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'scanruler-mcp-'))
+  const picture = (n) => ({ file: { name: 'part-view.png', mimeType: 'image/png', bytes: new Uint8Array([0x89, n]) } })
+  // Ten side by side into the output folder, and ten into a folder path.
+  const loose = await Promise.all(Array.from({ length: 10 }, (_, n) => batchedPicture(picture(n), {}, { cwd: dir, outDir: dir })))
+  const into = await Promise.all(Array.from({ length: 10 }, (_, n) => saveFileResult(picture(n), { path: dir }, { cwd: dir, outDir: '/elsewhere' })))
+  const paths = [...loose, ...into].map((r) => r.file.path)
+  assert.equal(new Set(paths).size, 20, paths.join('\n'))
+  // Each file holds its own picture.
+  for (const [n, r] of loose.entries()) assert.deepEqual([...(await readFile(r.file.path))], [0x89, n])
+  for (const [n, r] of into.entries()) assert.deepEqual([...(await readFile(r.file.path))], [0x89, n])
+  // writeNew numbers past what is there, whatever wrote it.
+  await writeFile(join(dir, 'a.json'), '{}')
+  assert.equal(await writeNew(dir, 'a.json', '1'), join(dir, 'a-2.json'))
+  assert.equal(await readFile(join(dir, 'a.json'), 'utf8'), '{}', 'the first left as it was')
 })
 
 test('a picture comes back as an image, and is written to a file only when asked', async () => {

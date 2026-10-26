@@ -10,15 +10,18 @@ import { registerCommands } from './registry'
 import { alignCommands } from './core/align'
 import { dimensionCommands } from './core/dimension'
 import { deviationCommands } from './core/deviation'
+import { volumeCommands } from './core/volume'
 import { elementCommands } from './core/element'
 import { exportCommands, projectCommands } from './core/files'
 import { flatCommands } from './core/flat'
+import { guideCommands } from './core/guide'
 import { scanCommands } from './core/scan'
 import { segmentCommands } from './core/segment'
 import { sectionCommands } from './core/section'
 import { historyCommands, reportCommands, sessionCommands, workspaceCommands } from './core/session'
 import { thicknessCommands } from './core/thickness'
 import { viewCommands } from './core/view'
+import { registerGuide } from './guides'
 
 let registered = false
 
@@ -36,7 +39,7 @@ export function registerCoreCommands(): void {
   registerCommands('dimension', dimensionCommands)
   registerCommands('align', alignCommands)
   registerCommands('section', sectionCommands)
-  registerCommands('deviation', deviationCommands)
+  registerCommands('deviation', [...deviationCommands, ...volumeCommands])
   registerCommands('thickness', thicknessCommands)
   registerCommands('flat', flatCommands)
   registerCommands('report', reportCommands)
@@ -44,4 +47,17 @@ export function registerCoreCommands(): void {
   registerCommands('project', projectCommands)
   registerCommands('history', historyCommands)
   registerCommands('view', viewCommands)
+  registerCommands('guide', guideCommands)
+  registerGuide({
+    id: 'measure',
+    title: 'Measuring a 3D scan',
+    when: 'measuring a 3D scan: fitting elements, dimensions and GD&T-like checks, sections and the 2D sheet, deviation against a reference part, wall thickness, the report — by hand or as an automatic run over many scans',
+    text: () => import('./guides/measure.md?raw').then((m) => m.default),
+  })
+  registerGuide({
+    id: 'measure-reference',
+    title: 'Measuring a 3D scan — reference',
+    when: 'the measuring tools’ shapes with examples, what each answer costs, what each refusal means — a section at a time, as the measure guide sends you',
+    text: () => import('./guides/measure-reference.md?raw').then((m) => m.default),
+  })
 }

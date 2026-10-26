@@ -76,7 +76,7 @@ test('before a page connects: the app’s tools are listed, status says how to c
   assert.ok(names.includes('scanruler_wait'))
   assert.ok(names.includes('scanruler_open'))
   assert.ok(names.includes('scan_open'))
-  assert.equal(tools.length, SNAPSHOT.length + 5)
+  assert.equal(tools.length, SNAPSHOT.length + 6)
   assert.ok(!names.includes('scanruler_tools'), 'listed in full, the tools need no catalogue')
   assert.equal((await call('scanruler_tools')).text, 'unknown_command: There is no tool scanruler_tools.')
   const status = await call('scanruler_status')
@@ -104,7 +104,7 @@ test('with a page: tools run on it — files read from paths and written to path
       throw { code: 'invalid_input', message: `${name} refused.` }
     },
   })
-  const status = await call('scanruler_wait', { for: 'idle', timeoutSeconds: 5 })
+  const status = await call('scanruler_wait', { timeoutSeconds: 5 })
   assert.equal(status.json.connected, true)
   assert.equal(status.json.page.version, '0.0.0-test')
   assert.equal(status.json.howToConnect, undefined)
@@ -276,12 +276,12 @@ test('scanruler_open opens the paired page when none comes back by itself, and l
   opener = async () => false
 })
 
-const OWN = ['scanruler_batch', 'scanruler_open', 'scanruler_status', 'scanruler_tools', 'scanruler_wait', 'scanruler_write']
+const OWN = ['scanruler_batch', 'scanruler_files', 'scanruler_open', 'scanruler_status', 'scanruler_tools', 'scanruler_wait', 'scanruler_write']
 /** The tools listed in compact mode beside the server's own: the commands
  *  that return a picture, by their flag. */
 const pictures = (commands) => commands.filter((c) => c.returnsImage).map(toolName)
 
-test('compact: the six and the picture tools listed, the rest read through scanruler_tools as the full list would give them', async () => {
+test('compact: the seven and the picture tools listed, the rest read through scanruler_tools as the full list would give them', async () => {
   const compact = await serve({ tools: 'compact' })
   const on = (name, args) => call(name, args, compact.client)
   try {
@@ -289,7 +289,7 @@ test('compact: the six and the picture tools listed, the rest read through scanr
     const { tools } = await compact.client.listTools()
     const shown = pictures(SNAPSHOT)
     assert.ok(shown.length > 0, 'the app has commands that return a picture')
-    assert.deepEqual(tools.map((t) => t.name).sort(), [...OWN, ...shown].sort(), 'each picture command, and nothing else beyond the six')
+    assert.deepEqual(tools.map((t) => t.name).sort(), [...OWN, ...shown].sort(), 'each picture command, and nothing else beyond the seven')
     for (const name of shown) assert.deepEqual(tools.find((t) => t.name === name), full.find((t) => t.name === name), `${name} as the full list gives it`)
 
     // The list: every command, a line each.

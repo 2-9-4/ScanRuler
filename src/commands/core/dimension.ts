@@ -15,7 +15,7 @@ import {
 import type { FitData } from '../../core/types'
 import { useStore, type Section } from '../../state/store'
 import { dimensionRefsOf, sectionMeasureRefs, type MeasureRef } from '../../state/sectionModel'
-import { elementRefSchema, measuredElement, type ElementRef } from '../refs'
+import { elementRefSchema, measuredElement, refOf, type ElementRef } from '../refs'
 import { arr, enumOf, int, num, obj, oneOf, str, type JsonSchema } from '../schema'
 import { describeDimension, evaluatedDimensions } from '../state'
 import { CommandError, type Command } from '../types'
@@ -26,8 +26,9 @@ const typeIds = () => dimensionTypes().map((t) => t.id)
 
 /** A reference of a dimension: an element, or — where no element answers to
  *  it — a section, standing in as the plane it was cut on. */
-function dimensionRef(ref: ElementRef): MeasureRef {
+function dimensionRef(given: ElementRef): MeasureRef {
   const { elements, sections } = useStore.getState()
+  const ref = refOf([...elements, ...sections], given)
   const want = typeof ref === 'string' ? ref.trim().toLowerCase() : null
   const isSection = (sec: Section) => (want === null ? sec.id === ref : sec.name.trim().toLowerCase() === want)
   const isElement = (e: { id: number; name: string }) => (want === null ? e.id === ref : e.name.trim().toLowerCase() === want)
@@ -57,8 +58,9 @@ const dimensionRefSchema = (description: string): JsonSchema =>
   oneOf([int('The dimension’s id.', { minimum: 1 }), str('Its name — "Distance 1".', { minLength: 1 })], description)
 
 /** The dimension an id or a name stands for. */
-function findDimension(ref: number | string): Dimension {
+function findDimension(given: number | string): Dimension {
   const { dimensions } = useStore.getState()
+  const ref = refOf(dimensions, given)
   const hits =
     typeof ref === 'number'
       ? dimensions.filter((d) => d.id === ref)

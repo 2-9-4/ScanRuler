@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // The scan points a command left marked for the next one: the region
-// element.fit grew (mark: true), a region scan.segment found (mark: id). A
-// caller hands them on with `marked: true` — element.fit_marked fits to them
-// — instead of sending the vertex list out and back. Kept apart from the
+// element.fit grew (mark: true), a region scan.segment found (mark: id),
+// every vertex scan.query matched (mark: true). A caller hands them on with
+// `marked: true` — element.fit_marked fits to them — instead of sending
+// the vertex list out and back. Kept apart from the
 // panels' marking: nothing is drawn and no tool is in the hand, and it lasts
 // until the next mark, or until another scan is opened.
 
@@ -39,6 +40,6 @@ export function markedPoints(): { vertices: Uint32Array; from: string } | null {
 /** The marked points, or a refusal saying how to mark some. */
 export function requireMarked(): { vertices: Uint32Array; from: string } {
   const m = markedPoints()
-  if (!m) throw new CommandError('invalid_state', 'Nothing is marked — element.fit { mark: true } or scan.segment { mark: <region id> } marks a region.')
+  if (!m) throw new CommandError('invalid_state', 'Nothing is marked — element.fit { mark: true }, scan.segment { mark: <region id> } or scan.query { mark: true } marks points.')
   return m
 }

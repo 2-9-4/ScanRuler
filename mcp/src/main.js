@@ -10,13 +10,14 @@ import { resolve } from 'node:path'
 import { format, parseArgs } from 'node:util'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { openInBrowser } from './browser.js'
-import { configDir, loadConfig, loadRemembered, saveRemembered } from './config.js'
+import { configDir, loadConfig, loadFolders, loadLastProject, loadRemembered, saveFolders, saveLastProject, saveRemembered } from './config.js'
 import { CHECKOUT_ENGINE, EngineLink, loadEngine } from './engine.js'
 import { originAllowed } from './link.js'
-import { createMcpServer, TOOL_MODES } from './mcp.js'
+import { ANSWER_WITHIN_MS, createMcpServer, TOOL_MODES } from './mcp.js'
 import { SharedLink } from './relay.js'
 import { createTrace } from './trace.js'
 import { httpServer } from './serve.js'
+import { NO_UPDATE_ENV, startUpdates, watchParent } from './update.js'
 
 const DEFAULT_PORT = 7317
 const HOSTED_APP = 'https://scanruler.com/'
@@ -39,21 +40,34 @@ Usage: scanruler-mcp [options]
   --headless             the same, with the engine built in the ScanRuler checkout
                          this server is part of
   --tools <mode>         full (the default) lists each of ScanRuler's commands as a tool;
-                         compact lists five and the commands that return a picture, the
-                         rest read through scanruler_tools and run through scanruler_batch
-                         — for a small context window
+                         compact lists the server's own and the commands that return a
+                         picture, the rest read through scanruler_tools and run through
+                         scanruler_batch — for a small context window
   --trace <dir>          write a line per tool call — tool, ms, bytes each way, error,
                          whether the tab was hidden — to a new file in <dir>, for
                          measuring a run (scripts/trace-summary.mjs in the ScanRuler
                          repository sums it up); off by default
   --trace-args           with --trace, also write each call's arguments (otherwise
                          only their size)
+  --answer-within <s>    hold a call at most this many seconds (default ${ANSWER_WITHIN_MS / 1000}): a change,
+                         a batch or a long read still running then answers with its job
+                         and runs on, and scanruler_wait waits no longer — under the
+                         minute a client or a bridge may cut a call at; 0 holds a call
+                         to its end
+  --no-update            do not keep this server current (${NO_UPDATE_ENV}=1)
   --pair                 print the pairing token and link, and exit
+  --version              print this server's version, and exit
   --help                 this
 
+Once a day, in the background, the server asks npm's registry for its latest
+version; when there is a newer one, npm fetches it, and the next start runs it
+in this one's place. Not for a copy run from a git checkout, a version pinned
+in the agent's config (scanruler-mcp@0.4.0), or with --no-update.
+
 The pairing token is made on the first run and kept in ${join2(configDir(), 'config.json')};
-SCANRULER_MCP_TOKEN overrides it. SCANRULER_MCP_PORT, SCANRULER_MCP_TOOLS and
-SCANRULER_MCP_TRACE stand in for --port, --tools and --trace. The agent's scanruler_open tool opens ScanRuler
+SCANRULER_MCP_TOKEN overrides it. SCANRULER_MCP_PORT, SCANRULER_MCP_TOOLS,
+SCANRULER_MCP_TRACE and SCANRULER_MCP_ANSWER_WITHIN stand in for --port, --tools,
+--trace and --answer-within. The agent's scanruler_open tool opens ScanRuler
 in the default browser, paired. By hand: open the pairing link once, or in
 ScanRuler go to Settings → Agents → Local agent connection and enter the port
 and the token.
@@ -61,7 +75,7 @@ and the token.
 
 /** ScanRuler run in this process from the engine at `file`, in place of
  *  the page — no port, no pairing. */
-async function headless(file, { cwd, outDir, tools, trace }) {
+async function headless(file, { cwd, outDir, tools, trace, answerWithinMs, updates }) {
   // stdout is the MCP channel, the transport's alone: whatever else writes
   // to it — the app's logging, the kernel's own reports — goes to stderr.
   const stdout = process.stdout
@@ -78,10 +92,11 @@ async function headless(file, { cwd, outDir, tools, trace }) {
     cwd,
     outDir,
     connectHelp: () => 'This server runs ScanRuler headless, in its own process; no page connects to it.',
-    serverInfo: () => ({ name: 'scanruler-mcp', version: VERSION, backend: 'headless', engine: file, tools, outDir, ...(trace ? { trace: trace.file } : {}) }),
+    serverInfo: () => ({ name: 'scanruler-mcp', version: VERSION, ...updates.info(), backend: 'headless', engine: file, tools, outDir, ...(trace ? { trace: trace.file } : {}) }),
     remembered: null,
     tools,
     trace,
+    answerWithinMs,
   })
   server.onclose = () => {
     link.close()
@@ -111,7 +126,10 @@ export async function main(argv = process.argv.slice(2)) {
       tools: { type: 'string' },
       trace: { type: 'string' },
       'trace-args': { type: 'boolean' },
+      'answer-within': { type: 'string' },
+      'no-update': { type: 'boolean' },
       pair: { type: 'boolean' },
+      version: { type: 'boolean' },
       help: { type: 'boolean' },
     },
     strict: true,
@@ -120,11 +138,20 @@ export async function main(argv = process.argv.slice(2)) {
     process.stderr.write(HELP)
     return
   }
+  if (values.version) {
+    process.stdout.write(`${VERSION}\n`)
+    return
+  }
   const port = Number(values.port ?? process.env.SCANRULER_MCP_PORT ?? DEFAULT_PORT)
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`--port ${values.port} is not a port.`)
   const tools = values.tools ?? (process.env.SCANRULER_MCP_TOOLS || 'full')
   if (!TOOL_MODES.includes(tools)) {
     throw new Error(`${values.tools === undefined ? 'SCANRULER_MCP_TOOLS' : '--tools'} ${tools} is not one of ${TOOL_MODES.join(', ')}.`)
+  }
+  const within = values['answer-within'] ?? process.env.SCANRULER_MCP_ANSWER_WITHIN
+  const answerWithinMs = within === undefined || within === '' ? ANSWER_WITHIN_MS : Number(within) * 1000
+  if (!Number.isFinite(answerWithinMs) || answerWithinMs < 0) {
+    throw new Error(`${values['answer-within'] === undefined ? 'SCANRULER_MCP_ANSWER_WITHIN' : '--answer-within'} ${within} is not a number of seconds.`)
   }
   const config = loadConfig()
   const token = process.env.SCANRULER_MCP_TOKEN || config.token
@@ -137,13 +164,17 @@ export async function main(argv = process.argv.slice(2)) {
     return
   }
 
+  // Kept current in the background (update.js); a copy handed to stops
+  // with the launcher that started it.
+  const updates = startUpdates({ version: VERSION, argv })
+  watchParent()
   const cwd = process.cwd()
   const outDir = values.out ? (values.out.match(/^([A-Za-z]:)?[\\/]/) ? values.out : `${cwd}/${values.out}`) : cwd
   const traceDir = values.trace ?? process.env.SCANRULER_MCP_TRACE
   const trace = traceDir ? createTrace(resolve(cwd, traceDir), { args: values['trace-args'] === true }) : null
   if (trace) log(`Tracing every call to ${trace.file}${trace.args ? ', arguments too' : ''}.`)
   const engineFile = values.engine ?? process.env.SCANRULER_ENGINE ?? (values.headless ? CHECKOUT_ENGINE : null)
-  if (engineFile) return headless(resolve(cwd, engineFile), { cwd, outDir, tools, trace })
+  if (engineFile) return headless(resolve(cwd, engineFile), { cwd, outDir, tools, trace, answerWithinMs, updates })
   const origins = values['allow-origin'] ?? []
   const http = httpServer({ serve: values.serve, allowOrigin: (origin) => originAllowed(origin, origins), version: VERSION })
   // The port, or — when another copy holds it — the relay through that one.
@@ -161,11 +192,13 @@ export async function main(argv = process.argv.slice(2)) {
     cwd,
     outDir,
     connectHelp: () => (link.error ? `${link.error} ` : '') + connectHelp(),
-    serverInfo: () => ({ name: 'scanruler-mcp', version: VERSION, port, role: link.role, tools, outDir, config: config.file, ...(trace ? { trace: trace.file } : {}), ...(link.error ? { error: link.error } : {}) }),
+    serverInfo: () => ({ name: 'scanruler-mcp', version: VERSION, ...updates.info(), port, role: link.role, ...(link.role === 'relay' ? { holder: { version: link.holderVersion ?? null } } : {}), tools, outDir, config: config.file, ...(trace ? { trace: trace.file } : {}), ...(link.error ? { error: link.error } : {}) }),
     remembered: { load: () => loadRemembered(), save: (commands) => saveRemembered(commands) },
+    folderStore: { load: () => loadFolders(), save: (folders) => saveFolders(folders), loadProject: () => loadLastProject(), saveProject: (project) => saveLastProject(project) },
     openPage: () => openInBrowser(pairing),
     tools,
     trace,
+    answerWithinMs,
   })
   const transport = new StdioServerTransport()
   server.onclose = () => {

@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// The skills in skills/ and the MCP server's instructions name only tools
-// that exist: every tool name a skill writes in backticks in one of the
+// The guides guide.read serves (src/commands/guides/), the skills in
+// skills/ that point at them, and the MCP server's instructions name only
+// tools that exist: every tool name one writes in backticks in one of the
 // app's namespaces (scan_, element_, history_ …) or the server's own
 // (scanruler_) must be a command the app registers, as the server lists it,
 // or one of the server's own tools; the server's instructions likewise. A
-// plugin checks its own namespace in its own skill. A renamed or removed
-// command that a skill still teaches fails here.
+// plugin checks its own namespace in its own guides. A renamed or removed
+// command that a guide still teaches fails here.
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
@@ -13,6 +14,7 @@ import { registerCoreCommands } from '../src/commands/core'
 import { listCommands } from '../src/commands/registry'
 
 const SKILLS = new URL('../skills/', import.meta.url)
+const GUIDES = new URL('../src/commands/guides/', import.meta.url)
 const MCP = readFileSync(new URL('../mcp/src/mcp.js', import.meta.url), 'utf8')
 
 /** The server's own tools, as mcp.js names them. */
@@ -33,28 +35,34 @@ function namespaces(): Set<string> {
 /** A file's text with its line ends as LF, however it was checked out. */
 const textOf = (url: URL) => readFileSync(url, 'utf8').split('\r\n').join('\n')
 
-/** Every skill file: SKILL.md and reference.md of each skill folder. */
+/** Every skill file — SKILL.md and reference.md of each skill folder —
+ *  and every guide. */
 function skillFiles(): { path: string; text: string }[] {
-  if (!existsSync(SKILLS)) return []
-  return readdirSync(SKILLS, { withFileTypes: true })
-    .filter((d) => d.isDirectory())
-    .flatMap((d) =>
-      ['SKILL.md', 'reference.md']
-        .map((f) => new URL(`${d.name}/${f}`, SKILLS))
-        .filter((u) => existsSync(u))
-        .map((u) => ({ path: u.pathname.split('/skills/')[1], text: textOf(u) })),
-    )
+  const skills = existsSync(SKILLS)
+    ? readdirSync(SKILLS, { withFileTypes: true })
+        .filter((d) => d.isDirectory())
+        .flatMap((d) =>
+          ['SKILL.md', 'reference.md']
+            .map((f) => new URL(`${d.name}/${f}`, SKILLS))
+            .filter((u) => existsSync(u))
+            .map((u) => ({ path: u.pathname.split('/skills/')[1], text: textOf(u) })),
+        )
+    : []
+  const guides = readdirSync(GUIDES)
+    .filter((f) => f.endsWith('.md'))
+    .map((f) => ({ path: `guides/${f}`, text: textOf(new URL(f, GUIDES)) }))
+  return [...skills, ...guides]
 }
 
 /** The tool-like names in backticks: lower case, an underscore in them. */
 const backticked = (text: string) => [...new Set([...text.matchAll(/`([a-z][a-z0-9]*_[a-z0-9_]+)`/g)].map((m) => m[1]))]
 
-describe('the names the skills and the server’s instructions teach', () => {
+describe('the names the guides, the skills and the server’s instructions teach', () => {
   it('are the server’s own tools in mcp.js', () => {
     expect(ownTools()).toEqual(expect.arrayContaining(['scanruler_status', 'scanruler_open', 'scanruler_wait', 'scanruler_batch']))
   })
 
-  it('in every skill, name only tools that exist', () => {
+  it('in every guide and skill, name only tools that exist', () => {
     const files = skillFiles()
     expect(files.length).toBeGreaterThan(0)
     const known = tools()

@@ -1750,13 +1750,13 @@ once.
 - **Claude Code** — in a terminal:
 
   ```bash
-  claude mcp add --scope user scanruler -- npx -y scanruler-mcp
+  claude mcp add --scope user scanruler -- npx -y scanruler-mcp@latest
   ```
 
 - **Codex** (the CLI, the IDE extension and the app) — in a terminal:
 
   ```bash
-  codex mcp add scanruler -- npx -y scanruler-mcp
+  codex mcp add scanruler -- npx -y scanruler-mcp@latest
   ```
 
 - **Claude Desktop** — Settings → Developer → **Edit Config**, put this in
@@ -1768,7 +1768,7 @@ once.
     "mcpServers": {
       "scanruler": {
         "command": "npx",
-        "args": ["-y", "scanruler-mcp", "--out", "C:/Users/you/Documents/ScanRuler"]
+        "args": ["-y", "scanruler-mcp@latest", "--out", "C:/Users/you/Documents/ScanRuler"]
       }
     }
   }
@@ -1820,14 +1820,14 @@ saves exports where you say. Everything happens in the tab in front of you;
 - **It says *Agent: turned away*** — another ScanRuler tab is connected
   already; close that one.
 - **ScanRuler opened in a different browser than the one you use** — run
-  `npx -y scanruler-mcp --pair` in a terminal and open the link it prints in
+  `npx -y scanruler-mcp@latest --pair` in a terminal and open the link it prints in
   your browser.
 - **Codex says the server timed out on its first start** — it was still
   downloading; start a new session. [mcp/README.md](mcp/README.md) shows how
   to give it more time.
 - **Safari** does not let a website reach your own computer. Use Chrome,
   Edge or Firefox — or have the helper serve the app itself:
-  `npx -y scanruler-mcp --serve dist` after `npm run build` in a clone of
+  `npx -y scanruler-mcp@latest --serve dist` after `npm run build` in a clone of
   this repository, then open `http://127.0.0.1:7317/`.
 
 ### What happens on your computer
@@ -1839,8 +1839,10 @@ pairing token only the two of them know. **Nothing leaves your computer
 through ScanRuler**: the scan goes from your disk to your browser, as it does
 when you open it yourself. What the agent asks for — the figures, the report
 — goes to the agent's own model provider, like everything else it reads.
-[mcp/README.md](mcp/README.md) has the rest: every option, several agents
-sharing one tab, and how the connection works.
+The helper's one request of its own is a daily look at npm for a newer
+version of itself, which it then uses from its next start.
+[mcp/README.md](mcp/README.md) has the rest: how to turn that off, every
+option, several agents sharing one tab, and how the connection works.
 
 ### What the agent can do
 
@@ -1979,8 +1981,9 @@ opening. To cut one:
 
 ```bash
 npm version minor --no-git-tag-version   # or patch / major: bumps package.json and the lockfile
+UPDATE_MCP_COMMANDS=1 npx vitest run tests/mcpCommands.test.ts   # the server's command list carries the app's version
 # describe it at the top of CHANGELOG.md
-git add package.json package-lock.json CHANGELOG.md
+git add package.json package-lock.json CHANGELOG.md mcp/src/commands.json
 git commit -m "chore: release v0.3.0"
 git tag -a v0.3.0 -m "ScanRuler 0.3.0"
 git push --follow-tags

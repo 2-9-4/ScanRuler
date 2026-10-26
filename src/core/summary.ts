@@ -107,7 +107,7 @@ export function formatDetail(fit: FitData): string {
   const dia = range ? ` · ${range}` : ''
   switch (fit.kind) {
     case 'sphere':
-      return `σ ${fit.sigma.toFixed(4)} mm${form}${dia} · ${points}`
+      return `${fit.held ? `Ø held · free Ø ${(fit.held.freeDiameter).toFixed(3)} mm · ` : ''}σ ${fit.sigma.toFixed(4)} mm${form}${dia} · ${points}`
     case 'cylinder':
       return `σ ${fit.sigma.toFixed(4)} mm${form}${dia} · length ${fit.length.toFixed(3)} mm · arc ${Math.round(fit.coverage)}° · ${points}`
     case 'cone':
@@ -172,8 +172,13 @@ export function buildSummary(
       continue
     }
     if (f.kind === 'sphere') {
-      lines.push(`  diameter: ${(f.radius * 2).toFixed(4)} mm`)
+      lines.push(`  diameter: ${(f.radius * 2).toFixed(4)} mm${f.held ? ' (known, held by the fit)' : ''}`)
       lines.push(`  center: ${formatVec(f.center)}`)
+      if (f.held) {
+        lines.push(
+          `  free fit: diameter ${f.held.freeDiameter.toFixed(4)} mm, centre ${f.held.shift.toFixed(4)} mm from the held one`,
+        )
+      }
     } else if (f.kind === 'cylinder') {
       lines.push(`  diameter: ${(f.radius * 2).toFixed(4)} mm`)
       lines.push(`  axis point: ${formatVec(f.center)}`)

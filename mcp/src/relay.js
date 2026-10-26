@@ -24,6 +24,9 @@ export class PeerLink extends Asker {
     this.token = token
     this.version = version
     this.log = log
+    /** The holding copy's version, as its welcome said; null from a copy
+     *  before 0.4.1, whose welcome to another copy carried none. */
+    this.holderVersion = null
   }
 
   /** Connect to the copy on the port. Resolves `{ ok: true }` once it took
@@ -40,6 +43,7 @@ export class PeerLink extends Asker {
           if (message.welcome) {
             accepted = true
             this.socket = ws
+            this.holderVersion = typeof message.welcome.version === 'string' ? message.welcome.version : null
             this.#setPage(message.welcome.page ?? null)
             resolve({ ok: true })
           } else resolve({ refused: String(message.refused ?? 'It said no.') })
@@ -111,7 +115,7 @@ export class SharedLink extends EventEmitter {
     this.retryMs = retryMs
     this.role = 'none'
     this.error = null
-    this.holder = new PageLink({ token, origins, log })
+    this.holder = new PageLink({ token, origins, log, version })
     this.holder.attach(http)
     this.peer = null
     this.timer = null
@@ -141,10 +145,16 @@ export class SharedLink extends EventEmitter {
     return this.current?.page ?? null
   }
 
-  run(name, input, binaryKey, onProgress) {
+  /** While relaying: the version of the copy holding the port, null when
+   *  it is from before 0.4.1 and did not say. Undefined otherwise. */
+  get holderVersion() {
+    return this.role === 'relay' ? (this.peer?.holderVersion ?? null) : undefined
+  }
+
+  run(name, input, binaryKey, onProgress, job, deferred = false) {
     const link = this.current
     if (!link) return Promise.reject({ code: 'unavailable', message: 'No ScanRuler page is connected.' })
-    return link.run(name, input, binaryKey, onProgress)
+    return link.run(name, input, binaryKey, onProgress, job, deferred)
   }
 
   waitForPage(timeoutMs) {

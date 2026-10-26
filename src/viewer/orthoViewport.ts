@@ -61,6 +61,41 @@ export const STANDARD_VIEWS: Record<StandardView, { dir: THREE.Vector3; up: THRE
   right: { dir: new THREE.Vector3(1, 0, 0), up: new THREE.Vector3(0, 0, 1) },
 }
 
+/**
+ * The half-extents on the screen plane a framing keeps in view: the box's
+ * eight corners as seen from the camera (`toCamera` takes the world into
+ * its frame; an orthographic view's x and y do not depend on depth, so
+ * this frames the box exactly), with a margin. With `across`, a square
+ * exactly that many millimetres on a side whatever the box, fitted in the
+ * view: the view's shorter side is `across`, the longer follows its shape
+ * — a cube seen in iso spans about 1.6 times its side, so a size asked
+ * for is not a box's.
+ */
+export function frameExtent(box: THREE.Box3, toCamera: THREE.Matrix4, across?: number): { halfW: number; halfH: number } {
+  if (across !== undefined && across > 0) return { halfW: across / 2, halfH: across / 2 }
+  const corner = new THREE.Vector3()
+  let halfW = 1e-3
+  let halfH = 1e-3
+  for (let i = 0; i < 8; i++) {
+    corner.set(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z).applyMatrix4(toCamera)
+    halfW = Math.max(halfW, Math.abs(corner.x))
+    halfH = Math.max(halfH, Math.abs(corner.y))
+  }
+  return { halfW: halfW * FRAME_MARGIN, halfH: halfH * FRAME_MARGIN }
+}
+
+/** The frustum's half-height that keeps a framing's extent in a view of
+ *  this shape (width over height): the extent's height, or its width
+ *  where the view is too narrow for it. */
+export const viewHalfHeight = (extent: { halfW: number; halfH: number }, aspect: number): number => Math.max(extent.halfH, extent.halfW / aspect)
+
+/** What a view of this shape spans with that extent at that zoom: width
+ *  and height, millimetres. */
+export const viewAcross = (extent: { halfW: number; halfH: number }, aspect: number, zoom = 1): [number, number] => {
+  const h = viewHalfHeight(extent, aspect) / (zoom > 0 ? zoom : 1)
+  return [2 * h * aspect, 2 * h]
+}
+
 export interface OrthoViewportOptions {
   /** Stage and lights — see viewThemes. One scheme across every viewport: two
    *  halves of a split view lit differently would read as two instruments. */
@@ -378,6 +413,7 @@ export class OrthoViewport {
     box: THREE.Box3,
     axis: THREE.Vector3 | null,
     view?: { dir: THREE.Vector3; up: THREE.Vector3 },
+    across?: number,
   ): void {
     const center = box.getCenter(new THREE.Vector3())
     const radius = Math.max(box.getSize(new THREE.Vector3()).length() / 2, 1e-3)
@@ -405,31 +441,15 @@ export class OrthoViewport {
     this.camera.lookAt(center)
     this.camera.updateMatrixWorld(true)
 
-    // Screen-plane half-extents of the eight box corners. Orthographic x/y are
-    // independent of depth, so this frames the part exactly.
-    const toCamera = new THREE.Matrix4().copy(this.camera.matrixWorld).invert()
-    const corner = new THREE.Vector3()
-    let halfW = 1e-3
-    let halfH = 1e-3
-    for (let i = 0; i < 8; i++) {
-      corner
-        .set(
-          i & 1 ? box.max.x : box.min.x,
-          i & 2 ? box.max.y : box.min.y,
-          i & 4 ? box.max.z : box.min.z,
-        )
-        .applyMatrix4(toCamera)
-      halfW = Math.max(halfW, Math.abs(corner.x))
-      halfH = Math.max(halfH, Math.abs(corner.y))
-    }
-    this.fitExtent = { halfW: halfW * FRAME_MARGIN, halfH: halfH * FRAME_MARGIN }
+    this.fitExtent = frameExtent(box, new THREE.Matrix4().copy(this.camera.matrixWorld).invert(), across)
     this.applyFrustum()
     this.controls.update()
     this.invalidate()
   }
 
   /**
-   * Fit the part back on screen without turning it.
+   * Fit the part back on screen without turning it — or, with `across`,
+   * centre the box in a view whose shorter side is that many millimetres.
    *
    * The way out of a lost model: orbiting about the cursor and zooming into a
    * corner can leave the part off the frame entirely, and re-framing it from
@@ -438,12 +458,12 @@ export class OrthoViewport {
    * is looking from and its up vector, and only the centre and the zoom are
    * taken back — which is what every CAD tool's zoom-to-fit does.
    */
-  fitCamera(box: THREE.Box3): void {
+  fitCamera(box: THREE.Box3, across?: number): void {
     const dir = new THREE.Vector3().subVectors(this.camera.position, this.controls.target)
     // Nothing to preserve if the camera has somehow ended up on its own target;
     // the default three-quarter direction is as good an answer as any.
     if (dir.lengthSq() < 1e-12) dir.set(0.62, 0.42, 1)
-    this.frameCamera(box, null, { dir, up: this.camera.up.clone() })
+    this.frameCamera(box, null, { dir, up: this.camera.up.clone() }, across)
   }
 
   /**
@@ -712,8 +732,7 @@ export class OrthoViewport {
    *  leaving camera.zoom (the user's zoom) alone. */
   private applyFrustum(): void {
     const aspect = (this.container.clientWidth || 1) / (this.container.clientHeight || 1)
-    const { halfW, halfH } = this.fitExtent
-    const h = Math.max(halfH, halfW / aspect)
+    const h = viewHalfHeight(this.fitExtent, aspect)
     this.camera.top = h
     this.camera.bottom = -h
     this.camera.right = h * aspect
@@ -741,8 +760,7 @@ export class OrthoViewport {
     this.renderer.setPixelRatio(1)
     this.renderer.setSize(width, height, false)
     const aspect = width / height
-    const { halfW, halfH } = this.fitExtent
-    const h = Math.max(halfH, halfW / aspect)
+    const h = viewHalfHeight(this.fitExtent, aspect)
     this.camera.top = h
     this.camera.bottom = -h
     this.camera.right = h * aspect

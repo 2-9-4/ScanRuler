@@ -5,7 +5,491 @@ bar and the imprint is the entry it belongs to; the `.scanruler` projects it
 saves carry the same number as `appVersion`. How a release is cut is in the
 README under "Releases".
 
-## Unreleased
+## 0.8.0 — 2026-10-26
+
+From an agent's run on a scooter lamp housing (2026-10-25):
+
+- **Seeds on two surfaces are said** (2026-10-25). `element.fit` with
+  several seeds grew one surface and said nothing of a seed it could not
+  reach: two seeds on two bands 23.5 mm apart gave the second band's plane
+  alone. Each seed now answers `inRegion`, `offMm` and `deg` from the
+  fitted element, and a seed left out warns — on another surface ("seed 1
+  lies 23.52 mm off it, turned 18.4° — fit each on its own, or mark both
+  …") or outside the region it grew to. A seed that grew nothing is no
+  longer part of the region, its box, extents or fit. One seed answers as
+  before.
+- **Guides read in one answer** (2026-10-25). Two guides read together had
+  grown to 93 k characters, past what an answer carries, and were written
+  to a file. `guide.read` with several topics now answers those that fit in
+  about 80 k, in order, the first always whole, and names the rest in
+  `next` with the call that reads them. A test reads every `guide.read` a
+  guide quotes under the cap.
+- **A mark answers the mark** (2026-10-25). `scan.segment { mark }`
+  answered the whole region list again with every mark: 8 k characters
+  each to mark four regions. It now answers `{ found, considered, claimed,
+  marked, region }`, the list only with `list: true`, and `mark` takes
+  several ids, their points together.
+- **A framed view is the size asked** (2026-10-25). `view.render` and
+  `view.set` `frame: { at, size }` made `size` the picture's width, so a
+  landscape picture at 40 mm showed 25 mm up. The size × size square now
+  fits the picture, its shorter side, and the answer gives
+  `mmAcross: [w, h]`.
+- **Places in world coordinates** (2026-10-25). Each sheet a section, a
+  height map or an outline is read on has its own origin — the part
+  centre's foot, an element's centre, an axis, the world origin's foot —
+  and a place worked out in the wrong one framed empty space.
+  `section.render` takes `frame: { at: [x, y, z] }` or
+  `{ world: { min, max } }`, `scan.heightmap` and `scan.outline` take
+  `box: { world: { min, max } }`, and `scan.pattern` takes heights as
+  points. `section.render` always answers its sheet, and `section.cut`'s
+  plane gives `basisU` and `basisV`. A height map on a plane element gives
+  the element's centre in [u, v], and where few cells meet the scan it says
+  where the scan lies (`scanLies`).
+- **Opening with discard stops what keeps the session busy** (2026-10-25).
+  Opening a project or a scan with `discard: true`, or starting over, was
+  refused while a plugin's work kept the session busy — for good, when
+  that work never finished. They now stop it first (`registerBusy` takes a
+  stop), and a command marked `interrupts` runs at once beside the change
+  that waits on the work it stops.
+- **scanruler-mcp 0.4.5** (2026-10-25):
+  - **Spills go where the scan is:** an answer too long to carry, and a
+    batch's pictures, go into the folder the open scan was opened from
+    through this server, else the output folder — no longer the folder
+    last saved into, which was the previous part's.
+  - **The idle wait says what the page is at:**
+    `scanruler_wait { for: "idle" }` still running at its time answers
+    `busy` (a build's step and how long it has run) and `running` with
+    `runningS`.
+
+- **A viewport layer can take the left-drag** (2026-10-25). A layer drawing
+  in the 3D viewport had no way to keep the camera still while something
+  of its own was dragged: the press was the layer's, the drag turned the
+  view as well. `SceneLayerHost.claimDrag` takes the plain left-drag from
+  the camera while the cursor is over what the layer drags — the camera
+  then turns on Shift and the other buttons, as it does for the brush and
+  the extend grips.
+- **A sparse solver and paths along a scan** (2026-10-24), two pieces of
+  geometry for other code to build on: sparse matrices with conjugate
+  gradient and BiCGSTAB (`src/core/fit/sparse.ts`), and the way between
+  two points along a triangle mesh — the plane cut through them, within a
+  tube round the straight line, or along its edges where a hole is in the
+  way (`src/core/geometry/scanPath.ts`). The cut visits only the grid cells
+  the plane passes through, and the way along the edges is an A* search
+  over arrays kept between searches: on a two-million-triangle scan a
+  60–100 mm path takes 3 ms instead of 29 and a way along the edges 13 ms
+  instead of 113 at the median, the paths the same.
+- **Contributor License Agreement** (2026-10-24). Outside contributions
+  are now accepted against a written CLA ([CLA.md](CLA.md)): the contributor
+  keeps their copyright and licenses the contribution to the author under
+  any terms, which is what lets the app stay AGPL and still be licensed
+  commercially. A bot asks for the signature on a contributor's first pull
+  request and records it on the `cla-signatures` branch; CONTRIBUTING.md
+  says how. The one outside code change merged before this — the guard
+  against viewport labels looping while being spread apart — was written
+  anew: the spreading now runs a counted number of rounds, one per label
+  already placed, with sub-pixel slack in the overlap test, instead of
+  running until the arithmetic says the labels are clear.
+- **Sphere fit with a known diameter** (2026-10-24). A precision ball —
+  a gauge ball, a ballbar's — can be fitted with its diameter held: type
+  it under *Known Ø* while fitting a sphere, and only the centre is
+  fitted. On a ball scanned only partly the free fit's diameter and its
+  centre trade off, so a scan a few µm off towards the edge of the cap
+  moves the centre several times as far; holding the true diameter keeps
+  it in place. Under the field: the diameter the points give when it is
+  free, and how far holding it moved the centre. The value is that
+  sphere's own, kept by the next sphere fitted after Create (a ballbar's
+  second ball) and saved with the project. Agents give `knownDiameter` to
+  element.fit and element.fit_marked; a diameter more than 1 mm or 10 %
+  off what the surface fits is refused as the wrong ball or a typo.
+
+From an agent's runs on a game controller's housing and a camera mount's
+buckle (2026-10-24):
+
+- **A tab older than its app says so** (2026-10-24). A page left open
+  while the app was rebuilt or deployed under it can no longer load the
+  parts it fetches on demand; every such command failed with the
+  browser's "Failed to fetch dynamically imported module" while the rest
+  worked. It now answers `stale_page`: "this tab is older than the app it
+  came from (rebuilt since) — save the project, then ask the person to
+  reload; the work is lost on reload otherwise", and `session.state`
+  carries `stale` from then on. Vite's `vite:preloadError` counts too.
+- **The page says who it is** (2026-10-24). The agent link's hello
+  carries `pageId` and `since`, so the agent's server can tell a page that
+  reloaded from one that only reconnected.
+- **A name in an id** (2026-10-24). A name given where an `id` takes a
+  number, on an object that has a `name` beside it, is refused with "a
+  name goes in name", not "expected a finite number".
+- **Asking for less, by the command** (2026-10-24). A command can say what
+  a too-long answer should ask for next time (`askForLess`); the agent's
+  server uses it in the note of an answer it had to write to a file.
+- **Ramps between tiers** (2026-10-24). `scan.heightmap`'s `levels` leave
+  cells steeper than `slopeDeg` out, so a recess with ramps read from
+  below came out a box. Past a fifth of the map sloped, or where a ramp
+  borders one tier only, the answer now gives `ramps` — each with its
+  box, area and the levels it joins — and says "a section along them
+  gives their profile".
+- **scanruler-mcp 0.4.4** (2026-10-24):
+  - **Strings of JSON:** `scanruler_batch` reads `calls`, a call or a
+    call's `arguments` given as a string of JSON, as some clients send a
+    large nested list; one that is not JSON is refused saying so ("calls
+    came as a string that is not JSON"), with nothing run — not "give at
+    least one call".
+  - **A tab that reloaded:** when the tab that held work comes back as
+    another page, the next answer says so (`pageReloaded`: "The ScanRuler
+    page reloaded at 16:08 and holds nothing now …") and names the
+    project last opened or saved here. `scanruler_status` gives
+    `lastProject` (kept with `folders`), `page.since`, and `page.stale`
+    once the page answered `stale_page`.
+  - **Spills ask by the command:** a spilled answer's note takes the
+    command's own `askForLess`.
+
+From an agent's run on a game controller's add-on pack modelled as one
+solid (2026-10-24):
+
+- **A picture says whether it fitted** (2026-10-24). A picture after a
+  framed one kept the frame's zoom, and nothing said so. `view.render`
+  and `view.set` answer `fitted`, and `framedEarlier` (the box, or the
+  place and size) while the camera still stands at the zoom an earlier
+  `frame` left — a standard view keeps it; `fit: true` pictures the part
+  whole. A fit, or a zoom by hand, forgets the frame.
+- **"Crown of a bead" on curvature** (2026-10-24). A plane fit on a flat
+  face with lettering on it warned of a crown: the relief spread its
+  normals past 10°. The warning now needs the region curved as well — a
+  quadric over it rising more across it than three times what the quadric
+  leaves (`region.sagitta`) — or the region a sliver of what it spans.
+  The spread stays in the answer.
+- **The map on the reference without fans** (2026-10-24). A long sliver
+  of the reference (a planar face fanned out from one corner, a cylinder's
+  strips) was cut along its long edge only and stitched to its far corner,
+  so the colours ran out from the corner across the face. Its other edges
+  are cut as finely now: every triangle of the map is about the spacing
+  across. A sliver costs a few readings a spacing of its length, and a
+  large reference's spacing opens by those as well as by its area, so the
+  map stays within its triangle budget.
+
+- **deviation.volume** (2026-10-23). The volume error for an agent: the
+  totals and the regions largest first, each a layer (a face standing off)
+  or a lump (material there or not) with its box — a frame view.render
+  takes — over the whole part or within a box. The measuring guide reads it
+  before the surface patches.
+- **Volume error** (2026-10-23). The deviation workspace compares the scan
+  and the reference as solids as well as surfaces: *Find volume errors*
+  lists the material the reference has and the part has not (excess) and
+  the material the part has and the reference has not (missing) as regions
+  with their volume and depth — a boss not modelled, a pocket not cut,
+  behind a wall or inside a cavity too — largest first, drawn over the
+  parts. Hover a row to light its region, click it to frame it. Where the
+  scan has a hole the reference stands in for it; what the scan still does
+  not say is *unsure*, never an error. Within the tolerance of the scan's
+  surface a difference is noise, and nothing thinner than about two cells
+  is seen. About 15 s on a 1.5M-triangle scan.
+- **Progress shown** (2026-10-23). A long job that can tell how far it has
+  got shows a bar on the card over the stage.
+
+- **Workspace tabs say their name first** (2026-10-23). A tab folded to
+  its picture showed only what the workspace is for when hovered; its
+  tooltip now leads with the workspace's name.
+
+From an agent's run on a wrapped assembly scan of a water pump (2026-10-23):
+
+- **Cylinders on stepped bores** (2026-10-23). A bolt hole whose bore
+  steps 0.5 mm wider partway down was refused, though the first estimate
+  was right: the region grew the full length and its scatter failed the
+  gate. Such a region is now split along the axis, and the fit answers the
+  seed's part with the other as `second` (its radius, where along the axis,
+  its share). A taper or a cone is not split. A refusal says what it
+  found, rounds first — "R4.68 (σ 0.42 over 24.0 mm along the axis — two
+  surfaces? give within, or seed nearer one end)" — and a guided fit lists
+  the sizes in range first.
+- **Holes a wrap closed** (2026-10-23). A bore's fit answers `closed: {
+  from, to }` where its axis runs into the skin within a radius past the
+  wall, with a warning. `scan.qa` on a closed skin with no rims says the
+  wrap bridged the holes it did not see through.
+- **A plane fit on a crown warns** (2026-10-23). `element.fit` plane says
+  "the crown of a bead or round, not a face?" when its normals spread over
+  10° or it fills under 15 % of its box (`fill` in the region's reading).
+- **Patches say feature or texture** (2026-10-23). Every deviation patch
+  answers `volume` (mm³ past the tolerance), `depth` (median distance) and
+  `kind`: `"feature"` for one at least 4 mm² (and 25 spacings²) and twice
+  the tolerance deep, else `"texture"`. `deviation.hotspots` answers
+  `features: { count, shareOfExcess }` and that each feature patch is
+  material missing or misplaced. Every place the person pointed at on the
+  run's part was a feature patch.
+- **Refusals by the value's own type** (2026-10-23). A value no branch of
+  a choice takes was refused by the closest branch, which for an object
+  could be a number's ("expected a finite number"); the branch its type
+  fits now speaks.
+- **A picture says why something is not in it** (2026-10-23). `view.render`
+  and `view.set` answer `<key>Why` for a view key that is off and that
+  `show` did not put away, where its workspace can say why.
+- **scanruler-mcp 0.4.3** (2026-10-23):
+  - **The person's notes kept:** an answer cut to a brief keeps `notes`, a
+    level down too, and a batch answers the last notes at its top.
+  - **The time:** `scanruler_status` answers `server.now`, local time with
+    its offset.
+  - **Spills where the agent can read them** (2026-10-24): an answer too
+    long to carry, and a picture in a batch without a path, are written
+    into the folder of the scan or project last opened or saved — where an
+    agent kept to that folder can open them — and into the output folder
+    only before any; the note says which.
+
+From an agent's run on a bracket with the person's notes (2026-10-23):
+
+- **Pictures one at a time** (2026-10-23). Two pictures asked for at once
+  shared the one camera, and both came back as the second. `view.set`,
+  `view.render`, `section.render` and `flat.render` now take the viewport
+  in turn, putting back what they hid before the next one starts.
+- **Plane names everywhere** (2026-10-23). "XY", "YZ" and "XZ" (or "ZX",
+  any case, with or without "plane") name the coordinate planes in every
+  command that takes a plane: `section.render { plane }` and
+  `element.construct`'s refs took them for an element's name and refused.
+  Answers and the base planes spell the third one "XZ plane"; the section
+  in the session's state is named so that `section.cut` takes it back.
+- **A picture says why it has no colours** (2026-10-23). Outside the
+  Deviation workspace `view.render` answered nothing about the map, and
+  pictures came out grey. With a map measured, it now says the Deviation
+  workspace isn't on screen and how to switch; a plugin's workspace can say
+  which map it paints itself.
+- **Auto-align says how square it came out** (2026-10-23). `align.auto`
+  answers `square`: its largest flat face's tilt, and per axis the faces
+  square to it with theirs, by area — a drafted wall leans by its draft,
+  not by the alignment. `level: "largest"` squares the largest face exactly
+  and settles the rest about it.
+- **The map on the reference reads faster** (2026-10-23). Readings welded
+  on number keys and the facing search tried near first: the reference
+  side of a two-way comparison takes about a third less, with the same
+  readings. Its progress names each phase.
+- **scanruler-mcp 0.4.2** (2026-10-23):
+  - **Pictures and files never written over:** a picture or file written
+    into a folder is numbered past one already there, and two written at
+    once get two names.
+  - **Relative paths from the scan's folder:** a batch's `file`, `$file`,
+    files to open and outputs' paths are taken from the open scan's folder,
+    or from the server's start folder with none open; `scanruler_status`
+    gives both.
+  - **Batches say what they undid, and check names first:** each call a
+    rollback took back answers `undone: true` (`callsUndone` counts them);
+    a batch whose calls would give one name twice, where the page keeps
+    names unique, is refused before anything runs.
+  - **Progress on jobs:** a running job answers its phase and percent in
+    `scanruler_status` and `scanruler_wait`, whether or not the client asked
+    for progress notifications.
+  - **Guides arrive whole:** `guide.read` answers up to 90 000 characters
+    before going to a file; a spilled guide's note names `section`.
+- **scanruler-mcp 0.4.1** (2026-10-23): **the old connector named when it
+  is another app's.** Copies of the server share the tab: the first holds
+  its connection and the others relay through it. The page judges the copy
+  holding the connection, so with an old copy left running in another app,
+  an up-to-date agent was told to update an app that was already current.
+  The holding copy now tells the relaying ones its version
+  (`server.holder.version` in `scanruler_status`), and a relaying copy's
+  `serverTooOld` says the other copy is the old one and that quitting the
+  app that started it lets a current copy take over. The status tool says
+  what `server.role` — `holder`, `relay`, `none` — means. The page's banner
+  adds that the old connector may be another app's.
+
+## 0.7.0 — 2026-10-23
+
+- **Guides for agents, served by the app** (2026-10-23). `guide.read`
+  gives an agent the workflow and judgement for a task, written for the
+  build it is connected to, so no copy kept elsewhere goes out of date. With
+  no topic it lists the guides with their sections and what each costs in
+  tokens; with a topic it gives that guide whole, or one section of it. The
+  measuring skill's text is now the `measure` guide and its reference
+  `measure-reference`, and `skills/scan-measuring` only points at them.
+  A plugin can add guides of its own. Until a guide has been read,
+  `session.state` says where they are, and scanruler-mcp's instructions
+  tell an agent to read one before its first step.
+
+From an agent's second run on a scooter handlebar cover (2026-10-23):
+
+- **An out-of-date connector says so** (2026-10-23). The page knows the
+  oldest scanruler-mcp its commands work with. A server older than that
+  — every one before 0.4.0 — gets a banner in plain words with one line to
+  copy for Claude Code, Codex and Claude Desktop, and "quit the app
+  completely and open it again"; `session.state` says `serverTooOld` for
+  the agent. Settings shows the connected server's version.
+- **Marking a query marks it all** (2026-10-23). `scan.query { mark: true }`
+  marked only the vertices it answered, thinned to its limit — 983 of
+  11,786 on a face — so a fit on the marked points used a twelfth of them.
+  It now marks every vertex that matched, and with `mark` it answers the
+  counts alone unless `fields` asks for more.
+- **Pictures as wide as asked** (2026-10-23). `view.render frame { at, size }`
+  shows a view `size` mm wide in every view; it framed a cube of that size,
+  about 1.6× wider in an iso view. `show` puts back exactly what it changed
+  after the picture, also when one of its keys is refused, and `false` on a
+  key the workspace on screen does not have is answered as `absent` instead
+  of failing the picture.
+- **Sections on an element's plane** (2026-10-23). `section.render { plane }`
+  takes a plane element by id or name and cuts in the frame a sketch on it
+  gets, or a workspace's sketch plane as `{ sketch }`. With `offsets` the
+  answer's `sheet` gives its `origin` too.
+- **Large tori and two-surface cylinders** (2026-10-23). A torus fit takes
+  a spine up to five times the scan's diagonal — a long, gently bent tube
+  fits as R592 / r75 — and a torus turned down for its size says the limit.
+  A cylinder fit warns when its region is two surfaces, such as a tilted lip
+  over an upright wall, naming the second part's share, its band along the
+  axis, the angle between the axes, both radii and how far each part's
+  normals lean.
+- **Draft patches that stay on their wall** (2026-10-23). `scan.draft` joins
+  only points facing within 20° of the patch's mean, so a smooth freeform
+  wall comes in patches that turn 40° at most (`turnDeg`) instead of one
+  patch running round the curve. `split` — a plane, a coordinate plane or
+  `"symmetry"` — keeps patches to one side of a mirror plane.
+- **A name in a number field says where it goes** (2026-10-23). A command
+  field that takes a number can name the field its expression goes in;
+  a name or an expression given in its place is refused with the way to
+  write it.
+
+- **Sections know which side the material is on** (2026-10-22). Every
+  point of a section's cut carries the direction out of the material, read
+  from the scan's triangles. `section.get` takes `skin: "outer" | "inner"`
+  to read one skin of a thin wall alone, without the ribs and bosses inside
+  it, and `facing { dir, withinDeg }` for the points that face a way; each
+  chain then comes back as its runs on that side.
+
+- **Sections through an axis** (2026-10-22). `section.cut` takes
+  `across: { axis, angleDeg }`: a plane through a cylinder's, cone's,
+  line's or circle's axis, or through the X, Y or Z axis, turned about it.
+  Its sheet is a half section — u the distance out from the axis, v up it —
+  at every angle and never mirrored. The section keeps its axis and angle,
+  and the angle can be changed in the section editor.
+
+- **Draft keeps a thin wall's two sides apart** (2026-10-22). `scan.draft`
+  grows its patches from point to neighbouring point while they face
+  within 20° of each other, so the two sides of a blade or a rib are two
+  patches facing opposite ways, and a boss's or a hole's round side is one
+  patch marked `round: true`. A wall nearly square to the pull is no longer
+  split in two by its noise. Grouping points into patches is quicker too,
+  for the deviation's hot spots as well.
+
+- **Repeats round an axis** (2026-10-22). `scan.pattern { axis, at, radius }`
+  cuts the scan square to an axis at each height and turns each cut
+  against itself. It answers how many copies there are, their pitch, where
+  the first lies, and how far each copy's outline lies from the others
+  turned onto it. Round outlines about the axis come back as rings, with
+  how far their centres lie off it.
+
+- **Height levels from the flat cells** (2026-10-22).
+  `scan.heightmap { levels: true }` leaves out the cells on a slope steeper
+  than `slopeDeg` (10° by default; 90 keeps every one) before it counts
+  levels, and answers how many as `sloped`; the noise that sets the gap
+  between levels is read on the flat cells alone. Two tiers joined by a
+  fillet's ramp came back as one level, and now are two.
+
+- **Holes and outlines from the scan** (2026-10-22). `scan.qa` numbers each
+  open rim and gives its circle where one fits, and
+  `element.fit { kind: "circle", rim }` makes it an element. The new
+  `scan.outline` reads the scan's outline along an axis or onto a plane:
+  straight sides met at corners, corner rounds, arcs and circles, with how
+  far the scan strays from it. Rims are walked in order whichever way the
+  scan's triangles are wound.
+
+- **Reading the scan without vertex lists** (2026-10-22). `scan.query`
+  answers just the count or just the vertex numbers (`fields`), and
+  `mark: true` leaves its points marked for the next command.
+  `element.fit_marked` takes a box and a facing direction, as
+  `scan.fit_surface` does.
+
+- **align.datum says what it centred** (2026-10-22). A first alignment
+  answers `centred` with the coordinates it put on the scan's box centre,
+  and `keepFree: true` leaves them where they are. Where a face parallel to
+  the levelling plane, within 5 mm of it, holds more of the scan, the
+  answer says so (`parallelFace`) — the part may stand on that one.
+
+- **Fit refusals that name the axis** (2026-10-22). A cylinder or cone
+  refused because its axis lay off the one given names that axis, a point
+  on it, how far off it lay and how many points it held, and suggests
+  giving that axis or dropping it.
+
+- **Values sent as strings** (2026-10-22). Commands take `"true"` and
+  `"false"` where only a boolean fits, and an id sent as a string (`"185"`)
+  where nothing is named so — some agents' clients send every value as a
+  string.
+
+- **The map on the reference waits for itself** (2026-10-22). Asking for
+  the map on the reference while it is being measured waits for that run,
+  instead of saying it could not be measured and leaving the run to
+  collide with the next change.
+
+- **A surface's cut in a section picture** (2026-10-22). An outline can say
+  it is the cut of an open surface: it is drawn in a colour of its own with
+  its ends marked, and never counts as the inside of the material.
+
+- **Pictures without elements** (2026-10-22).
+  `view.render { show: { elements: false } }` also puts away the selection
+  outline and the ghost of a fit being made.
+
+- **An agent's jobs, kept on the page** (2026-10-22). The page keeps the
+  outcome of the last hundred commands an agent's server ran as a job,
+  read with `session.recent`, so a restarted server can still say what a
+  job did. A command can be marked `long`, and the server then runs it as
+  a job. A run can be marked deferred: more changes follow straight after
+  it, and work only the last needs waits for the last (`registerSettle`).
+
+- **scanruler-mcp 0.4.0** (2026-10-22):
+  - **No call held past a minute.** `--answer-within <s>` (default 45, or
+    `SCANRULER_MCP_ANSWER_WITHIN`): a change, a batch or a long read still
+    running then answers `{ queued: true, job, after }` and runs on, and
+    `scanruler_wait` waits no longer either and answers
+    `state: "running"`. A bridge that cuts calls at 60 s no longer loses
+    them.
+  - **Jobs survive a restart.** A server copy started afresh still answers
+    `scanruler_wait` for a job of the copy before it, from the tab's
+    record (`session_recent`).
+  - **A refused read keeps the batch's work.** `scanruler_batch` rolls back
+    only when the refused call is a change; a refused read stops the batch
+    and says what came before stands (`kept`). A call refused `busy` is
+    run again once the tab is idle, and the rollback waits for idle too.
+  - **Batches that build once.** `scanruler_batch { build: "end" }` sends
+    every call but the last as deferred, so a run of model changes
+    rebuilds once.
+  - **The scan's folder is kept** beside `tools.json`, listed in
+    `scanruler_status` and used by `scanruler_write` after a restart; the
+    new `scanruler_files` lists it.
+  - **Folders and files as arguments.** `scan_open` and `project_load`
+    take a folder and open the one mesh or `.scanruler` in it, or list
+    what is there. `{ "$file": path }` anywhere in a tool's arguments is
+    that file's JSON.
+  - **Stale tool lists say more:** which tools' definitions `changed`, and
+    which page the list came from (`listedFrom`).
+  - **The newest tool list wins** (2026-10-23). The list kept from the last
+    page (`tools.json`) now carries that page's version, and the server
+    takes whichever of it and the list it ships with is newer — a cache
+    from an older page hid tools the server already knew. Plugin tools
+    from the cache are kept. Asked for its tools while a page it knew is
+    reconnecting, the server waits up to 3 s for it.
+  - **Answers that fit in a chat** (2026-10-23). An answer over 40,000
+    characters is written to a file in the output folder and the agent
+    gets `{ truncated, file, bytes, keys, brief }`. `scanruler_status`
+    lists the running jobs and the newest five (`jobsMore` counts the
+    rest); `scanruler_wait { for: "idle" }` answers only what finished;
+    the names of tools that changed come once, counts after.
+  - **A path that is almost right** (2026-10-23). `scan_open` and the
+    other file tools, given a path that does not exist, list up to five
+    names in the nearest folder that do and are near it
+    (`10-scooterHead` → `10_scooterHead`).
+  - **The server keeps itself current** (2026-10-23). Once a day, in the
+    background, it asks npm for the newest scanruler-mcp and fetches it;
+    the next start runs that copy in its place, so an install that would
+    otherwise stay on its first version — a global install, a copied
+    folder — follows the releases with nobody editing a config. Every
+    failure falls back to the copy that is there. It never runs from a
+    clone of the repository, for a version pinned in the config, or with
+    `--no-update` (`SCANRULER_MCP_NO_UPDATE=1`). `scanruler_status` says
+    `server: { version, latest, handedOffFrom? }`; `--version` prints it.
+    The install lines now say `scanruler-mcp@latest`.
+
+- **Top bar on a laptop** (2026-10-22). The top bar fits its window again.
+  It used to give up its words at fixed window widths that took no account
+  of the part chip, the agent chip or the number of workspaces. On a 14″
+  laptop that pushed Load, Settings and the GitHub key out of sight with
+  nothing to show they were there. The bar now measures what it holds and
+  folds only as far as it needs to: first the word "Project" and the part's
+  counts, then the tabs' pictures and the brand's caption, then the tabs that
+  are not open, which show just their picture, and last the words on the
+  keys to the right. When even that does not fit, the end with keys out of
+  sight fades out.
 
 - **Deviation from a fitted element** (2026-10-22). The colour map is back on
   the scan. Since sharp edges became the default in 0.4.5, any scan with an

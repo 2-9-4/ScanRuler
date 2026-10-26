@@ -14,6 +14,7 @@ import { thicknessStats, type ThicknessStats } from '../core/thickness/thickness
 import { describeRigid } from '../core/alignment'
 import type { Rigid } from '../core/deviation/rigid'
 import type { Vec3 } from '../core/types'
+import { isWorldAxis, worldPlaneName } from '../core/section/frame'
 import { cutoffLabel } from '../core/summary'
 import { useDeviation } from '../state/deviationStore'
 import { usePrefs } from '../state/prefsStore'
@@ -34,7 +35,10 @@ import { APP_VERSION } from '../version'
 import { commandHost, sessionBusy, type FlatSheetView } from './host'
 import { useCommandActivity } from './activity'
 import { readStateSections } from './stateSections'
+import { guideRead, listGuides } from './guides'
 import { describeView } from './core/view'
+import { serverTooOld } from './agentLink'
+import { pageStale, STALE_PAGE } from './stalePage'
 
 // ---- Workspaces -------------------------------------------------------------
 
@@ -81,6 +85,7 @@ export function describeElement(el: Element) {
             method: src.settings.method,
             sigmaCutoff: src.settings.sigma,
             cutoff: cutoffLabel(src.settings.sigma),
+            ...(src.settings.knownDiameter !== undefined ? { knownDiameter: src.settings.knownDiameter } : {}),
             ...(src.selection ? { markedPoints: src.selection.length } : { seeds: [...src.seeds] }),
           }
         : src.type === 'picked'
@@ -146,9 +151,13 @@ export function describeSection(sec: Section) {
     id: sec.id,
     name: sec.name,
     visible: sec.visible,
-    across: sec.ref,
+    // A coordinate plane by the name section.cut takes back ("XZ plane");
+    // an element by its id; through an axis as { axis, angleDeg }.
+    across: isWorldAxis(sec.ref) ? worldPlaneName(sec.ref) : sec.ref,
     offset: sec.offset,
-    plane: { origin: sec.frame.origin, normal: sec.frame.normal },
+    // The sheet in the world, as section.get and section.render lay it: a
+    // sheet point [u, v] is origin + u·basisU + v·basisV.
+    plane: { origin: sec.frame.origin, normal: sec.frame.normal, basisU: sec.frame.basisU, basisV: sec.frame.basisV },
     chains: sec.cut ? sec.cut.offsets.length - 1 : null,
     ...(sec.message ? { message: sec.message } : {}),
   }
@@ -377,6 +386,11 @@ export async function scanBounds(): Promise<{ min: Vec3; max: Vec3 } | null> {
   }
 }
 
+const withServerTooOld = () => {
+  const text = serverTooOld()
+  return text ? { serverTooOld: text } : {}
+}
+
 export async function sessionState() {
   const bounds = await scanBounds()
   const s = useStore.getState()
@@ -386,6 +400,12 @@ export async function sessionState() {
   const running = useCommandActivity.getState().running
   return {
     app: { name: 'ScanRuler', version: APP_VERSION, plugins: plugins().map((p) => p.id), viewport: session.sceneRef.current !== null },
+    // The agent's server older than this page's commands assume: what the
+    // banner tells the person, for an agent to pass on.
+    ...withServerTooOld(),
+    // A part of the app this page could not load: it is older than the app
+    // (stalePage.ts) — the work saved before the person reloads.
+    ...(pageStale() ? { stale: { since: pageStale(), note: STALE_PAGE } } : {}),
     // unsaved: changes since the project was last saved or opened, as the
     // top bar says it; holds: the work a replace would lose, counted.
     project: { name: s.projectName, unsaved: projectUnsaved(), holds: sessionHolds() },
@@ -415,6 +435,9 @@ export async function sessionState() {
     thickness: describeThickness(),
     flat: describeFlat(),
     hint: hintNow(),
+    // Until an agent has read a guide, where they are: an agent that came
+    // with no instructions learns of them from its first readout.
+    ...(guideRead() || listGuides().length === 0 ? {} : { guide: 'Before a task’s first step, read its guide: guide.read lists them — how to go about each task with this build.' }),
     history: {
       undo: history.past.at(-1)?.label ?? null,
       redo: history.future.at(-1)?.label ?? null,

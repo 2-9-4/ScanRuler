@@ -10,8 +10,8 @@
 //
 // A reference tessellation has few vertices on a plane and long slivers on
 // a cylinder, so it is first cut finer — every triangle in rows about the
-// spacing apart, each row in pieces as long — and each vertex of the finer
-// mesh is one reading,
+// spacing apart, each row in pieces as long, the two other edges as well —
+// and each vertex of the finer mesh is one reading,
 // painted as the map's colour there. A reading is the signed distance to
 // the scan, positive where the reference stands outside it, taken only off
 // scan surface that faces the way the reference does (the far skin of a
@@ -67,13 +67,27 @@ const OPEN_STEPS = [1, 1.1, 1.25, 1.4, 1.6, 1.8, 2, 2.2, 2.5, 2.8, 3.2, 3.6, 4, 
 
 /** The spacing a reference of this area is cut to: `wanted`, opened as far
  *  as keeps it under MAX_SAMPLE_TRIANGLES, onto the next of OPEN_STEPS.
- *  Cut to about s, a triangle holds about s²/2 of area. */
-export function sampleSpacing(area: number, wanted: number): number {
-  const needed = Math.sqrt((2 * area) / MAX_SAMPLE_TRIANGLES)
+ *  Cut to about s, a triangle holds about s²/2 of area, and each triangle
+ *  costs about two more a spacing of its longest edge — what slivers cost
+ *  over their area: `longEdges` is those edges' sum (meshLongEdges), mm.
+ *  So s² · MAX − 2 · longEdges · s − 2 · area = 0 at the cap. */
+export function sampleSpacing(area: number, wanted: number, longEdges = 0): number {
+  const needed = (longEdges + Math.sqrt(longEdges * longEdges + 2 * MAX_SAMPLE_TRIANGLES * area)) / MAX_SAMPLE_TRIANGLES
   if (needed <= wanted) return wanted
   const decade = 10 ** Math.floor(Math.log10(needed))
   const step = OPEN_STEPS.find((s) => s * decade >= needed * (1 - 1e-9))!
   return Number((step * decade).toPrecision(6))
+}
+
+/** The sum of a mesh's triangles' longest edges, mm. */
+export function meshLongEdges(positions: Float32Array, indices: Uint32Array): number {
+  const len = (a: number, b: number) => Math.hypot(positions[3 * a] - positions[3 * b], positions[3 * a + 1] - positions[3 * b + 1], positions[3 * a + 2] - positions[3 * b + 2])
+  let sum = 0
+  for (let t = 0; t < indices.length; t += 3) {
+    const [a, b, c] = [indices[t], indices[t + 1], indices[t + 2]]
+    sum += Math.max(len(a, b), len(b, c), len(c, a))
+  }
+  return sum
 }
 
 /** A mesh's surface area, mm². */
@@ -87,7 +101,13 @@ export function meshArea(positions: Float32Array, indices: Uint32Array): number 
  * The reference cut so that its readings lie about `spacing` apart: each
  * triangle in rows parallel to its longest edge, as many as its height
  * takes, each row in pieces no longer than the spacing, neighbouring rows
- * stitched. A sliver is one row — cut by its area, not its length. Where
+ * stitched where they lie side by side along the longest edge. The other
+ * two edges are cut into pieces no longer than the spacing too: a sliver is
+ * one row, and stitched to its far corner alone every piece of it ran the
+ * sliver's length — a fan of colour from the corner, and from the corner of
+ * a face its triangles fan out from. So every triangle cut has its longest
+ * edge about the spacing; a sliver costs a few a spacing of its length,
+ * not of its area. Where
  * two triangles cut a shared edge alike their points are one vertex; where
  * not, the pieces lie on the edge from either side — no gap. Normals are
  * the reference's vertex normals carried across each triangle, or, where
@@ -109,8 +129,12 @@ export function subdivideForMap(
   // an edge both cut alike — is one vertex where they face the same way:
   // the readings would otherwise lie twice at one place, and a spacing read
   // off the points' nearest neighbours would come out nothing. Where they
-  // face apart, a sharp edge, each keeps its own.
-  const welded = new Map<string, number[]>()
+  // face apart, a sharp edge, each keeps its own. The points are told apart
+  // by their coordinates rounded to the weld, held as integers: a hash of
+  // the three picks a chain of the points under it, in the order they came.
+  const firstOf = new Map<number, number>()
+  const nextOf: number[] = []
+  const cell: number[] = []
   for (let t = 0; t < indices.length; t += 3) {
     // The longest edge first, the winding kept: A→B the longest, C the far
     // corner.
@@ -121,6 +145,14 @@ export function subdivideForMap(
     const long = l[first]
     const height = long > 0 ? (2 * triangleArea(positions, a, b, c)) / long : 0
     const rows = Math.max(1, Math.ceil(height / spacing))
+    // Where C lies along A→B, from A: every point's place along the
+    // longest edge, by which neighbouring rows are stitched.
+    let dotC = 0
+    for (let k = 0; k < 3; k++) dotC += (positions[c * 3 + k] - positions[a * 3 + k]) * (positions[b * 3 + k] - positions[a * 3 + k])
+    const placeC = long > 0 ? dotC / long : 0
+    // How many pieces each row's stretch of A→C and of B→C is cut into.
+    const sideA = Math.max(1, Math.ceil(l[(first + 2) % 3] / rows / spacing))
+    const sideB = Math.max(1, Math.ceil(l[(first + 1) % 3] / rows / spacing))
     const point = (wa: number, wb: number, wc: number) => {
       const at = pos.length / 3
       let nx = 0, ny = 0, nz = 0
@@ -138,38 +170,64 @@ export function subdivideForMap(
       nx /= ln
       ny /= ln
       nz /= ln
-      const key = `${Math.round(corner[0] * WELD)},${Math.round(corner[1] * WELD)},${Math.round(corner[2] * WELD)}`
-      const same = welded.get(key)
-      for (const w of same ?? []) if (nor[w * 3] * nx + nor[w * 3 + 1] * ny + nor[w * 3 + 2] * nz > WELD_FACING) return w
-      if (same) same.push(at)
-      else welded.set(key, [at])
+      const ix = Math.round(corner[0] * WELD), iy = Math.round(corner[1] * WELD), iz = Math.round(corner[2] * WELD)
+      const hash = Math.imul(ix | 0, 73856093) ^ Math.imul(iy | 0, 19349663) ^ Math.imul(iz | 0, 83492791)
+      let last = -1
+      for (let w = firstOf.get(hash) ?? -1; w >= 0; w = nextOf[w]) {
+        last = w
+        if (cell[w * 3] !== ix || cell[w * 3 + 1] !== iy || cell[w * 3 + 2] !== iz) continue
+        if (nor[w * 3] * nx + nor[w * 3 + 1] * ny + nor[w * 3 + 2] * nz > WELD_FACING) return w
+      }
+      if (last >= 0) nextOf[last] = at
+      else firstOf.set(hash, at)
+      nextOf.push(-1)
+      cell.push(ix, iy, iz)
       pos.push(corner[0], corner[1], corner[2])
       nor.push(nx, ny, nz)
       return at
     }
+    const put = (into: Line, wa: number, wb: number, wc: number) => {
+      into.at.push(point(wa, wb, wc))
+      into.x.push(wb * long + wc * placeC)
+    }
     // Row i runs from A towards C to B towards C, i/rows of the way up;
     // the last is C alone.
-    const row = (i: number): { at: number[]; t: number[] } => {
+    const row = (i: number) => {
       const up = i / rows
       const pieces = i === rows ? 0 : Math.max(1, Math.ceil((long * (1 - up)) / spacing))
-      const at: number[] = []
-      const ts: number[] = []
+      const r: Line = { at: [], x: [] }
       for (let j = 0; j <= pieces; j++) {
         const along = pieces === 0 ? 0 : j / pieces
-        at.push(point((1 - up) * (1 - along), (1 - up) * along, up))
-        ts.push(along)
+        put(r, (1 - up) * (1 - along), (1 - up) * along, up)
       }
-      return { at, t: ts }
+      return r
     }
     let lower = row(0)
     for (let i = 1; i <= rows; i++) {
-      const upper = row(i)
+      const next = row(i)
+      // What the strip between the rows is stitched to above: A→C from
+      // where the lower row starts, the next row, then B→C back down to
+      // where the lower row ends — each stretch of the sides cut as finely
+      // as the rows, all in order along A→B.
+      const upper: Line = { at: [], x: [] }
+      const u0 = (i - 1) / rows
+      const u1 = i / rows
+      for (let k = 1; k < sideA; k++) {
+        const u = u0 + ((u1 - u0) * k) / sideA
+        put(upper, 1 - u, 0, u)
+      }
+      upper.at.push(...next.at)
+      upper.x.push(...next.x)
+      for (let k = sideB - 1; k >= 1; k--) {
+        const u = u0 + ((u1 - u0) * k) / sideB
+        put(upper, 0, 1 - u, u)
+      }
       let j = 0
       let k = 0
       const nj = lower.at.length - 1
       const nk = upper.at.length - 1
       while (j < nj || k < nk) {
-        if (j < nj && (k === nk || lower.t[j + 1] <= upper.t[k + 1])) {
+        if (j < nj && (k === nk || lower.x[j + 1] <= upper.x[k + 1])) {
           out.push(lower.at[j], lower.at[j + 1], upper.at[k])
           j++
         } else {
@@ -178,11 +236,15 @@ export function subdivideForMap(
         }
         parent.push(t / 3)
       }
-      lower = upper
+      lower = next
     }
   }
   return { positions: Float32Array.from(pos), normals: Float32Array.from(nor), indices: Uint32Array.from(out), parent: Uint32Array.from(parent), spacing }
 }
+
+/** Points of a cut triangle in order along its longest edge: each one's
+ *  vertex, and its place along the edge from its start, mm. */
+type Line = { at: number[]; x: number[] }
 
 /** Points within a hundred-thousandth of a millimetre are one, facing
  *  within about 8° of each other. */
@@ -265,6 +327,11 @@ const SQUARE_DEG = 60
 /** Readings nearer than this are on the surface, whatever the line's
  *  direction, mm. */
 const ON_SURFACE = 1e-3
+/** How far round a point a facing scan face is first looked for: this many
+ *  millimetres, or this many times the distance to the nearest face of any
+ *  facing, whichever is the more. */
+const FACING_NEAR_MM = 2
+const FACING_NEAR_TIMES = 4
 
 /**
  * Every vertex of the finer reference read against the scan: the signed
@@ -291,9 +358,16 @@ export function readReference(scan: NominalSurface, samples: ReferenceSamples, {
     let found = scan.closest(p[0], p[1], p[2], hit, reach)
     if (found && minFacing !== null && outward * (sn[0] * hit.nx + sn[1] * hit.ny + sn[2] * hit.nz) < minFacing) {
       // The scan's faces are tested by their own winding: the reference's
-      // normal turned the way the scan is wound.
+      // normal turned the way the scan is wound. Looked for close by first:
+      // the search is best-first, so a facing face found within `near` is
+      // the nearest within the whole reach too — the same reading — and
+      // only a point with none close by pays for opening every face of the
+      // scan within reach.
+      const fx = outward * sn[0], fy = outward * sn[1], fz = outward * sn[2]
+      const near = Math.min(reach, Math.max(FACING_NEAR_MM, FACING_NEAR_TIMES * hit.distance))
       found =
-        scan.closestFacing(p[0], p[1], p[2], outward * sn[0], outward * sn[1], outward * sn[2], minFacing, hit, reach) &&
+        (scan.closestFacing(p[0], p[1], p[2], fx, fy, fz, minFacing, hit, near) ||
+          (near < reach && scan.closestFacing(p[0], p[1], p[2], fx, fy, fz, minFacing, hit, reach))) &&
         outward * (sn[0] * hit.nx + sn[1] * hit.ny + sn[2] * hit.nz) >= minFacing
     }
     if (found && hit.distance > ON_SURFACE) {

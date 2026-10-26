@@ -8,9 +8,10 @@ import { hasDiameter } from '../../core/elements/assumed'
 import { methodsForKind } from '../../core/elements/construct'
 import { isExtendable, type ExtendSide } from '../../core/elements/extend'
 import { isOrientable, type OrientRelation } from '../../core/elements/orient'
+import { worldAxisDir, worldPlaneName, type WorldAxis } from '../../core/section/frame'
 import { roleOf } from '../../core/elements/refs'
 import type { ScanSpot } from '../../core/geometry/nearest'
-import type { ElementKind, PointFit, SigmaPreset } from '../../core/types'
+import type { ElementKind, FitTold, PointFit, SigmaPreset, Vec3 } from '../../core/types'
 import { forgetSurface } from '../../app/surfaces'
 import { useStore } from '../../state/store'
 import { commandHost } from '../host'
@@ -19,6 +20,7 @@ import {
   findElement,
   locationSchema,
   measuredElement,
+  parsePlaneName,
   planeRef,
   requireScan,
   resolveLocation,
@@ -27,6 +29,8 @@ import {
 } from '../refs'
 import { anyObject, arr, bool, enumOf, int, num, obj, oneOf, str, vec3 } from '../schema'
 import type { FitGuide } from '../../core/fit/guide'
+import { looksLikeCrown } from '../../core/fit/segment'
+import { seedOff } from '../../core/fit/seedOff'
 import { describeElement } from '../state'
 import { requireMarked, setMarked } from '../marked'
 import { roundTo } from '../../core/round'
@@ -47,7 +51,7 @@ const sigmaSchema = enumOf(
 
 const orientSchema = obj(
   {
-    to: elementRefSchema('The reference plane: a plane element, or a coordinate plane "XY", "YZ" or "ZX".'),
+    to: elementRefSchema('The reference plane: a plane element, or a coordinate plane "XY", "YZ" or "XZ".'),
     relation: enumOf(['normal', 'inPlane'] as OrientRelation[], 'normal (the default): the element’s direction is the plane’s normal — a parallel face, a perpendicular bore. inPlane: it lies in the plane.'),
   },
   ['to'],
@@ -69,6 +73,7 @@ const extendSchema = obj(
 
 const finishing = {
   sigma: sigmaSchema,
+  knownDiameter: num('Sphere: the ball’s known diameter, mm — a gauge ball, a ballbar’s balls. The fit holds it and places the centre alone, which keeps the centre right on a ball scanned only partly; fit.held then gives the diameter the same points fit freely (freeDiameter — it should be close: a scan reading off moves a held centre by about as much) and how far holding it moved the centre (shift). Refused when the surface fits a sphere more than 1 mm or 10 % off it.', { exclusiveMinimum: 0 }),
   assumed: num('The diameter the feature was designed at, mm — a sphere, cylinder or circle is then drawn and exported at it, and still reported as measured.', { exclusiveMinimum: 0 }),
   orient: orientSchema,
   extend: extendSchema,
@@ -77,10 +82,19 @@ const finishing = {
 
 interface Finishing {
   sigma?: SigmaPreset
+  knownDiameter?: number
   assumed?: number
   orient?: { to: ElementRef; relation?: OrientRelation }
   extend?: Partial<Record<ExtendSide, number>>
   name?: string
+}
+
+/** A known diameter is a sphere's: refused on anything else before a box
+ *  is opened. */
+function requireSphereForKnown(input: { kind: string; knownDiameter?: number }) {
+  if (input.knownDiameter !== undefined && input.kind !== 'sphere') {
+    throw new CommandError('invalid_input', `knownDiameter is for a sphere, not a ${input.kind}.`)
+  }
 }
 
 /** Close whatever box a command left open — the empty one Create leaves for
@@ -157,23 +171,29 @@ function guideOf(input: { kind: FitKind } & FitGuide): FitGuide | undefined {
   return { ...(side ? { side } : {}), ...(radius ? { radius } : {}), ...(axis ? { axis } : {}), ...(within ? { within } : {}) }
 }
 
-/** What the region a surface grew to holds, and — a plane's — whether it
- *  looks like two surfaces, as the answer puts it. */
+/** What the region a surface grew to holds, and — a plane's or a
+ *  cylinder's — whether it looks like two surfaces, as the answer puts it;
+ *  a plane's whether it looks like no face at all, and a bore's whether its
+ *  axis runs into the scan at an end. */
 async function regionAnswer(kind: FitKind, region: Uint32Array, elementId: number, seed: number) {
   const client = commandHost().session.clientRef.current
   if (!client) return {}
   const el = useStore.getState().elements.find((e) => e.id === elementId)
   const fit = el?.measured ?? el?.fit
   const normal = kind === 'plane' && fit?.kind === 'plane' ? fit.normal : undefined
-  const r = await client.planeRegion(region, normal ? { normal, seed } : undefined)
+  const cylinder = kind === 'cylinder' && fit?.kind === 'cylinder' ? { center: fit.center, axis: fit.axis, radius: fit.radius, seed } : undefined
+  const r = await client.planeRegion(region, normal ? { normal, seed } : undefined, cylinder)
   const v = (p: readonly number[], places: number) => p.map((x) => roundTo(x, places))
-  const out: { region: Record<string, unknown>; warning?: string } = {
+  const out: { region: Record<string, unknown>; closed?: Record<string, unknown>; warning?: string } = {
     region: {
       area: roundTo(r.area, 1),
       box: { min: v(r.min, 2), max: v(r.max, 2) },
       ...(r.normalSpreadDeg !== undefined ? { normalSpreadDeg: roundTo(r.normalSpreadDeg, 2) } : {}),
+      ...(r.fill !== undefined ? { fill: roundTo(r.fill, 3) } : {}),
+      ...(r.curve ? { sagitta: roundTo(r.curve.sagitta, 3) } : {}),
     },
   }
+  const warnings: string[] = []
   const second = r.second
   if (second && fit?.kind === 'plane') {
     out.region.second = {
@@ -185,18 +205,110 @@ async function regionAnswer(kind: FitKind, region: Uint32Array, elementId: numbe
       rmsTwo: roundTo(second.rmsTwo, 4),
     }
     const side = second.offset >= 0 ? 'above' : 'below'
-    out.warning =
+    warnings.push(
       `two surfaces? ${Math.round(second.share * 100)} % of the region lies on a second plane ${roundTo(second.angleDeg, 2)}° off this one and ${roundTo(Math.abs(second.offset), 3)} mm ${side} it at its centroid [${v(second.centroid, 2).join(', ')}], ` +
-      `box [${v(second.min, 1).join(', ')}]–[${v(second.max, 1).join(', ')}] (σ ${roundTo(fit.sigma, 4)} mm${fit.formError !== undefined ? `, form error ${roundTo(fit.formError, 3)}` : ''}; two planes leave ${roundTo(second.rmsTwo, 4)}) — shrink the box or move the seed.`
+        `box [${v(second.min, 1).join(', ')}]–[${v(second.max, 1).join(', ')}] (σ ${roundTo(fit.sigma, 4)} mm${fit.formError !== undefined ? `, form error ${roundTo(fit.formError, 3)}` : ''}; two planes leave ${roundTo(second.rmsTwo, 4)}) — shrink the box or move the seed.`,
+    )
   }
+  // On curvature, not the spread alone: relief on a face (lettering, a
+  // label) spreads the normals as wide, and is no crown (looksLikeCrown).
+  if (fit?.kind === 'plane' && looksLikeCrown(r)) {
+    const curved = r.curve ? ` and curves ${roundTo(r.curve.sagitta, 3)} mm across it (σ ${roundTo(r.curve.sigma, 3)} left by a quadric)` : ''
+    warnings.push(
+      `the crown of a bead or round, not a face? 95 % of its normals lie within ${roundTo(r.normalSpreadDeg ?? 0, 1)}° of the plane's and it fills ${Math.round((r.fill ?? 1) * 100)} % of the rectangle it spans (${roundTo(r.area, 0)} mm²)${curved} — seed in the middle of the face, or give within.`,
+    )
+  }
+  const two = r.secondCylinder
+  if (two && fit?.kind === 'cylinder') {
+    out.region.second = {
+      share: roundTo(two.share, 3),
+      centroid: v(two.centroid, 3),
+      box: { min: v(two.min, 2), max: v(two.max, 2) },
+      band: v(two.band, 2),
+      angleDeg: roundTo(two.angleDeg, 2),
+      radius: roundTo(two.radiusSecond, 3),
+      leanDeg: v(two.leanDeg, 2),
+      rmsTwo: roundTo(two.rmsTwo, 4),
+    }
+    warnings.push(
+      `two surfaces? ${Math.round(two.share * 100)} % of the region lies on a second cylinder, its axis ${roundTo(two.angleDeg, 2)}° off and its radius ${roundTo(two.radiusSecond, 3)} against ${roundTo(two.radius, 3)}, ` +
+        `in the band ${roundTo(two.band[0], 2)} to ${roundTo(two.band[1], 2)} mm along this axis from the centre, box [${v(two.min, 1).join(', ')}]–[${v(two.max, 1).join(', ')}]; ` +
+        `the normals lean ${roundTo(two.leanDeg[0], 1)}° and ${roundTo(two.leanDeg[1], 1)}° off square to this axis (σ ${roundTo(fit.sigma, 4)} mm${fit.formError !== undefined ? `, form error ${roundTo(fit.formError, 3)}` : ''}; two cylinders leave ${roundTo(two.rmsTwo, 4)}) — ` +
+        'fit each part with within (a box round its band) or axis, or move the seed.',
+    )
+  }
+  const closed = r.closed
+  if (closed && fit?.kind === 'cylinder') {
+    out.closed = { from: roundTo(closed.from, 2), ...(closed.to !== undefined ? { to: roundTo(closed.to, 2) } : {}), at: v(closed.at, 2) }
+    const past = Math.max(0, Math.abs(closed.from) - fit.length / 2)
+    const through = closed.to !== undefined ? ` and leaves it ${roundTo(Math.abs(closed.to - closed.from), 2)} mm further on` : ''
+    warnings.push(
+      `closed: the axis meets the scan ${roundTo(past, 2)} mm past this end of the bore, at [${v(closed.at, 2).join(', ')}]${through} — a floor, or the skin of a wrap bridging a hole the scan did not see through; read it from both ends (scan.heightmap along the axis each way) before modelling it blind.`,
+    )
+  }
+  if (warnings.length) out.warning = warnings.join(' ')
   return out
 }
 
-const fit: Command<{ kind: FitKind; at: Location | Location[]; mark?: boolean } & FitGuide & Finishing> = {
+/** A seed left out that lies off the surface past this many sigma (and a
+ *  hundredth of a millimetre), or turned past this many degrees, is on
+ *  another surface; one within both, at the region's rim or past a gap. */
+const SEED_OFF_SIGMA = 3.5
+const SEED_OFF_DEG = 25
+
+/** Several seeds, each as the answer gives it: whether the surface grew
+ *  from it (inRegion — a corner of its triangle in the region), how far it
+ *  lies off the fitted surface and how far its normal turns from the
+ *  surface's there; and, a seed left out, a warning saying where it lies.
+ *  One seed answers as it always has. */
+function seedsAnswer(spots: ScanSpot[], kind: FitKind, region: Uint32Array, elementId: number): { seeds: Record<string, unknown>[]; warning?: string } {
+  if (spots.length < 2) return { seeds: spots.map(spotJson) }
+  const el = useStore.getState().elements.find((e) => e.id === elementId)
+  const fit = el?.measured ?? el?.fit
+  const members = new Set(region)
+  const read = spots.map((s) => ({ spot: s, inRegion: s.triangle.some((v) => members.has(v)), off: fit ? seedOff(fit, s.point, s.normal) : null }))
+  const seeds = read.map(({ spot, inRegion, off }) => ({ ...spotJson(spot), inRegion, ...(off ? { offMm: roundTo(off.offMm, 3), deg: roundTo(off.deg, 1) } : {}) }))
+  const out = read.map((r, i) => ({ ...r, n: i + 1 })).filter((r) => !r.inRegion)
+  if (!out.length || !fit) return { seeds }
+  const sigma = 'sigma' in fit ? fit.sigma : 0
+  const elsewhere = (r: (typeof out)[number]) => r.off !== null && (Math.abs(r.off.offMm) > SEED_OFF_SIGMA * sigma + 0.01 || r.off.deg > SEED_OFF_DEG)
+  const where = (r: (typeof out)[number]) => (r.off ? `${roundTo(Math.abs(r.off.offMm), 2)} mm off it, turned ${roundTo(r.off.deg, 1)}°` : 'where it has no normal')
+  const from = read.flatMap((r, i) => (r.inRegion ? [i + 1] : []))
+  const grew = from.length ? `the ${kind} grew from seed${from.length > 1 ? 's' : ''} ${from.join(', ')}` : `the ${kind} grew from none of the seeds`
+  const far = out.filter(elsewhere)
+  const near = out.filter((r) => !elsewhere(r))
+  const parts: string[] = []
+  if (far.length) {
+    parts.push(
+      `seeds lie on two surfaces? ${grew}; ${far.map((r) => `seed ${r.n} lies ${where(r)}`).join('; ')} — fit each on its own, or mark both (scan.segment { mark: [ids] }) and fit the marked (element.fit_marked { marked: true }).`,
+    )
+  }
+  if (near.length) {
+    parts.push(`${near.map((r) => `seed ${r.n} lies on it (${where(r)})`).join('; ')} but outside the region it grew to — at its rim, or on a part the growing did not reach: fit it alone to see.`)
+  }
+  return { seeds, warning: parts.join(' ') }
+}
+
+/** The seed the region's own reading starts from: the first the surface
+ *  grew from, else the first. */
+const seedInRegion = (spots: ScanSpot[], seeded: { seeds: Record<string, unknown>[] }) => spots[Math.max(0, seeded.seeds.findIndex((s) => s.inRegion !== false))].vertex
+
+/** What a fit told besides its numbers, as the answer gives it: its note,
+ *  and the other surface its first region took in. */
+function toldAnswer(told: FitTold | undefined) {
+  if (!told) return {}
+  const s = told.second
+  return {
+    note: told.note,
+    ...(s ? { second: { radius: roundTo(s.radius, 3), band: s.band.map((x) => roundTo(x, 2)), share: roundTo(s.share, 3) } } : {}),
+  }
+}
+
+const fit: Command<{ kind: FitKind; at?: Location | Location[]; rim?: number; mark?: boolean } & FitGuide & Finishing> = {
   name: 'fit',
   title: 'Fit an element',
   description:
-    'Fit an element on the scan where the panel would take a click: a plane, sphere, cylinder, cone or torus grows its surface from the place given and is best-fitted to it; a point is the place itself; a circle goes through three or more places. `at` is one place, or a list — a feature seen in patches can be seeded on each. A place is { vertex } (a scan vertex), { point: [x, y, z] } (the nearest scan vertex to a point, mm, in the current frame), or { screen } / { candidate } (not available yet). A seed near an edge can land on the wrong surface (a cup’s underside for its inside): say what is sought — side, radius, axis, within — and surfaces that do not match are passed over; a fit that finds none is refused with the radii it saw. Returns the element with its fit and the seed actually used (vertex and point), so a recipe can be replayed on another scan; a surface also the region it grew to — region { area (mm²), box } and, a plane’s, normalSpreadDeg (95 % of its normals lie within it) — and a plane a warning when its points look like two surfaces, with region.second naming where the other lies. mark: true leaves the region’s points marked for element.fit_marked { marked: true }. One undo step.',
+    'Fit an element on the scan where the panel would take a click: a plane, sphere, cylinder, cone or torus grows its surface from the place given and is best-fitted to it; a point is the place itself; a circle goes through three or more places. `at` is one place, or a list — a feature seen in patches can be seeded on each. A place is { vertex } (a scan vertex), { point: [x, y, z] } (the nearest scan vertex to a point, mm, in the current frame), or { screen } / { candidate } (not available yet). A seed near an edge can land on the wrong surface (a cup’s underside for its inside): say what is sought — side, radius, axis, within — and surfaces that do not match are passed over; a fit that finds none is refused with the radii it saw — a round turned down for its axis with that axis, a point on it, how far off it lay and its points, to give as axis or to drop axis for. Returns the element with its fit and the seed actually used (vertex and point), so a recipe can be replayed on another scan — several seeds each with inRegion (whether the surface grew from it: one surface grows, from the seeds on it), offMm (how far it lies off the fitted surface along its normal, a round one’s outward) and deg (how far its normal turns from the surface’s there), and a seed left out warns where it lies: on another surface (fit each, or mark both and fit the marked), or on this one outside the region; a surface also the region it grew to — region { area (mm²), box } and, a plane’s, normalSpreadDeg (95 % of its normals lie within it) — and a plane or a cylinder a warning when its points look like two surfaces, with region.second naming where the other lies (a cylinder’s: its share, band along the axis from the centre, axis angle, radius and how far each part’s normals lean off square to the axis). A cylinder whose region grew over two surfaces one after the other along the axis — a bore stepping wider below a flange — is parted where two cylinders fit it best and the part the seed is on answered, with note and second { radius, band (mm along the axis from the centre), share }; a refusal lists the radii it turned down and why (σ over its length, arc). A bore whose axis meets the scan at an end answers closed { from, to (mm along the axis from the centre, where the axis meets the scan and leaves it), at } with a warning — a floor, or a wrap bridging a hole. A plane warns, with region.fill (the share of the rectangle it spans that it fills) and region.sagitta (how far a quadric over the region curves across it, mm), when it fills under 15 %, or its normals spread past 10° and the region is curved — the sagitta over three times what the quadric leaves: the crown of a bead or round, not a face. Relief on a flat face (lettering) spreads the normals as wide and does not warn. mark: true leaves the region’s points marked for element.fit_marked { marked: true }. A circle may come off an open rim of the scan instead — rim: its number from scan.qa, in place of at: fitted through the rim’s whole loop, the answer giving rim { index, points, rms }. One undo step.',
   input: obj(
     {
       kind: enumOf(FIT_KINDS, 'What to fit.'),
@@ -206,15 +318,19 @@ const fit: Command<{ kind: FitKind; at: Location | Location[]; mark?: boolean } 
       axis: vec3('Cylinder, cone: the axis direction, roughly (within 20°).'),
       within: obj({ min: vec3('Lowest corner, mm.'), max: vec3('Highest corner, mm.') }, ['min', 'max'], 'The surface stays inside this box.'),
       mark: bool('Leave the region the surface grew to marked, for element.fit_marked { marked: true }.'),
+      rim: int('A circle through an open rim of the scan, by its number from scan.qa — in place of at.', { minimum: 0 }),
       ...finishing,
     },
-    ['kind', 'at'],
+    ['kind'],
   ),
   label: ({ kind }) => `fit ${kind}`,
   run: async (input) => {
     requireScan()
     requireMeasureFree()
     const guide = guideOf(input)
+    requireSphereForKnown(input)
+    if (input.rim !== undefined) return fitRim(input as Finishing & { kind: FitKind; at?: unknown; rim: number })
+    if (input.at === undefined) throw new CommandError('invalid_input', 'Give at — the place on the scan; or, for a circle, rim.')
     const places = Array.isArray(input.at) ? input.at : [input.at]
     if (input.kind === 'point' && places.length !== 1) throw new CommandError('invalid_input', 'A point is one place.')
     if (input.kind === 'circle' && places.length < 3) throw new CommandError('invalid_input', 'A circle needs three places or more.')
@@ -223,9 +339,11 @@ const fit: Command<{ kind: FitKind; at: Location | Location[]; mark?: boolean } 
     for (const at of places) spots.push(await resolveLocation(at))
     const m = commandHost().session.measure
     showWorkspace('elements')
+    let told: FitTold | undefined
     try {
       m.startDraft(input.kind)
       if (input.sigma !== undefined) useStore.getState().setDraftSigma(input.sigma)
+      if (input.knownDiameter !== undefined) useStore.getState().setDraftKnownDiameter(input.knownDiameter)
       const picks = spots.map((s) => s.triangle)
       const points = spots.map((s) => s.point)
       if (input.kind === 'point') {
@@ -238,33 +356,74 @@ const fit: Command<{ kind: FitKind; at: Location | Location[]; mark?: boolean } 
         m.runPickFit(points)
       } else {
         useStore.getState().setDraftPicks(picks, points)
-        await m.runDraftFit(input.kind, picks, guide)
+        told = await m.runDraftFit(input.kind, picks, guide)
       }
       // The region goes to the element as it is created; it is read first.
       const region = input.kind === 'point' || input.kind === 'circle' ? null : m.draftRegion.current
       const id = finishAndCreate(input)
       if (!region) return { element: created(id), seeds: spots.map(spotJson) }
-      const grown = await regionAnswer(input.kind, region, id, spots[0].vertex)
+      const seeded = seedsAnswer(spots, input.kind, region, id)
+      const grown = await regionAnswer(input.kind, region, id, seedInRegion(spots, seeded))
+      const warning = [seeded.warning, 'warning' in grown ? grown.warning : undefined].filter(Boolean).join(' ')
       const marked = input.mark ? setMarked(region, `element.fit ${useStore.getState().elements.find((e) => e.id === id)?.name ?? id}`) : undefined
-      return { element: created(id), seeds: spots.map(spotJson), ...grown, ...(marked ? { marked } : {}) }
+      return { element: created(id), seeds: seeded.seeds, ...grown, ...(warning ? { warning } : {}), ...toldAnswer(told), ...(marked ? { marked } : {}) }
     } finally {
       closeDraft()
     }
   },
 }
 
+/** How many of a rim's vertices a circle keeps as its picks, spread evenly
+ *  round the loop: enough for the fit, few enough for the recipe. */
+const RIM_PICKS = 120
+
+/** A circle through an open rim of the scan, the rim scan.qa numbers. */
+async function fitRim(input: Finishing & { kind: FitKind; at?: unknown; rim: number }) {
+  if (input.kind !== 'circle') throw new CommandError('invalid_input', `rim makes a circle, not a ${input.kind} — give kind: "circle".`)
+  if (input.at !== undefined) throw new CommandError('invalid_input', 'Give at, or rim — one of them.')
+  const client = commandHost().session.clientRef.current
+  if (!client) throw new CommandError('unavailable', 'The mesh worker is not running.')
+  const rim = await client.scanRim(input.rim)
+  if (!rim) throw new CommandError('not_found', `The scan has no rim ${input.rim} — scan.qa numbers its rims, longest first.`)
+  if (!rim.closed) throw new CommandError('failed', `Rim ${input.rim} does not close on itself — its open edges run out at a vertex; pick three places on it instead.`)
+  const n = rim.vertices.length
+  const step = Math.max(1, Math.ceil(n / RIM_PICKS))
+  const picks: [number, number, number][] = []
+  const points: [number, number, number][] = []
+  // Each vertex kept, with the triangle along the edge that leaves it.
+  for (let i = 0; i < n; i += step) {
+    points.push([rim.positions[i * 3], rim.positions[i * 3 + 1], rim.positions[i * 3 + 2]])
+    picks.push([rim.corners[i * 3], rim.corners[i * 3 + 1], rim.corners[i * 3 + 2]])
+  }
+  if (points.length < 3) throw new CommandError('failed', `Rim ${input.rim} has ${n} vertices — a circle needs three.`)
+  const m = commandHost().session.measure
+  showWorkspace('elements')
+  try {
+    m.startDraft('circle')
+    useStore.getState().setDraftPicks(picks, points)
+    m.runPickFit(points)
+    const id = finishAndCreate(input)
+    const el = useStore.getState().elements.find((e) => e.id === id)
+    return { element: created(id), rim: { index: input.rim, points: points.length, rms: el?.fit && 'sigma' in el.fit ? roundTo(el.fit.sigma, 4) : null } }
+  } finally {
+    closeDraft()
+  }
+}
+
 // ---- element.fit_marked -------------------------------------------------------
 
-const fitMarked: Command<{ kind: (typeof SURFACE_KINDS)[number]; vertices?: number[]; marked?: boolean } & Finishing> = {
+const fitMarked: Command<{ kind: (typeof SURFACE_KINDS)[number]; vertices?: number[]; marked?: boolean; box?: { min: Vec3; max: Vec3 }; normal?: { dir: Vec3; withinDeg?: number } } & Finishing> = {
   name: 'fit_marked',
   title: 'Fit an element to a marked surface',
   description:
-    'Fit a plane, sphere, cylinder, cone or torus to exactly the scan vertices given — a surface marked by hand in the panel, with no search for the surface — or, with marked: true in place of vertices, to the points the last element.fit { mark: true } or scan.segment { mark } left marked. The element keeps the marking as its recipe. Returns the element. One undo step.',
+    'Fit a plane, sphere, cylinder, cone or torus to exactly the scan vertices given — a surface marked by hand in the panel, with no search for the surface — or, with marked: true in place of vertices, to the points the last element.fit { mark: true }, scan.segment { mark } or scan.query { mark: true } left marked, or with box (and normal: only those facing a way, within withinDeg, 30 by default) to every scan vertex inside it, as scan.fit_surface takes them. The element keeps the marking as its recipe. Returns the element, and with box how many points it took. One undo step.',
   input: obj(
     {
       kind: enumOf(SURFACE_KINDS, 'What to fit.'),
       vertices: arr(int(undefined, { minimum: 0 }), 'The scan vertices of the surface.', { minItems: 3 }),
       marked: bool('The points left marked, in place of vertices.'),
+      box: obj({ min: vec3('The lowest corner, mm.'), max: vec3('The highest corner, mm.') }, ['min', 'max'], 'The scan inside a box, in place of vertices.'),
+      normal: obj({ dir: vec3('The direction, any length.'), withinDeg: num('Degrees; 30 by default.', { exclusiveMinimum: 0, maximum: 180 }) }, ['dir'], 'With box: only the vertices facing this way.'),
       ...finishing,
     },
     ['kind'],
@@ -273,26 +432,75 @@ const fitMarked: Command<{ kind: (typeof SURFACE_KINDS)[number]; vertices?: numb
   run: async (input) => {
     requireScan()
     requireMeasureFree()
-    if ((input.vertices === undefined) === !input.marked) throw new CommandError('invalid_input', 'Give vertices, or marked: true — one of them.')
+    requireSphereForKnown(input)
+    if ([input.vertices !== undefined, input.marked === true, input.box !== undefined].filter(Boolean).length !== 1) throw new CommandError('invalid_input', 'Give vertices, marked: true or box — one of them.')
+    if (input.normal && !input.box) throw new CommandError('invalid_input', 'normal goes with box.')
     const count = useStore.getState().vertexCount
     const bad = input.vertices?.find((v) => v >= count)
     if (bad !== undefined) throw new CommandError('invalid_input', `The scan has no vertex ${bad} — it has ${count}.`)
-    const vertices = input.vertices ? Uint32Array.from(input.vertices) : Uint32Array.from(requireMarked().vertices)
+    const vertices = input.vertices ? Uint32Array.from(input.vertices) : input.box ? await boxVertices(input.box, input.normal) : Uint32Array.from(requireMarked().vertices)
+    if (input.box && vertices.length < 3) throw new CommandError('invalid_input', `Only ${vertices.length} scan points lie in the box${input.normal ? ' facing that way' : ''} — a surface needs more.`)
     const m = commandHost().session.measure
     showWorkspace('elements')
     try {
       m.startDraft(input.kind)
       if (input.sigma !== undefined) useStore.getState().setDraftSigma(input.sigma)
+      if (input.knownDiameter !== undefined) useStore.getState().setDraftKnownDiameter(input.knownDiameter)
       await m.runDraftPaintFit(input.kind, vertices)
       const id = finishAndCreate(input)
-      return { element: created(id) }
+      return { element: created(id), ...(input.box ? { points: vertices.length } : {}) }
     } finally {
       closeDraft()
     }
   },
 }
 
+/** Every scan vertex in a box, facing a way within an angle if asked. */
+async function boxVertices(box: { min: Vec3; max: Vec3 }, normal?: { dir: Vec3; withinDeg?: number }): Promise<Uint32Array> {
+  for (let k = 0; k < 3; k++) if (!(box.min[k] <= box.max[k])) throw new CommandError('invalid_input', 'The box’s min lies past its max.')
+  if (normal && !(Math.hypot(...normal.dir) > 0)) throw new CommandError('invalid_input', 'normal.dir: give a direction, not a zero vector.')
+  const client = commandHost().session.clientRef.current
+  if (!client) throw new CommandError('unavailable', 'The mesh worker is not running.')
+  const cosLimit = Math.cos(((normal?.withinDeg ?? 30) * Math.PI) / 180)
+  const found = await client.query({ min: box.min, max: box.max, ...(normal ? { normal: { dir: normal.dir, cosLimit } } : {}), limit: Math.max(1, useStore.getState().vertexCount) })
+  return found.vertices
+}
+
 // ---- element.construct ----------------------------------------------------------
+
+/** A construction's source given as a coordinate plane by name — "XY",
+ *  "XZ" — when no element goes by that name. */
+function coordinatePlaneRef(ref: ElementRef): WorldAxis | null {
+  if (typeof ref !== 'string') return null
+  const want = ref.trim().toLowerCase()
+  if (useStore.getState().elements.some((e) => e.name.trim().toLowerCase() === want)) return null
+  return parsePlaneName(ref)
+}
+
+/** The coordinate plane as an element a construction can be built on — a
+ *  plane from coordinates through the origin, as a person makes one first:
+ *  one already made so is taken again, else it is made, named "XY plane"
+ *  while that name is free, and listed in `made`. */
+function coordinatePlane(axis: WorldAxis, made: { id: number; name: string }[]): number {
+  const params = [...worldAxisDir(axis), 0, 0, 0]
+  const same = useStore.getState().elements.find(
+    (e) => e.source.type === 'constructed' && e.source.method === 'plane-coords' && e.source.params.length === 6 && e.source.params.every((v, i) => Math.abs(v - params[i]) < 1e-9),
+  )
+  if (same) return same.id
+  const name = worldPlaneName(axis)
+  const taken = useStore.getState().elements.some((e) => e.name.trim().toLowerCase() === name.toLowerCase())
+  const m = commandHost().session.measure
+  try {
+    m.startDraft('plane')
+    useStore.getState().setDraftMethod('plane-coords')
+    params.forEach((v, i) => useStore.getState().setDraftParam(i, v))
+    const id = finishAndCreate(taken ? {} : { name })
+    made.push({ id, name: useStore.getState().elements.find((e) => e.id === id)?.name ?? name })
+    return id
+  } finally {
+    closeDraft()
+  }
+}
 
 const construct: Command<{
   kind: ElementKind
@@ -301,16 +509,16 @@ const construct: Command<{
   params?: number[] | Record<string, number>
   seed?: ElementRef
   vertices?: number[]
-} & Omit<Finishing, 'sigma' | 'extend'>> = {
+} & Omit<Finishing, 'sigma' | 'knownDiameter' | 'extend'>> = {
   name: 'construct',
   title: 'Construct an element',
   description:
-    'Construct an element from others and typed-in numbers, as the panel’s creation methods do — by kind: point (point-coords, point-centroid, point-midpoint, point-line-plane), line (line-two-points, line-axis, line-plane-plane), plane (plane-three-points, plane-offset, plane-midplane, plane-coords, plane-symmetry), circle (circle-plane-cylinder, circle-plane-sphere, circle-coords). refs fill the method’s slots in order, by element id or name; params are its numbers in order (or by key: x, y, z; offset; nx, ny, nz, px, py, pz; d, cx, cy, cz). point-centroid and plane-symmetry measure the scan themselves: vertices confines them to a marked surface, seed starts the symmetry search from a plane. plane-symmetry finds the scan’s own mirror plane as an element, the alignment left as it is (align.symmetry re-poses the part on it instead), and answers with the search’s residual: symmetry { rms, matched, sampled } and a note. Returns the element. One undo step.',
+    'Construct an element from others and typed-in numbers, as the panel’s creation methods do — by kind: point (point-coords, point-centroid, point-midpoint, point-line-plane), line (line-two-points, line-axis, line-plane-plane), plane (plane-three-points, plane-offset, plane-midplane, plane-coords, plane-symmetry), circle (circle-plane-cylinder, circle-plane-sphere, circle-coords). refs fill the method’s slots in order, by element id or name — a coordinate plane "XY", "YZ" or "XZ" in a plane’s slot is made a plane element through the origin first (one made so before is taken again) and listed under made; params are its numbers in order (or by key: x, y, z; offset; nx, ny, nz, px, py, pz; d, cx, cy, cz). point-centroid and plane-symmetry measure the scan themselves: vertices confines them to a marked surface, seed starts the symmetry search from a plane. plane-symmetry finds the scan’s own mirror plane as an element, the alignment left as it is (align.symmetry re-poses the part on it instead), and answers with the search’s residual: symmetry { rms, matched, sampled } and a note. Returns the element. One undo step.',
   input: obj(
     {
       kind: enumOf(ALL_KINDS, 'What to construct.'),
       method: str('The creation method — see the description.', { minLength: 1 }),
-      refs: arr(elementRefSchema('A source element.'), 'The method’s source elements, slot by slot.'),
+      refs: arr(elementRefSchema('A source element — or, in a plane’s slot, a coordinate plane "XY", "YZ", "XZ".'), 'The method’s source elements, slot by slot.'),
       params: oneOf(
         [
           arr(num(), 'The numbers in the method’s order.'),
@@ -318,7 +526,7 @@ const construct: Command<{
         ],
         'The method’s typed-in numbers, in millimetres.',
       ),
-      seed: elementRefSchema('plane-symmetry: the plane the search starts from — a plane element or "XY", "YZ", "ZX".'),
+      seed: elementRefSchema('plane-symmetry: the plane the search starts from — a plane element or "XY", "YZ", "XZ".'),
       vertices: arr(int(undefined, { minimum: 0 }), 'point-centroid, plane-symmetry: confine the search to these scan vertices.', { minItems: 3 }),
       assumed: finishing.assumed,
       orient: orientSchema,
@@ -340,14 +548,19 @@ const construct: Command<{
     if (refs.length !== method.slots.length) {
       throw new CommandError('invalid_input', `${method.label} takes ${method.slots.length} source element${method.slots.length === 1 ? '' : 's'} (${method.slots.map((s) => s.label).join(', ') || 'none'}), not ${refs.length}.`)
     }
-    const ids = refs.map((ref, i) => {
-      const el = measuredElement(ref)
+    // A coordinate plane by name stands in a plane's slot: made a plane
+    // element (coordinatePlane) once the whole input has passed.
+    const sources = refs.map((ref, i): number | WorldAxis => {
       const slot = method.slots[i]
-      const plays = slot.role === roleOf(el.kind) || (slot.role === 'axis' && el.kind === 'circle')
-      if (!plays || (slot.kinds && !slot.kinds.includes(el.kind))) {
-        throw new CommandError('invalid_input', `${el.name} cannot be “${slot.label}” — that takes a ${slot.kinds?.join(' or ') ?? slot.role}.`)
+      const axis = coordinatePlaneRef(ref)
+      const name = axis ? worldPlaneName(axis) : null
+      const el = axis ? null : measuredElement(ref)
+      const kind: ElementKind = el?.kind ?? 'plane'
+      const plays = slot.role === roleOf(kind) || (slot.role === 'axis' && kind === 'circle')
+      if (!plays || (slot.kinds && !slot.kinds.includes(kind))) {
+        throw new CommandError('invalid_input', `${el?.name ?? name} cannot be “${slot.label}” — that takes a ${slot.kinds?.join(' or ') ?? slot.role}.`)
       }
-      return el.id
+      return el ? el.id : axis!
     })
     const typed = method.params.filter((p) => !p.hidden)
     const given = input.params ?? []
@@ -363,6 +576,8 @@ const construct: Command<{
     }
     const m = commandHost().session.measure
     showWorkspace('elements')
+    const made: { id: number; name: string }[] = []
+    const ids = sources.map((s) => (typeof s === 'number' ? s : coordinatePlane(s, made)))
     let symmetry: { rms: number; matched: number; sampled: number; note?: string } | null = null
     try {
       m.startDraft(input.kind)
@@ -396,7 +611,7 @@ const construct: Command<{
         throw new CommandError('invalid_input', `${method.label} takes no marked surface and no seed.`)
       }
       const id = finishAndCreate(input)
-      return { element: created(id), ...(symmetry ? { symmetry } : {}) }
+      return { element: created(id), ...(made.length > 0 ? { made } : {}), ...(symmetry ? { symmetry } : {}) }
     } finally {
       closeDraft()
     }

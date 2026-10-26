@@ -12,7 +12,7 @@ import type { FieldScale } from '../field/colormap'
 import { fieldPercentiles, fieldStats, niceCeil, type FieldStats } from '../field/stats'
 import { writeDirection } from './deflection'
 import { rigidApply, rigidRotate, type Rigid } from './rigid'
-import { emptyHit, type NominalSurface } from './surface'
+import { type ClosestHit, emptyHit, type NominalSurface } from './surface'
 
 /** A deviation map's numbers: the shared ones, plus the tolerance band an
  *  inspection report is actually judged on. `measured` here means "had a
@@ -114,12 +114,13 @@ export function computeDeviation(
   const chunk = Math.max(1, Math.floor(n / 50))
   const minFacing = normals && maxNormalDeviation !== null ? Math.cos(maxNormalDeviation) : null
   const reach = surface.bboxDiagonal * FACING_REACH
-  const outward = minFacing === null ? 1 : normalsSign(surface, scanPositions, normals!, transform)
+  const outward = minFacing === null ? 1 : scanNormalsSign(surface, scanPositions, normals!, transform)
 
   for (let v = 0; v < n; v++) {
     rigidApply(transform, scanPositions[v * 3], scanPositions[v * 3 + 1], scanPositions[v * 3 + 2], p)
-    let found = surface.closest(p[0], p[1], p[2], hit)
-    if (found && minFacing !== null) {
+    let found: boolean
+    if (minFacing === null) found = surface.closest(p[0], p[1], p[2], hit)
+    else {
       // The scan's own normal, carried into the reference's frame.
       rigidRotate(
         transform,
@@ -128,16 +129,8 @@ export function computeDeviation(
         outward * normals![v * 3 + 2],
         sn,
       )
-      if (sn[0] * hit.nx + sn[1] * hit.ny + sn[2] * hit.nz < minFacing) {
-        found =
-          surface.closestFacing(p[0], p[1], p[2], sn[0], sn[1], sn[2], minFacing, hit, reach) &&
-          // The search filters on each face's own normal, while the reading's
-          // sign comes off the pseudonormal of the feature the point lands on
-          // — and a seam's is the average of the faces meeting there, so on
-          // the rim of a sheet or a knife edge it can still face away. Such a
-          // reading is no better than the one it was meant to replace.
-          sn[0] * hit.nx + sn[1] * hit.ny + sn[2] * hit.nz >= minFacing
-      }
+      const read = closestFacingWay(surface, p[0], p[1], p[2], sn[0], sn[1], sn[2], minFacing, hit, Infinity, reach)
+      found = read === 'nearest' || read === 'refaced'
     }
     if (!found) {
       values[v] = NaN
@@ -170,6 +163,49 @@ export function computeDeviation(
   return values
 }
 
+/** What a closest-point query under a facing limit came to — see
+ *  closestFacingWay. */
+export type FacingRead = 'none' | 'nearest' | 'refaced' | 'unfacing'
+
+/** The plain hit held while a facing surface is looked for. */
+const heldHit = emptyHit()
+
+/**
+ * The closest point to (x, y, z) under a facing limit: the nearest surface
+ * within `maxDistance` when its outward normal turns from (sx, sy, sz) by
+ * no more than `minFacing` allows (a cosine) — 'nearest' — or else the
+ * nearest surface within `facingReach` that does — 'refaced'. 'unfacing':
+ * no surface within reach faces the point's way, and `hit` holds the plain
+ * nearest all the same, for a caller that reads it anyway; 'none': there
+ * is no surface within `maxDistance` at all. A null `minFacing` takes the
+ * nearest whatever it faces.
+ */
+export function closestFacingWay(
+  surface: NominalSurface,
+  x: number, y: number, z: number,
+  sx: number, sy: number, sz: number,
+  minFacing: number | null,
+  hit: ClosestHit,
+  maxDistance = Infinity,
+  facingReach = maxDistance,
+): FacingRead {
+  if (!surface.closest(x, y, z, hit, maxDistance)) return 'none'
+  if (minFacing === null || sx * hit.nx + sy * hit.ny + sz * hit.nz >= minFacing) return 'nearest'
+  Object.assign(heldHit, hit)
+  if (
+    surface.closestFacing(x, y, z, sx, sy, sz, minFacing, hit, facingReach) &&
+    // The search filters on each face's own normal, while the reading's
+    // sign comes off the pseudonormal of the feature the point lands on
+    // — and a seam's is the average of the faces meeting there, so on
+    // the rim of a sheet or a knife edge it can still face away. Such a
+    // reading is no better than the one it was meant to replace.
+    sx * hit.nx + sy * hit.ny + sz * hit.nz >= minFacing
+  )
+    return 'refaced'
+  Object.assign(hit, heldHit)
+  return 'unfacing'
+}
+
 /**
  * Which way the scan's normals point: 1 out of the material, -1 into it. A
  * scan too open for its winding to be settled on loading can come in either
@@ -177,24 +213,34 @@ export function computeDeviation(
  * surface each point came off. Nearly every point lies nearest the surface it
  * came off, so the sign of their summed agreement with it is the scan's — and
  * a couple of thousand of them settle it.
+ *
+ * `vertices` keeps the vote to some of the scan — the part near what is
+ * measured. With `near`, mm, a point's vote counts less the further it lies
+ * from the surface (by 1 / (1 + (d / near)²)): against a model that has one
+ * skin of a thin wall and not the other, as many points lie a wall away,
+ * facing back at it, as lie on it, and only the ones on it say how the scan
+ * is wound.
  */
-function normalsSign(
+export function scanNormalsSign(
   surface: NominalSurface,
   positions: Float32Array,
   normals: Float32Array,
   transform: Rigid,
+  { vertices, near }: { vertices?: ArrayLike<number>; near?: number } = {},
 ): 1 | -1 {
-  const n = positions.length / 3
+  const n = vertices ? vertices.length : positions.length / 3
   const step = Math.max(1, Math.floor(n / 2000))
   const hit = emptyHit()
   const p = new Float64Array(3)
   const sn = new Float64Array(3)
   let agreement = 0
-  for (let v = 0; v < n; v += step) {
+  for (let i = 0; i < n; i += step) {
+    const v = vertices ? vertices[i] : i
     rigidApply(transform, positions[v * 3], positions[v * 3 + 1], positions[v * 3 + 2], p)
     if (!surface.closest(p[0], p[1], p[2], hit)) continue
     rigidRotate(transform, normals[v * 3], normals[v * 3 + 1], normals[v * 3 + 2], sn)
-    agreement += sn[0] * hit.nx + sn[1] * hit.ny + sn[2] * hit.nz
+    const weight = near ? 1 / (1 + (hit.distance / near) ** 2) : 1
+    agreement += weight * (sn[0] * hit.nx + sn[1] * hit.ny + sn[2] * hit.nz)
   }
   return agreement < 0 ? -1 : 1
 }

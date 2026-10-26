@@ -54,12 +54,15 @@ import {
   canCutAlong,
   cutAxisOf,
   frameKey,
+  isRadialRef,
   isWorldAxis,
+  sectionRefAxis,
+  sectionRefElement,
   transformAxis,
   transformFrame,
   worldCutAxis,
   type CutAxis,
-  type SectionRef,
+  type SectionPlaneRef,
 } from '../core/section/frame'
 import { transformCut, type SectionCut } from '../core/section/slice'
 import { SCHEMES, schemeById } from '../viewer/navSchemes'
@@ -108,6 +111,9 @@ interface AppState {
    *  null. The strip's status line says what is being searched for. */
   working: string | null
   statusText: string
+  /** How far the job the status line describes has got, 0 to 1, when it
+   *  says — a progress message from the worker — or null. */
+  progress: number | null
   errorText: string | null
   elements: Element[]
   draft: Draft | null
@@ -291,8 +297,9 @@ interface AppState {
   editSection: (id: number) => void
   cancelSection: () => void
   /** Take the plane across an element, or across a coordinate axis — the
-   *  XY, YZ or XZ plane, moved to pass through the part's centre. */
-  setSectionDraftRef: (ref: SectionRef | null) => void
+   *  XY, YZ or XZ plane, moved to pass through the part's centre — or
+   *  through an axis at an angle about it. */
+  setSectionDraftRef: (ref: SectionPlaneRef | null) => void
   setSectionDraftOffset: (mm: number) => void
   /** The plane turned by hand: the gizmo's rings hand back the line it now
    *  slides along. The reference stays, as the record of what the plane was
@@ -365,6 +372,11 @@ interface AppState {
    *  element. The re-fit that follows is the caller's, like a change of the
    *  fit window: the store only records the choice. */
   setDraftSigma: (k: SigmaPreset) => void
+  /** The diameter the open draft's sphere is held at, or none. The draft's
+   *  own: the next sphere the box stays on after Create keeps it — a
+   *  ballbar's second ball — but it is never the default a new box starts
+   *  on. Like the cut-off, the re-fit is the caller's. */
+  setDraftKnownDiameter: (mm: number | undefined) => void
   setSelectMode: (mode: SelectMode) => void
   setShowLabels: (v: boolean) => void
   setScanHidden: (v: boolean) => void
@@ -476,6 +488,7 @@ export const useStore = create<AppState>()((set, get) => ({
   busy: false,
   working: null,
   statusText: '',
+  progress: null,
   errorText: null,
   nextId: 1,
   nextDimensionId: 1,
@@ -493,7 +506,7 @@ export const useStore = create<AppState>()((set, get) => ({
   creaseAngle: storedCreaseAngle(),
   imprintOpen: false,
 
-  setStatus: (statusText) => set({ statusText }),
+  setStatus: (statusText) => set({ statusText, progress: null }),
   setError: (errorText) => set({ errorText }),
   setWorking: (working) => set({ working }),
 
@@ -565,10 +578,10 @@ export const useStore = create<AppState>()((set, get) => ({
         // A section keeps its frozen plane whatever happens to the element
         // it was cut along; only the name in the record goes.
         sections: s.sections.map((sec) =>
-          typeof sec.ref === 'number' && doomed.has(sec.ref) ? { ...sec, ref: null } : sec,
+          doomed.has(sectionRefElement(sec.ref) ?? -1) ? { ...sec, ref: null } : sec,
         ),
         sectionDraft:
-          s.sectionDraft && typeof s.sectionDraft.ref === 'number' && doomed.has(s.sectionDraft.ref)
+          s.sectionDraft && doomed.has(sectionRefElement(s.sectionDraft.ref) ?? -1)
             ? { ...s.sectionDraft, ref: null }
             : s.sectionDraft,
         alignDraft: s.alignDraft
@@ -1105,9 +1118,9 @@ export const useStore = create<AppState>()((set, get) => ({
     set((s) => {
       const sec = s.sections.find((x) => x.id === id)
       if (!sec) return {}
-      const refAlive =
-        isWorldAxis(sec.ref) ||
-        (sec.ref !== null && s.elements.some((e) => e.id === sec.ref && e.fit))
+      // A coordinate axis is always there; an element only while it is.
+      const refEl = sectionRefElement(sec.ref)
+      const refAlive = sec.ref !== null && (refEl === null || s.elements.some((e) => e.id === refEl && e.fit))
       return {
         sectionDraft: settleSectionDraft({
           ref: refAlive ? sec.ref : null,
@@ -1149,6 +1162,16 @@ export const useStore = create<AppState>()((set, get) => ({
         const offset =
           d.ref === ref ? d.offset : c[0] * axis.dir[0] + c[1] * axis.dir[1] + c[2] * axis.dir[2]
         return { sectionDraft: settleSectionDraft({ ...d, ref, axis, refDir: axis.dir, offset }) }
+      }
+      if (isRadialRef(ref)) {
+        // A plane through an axis is laid out by the axis alone — its X
+        // along the radius, never the one an edited section had, which
+        // turned half round would mirror the sheet. Turned about the same
+        // axis it keeps its offset; taken about another it goes through it.
+        const axis = sectionRefAxis(ref, s.elements, s.modelCenter)
+        if (!axis) return {}
+        const offset = isRadialRef(d.ref) && d.ref.axis === ref.axis ? d.offset : 0
+        return { sectionDraft: settleSectionDraft({ ...d, ref, axis, refDir: axis.dir, offset, seedU: undefined }) }
       }
       const el = s.elements.find((e) => e.id === ref)
       if (!el?.fit || !canCutAlong(el.kind)) return {}
@@ -1644,7 +1667,15 @@ export const useStore = create<AppState>()((set, get) => ({
   setDraftSigma: (sigma) =>
     set((s) => {
       const settings = { ...(s.draft?.settings ?? s.settings), sigma }
-      return { settings, draft: s.draft ? { ...s.draft, settings } : null }
+      const { knownDiameter: _known, ...remembered } = settings
+      return { settings: remembered, draft: s.draft ? { ...s.draft, settings } : null }
+    }),
+  setDraftKnownDiameter: (mm) =>
+    set((s) => {
+      if (!s.draft) return {}
+      const { knownDiameter: _known, ...rest } = s.draft.settings
+      const settings = mm !== undefined && Number.isFinite(mm) && mm > 0 ? { ...rest, knownDiameter: mm } : rest
+      return { draft: { ...s.draft, settings } }
     }),
   setSelectMode: (selectMode) => set({ selectMode }),
   setShowLabels: (showLabels) => set({ showLabels }),

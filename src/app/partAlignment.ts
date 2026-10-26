@@ -8,7 +8,7 @@
 import type { RefObject } from 'react'
 import { describeRigid } from '../core/alignment'
 import { ALIGN_SYMMETRY_MAX_RMS_MM, poseOfRigid, poseOnSymmetry } from '../core/alignSymmetry'
-import { autoAlignPicks } from '../core/autoAlign'
+import { autoAlignLevel, autoAlignPicks, autoAlignTilts, type AutoAlignLevel, type AutoAlignTilts } from '../core/autoAlign'
 import { rigidApply, rigidInvert, type Rigid } from '../core/deviation/rigid'
 import { SYMMETRY_MAX_RMS_MM, SYMMETRY_MIN_MATCHED } from '../core/symmetry'
 import type { Vec3 } from '../core/types'
@@ -28,6 +28,16 @@ export interface PartAlignmentDeps {
   imports: ImportQueue
   maps: ScanMaps
   clearPreview: () => void
+}
+
+/** How square an auto-aligned pose came out, as the proposal's note says
+ *  it: the largest face's tilt off its axis, and each axis's faces by area. */
+function squareNote(t: AutoAlignTilts, level: AutoAlignLevel): string {
+  if (!t.largest) return ''
+  const deg = (v: number) => `${v < 0.01 ? v.toFixed(3) : v.toFixed(2)}°`
+  const largest = `${level === 'largest' ? 'Squared to its largest face' : 'Its largest face'} (square to ${t.largest.axis.toUpperCase()}, ${Math.round(t.largest.area)} mm²)${level === 'largest' ? ` — it stands ${deg(t.largest.tiltDeg)} off` : ` stands ${deg(t.largest.tiltDeg)} off square`}`
+  const each = t.axes.map((a) => `${a.axis.toUpperCase()} ${deg(a.tiltDeg)}`).join(', ')
+  return ` ${largest}; the faces square to each axis lean off it by ${each}, by area.`
 }
 
 export function partAlignment({ clientRef, sceneRef, imports, maps, clearPreview }: PartAlignmentDeps) {
@@ -106,15 +116,19 @@ export function partAlignment({ clientRef, sceneRef, imports, maps, clearPreview
   /** Ask the worker what coordinate system the scan suggests and open the
    *  alignment editor on it: the slots filled, the pose previewed on the part,
    *  nothing applied. What the proposal rests on is said in the editor, so a
-   *  guess reads as a guess. True when a proposal is open. */
-  const proposeAutoAlign = async (): Promise<boolean> => {
+   *  guess reads as a guess, and how square it came out on its faces. With
+   *  `level: 'largest'` the pose is squared to the largest face exactly
+   *  (autoAlignLevel). The faces' tilts when a proposal is open, else null. */
+  const proposeAutoAlign = async ({ level = 'settled' }: { level?: AutoAlignLevel } = {}): Promise<AutoAlignTilts | null> => {
     clearPreview()
     const s = useStore.getState()
     s.setError(null)
     s.setStatus('Auto-align — reading the part’s directions off the scan…')
     s.setWorking('READING…')
     try {
-      const r = await clientRef.current!.autoAlign()
+      const read0 = await clientRef.current!.autoAlign()
+      const r = level === 'largest' ? autoAlignLevel(read0) : read0
+      const tilts = autoAlignTilts(r)
       const pct = (share: number) => `${Math.round(share * 100)} %`
       const stands = {
         'open-side': 'the side the scan is open on',
@@ -132,14 +146,14 @@ export function partAlignment({ clientRef, sceneRef, imports, maps, clearPreview
             : `Read off the scan: ${pct(r.planeShare)} of the surface is faces square to these axes${
                 r.wallShare >= 0.05 ? `, ${pct(r.wallShare)} more is wall running along them` : ''
               }.`
-      const note = `${read} The part stands on ${stands}, its long side along X. Change a side or a direction below if it reads the part differently than you do.`
+      const note = `${read}${squareNote(tilts, level)} The part stands on ${stands}, its long side along X. Change a side or a direction below if it reads the part differently than you do.`
       useStore.getState().proposeAlignment(autoAlignPicks(r, 0.2 * useStore.getState().modelSize), note)
       useStore.getState().setStatus('Auto-align — check the previewed pose, then press Confirm alignment.')
-      return true
+      return tilts
     } catch (e) {
       useStore.getState().setStatus('')
       useStore.getState().setError(e instanceof Error ? e.message : 'Auto-align failed.')
-      return false
+      return null
     } finally {
       useStore.getState().setWorking(null)
     }

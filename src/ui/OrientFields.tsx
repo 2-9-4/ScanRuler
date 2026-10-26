@@ -50,7 +50,7 @@ export function OrientFields({ fit }: { fit: OrientableFit }) {
               that has been aligned — Auto-align or Align part, in the Alignment group — the
               coordinate planes are the part&rsquo;s own, so a bore perpendicular to the XY plane
               stands square to the part&rsquo;s base. Align the part again and the alignment goes
-              along: to whichever coordinate plane its old one was turned onto — the ZX plane once
+              along: to whichever coordinate plane its old one was turned onto — the XZ plane once
               the part is stood on its side — or, turned onto none, it comes off.
             </p>
             <p>

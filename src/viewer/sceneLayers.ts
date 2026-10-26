@@ -45,6 +45,10 @@ export interface SceneLayerHost {
   requestHover(): void
   /** Set the canvas's cursor. */
   setCursor(cursor: string): void
+  /** Take the plain left-drag from the camera while the cursor is over
+   *  something the layer drags, or give it back: the camera then turns on
+   *  Shift and the other buttons, as it does for the brush. */
+  claimDrag(on: boolean): void
   theme(): ViewTheme
   /** Half the part's bounding-box diagonal — the scale overlays are drawn at. */
   modelRadius(): number

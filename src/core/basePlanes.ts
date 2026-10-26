@@ -18,7 +18,7 @@ export interface BasePlane {
 export const BASE_PLANES: readonly BasePlane[] = [
   { id: -1, name: 'XY plane', normal: [0, 0, 1] },
   { id: -2, name: 'YZ plane', normal: [1, 0, 0] },
-  { id: -3, name: 'ZX plane', normal: [0, 1, 0] },
+  { id: -3, name: 'XZ plane', normal: [0, 1, 0] },
 ]
 
 export function basePlaneOf(id: number): BasePlane | undefined {

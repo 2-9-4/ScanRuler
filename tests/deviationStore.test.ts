@@ -63,6 +63,42 @@ describe('deviation store', () => {
   })
 })
 
+describe('the deviation as volumes', () => {
+  // Enough of a measurement for the store, which only holds it.
+  const measured = () => ({ regions: [], tolerance: 0.1 }) as unknown as Parameters<ReturnType<typeof useDeviation.getState>['resolveVolume']>[0]
+
+  it('is let go of with the alignment, the scan or the reference it was measured under', () => {
+    const s = () => useDeviation.getState()
+    s().resolveAlign(doneAlign())
+    s().beginVolume()
+    expect(s().volumeStatus).toBe('running')
+    s().resolveVolume(measured())
+    expect(s().volumeStatus).toBe('ready')
+    expect(s().volume).not.toBeNull()
+    // Drawn in the map's colours, it puts the colour plot away.
+    expect(s().showMap).toBe(false)
+    s().resolveAlign(doneAlign())
+    expect(s().volume).toBeNull()
+    s().resolveVolume(measured())
+    s().clearReferenceMap()
+    expect(s().volume).toBeNull()
+    s().resolveVolume(measured())
+    s().clearAlign()
+    expect(s().volume).toBeNull()
+    expect(s().volumeStatus).toBe('idle')
+  })
+
+  it('keeps the alignment when the measurement fails', () => {
+    const s = () => useDeviation.getState()
+    s().resolveAlign(doneAlign())
+    s().beginVolume()
+    s().failVolume('out of memory')
+    expect(s().volumeStatus).toBe('idle')
+    expect(s().volumeMessage).toBe('out of memory')
+    expect(s().align).not.toBeNull()
+  })
+})
+
 describe('how the map is looked at', () => {
   const s = () => useDeviation.getState()
 

@@ -2,8 +2,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { commandRunning, configureCommands, useCommandActivity } from '../src/commands/activity'
 import { listCommands, registerCommands, runCommand } from '../src/commands/registry'
-import { num, obj, SCHEMA_BUDGET, schemaWeight, type JsonSchema } from '../src/commands/schema'
+import { bool, num, obj, SCHEMA_BUDGET, schemaWeight, str, type JsonSchema } from '../src/commands/schema'
 import { registerCoreCommands } from '../src/commands/core'
+import { flatCommands } from '../src/commands/core/flat'
+import { sectionCommands } from '../src/commands/core/section'
+import { viewCommands } from '../src/commands/core/view'
 import { CommandError, type Command } from '../src/commands/types'
 import { clearHistory, useHistory } from '../src/state/historyStore'
 import { useStore } from '../src/state/store'
@@ -135,6 +138,72 @@ describe('the command registry', () => {
     } finally {
       off()
     }
+  })
+
+  it('runs the commands that set or picture the viewport one at a time, other reads beside them', async () => {
+    // A stand-in for the one camera: each picture aims it, waits frames,
+    // and captures what it points at — the race two pictures at once ran.
+    let camera = ''
+    const log: string[] = []
+    const frame = () => new Promise((r) => setTimeout(r, 5))
+    const picture: Command<{ view: string; fail?: boolean }> = {
+      name: 'picture',
+      title: 'Picture',
+      description: '',
+      input: obj({ view: str(), fail: bool() }),
+      readOnly: true,
+      returnsImage: true,
+      scene: true,
+      run: async ({ view, fail }) => {
+        log.push(`start ${view}`)
+        const before = camera
+        camera = view
+        await frame()
+        await frame()
+        const captured = camera
+        await frame()
+        camera = before
+        log.push(`end ${view}`)
+        if (fail) throw new Error('no picture')
+        return captured
+      },
+    }
+    const aside: Command = {
+      name: 'aside',
+      title: 'Aside',
+      description: '',
+      input: obj({}),
+      readOnly: true,
+      run: async () => {
+        await frame()
+        log.push('aside')
+        return camera
+      },
+    }
+    const off = registerCommands('test', [picture as Command<never>, aside])
+    try {
+      const a = runCommand('test.picture', { view: 'top' })
+      const b = runCommand('test.picture', { view: 'front', fail: true }).catch((e: CommandError) => e.code)
+      const c = runCommand('test.picture', { view: 'iso' })
+      const d = runCommand('test.aside')
+      expect(await a).toBe('top')
+      expect(await b).toBe('failed')
+      expect(await c).toBe('iso')
+      // The read that touches no viewport ran at once, inside the first
+      // picture; a failed picture lets the next one go.
+      expect(await d).toBe('top')
+      expect(log).toEqual(['start top', 'aside', 'end top', 'start front', 'end front', 'start iso', 'end iso'])
+      expect(camera).toBe('')
+    } finally {
+      off()
+    }
+  })
+
+  it('marks view.set, view.render, section.render and flat.render as taking the viewport, and nothing else of the app’s', () => {
+    const marked = [...viewCommands.map((c) => ['view', c] as const), ...sectionCommands.map((c) => ['section', c] as const), ...flatCommands.map((c) => ['flat', c] as const)]
+      .filter(([, c]) => (c as Command).scene)
+      .map(([ns, c]) => `${ns}.${c.name}`)
+    expect(marked.sort()).toEqual(['flat.render', 'section.render', 'view.render', 'view.set'])
   })
 
   it('turns any failure into a CommandError and runs the next command regardless', async () => {

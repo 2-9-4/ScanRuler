@@ -6,6 +6,7 @@
 
 import { cutSummary } from '../core/section/slice'
 import {
+  isRadialRef,
   isWorldAxis,
   SECTION_REF_KINDS,
   sectionRefName,
@@ -68,6 +69,7 @@ export function SectionEditor({
   const orphan = draft.axis !== null && draft.ref === null
   const tilt = draft.frame ? tiltOf(draft.refDir, draft.frame.normal) : 0
   const refName = sectionRefName(draft.ref, elements)
+  const radial = isRadialRef(draft.ref) ? draft.ref : null
 
   const hint = !draft.axis
     ? 'Choose what to cut across — click an element or one of the XY, YZ, XZ planes in the viewport, or pick it above. The plane runs across an element’s direction: a plane’s normal, the axis of a cylinder, cone or line, a circle’s normal.'
@@ -118,13 +120,37 @@ export function SectionEditor({
         <span>Cut along</span>
         <select
           data-test="section-ref"
-          value={draft.ref ?? ''}
+          value={isRadialRef(draft.ref) ? 'radial' : (draft.ref ?? '')}
           onChange={(e) => setRef(parseRef(e.target.value))}
         >
           <option value="">{orphan ? '(deleted element)' : 'Select…'}</option>
+          {/* A plane through an axis is made by command; here it is kept,
+              or swapped for one of the others. */}
+          {radial && <option value="radial">{refName ?? 'Through an axis'}</option>}
           <PlaneRefOptions options={options} />
         </select>
       </label>
+
+      {radial && (
+        <label className="field">
+          <span>Angle (°)</span>
+          <input
+            type="number"
+            step="any"
+            data-test="section-angle"
+            key={round(radial.angleDeg)}
+            defaultValue={round(radial.angleDeg)}
+            onBlur={(e) => {
+              const v = Number(e.target.value)
+              if (Number.isFinite(v) && v !== radial.angleDeg) setRef({ ...radial, angleDeg: v })
+              e.target.value = String(round(radial.angleDeg))
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') e.currentTarget.blur()
+            }}
+          />
+        </label>
+      )}
 
       <label className="field">
         {/* A plane still square to a coordinate axis has a coordinate, not an
@@ -227,9 +253,10 @@ export function SectionEditor({
 }
 
 /** The select's value back into a reference: an axis letter, an element id,
- *  or nothing. */
+ *  or nothing. The plane through an axis is never chosen afresh here — it
+ *  is only the one the draft already has. */
 function parseRef(value: string): SectionRef | null {
-  if (value === '') return null
+  if (value === '' || value === 'radial') return null
   if (isWorldAxis(value)) return value
   return Number(value)
 }

@@ -708,6 +708,20 @@ export function useSceneSync({
     const map = referenceReady ? referenceMap.current : null
     scene.setReferenceMap(map)
   }, [referenceVersion, referenceReady])
+  // The deviation as volumes: its regions on the stage while the
+  // workspace measures against a reference, one lit from the panel's list.
+  const volume = useDeviation((s) => s.volume)
+  const showVolume = useDeviation((s) => s.showVolume)
+  const volumeHover = useDeviation((s) => s.volumeHover)
+  useEffect(() => {
+    sceneRef.current?.setVolumeRegions(volume)
+  }, [volume])
+  useEffect(() => {
+    sceneRef.current?.setVolumeVisible(workspace === 'deviation' && source === 'reference' && showVolume && volume !== null)
+  }, [workspace, source, showVolume, volume])
+  useEffect(() => {
+    sceneRef.current?.highlightVolumeRegion(volumeHover)
+  }, [volumeHover, volume])
   const pluginRef = useRef(plugin)
   pluginRef.current = plugin
   /** Whichever map this workspace is showing: its values, and the scale they
@@ -936,7 +950,8 @@ export function useSceneSync({
   const hasMap =
     (workspace === 'deviation' && hasDeviationMap) ||
     (workspace === 'thickness' && hasThicknessMap) ||
-    Boolean(plugin?.hoverReadout)
+    Boolean(plugin?.hoverReadout) ||
+    Boolean(plugin?.hovers)
   useEffect(() => {
     sceneRef.current?.setHoverEnabled(hasMap && !picking)
   }, [hasMap, picking])

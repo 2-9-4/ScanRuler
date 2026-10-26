@@ -90,3 +90,82 @@ export function meshGaps(positions: Float32Array | Float64Array, indices: Uint32
   gaps.sort((a, b) => b.edges - a.edges)
   return gaps.slice(0, maxGaps)
 }
+
+/** One rim walked round in order: its vertices one after another along
+ *  the open edges, and for each edge the triangle it is the open side of
+ *  (edge i runs from vertices[i] to vertices[i + 1], the last one back to
+ *  the first when the rim closes). */
+export interface RimLoop {
+  vertices: Uint32Array
+  triangles: Uint32Array
+  /** Whether the walk came back to where it started. A rim that runs into
+   *  a vertex with no open edge left to go on by — a dangling run of open
+   *  edges — is walked as far as it goes and left open. */
+  closed: boolean
+}
+
+/** The rims of a welded mesh, each walked round in order. The open edges
+ *  are followed through the vertices they share, whichever way their
+ *  triangles wind them — a scan's triangles are not always wound alike —
+ *  each edge once; the walks start at the ends of runs that do not close,
+ *  then anywhere. Two rims that touch at a vertex may come out as one loop
+ *  through it, a figure of eight. Pure topology: the vertices' places are
+ *  read by the caller. */
+export function rimLoops(indices: Uint32Array): RimLoop[] {
+  const seen = new Map<number, number>()
+  const key = (a: number, b: number) => (a < b ? a * 4_294_967_296 + b : b * 4_294_967_296 + a)
+  for (let t = 0; t + 2 < indices.length; t += 3) {
+    for (let k = 0; k < 3; k++) {
+      const a = indices[t + k]
+      const b = indices[t + ((k + 1) % 3)]
+      if (a === b) continue
+      const e = key(a, b)
+      seen.set(e, (seen.get(e) ?? 0) + 1)
+    }
+  }
+  // The open edges, each listed at both its ends.
+  const edges: { a: number; b: number; tri: number; used: boolean }[] = []
+  const at = new Map<number, number[]>()
+  for (let t = 0; t + 2 < indices.length; t += 3) {
+    for (let k = 0; k < 3; k++) {
+      const a = indices[t + k]
+      const b = indices[t + ((k + 1) % 3)]
+      if (a === b || seen.get(key(a, b)) !== 1) continue
+      const id = edges.length
+      edges.push({ a, b, tri: t / 3, used: false })
+      for (const v of [a, b]) {
+        const list = at.get(v) ?? []
+        list.push(id)
+        at.set(v, list)
+      }
+    }
+  }
+  const loops: RimLoop[] = []
+  const walk = (start: number) => {
+    for (;;) {
+      const first = at.get(start)!.find((id) => !edges[id].used)
+      if (first === undefined) return
+      const vertices: number[] = [start]
+      const triangles: number[] = []
+      let id: number | undefined = first
+      let v = start
+      let closed = false
+      while (id !== undefined) {
+        const e: { a: number; b: number; tri: number; used: boolean } = edges[id]
+        e.used = true
+        triangles.push(e.tri)
+        v = e.a === v ? e.b : e.a
+        if (v === start) {
+          closed = true
+          break
+        }
+        vertices.push(v)
+        id = at.get(v)!.find((x) => !edges[x].used)
+      }
+      loops.push({ vertices: Uint32Array.from(vertices), triangles: Uint32Array.from(triangles), closed })
+    }
+  }
+  for (const [v, list] of at) if (list.length % 2 === 1) walk(v)
+  for (const v of at.keys()) walk(v)
+  return loops
+}

@@ -29,7 +29,7 @@ import {
 import type { Steps } from './deviation/steps'
 import { computeDeviation, defaultMaxDistance, suggestRange } from './deviation/deviation'
 import { rigidApplyToPoints, rigidInvert, rigidRotateVectors, type Rigid } from './deviation/rigid'
-import { meshArea, readReference, sampleSpacing, subdivideForMap } from './deviation/onReference'
+import { meshArea, meshLongEdges, readReference, sampleSpacing, subdivideForMap } from './deviation/onReference'
 import { buildSolidIndex, computeThickness, suggestThicknessScale } from './thickness/thickness'
 import { sliceMesh } from './section/slice'
 import { meshCentroid } from './geometry/centroid'
@@ -46,13 +46,19 @@ import { workerPlugins } from './workerPlugins'
 import type { WorkerContext } from './workerPluginApi'
 import type { MeshBVH } from 'three-mesh-bvh'
 import { reply } from './workerRpc'
-import { firstHits, firstHitsAt, localNoise, scanRims } from './geometry/scanQa'
+import { firstHits, firstHitsAt, localNoise, scanRim, scanRims } from './geometry/scanQa'
+import { rimLoops, type RimLoop } from './geometry/openEdges'
+import { DEFAULT_VOLUME_BETA, volumeDeviation } from './deviation/volume'
+import { WindingTree } from './deviation/winding'
 
 let graph: MeshGraph | null = null
 /** How far from the reference the scan is looked for, as a fraction of the
  *  scan's diagonal: past every search distance worth a map; the display's
  *  own search distance cuts it closer. */
 const REFERENCE_REACH = 0.1
+/** The share of the volume error's progress bar preparing the scan for it
+ *  takes, when it has to. */
+const PREPARE_SHARE = 0.3
 /** The reference geometry, prepared for signed closest-point queries. Held
  *  across requests so an alignment and the deviation map that follows it do
  *  not each pay for the tree. */
@@ -65,6 +71,20 @@ let scanSolid: MeshBVH | null = null
  *  the same structure a reference gets. Built on first use, and remembered
  *  with the graph it describes so a new scan or moved vertices drop it. */
 let scanSurfaces = new WeakMap<MeshGraph, NominalSurface>()
+/** The scan's winding-number tree, for the deviation as volumes: built on
+ *  first use and kept, like the surface, with the graph it describes. */
+let scanTrees = new WeakMap<MeshGraph, WindingTree>()
+/** The scan's open rims walked round, by the index buffer they were walked
+ *  on: topology alone, so an alignment that moves the vertices keeps them. */
+const rimsOf = new WeakMap<Uint32Array, RimLoop[]>()
+function scanLoops(g: MeshGraph): RimLoop[] {
+  let loops = rimsOf.get(g.indices)
+  if (!loops) {
+    loops = rimLoops(g.indices)
+    rimsOf.set(g.indices, loops)
+  }
+  return loops
+}
 const stagedScans = new Map<number, MeshGraph>()
 const stagedNominals = new Map<number, NominalSurface>()
 
@@ -218,7 +238,7 @@ const contextOf = (progress: (t: string) => void): WorkerContext => ({
 })
 
 function handle(msg: Exclude<WorkerRequest, { type: 'align-abort' }>): void {
-  const progress = (text: string) => post({ type: 'progress', text })
+  const progress = (text: string, fraction?: number) => post({ type: 'progress', text, ...(fraction !== undefined ? { fraction } : {}) })
 
   if (msg.type === 'discard-import') {
     for (const id of msg.ids) { stagedScans.delete(id); stagedNominals.delete(id) }
@@ -434,6 +454,7 @@ function handle(msg: Exclude<WorkerRequest, { type: 'align-abort' }>): void {
     // of where the part sits.
     scanSolid = null
     scanSurfaces = new WeakMap()
+    scanTrees = new WeakMap()
     post({ type: 'transform-ok', requestId: msg.requestId })
     return
   }
@@ -456,7 +477,7 @@ function handle(msg: Exclude<WorkerRequest, { type: 'align-abort' }>): void {
     try {
       if (msg.type === 'plane-region') {
         checkVertices(msg.vertices, graph.vertexCount)
-        const result = planeRegionReport(graph, msg.vertices, msg.normal ? { normal: msg.normal, seed: msg.seed } : undefined)
+        const result = planeRegionReport(graph, msg.vertices, msg.normal ? { normal: msg.normal, seed: msg.seed } : undefined, msg.cylinder ? { ...msg.cylinder, seed: msg.seed } : undefined)
         post({ type: 'plane-region-ok', requestId: msg.requestId, result })
       } else {
         const result = segmentPlanes(graph, msg.options)
@@ -507,7 +528,7 @@ function handle(msg: Exclude<WorkerRequest, { type: 'align-abort' }>): void {
     return
   }
 
-  if (msg.type === 'heights' || msg.type === 'scan-qa') {
+  if (msg.type === 'heights' || msg.type === 'scan-qa' || msg.type === 'scan-rim') {
     if (!graph) {
       post({ type: 'error', requestId: msg.requestId, message: 'No model loaded.' })
       return
@@ -522,8 +543,11 @@ function handle(msg: Exclude<WorkerRequest, { type: 'align-abort' }>): void {
           const values = firstHits(scanSolid, msg.grid)
           post({ type: 'heights-ok', requestId: msg.requestId, values }, [values.buffer])
         }
+      } else if (msg.type === 'scan-rim') {
+        const rim = scanRim(graph.positions, graph.indices, scanLoops(graph), msg.index)
+        post({ type: 'scan-rim-ok', requestId: msg.requestId, rim }, rim ? [rim.vertices.buffer, rim.positions.buffer, rim.corners.buffer] : [])
       } else {
-        const rims = scanRims(graph.positions, graph.indices, msg.rims)
+        const rims = scanRims(graph.positions, scanLoops(graph), msg.rims)
         post({ type: 'scan-qa-ok', requestId: msg.requestId, rims, noise: localNoise(graph, msg.sample) })
       }
     } catch (e) {
@@ -662,8 +686,8 @@ function handle(msg: Exclude<WorkerRequest, { type: 'align-abort' }>): void {
         minLength: msg.minLength,
       })
       post(
-        { type: 'section-ok', requestId: msg.requestId, points: cut.points, offsets: cut.offsets },
-        [cut.points.buffer, cut.offsets.buffer],
+        { type: 'section-ok', requestId: msg.requestId, points: cut.points, offsets: cut.offsets, normals: cut.normals },
+        cut.normals ? [cut.points.buffer, cut.offsets.buffer, cut.normals.buffer] : [cut.points.buffer, cut.offsets.buffer],
       )
     } catch (e) {
       post({ type: 'error', requestId: msg.requestId, message: errorText(e) })
@@ -730,8 +754,8 @@ function handle(msg: Exclude<WorkerRequest, { type: 'align-abort' }>): void {
     }
     try {
       const scan = scanSurfaceOf(graph, progress, 'Preparing the scan for the map on the reference…')
-      const spacing = sampleSpacing(meshArea(mesh.positions, mesh.indices), msg.spacing)
-      progress('Cutting the reference finer for its map…')
+      const spacing = sampleSpacing(meshArea(mesh.positions, mesh.indices), msg.spacing, meshLongEdges(mesh.positions, mesh.indices))
+      progress(`Cutting the reference into readings ${spacing} mm apart…`)
       const samples = subdivideForMap(mesh.positions, mesh.indices, null, spacing)
       let lastPercent = -1
       const values = readReference(scan, samples, {
@@ -755,6 +779,46 @@ function handle(msg: Exclude<WorkerRequest, { type: 'align-abort' }>): void {
     return
   }
 
+  if (msg.type === 'deviate-volume') {
+    const mesh = msg.mesh ?? (nominal ? { positions: nominal.positions, indices: nominal.index } : null)
+    if (!graph || !mesh) {
+      post({ type: 'error', requestId: msg.requestId, message: 'Load both a scan and a reference geometry first.' })
+      return
+    }
+    try {
+      const g = graph
+      // Preparing the scan, the first time, takes about a third of the
+      // whole: the bar gives it that share.
+      const fresh = !scanTrees.has(g)
+      const share = fresh ? PREPARE_SHARE : 0
+      const scanSurface = scanSurfaceOf(g, (t) => progress(t, 0), 'Preparing the scan for the volume error…')
+      let scanTree = scanTrees.get(g)
+      if (!scanTree) {
+        progress('Preparing the scan for the volume error…', share / 2)
+        scanTree = new WindingTree(g.positions, g.indices, { beta: DEFAULT_VOLUME_BETA })
+        scanTrees.set(g, scanTree)
+      }
+      const volume = volumeDeviation({
+        reference: mesh,
+        scan: { positions: g.positions, indices: g.indices },
+        toReference: msg.transform,
+        tolerance: msg.tolerance,
+        ...(msg.cell !== undefined ? { cell: msg.cell } : {}),
+        ...(msg.within ? { within: msg.within } : {}),
+        scanSurface,
+        scanTree,
+        scanRims: scanLoops(g),
+        meshes: true,
+        onProgress: (text, fraction) => progress(text, share + (1 - share) * fraction),
+      })
+      const shells = volume.meshes ? Object.values(volume.meshes) : []
+      post({ type: 'volume-deviation-ok', requestId: msg.requestId, volume }, shells.flatMap((m) => [m.positions.buffer, m.indices.buffer, m.region.buffer]))
+    } catch (e) {
+      post({ type: 'error', requestId: msg.requestId, message: errorText(e) })
+    }
+    return
+  }
+
   if (msg.type === 'deviate') {
     if (!graph || !nominal) {
       post({
@@ -772,7 +836,7 @@ function handle(msg: Exclude<WorkerRequest, { type: 'align-abort' }>): void {
           const percent = Math.round(f * 100)
           if (percent === lastPercent) return
           lastPercent = percent
-          progress(`Measuring deviation — ${percent}%…`)
+          progress(`Measuring the scan against the reference — ${percent}%…`)
         },
         directions,
         // Rotated along with the positions whenever an alignment is baked in,

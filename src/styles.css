@@ -215,6 +215,20 @@ body {
   font-size: 12px;
 }
 .recovery-bar select { max-width: min(420px, 90vw); }
+.connector-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px 12px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--line);
+  border-left: 3px solid var(--amber);
+  font-size: 12px;
+}
+.connector-bar p { flex: 1 1 100%; margin: 0; }
+.connector-bar ul { flex: 1 1 auto; margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+.connector-bar li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.connector-bar code { font-family: var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; background: var(--well); padding: 2px 6px; border-radius: var(--r); }
 @media (max-width: 1100px) {
   .project-save-status { max-width: 95px; }
 }
@@ -592,39 +606,67 @@ button.block {
   gap: 5px;
 }
 
-/* The top bar is one row that never wraps. Below this the keys on the right
-   give up their words, and the part chip its counts — the panel's model row
-   carries the triangle count too — so the settings key and the GitHub link
-   stay on screen down to a window a good deal narrower than the panel and
-   the stage together want. */
-@media (max-width: 1240px) {
-  .top .btxt,
-  .partchip span {
-    display: none;
-  }
+/* The top bar is one row that never wraps. What it holds varies — the
+   plugins' tabs, the part chip, the agent chip — so it is not folded by
+   window width: TopBar measures, and takes the folds below in turn, each on
+   top of those before it, until the row fits. It measures with nothing
+   squeezed — the part chip asking for its name's width, up to a cap — so
+   the words go before the part's name or the save status are cut short. */
+.top.measuring > * {
+  flex-shrink: 0;
 }
 
-/* The workspace tabs give up their pictures first: five of them are a
-   hundred pixels the part chip's file name needs sooner. */
-@media (max-width: 1800px) {
-  .modeswitch svg.icon {
-    display: none;
-  }
+.top.measuring .partchip {
+  max-width: 240px;
 }
 
-/* With three project keys — New, Save, Load — they give up the word
-   "Project" early, and the brand its caption after them: the version is in
-   the brand's tooltip and in the imprint as well. */
-@media (max-width: 1900px) {
-  .top .ptxt {
-    display: none;
-  }
+/* 1. The project keys give up the word "Project", and the part chip its
+   counts — the panel's model row carries the triangle count too. */
+.top[data-fold~='1'] .ptxt,
+.top[data-fold~='1'] .partchip span {
+  display: none;
 }
 
-@media (max-width: 1700px) {
-  .brand span {
-    display: none;
-  }
+/* 2. The workspace tabs give up their pictures. */
+.top[data-fold~='2'] .modeswitch svg.icon {
+  display: none;
+}
+
+/* 3. The brand gives up its caption: the version is in the brand's tooltip
+   and in the imprint as well. */
+.top[data-fold~='3'] .brand span {
+  display: none;
+}
+
+/* 4. The tabs not open give up their word for their picture — the tooltip
+   still names them — and the open one keeps its name. The workspaces'
+   names are the widest thing in the bar. */
+.top[data-fold~='4'] .modeswitch button:not(.on) .wtxt {
+  display: none;
+}
+
+.top[data-fold~='4'] .modeswitch button:not(.on) svg.icon {
+  display: block;
+}
+
+/* 5. The keys on the right give up their words and keep their pictures,
+   the agent chip its words and keeps its lamp — its tooltip says the rest. */
+.top[data-fold~='5'] .btxt {
+  display: none;
+}
+
+/* Narrower still the row scrolls (see .top), and an end with keys out of
+   sight fades out, so they read as there rather than missing. */
+.top[data-hidden='end'] {
+  mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent);
+}
+
+.top[data-hidden='start'] {
+  mask-image: linear-gradient(to left, #000 calc(100% - 40px), transparent);
+}
+
+.top[data-hidden='start end'] {
+  mask-image: linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent);
 }
 
 /* icon-only link styled as a ghost button (GitHub mark in the top bar) */
@@ -1774,6 +1816,22 @@ button.x:disabled {
 
 .busycard b {
   font-weight: 700;
+}
+
+/* How far a job that says has got, under the spinner. */
+.busybar {
+  width: 220px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.busybar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.25s ease-out;
 }
 
 .busynote {

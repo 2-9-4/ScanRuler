@@ -105,7 +105,7 @@ describe('deviation', () => {
     // one, a share of the part's size, lands about there).
     await run('deviation.settings', { maxDistance: 3 })
     type V3 = [number, number, number]
-    type H = { source: string; tolerance: number; over: number; found: number; spacing: number; patches: { centroid: V3; box: { min: V3; max: V3 }; area: number; count: number; mean: number; extreme: number; side: string; at: V3; vertex: number; vertices: number[]; onReference?: { centroid: V3; at: V3 } }[] }
+    type H = { source: string; tolerance: number; over: number; found: number; spacing: number; features: { count: number; shareOfExcess: number; note?: string }; patches: { centroid: V3; box: { min: V3; max: V3 }; area: number; count: number; mean: number; extreme: number; depth: number; volume: number; kind: string; side: string; at: V3; vertex: number; vertices: number[]; onReference?: { centroid: V3; at: V3 } }[] }
     const h = await run<H & { far: { count: number } }>('deviation.hotspots', { tolerance: 0.5 })
     expect(h.source).toBe('reference')
     expect(h.tolerance).toBe(0.5)
@@ -123,12 +123,20 @@ describe('deviation', () => {
       expect(p.vertices.length).toBeGreaterThan(0)
       expect(p.vertices).toContain(p.vertex)
       expect(p.onReference).toBeDefined()
+      // 2 mm deep over a face, four times the tolerance: a feature, its
+      // volume what lies past the 0.5.
+      expect(p.kind).toBe('feature')
+      expect(p.depth).toBeCloseTo(2, 1)
+      expect(p.volume / p.area).toBeCloseTo(1.5, 1)
     }
+    expect(h.features).toMatchObject({ count: 2, note: expect.stringContaining('model it or name it') })
+    expect(h.features.shareOfExcess).toBeGreaterThan(0.95)
     expect(h.patches[0].centroid[2] * h.patches[1].centroid[2]).toBeLessThan(0)
     expect(h.over).toBeGreaterThanOrEqual(h.patches[0].count + h.patches[1].count)
     const none = await run<H>('deviation.hotspots', { tolerance: 3 })
     expect(none.patches).toEqual([])
     expect(none.over).toBe(0)
+    expect(none.features).toEqual({ count: 0, shareOfExcess: 0 })
     expect((await refused('deviation.hotspots', { patches: 0 })).code).toBe('invalid_input')
     // Within the search distance the far reading holds nothing. The search
     // distance pulled in under the 2 mm the top and bottom lie inside: they

@@ -8,12 +8,12 @@
 
 import type { AlignResult, PointPair } from './deviation/align'
 import type { Rigid } from './deviation/rigid'
+import type { VolumeDeviation } from './deviation/volume'
 import type { StepInfo } from './parsers/step'
 import type { ThicknessMethod } from './thickness/thickness'
 import type { AxialWindow, ElementKind, FitOutput, FitSettings, Vec3 } from './types'
 import type { FitGuide } from './fit/guide'
-import type { RayGrid } from './geometry/scanQa'
-import type { MeshGap } from './geometry/openEdges'
+import type { RayGrid, RimCircle, ScanRim } from './geometry/scanQa'
 import type { MeshCentroid } from './geometry/centroid'
 import type { CreaseReport, CreaseSetting } from './geometry/crease'
 import type { SeedPlane, SymmetryPlane } from './symmetry'
@@ -112,6 +112,21 @@ export type WorkerRequest =
       spacing: number
       mesh?: { positions: Float32Array; indices: Uint32Array }
     }
+  /** The deviation as volumes: material the reference — or `mesh` — has
+   *  and the scan has not, and the other way round (deviation/volume.ts). */
+  | {
+      type: 'deviate-volume'
+      requestId: number
+      /** Takes the scan into the reference's frame, as for 'deviate'. */
+      transform: Rigid
+      /** Within this of the scan's surface a disagreement is noise, mm. */
+      tolerance: number
+      /** The cell's side, mm; by default the tool's. */
+      cell?: number
+      /** Only this box of the reference's frame is looked at. */
+      within?: { min: Vec3; max: Vec3 }
+      mesh?: { positions: Float32Array; indices: Uint32Array }
+    }
   /** Wall thickness of the scan itself — no reference model involved. The
    *  settings that shape the search travel with the request: all of them
    *  change the measurement, so all of them mean measuring again. */
@@ -145,9 +160,10 @@ export type WorkerRequest =
    *  fit/regionGrow floodByNormal. Capped at `limit` vertices. */
   | { type: 'flood'; requestId: number; seed: number; maxAngleDeg: number; limit?: number }
   /** What a grown region holds — its area and box, and given the plane's
-   *  normal its normals' spread and whether it is two surfaces. See
-   *  fit/segment planeRegionReport. */
-  | { type: 'plane-region'; requestId: number; vertices: Uint32Array; normal?: Vec3; seed?: number }
+   *  normal its normals' spread and whether it is two surfaces; given a
+   *  cylinder, whether it is two cylinders. See fit/segment
+   *  planeRegionReport. */
+  | { type: 'plane-region'; requestId: number; vertices: Uint32Array; normal?: Vec3; seed?: number; cylinder?: { center: Vec3; axis: Vec3; radius: number } }
   /** The scan's flat regions, the largest first — see fit/segment. */
   | { type: 'segment'; requestId: number; options: SegmentOptions }
   /** The scan's mean curvature at every vertex, 1/mm, convex positive, for
@@ -169,6 +185,9 @@ export type WorkerRequest =
   | { type: 'heights'; requestId: number; grid: RayGrid; corners?: boolean }
   /** Open rims and surface noise — see geometry/scanQa. */
   | { type: 'scan-qa'; requestId: number; sample: number; rims: number }
+  /** One open rim by its number among the scan's rims, longest first —
+   *  see geometry/scanQa (scanRim). */
+  | { type: 'scan-rim'; requestId: number; index: number }
   /** The coordinate system the scan itself suggests — its face directions,
    *  the side it stood on, a zero point. See core/autoAlign. Nothing moves:
    *  the answer is a proposal for the alignment editor. */
@@ -179,7 +198,9 @@ export type WorkerRequest =
 
 export type WorkerResponse =
   | { type: 'import-ok'; requestId: number }
-  | { type: 'progress'; text: string }
+  /** What a request is doing, and — from one that can tell — how far it
+   *  has got, 0 to 1. */
+  | { type: 'progress'; text: string; fraction?: number }
   | {
       type: 'loaded'
       requestId: number
@@ -240,6 +261,12 @@ export type WorkerResponse =
       suggestedMaxDistance: number
     }
   | {
+      type: 'volume-deviation-ok'
+      requestId: number
+      /** With its regions' surfaces for drawing. */
+      volume: VolumeDeviation
+    }
+  | {
       type: 'reference-deviation-ok'
       requestId: number
       positions: Float32Array
@@ -263,7 +290,7 @@ export type WorkerResponse =
     }
   | { type: 'transform-ok'; requestId: number }
   /** The polylines a plane cuts off the scan, in scan coordinates. */
-  | { type: 'section-ok'; requestId: number; points: Float32Array; offsets: Uint32Array }
+  | { type: 'section-ok'; requestId: number; points: Float32Array; offsets: Uint32Array; normals?: Float32Array }
   | { type: 'centroid-ok'; requestId: number; result: MeshCentroid }
   | { type: 'symmetry-ok'; requestId: number; result: SymmetryPlane }
   | { type: 'flood-ok'; requestId: number; vertices: Uint32Array }
@@ -279,7 +306,9 @@ export type WorkerResponse =
   /** Per ray, the coordinate of its first hit along the axis, NaN for none;
    *  asked for, the corners and weights of where it landed. */
   | { type: 'heights-ok'; requestId: number; values: Float32Array; corners?: Uint32Array; weights?: Float32Array }
-  | { type: 'scan-qa-ok'; requestId: number; rims: { count: number; total: number; largest: MeshGap[] }; noise: { median: number; p90: number; sampled: number } }
+  | { type: 'scan-qa-ok'; requestId: number; rims: { count: number; total: number; largest: ScanRim[]; circles: ScanRim[]; moreCircles: number }; noise: { median: number; p90: number; sampled: number } }
+  /** The rim's loop in order, null past the last rim. */
+  | { type: 'scan-rim-ok'; requestId: number; rim: { vertices: Uint32Array; positions: Float32Array; corners: Uint32Array; closed: boolean; length: number; circle?: RimCircle } | null }
   /** A plugin's answer. */
   | { type: 'plugin-ok'; requestId: number; result: unknown }
   | { type: 'error'; requestId: number; message: string }

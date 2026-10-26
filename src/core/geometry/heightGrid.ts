@@ -2,7 +2,8 @@
 // A height map read further: the relief left when the surface round each
 // cell is taken off it — icons, grooves, embossed lettering standing out of
 // a face that curves or leans — and the heights it holds gathered into levels, a
-// pad's tiers or a pocket's floors, each with how much of the map it covers.
+// pad's tiers or a pocket's floors, each with how much of the map it covers,
+// the cells on a slope (a fillet's ramp between tiers) left out first.
 // A grid here is row by row, row 0 at the low v, NaN where there is nothing.
 
 /** The grid's sums under a separable kernel, one along u and one along v:
@@ -100,6 +101,34 @@ export function cellNoise(values: Float32Array, cols: number, rows: number): num
   if (steps.length === 0) return 0
   steps.sort((a, b) => a - b)
   return (1.4826 * steps[Math.floor(steps.length / 2)]) / Math.SQRT2
+}
+
+/** Which cells lie on a slope steeper than `maxDeg`: a fillet's ramp
+ *  between two tiers, a cone, a wall met at a glance. Along each way the
+ *  slope is the gentler of the steps to the neighbours either side — so a
+ *  cell on the edge of a flat face, its one neighbour across a step, still
+ *  counts as flat, while a cell on a ramp, rising to both neighbours, does
+ *  not. A cell with no neighbour along a way counts as level along it. */
+export function slopedCells(values: Float32Array, cols: number, rows: number, cell: number, maxDeg: number): Uint8Array {
+  const out = new Uint8Array(values.length)
+  const limit = Math.tan((maxDeg * Math.PI) / 180) * cell
+  const gentler = (v: number, a: number, b: number) => {
+    const da = Number.isNaN(a) ? Infinity : Math.abs(a - v)
+    const db = Number.isNaN(b) ? Infinity : Math.abs(b - v)
+    const d = Math.min(da, db)
+    return d === Infinity ? 0 : d
+  }
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const i = r * cols + c
+      const v = values[i]
+      if (Number.isNaN(v)) continue
+      const du = gentler(v, c > 0 ? values[i - 1] : Number.NaN, c + 1 < cols ? values[i + 1] : Number.NaN)
+      const dv = gentler(v, r > 0 ? values[i - cols] : Number.NaN, r + 1 < rows ? values[i + cols] : Number.NaN)
+      if (Math.hypot(du, dv) > limit) out[i] = 1
+    }
+  }
+  return out
 }
 
 export interface HeightLevel {
@@ -212,4 +241,81 @@ export function heightLevels(
     })
   levels.sort((a, b) => b.cells - a.cells)
   return { levels, gap: w, unassigned }
+}
+
+/** A run of sloped cells touching each other: its cells, the grid box
+ *  round them, [u, v] mm, and the heights of the lowest and the highest
+ *  level it borders — two for a ramp between tiers (the gentle ends of a
+ *  rounded ramp may read as thin levels of their own; they lie between),
+ *  one for a ramp off a tier that leads to none. */
+export interface Ramp {
+  cells: number
+  box: { min: [number, number]; max: [number, number] }
+  joins: number[]
+}
+
+/** How much of the map is sloped, and the ramps it makes — the runs of
+ *  sloped cells (`steep`, slopedCells) side by side, the smallest left out
+ *  (under a two-hundredth of the cells with a value, eight at least) —
+ *  largest first. A cell borders a level when its neighbour along u or v
+ *  is a flat cell whose value lies in that level's range. */
+export function rampsOf(
+  values: Float32Array,
+  steep: Uint8Array,
+  grid: { cols: number; rows: number; cell: number; u0: number; v0: number },
+  levels: readonly HeightLevel[],
+): { sloped: number; valued: number; ramps: Ramp[] } {
+  const { cols, rows, cell, u0, v0 } = grid
+  let valued = 0
+  let sloped = 0
+  for (let i = 0; i < values.length; i++) {
+    if (Number.isNaN(values[i])) continue
+    valued++
+    if (steep[i]) sloped++
+  }
+  const levelAt = (i: number): number => {
+    const v = values[i]
+    if (Number.isNaN(v) || steep[i]) return -1
+    return levels.findIndex((l) => v >= l.range[0] && v <= l.range[1])
+  }
+  const least = Math.max(8, Math.ceil(valued / 200))
+  const seen = new Uint8Array(values.length)
+  const ramps: Ramp[] = []
+  for (let start = 0; start < values.length; start++) {
+    if (!steep[start] || seen[start] || Number.isNaN(values[start])) continue
+    const stack = [start]
+    seen[start] = 1
+    let n = 0, c0 = Infinity, c1 = -Infinity, r0 = Infinity, r1 = -Infinity
+    const borders = new Set<number>()
+    while (stack.length > 0) {
+      const i = stack.pop()!
+      n++
+      const c = i % cols
+      const r = (i - c) / cols
+      c0 = Math.min(c0, c); c1 = Math.max(c1, c)
+      r0 = Math.min(r0, r); r1 = Math.max(r1, r)
+      for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const cc = c + dc, rr = r + dr
+        if (cc < 0 || cc >= cols || rr < 0 || rr >= rows) continue
+        const j = rr * cols + cc
+        if (steep[j] && !Number.isNaN(values[j])) {
+          if (!seen[j]) {
+            seen[j] = 1
+            stack.push(j)
+          }
+        } else {
+          const l = levelAt(j)
+          if (l >= 0) borders.add(l)
+        }
+      }
+    }
+    if (n < least) continue
+    ramps.push({
+      cells: n,
+      box: { min: [u0 + c0 * cell, v0 + r0 * cell], max: [u0 + (c1 + 1) * cell, v0 + (r1 + 1) * cell] },
+      joins: [...new Set([Math.min(...[...borders].map((l) => levels[l].height)), Math.max(...[...borders].map((l) => levels[l].height))])].filter(Number.isFinite),
+    })
+  }
+  ramps.sort((a, b) => b.cells - a.cells)
+  return { sloped, valued, ramps }
 }

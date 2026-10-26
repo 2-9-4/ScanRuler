@@ -58,7 +58,7 @@ export function isOrientRef(ref: number, elements: readonly { id: number; kind: 
 /** A reference carried through a rigid motion of the part — a datum
  *  alignment. A plane element moves with the part and stays the reference.
  *  A coordinate plane stays where it is, so the reference becomes the
- *  coordinate plane the old one was turned onto: XY becomes ZX when the part
+ *  coordinate plane the old one was turned onto: XY becomes XZ when the part
  *  is stood on its side, and stays XY through a refinement of a degree. Null
  *  when it was turned onto none of them — the alignment then has nothing
  *  left to stand on. */

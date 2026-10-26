@@ -178,3 +178,50 @@ describe('seed-to-torus pipeline on a fillet mesh', () => {
     expect(() => fitTorusFromSeed(graph, [seed], SETTINGS)).toThrow(/torus/i)
   })
 })
+
+/** A patch of a large torus's outer side as a triangle grid: `spineDeg` of
+ *  the spine, `tubeDeg` of the tube about its outermost line — a shroud or a
+ *  bowed panel, whose spine lies far outside the part. */
+function torusPatchMesh(R: number, r: number, spineDeg: number, tubeDeg: number, nu = 140, nv = 60): Float32Array {
+  const at = (a: number, b: number): [number, number, number] => [(R + r * Math.cos(b)) * Math.cos(a), (R + r * Math.cos(b)) * Math.sin(a), r * Math.sin(b)]
+  const tris: number[] = []
+  const A = (spineDeg * Math.PI) / 180, B = (tubeDeg * Math.PI) / 180
+  for (let i = 0; i < nu; i++) {
+    for (let j = 0; j < nv; j++) {
+      const a0 = -A / 2 + (A * i) / nu, a1 = -A / 2 + (A * (i + 1)) / nu
+      const b0 = -B / 2 + (B * j) / nv, b1 = -B / 2 + (B * (j + 1)) / nv
+      const p = at(a0, b0), q = at(a1, b0), s = at(a1, b1), t = at(a0, b1)
+      tris.push(...p, ...q, ...s, ...p, ...s, ...t)
+    }
+  }
+  return Float32Array.from(tris)
+}
+
+describe('a large torus', () => {
+  it('fits a shroud whose spine lies well past the part — R600 / r75 on a part a fraction of that across', () => {
+    const graph = buildMeshGraph({ kind: 'soup', positions: torusPatchMesh(600, 75, 40, 120) })
+    // R is past the old limit of 0.8 × the scan's diagonal.
+    expect(600).toBeGreaterThan(0.8 * graph.bboxDiag)
+    let seed = 0, bestD = Infinity
+    for (let v = 0; v < graph.vertexCount; v++) {
+      const d = (graph.positions[v * 3] - 675) ** 2 + graph.positions[v * 3 + 1] ** 2 + graph.positions[v * 3 + 2] ** 2
+      if (d < bestD) {
+        bestD = d
+        seed = v
+      }
+    }
+    const out = fitTorusFromSeed(graph, [seed], SETTINGS)
+    expect(Math.abs(out.majorRadius - 600)).toBeLessThan(1)
+    expect(Math.abs(out.minorRadius - 75)).toBeLessThan(0.5)
+    expect(Math.abs(out.axis[2])).toBeGreaterThan(0.999)
+  })
+
+  it('names the limit when the spine lies too far out', () => {
+    // A small patch of the same torus: R600 is past 5 × its diagonal.
+    const graph = buildMeshGraph({ kind: 'soup', positions: torusPatchMesh(600, 75, 6, 40, 60, 40) })
+    expect(600).toBeGreaterThan(5 * graph.bboxDiag)
+    const all = new Uint32Array(graph.vertexCount)
+    for (let v = 0; v < all.length; v++) all[v] = v
+    expect(() => fitTorusOnSelection(graph, all, SETTINGS)).toThrow(/limit of 5 × the scan's diagonal/)
+  })
+})

@@ -4,7 +4,8 @@
 //
 // A plane fit from a click answers its fit; planeRegionReport adds the
 // region it grew — how much surface, where, how far its normals stray — and
-// whether that region is two surfaces rather than one (see splitTwoPlanes).
+// whether that region is two surfaces rather than one (see splitTwoPlanes;
+// a cylinder's region, splitTwoCylinders).
 //
 // segmentPlanes grows regions over the whole scan, or the part of it inside
 // a box, the way a person would click face after face: from the flattest
@@ -18,8 +19,10 @@
 // neighbours are found by letting each region spread a few rings into the
 // unclaimed vertices round it and seeing which fronts meet.
 
-import type { MeshGraph, Plane, Vec3 } from '../types'
-import { symmetricEigen3 } from './linalg'
+import type { Cylinder, MeshGraph, Plane, Vec3 } from '../types'
+import { cylinderResidual, splitTwoCylinders } from './cylinder'
+import { fitHeight } from './heightSurface'
+import { orthoBasis, symmetricEigen3 } from './linalg'
 import { planeResidual, splitTwoPlanes } from './plane'
 
 const DEG = Math.PI / 180
@@ -80,6 +83,182 @@ export interface PlaneRegionReport {
   normalSpreadDeg?: number
   /** The region seen as two planes: the one the seed is not on. */
   second?: SecondSurface
+  /** A cylinder's region seen as two cylinders: the one the seed is not
+   *  on. Only with the cylinder given. */
+  secondCylinder?: SecondCylinder
+  /** The share of the rectangle the region spans in its plane that it
+   *  fills: a face fills most of it, the crown of a bead or a round running
+   *  across a part a sliver. Only with a normal to measure from. */
+  fill?: number
+  /** How curved the region is: the sagitta of a quadric height fitted over
+   *  it in the plane's frame — how far the quadric's curved part rises and
+   *  falls across the region's points, mm — and the RMS the quadric leaves,
+   *  mm (the noise, and relief no quadric follows). Only with a normal to
+   *  measure from. See looksLikeCrown. */
+  curve?: { sagitta: number; sigma: number }
+  /** Where a bore's axis meets the scan at an end of its wall — see
+   *  closedAlong. Only with the cylinder given, and a bore. */
+  closed?: BoreClosed
+}
+
+export interface BoreClosed {
+  /** Where the axis, cast from the middle of the wall toward one end, meets
+   *  the scan, and where it leaves it again (when it does), mm along the
+   *  fitted axis from the fit's centre. */
+  from: number
+  to?: number
+  /** The point it meets the scan at. */
+  at: Vec3
+}
+
+export interface SecondCylinder {
+  /** The region's points on it, and their share of the region. */
+  count: number
+  share: number
+  centroid: Vec3
+  min: Vec3
+  max: Vec3
+  /** Where its points lie along the fitted axis, from the fit's centre, mm. */
+  band: [number, number]
+  /** Between the two cylinders' axes, degrees. */
+  angleDeg: number
+  /** The radius of the one the seed is on, and of the second, mm. */
+  radius: number
+  radiusSecond: number
+  /** How far each part's normals lean off square to the fitted axis, RMS,
+   *  degrees: the seed's part, then the second. */
+  leanDeg: [number, number]
+  /** RMS off the nearer of two cylinders, and off the one, mm. */
+  rmsTwo: number
+  rmsOne: number
+}
+
+/** A region a cylinder was fitted on, as two cylinders — see
+ *  splitTwoCylinders — reported along the fit's axis: the part the seed is
+ *  not on (the smaller without a seed). Null when it is one surface. */
+export function secondCylinder(
+  g: MeshGraph,
+  region: Uint32Array,
+  fit: { center: Vec3; axis: Vec3; radius: number; seed?: number },
+): SecondCylinder | null {
+  const { positions: p, normals: nrm } = g
+  const al = Math.hypot(fit.axis[0], fit.axis[1], fit.axis[2])
+  if (!(al > 0) || !(fit.radius > 0)) return null
+  const a: Vec3 = [fit.axis[0] / al, fit.axis[1] / al, fit.axis[2] / al]
+  const one: Cylinder = { px: fit.center[0], py: fit.center[1], pz: fit.center[2], ax: a[0], ay: a[1], az: a[2], r: fit.radius }
+  const split = splitTwoCylinders(p, nrm, region, one)
+  if (!split) return null
+  let first = 0
+  if (fit.seed !== undefined && fit.seed < g.vertexCount) {
+    const j = fit.seed * 3
+    const r0 = Math.abs(cylinderResidual(split.cylinders[0], p[j], p[j + 1], p[j + 2]))
+    const r1 = Math.abs(cylinderResidual(split.cylinders[1], p[j], p[j + 1], p[j + 2]))
+    if (r1 < r0) first = 1
+  }
+  const second = 1 - first
+  const leanOf = (members: Uint32Array) => {
+    let ss = 0
+    for (let i = 0; i < members.length; i++) {
+      const j = region[members[i]] * 3
+      const s = nrm[j] * a[0] + nrm[j + 1] * a[1] + nrm[j + 2] * a[2]
+      ss += Math.asin(Math.max(-1, Math.min(1, s))) ** 2
+    }
+    return members.length ? Math.sqrt(ss / members.length) / DEG : 0
+  }
+  const members = split.members[second]
+  const c: Vec3 = [0, 0, 0]
+  const lo: Vec3 = [Infinity, Infinity, Infinity]
+  const hi: Vec3 = [-Infinity, -Infinity, -Infinity]
+  let t0 = Infinity, t1 = -Infinity
+  for (let i = 0; i < members.length; i++) {
+    const j = region[members[i]] * 3
+    for (let k = 0; k < 3; k++) {
+      const x = p[j + k]
+      c[k] += x / members.length
+      if (x < lo[k]) lo[k] = x
+      if (x > hi[k]) hi[k] = x
+    }
+    const t = (p[j] - fit.center[0]) * a[0] + (p[j + 1] - fit.center[1]) * a[1] + (p[j + 2] - fit.center[2]) * a[2]
+    if (t < t0) t0 = t
+    if (t > t1) t1 = t
+  }
+  const A = split.cylinders[first]
+  const B = split.cylinders[second]
+  return {
+    count: members.length,
+    share: members.length / region.length,
+    centroid: c,
+    min: lo,
+    max: hi,
+    band: [t0, t1],
+    angleDeg: Math.acos(Math.min(1, Math.abs(A.ax * B.ax + A.ay * B.ay + A.az * B.az))) / DEG,
+    radius: A.r,
+    radiusSecond: B.r,
+    leanDeg: [leanOf(split.members[first]), leanOf(members)],
+    rmsTwo: split.rmsTwo,
+    rmsOne: split.rmsOne,
+  }
+}
+
+/** How many of a region's points its quadric is fitted on, at most. */
+const CURVE_SAMPLE = 4000
+
+/** A region's quadric h = a + b·u + c·v + d·u² + e·u·v + f·v² over the
+ *  plane's frame (origin at the points' centroid): the sagitta of its
+ *  curved part across the points — the spread of d·u² + e·u·v + f·v² over
+ *  them, which for a strip of a round of radius R and width w is w²/8R —
+ *  and the RMS it leaves. Null for too few points. */
+function curveOf(p: Float32Array, region: Uint32Array, normal: Vec3, basisU: Vec3, basisV: Vec3): { sagitta: number; sigma: number } | null {
+  const step = Math.max(1, Math.ceil(region.length / CURVE_SAMPLE))
+  const n = Math.floor((region.length - 1) / step) + 1
+  if (n < 12) return null
+  const packed = new Float64Array(n * 3)
+  const origin: Vec3 = [0, 0, 0]
+  for (let i = 0; i < n; i++) {
+    const j = region[i * step] * 3
+    for (let k = 0; k < 3; k++) {
+      packed[i * 3 + k] = p[j + k]
+      origin[k] += p[j + k] / n
+    }
+  }
+  const quadric = fitHeight(packed, { origin, basisU, basisV, normal }, 'quadric')
+  if (!quadric) return null
+  const { d, e, f } = quadric.coefficients
+  let lo = Infinity
+  let hi = -Infinity
+  for (let i = 0; i < n; i++) {
+    const x = packed[i * 3] - origin[0], y = packed[i * 3 + 1] - origin[1], z = packed[i * 3 + 2] - origin[2]
+    const u = x * basisU[0] + y * basisU[1] + z * basisU[2]
+    const v = x * basisV[0] + y * basisV[1] + z * basisV[2]
+    const q = d * u * u + e * u * v + f * v * v
+    if (q < lo) lo = q
+    if (q > hi) hi = q
+  }
+  return { sagitta: hi - lo, sigma: quadric.rms }
+}
+
+/** A plane's region whose normals spread wider than this, degrees, or that
+ *  fills less of the rectangle it spans than this share, may be no face:
+ *  the crown of a bead or a round grows a ring or a strip of points whose
+ *  normals turn across it. */
+export const PLANE_SPREAD_DEG = 10
+export const PLANE_FILL = 0.15
+/** How many times the RMS a quadric leaves its curved part has to rise
+ *  across the region for the region to count as curved. */
+const CURVED_SIGMAS = 3
+
+/** Whether a plane's region looks like the crown of a bead or a round, not
+ *  a face: a sliver of the rectangle it spans, or its normals spread wide
+ *  and the region curved — a quadric over it rising more across it than
+ *  three times what the quadric leaves. A spread alone does not tell: a
+ *  flat face with relief on it (lettering, a label) spreads its normals as
+ *  wide, and no quadric follows relief, so its sagitta stays within what is
+ *  left. The RMS left, not the plane's own: on a round the curve is the
+ *  plane's RMS, and its sagitta always about 3.4 times that. */
+export function looksLikeCrown(r: Pick<PlaneRegionReport, 'normalSpreadDeg' | 'fill' | 'curve'>): boolean {
+  if ((r.fill ?? 1) < PLANE_FILL) return true
+  if (!((r.normalSpreadDeg ?? 0) > PLANE_SPREAD_DEG)) return false
+  return r.curve ? r.curve.sagitta > CURVED_SIGMAS * r.curve.sigma : true
 }
 
 /** What a grown region holds: its area and box, and — given the plane's
@@ -90,6 +269,7 @@ export function planeRegionReport(
   g: MeshGraph,
   region: Uint32Array,
   plane?: { normal: Vec3; seed?: number },
+  cylinder?: { center: Vec3; axis: Vec3; radius: number; seed?: number },
 ): PlaneRegionReport {
   const { positions: p, normals: nrm } = g
   const areas = vertexAreas(g)
@@ -106,6 +286,12 @@ export function planeRegionReport(
     }
   }
   const out: PlaneRegionReport = { vertices: region.length, area, min, max }
+  if (cylinder && region.length > 0) {
+    const second = secondCylinder(g, region, cylinder)
+    if (second) out.secondCylinder = second
+    const closed = closedAlong(g, region, cylinder)
+    if (closed) out.closed = closed
+  }
   if (!plane || region.length === 0) return out
 
   const [nx, ny, nz] = plane.normal
@@ -116,6 +302,43 @@ export function planeRegionReport(
   }
   tilt.sort()
   out.normalSpreadDeg = tilt[Math.min(tilt.length - 1, Math.floor(0.95 * tilt.length))] / DEG
+  // The rectangle is the region's own, along its longest run in the plane,
+  // so a strip lying across the plane's axes still fills its rectangle.
+  const [e1, e2] = orthoBasis([nx, ny, nz])
+  const pu = new Float64Array(region.length)
+  const pw = new Float64Array(region.length)
+  let su = 0, sw = 0
+  for (let i = 0; i < region.length; i++) {
+    const j = region[i] * 3
+    pu[i] = p[j] * e1[0] + p[j + 1] * e1[1] + p[j + 2] * e1[2]
+    pw[i] = p[j] * e2[0] + p[j + 1] * e2[1] + p[j + 2] * e2[2]
+    su += pu[i]
+    sw += pw[i]
+  }
+  su /= region.length
+  sw /= region.length
+  let cuu = 0, cuw = 0, cww = 0
+  for (let i = 0; i < region.length; i++) {
+    const du = pu[i] - su, dw = pw[i] - sw
+    cuu += du * du
+    cuw += du * dw
+    cww += dw * dw
+  }
+  const turn = 0.5 * Math.atan2(2 * cuw, cuu - cww)
+  const cs = Math.cos(turn), sn = Math.sin(turn)
+  let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity
+  for (let i = 0; i < region.length; i++) {
+    const x = pu[i] * cs + pw[i] * sn
+    const y = -pu[i] * sn + pw[i] * cs
+    if (x < a0) a0 = x
+    if (x > a1) a1 = x
+    if (y < b0) b0 = y
+    if (y > b1) b1 = y
+  }
+  const spanned = (a1 - a0) * (b1 - b0)
+  if (spanned > 0) out.fill = Math.min(1, area / spanned)
+  const curve = curveOf(p, region, [nx, ny, nz], e1, e2)
+  if (curve) out.curve = curve
 
   const split = splitTwoPlanes(p, nrm, region)
   if (!split) return out
@@ -159,6 +382,99 @@ export function planeRegionReport(
     parted: split.parted,
   }
   return out
+}
+
+// ---- A bore closed at an end -------------------------------------------------
+
+/** A cap counts as closing the bore when the axis meets it within this many
+ *  radii past the end of the wall — the wall's own rounding into it is
+ *  peeled off the region, so the region stops a little short. */
+const CLOSED_REACH_OF_R = 1
+
+/**
+ * Whether a bore is closed at an end, read by casting its axis from the
+ * middle of the wall toward each end: on the axis inside a bore there is
+ * only air, so the first triangle the axis meets lies at or past an end — a
+ * floor, a cap, or the skin a scan wrapped across a hole it did not see
+ * through. One that lies within CLOSED_REACH_OF_R radii of the wall's end
+ * closes the bore there; the next one along says where the material that
+ * closes it ends. When both ends are closed, the one nearer its wall's end.
+ * Null for a shaft (the region's normals face away from the axis) or a bore
+ * open at both ends.
+ */
+export function closedAlong(g: MeshGraph, region: Uint32Array, fit: { center: Vec3; axis: Vec3; radius: number }): BoreClosed | null {
+  const { positions: p, normals: n, indices } = g
+  const al = Math.hypot(fit.axis[0], fit.axis[1], fit.axis[2])
+  if (!(al > 0) || !(fit.radius > 0) || region.length === 0) return null
+  const a: Vec3 = [fit.axis[0] / al, fit.axis[1] / al, fit.axis[2] / al]
+  const [cx, cy, cz] = fit.center
+  // A bore: its wall's normals face the axis.
+  let toward = 0
+  let seen = 0
+  let t0 = Infinity
+  let t1 = -Infinity
+  for (let i = 0; i < region.length; i++) {
+    const j = region[i] * 3
+    const qx = p[j] - cx, qy = p[j + 1] - cy, qz = p[j + 2] - cz
+    const t = qx * a[0] + qy * a[1] + qz * a[2]
+    if (t < t0) t0 = t
+    if (t > t1) t1 = t
+    const dot = (qx - t * a[0]) * n[j] + (qy - t * a[1]) * n[j + 1] + (qz - t * a[2]) * n[j + 2]
+    seen++
+    if (dot < 0) toward++
+  }
+  if (toward < 0.6 * seen) return null
+
+  // Every place the axis line crosses the scan, as t along it: a triangle
+  // is crossed when the axis lies inside it seen down the axis.
+  const [u, v] = orthoBasis(a)
+  const count = g.vertexCount
+  const pu = new Float32Array(count)
+  const pv = new Float32Array(count)
+  const pt = new Float32Array(count)
+  for (let k = 0; k < count; k++) {
+    const j = k * 3
+    const qx = p[j] - cx, qy = p[j + 1] - cy, qz = p[j + 2] - cz
+    pu[k] = qx * u[0] + qy * u[1] + qz * u[2]
+    pv[k] = qx * v[0] + qy * v[1] + qz * v[2]
+    pt[k] = qx * a[0] + qy * a[1] + qz * a[2]
+  }
+  const hits: number[] = []
+  for (let f = 0; f + 2 < indices.length; f += 3) {
+    const i0 = indices[f], i1 = indices[f + 1], i2 = indices[f + 2]
+    const u0 = pu[i0], u1 = pu[i1], u2 = pu[i2]
+    if ((u0 > 0 && u1 > 0 && u2 > 0) || (u0 < 0 && u1 < 0 && u2 < 0)) continue
+    const v0 = pv[i0], v1 = pv[i1], v2 = pv[i2]
+    if ((v0 > 0 && v1 > 0 && v2 > 0) || (v0 < 0 && v1 < 0 && v2 < 0)) continue
+    // The origin's barycentric weights in the triangle seen down the axis.
+    const d = (u1 - u0) * (v2 - v0) - (u2 - u0) * (v1 - v0)
+    if (!(Math.abs(d) > 1e-18)) continue
+    const w1 = ((0 - u0) * (v2 - v0) - (u2 - u0) * (0 - v0)) / d
+    const w2 = ((u1 - u0) * (0 - v0) - (0 - u0) * (v1 - v0)) / d
+    const w0 = 1 - w1 - w2
+    if (w0 < 0 || w1 < 0 || w2 < 0) continue
+    hits.push(w0 * pt[i0] + w1 * pt[i1] + w2 * pt[i2])
+  }
+  hits.sort((x, y) => x - y)
+
+  const mid = (t0 + t1) / 2
+  const reach = CLOSED_REACH_OF_R * fit.radius
+  const at = (t: number): Vec3 => [cx + t * a[0], cy + t * a[1], cz + t * a[2]]
+  /** The first crossing past the middle one way, the next after it, and how
+   *  far past the wall's end the first lies. */
+  const end = (sign: 1 | -1) => {
+    const ahead = sign > 0 ? hits.filter((t) => t > mid) : hits.filter((t) => t < mid).reverse()
+    if (!ahead.length) return null
+    const from = ahead[0]
+    const past = sign * (from - (sign > 0 ? t1 : t0))
+    if (past > reach) return null
+    const to = ahead.find((t) => sign * (t - from) > 1e-4)
+    return { past, closed: { from, ...(to !== undefined ? { to } : {}), at: at(from) } as BoreClosed }
+  }
+  const up = end(1)
+  const down = end(-1)
+  const best = up && down ? (up.past <= down.past ? up : down) : up ?? down
+  return best ? best.closed : null
 }
 
 // ---- Every flat face at once -------------------------------------------------

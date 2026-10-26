@@ -111,9 +111,11 @@ export class Asker extends EventEmitter {
   }
 
   /** Run a command on the page. `binaryKey` is the input field holding a
-   *  file's bytes, if one does. */
-  run(name, input, binaryKey, onProgress) {
-    return this.request({ method: 'run', name, input }, binaryKey ? `input.${binaryKey}` : undefined, onProgress)
+   *  file's bytes, if one does; `job` the job the run is part of, which the
+   *  page keeps its outcome under (session.recent); `deferred`, that more
+   *  changes follow straight after it, which build once after the last. */
+  run(name, input, binaryKey, onProgress, job, deferred = false) {
+    return this.request({ method: 'run', name, input, ...(job ? { job } : {}), ...(deferred ? { deferred: true } : {}) }, binaryKey ? `input.${binaryKey}` : undefined, onProgress)
   }
 
   /** Resolves true once a page is connected, false after `timeoutMs`. */
@@ -138,10 +140,13 @@ export function waitForPage(link, timeoutMs) {
 }
 
 export class PageLink extends Asker {
-  /** @param {{ token: string, origins?: string[], log?: (line: string) => void }} options */
-  constructor({ token, origins = [], log = () => {} }) {
+  /** @param {{ token: string, origins?: string[], log?: (line: string) => void, version?: string }} options */
+  constructor({ token, origins = [], log = () => {}, version = '' }) {
     super()
     this.token = token
+    /** This server's version, in the page's welcome — the page tells an out
+     *  of date server by it (before 0.4.0 the welcome had none). */
+    this.version = version
     this.origins = origins
     this.log = log
     /** The other copies relaying through this one. */
@@ -230,14 +235,14 @@ export class PageLink extends Asker {
     if (message.peer && typeof message.peer === 'object') {
       if (message.peer.token !== this.token) return refuse(CLOSE.badToken, 'Its pairing token is not this one’s.')
       this.peers.add(ws)
-      ws.send(JSON.stringify({ welcome: { server: 'scanruler-mcp', page: this.page } }))
+      ws.send(JSON.stringify({ welcome: { server: 'scanruler-mcp', page: this.page, ...(this.version ? { version: this.version } : {}) } }))
       this.log(`Another scanruler-mcp${message.peer.version ? ` ${message.peer.version}` : ''} sends its calls through this one.`)
       return true
     }
     const hello = message.hello
     if (!hello || typeof hello !== 'object') return refuse(CLOSE.noHello, 'The page did not say hello.')
     if (hello.token !== this.token) {
-      return refuse(CLOSE.badToken, 'The pairing token does not match — copy it again from `npx scanruler-mcp --pair` into ScanRuler’s Settings.')
+      return refuse(CLOSE.badToken, 'The pairing token does not match — copy it again from `npx -y scanruler-mcp@latest --pair` into ScanRuler’s Settings.')
     }
     if (this.socket && this.socket.readyState === this.socket.OPEN) {
       return refuse(CLOSE.taken, 'Another ScanRuler tab is connected to this agent already — close the connection there first.')
@@ -245,7 +250,7 @@ export class PageLink extends Asker {
     this.socket = ws
     const { token: _token, ...page } = hello
     this.page = { ...page, origin: origin ?? null, commands: Array.isArray(hello.commands) ? hello.commands : [] }
-    ws.send(JSON.stringify({ welcome: { server: 'scanruler-mcp' } }))
+    ws.send(JSON.stringify({ welcome: { server: 'scanruler-mcp', ...(this.version ? { version: this.version } : {}) } }))
     this.log(`ScanRuler ${page.version ?? ''} connected${origin ? ` from ${origin}` : ''}, with ${this.page.commands.length} commands.`)
     this.#tellPeers()
     this.emit('connected', this.page)

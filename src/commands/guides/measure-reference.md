@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
 # Measuring a 3D scan — reference
 
-The shapes behind SKILL.md. Every tool is a ScanRuler command with dots turned into underscores (`element.fit` is `element_fit`), plus the server's own four (`scanruler_status`, `scanruler_open`, `scanruler_wait`, `scanruler_batch`). Inputs are JSON; lengths in mm, angles in degrees. A field marked `?` is optional. An element, dimension or section is named by its id or by its name as the list shows it ("Plane 1").
+The shapes behind the measure guide. Every tool is a ScanRuler command with dots turned into underscores (`element.fit` is `element_fit`), plus the server's own four (`scanruler_status`, `scanruler_open`, `scanruler_wait`, `scanruler_batch`). Inputs are JSON; lengths in mm, angles in degrees. A field marked `?` is optional. An element, dimension or section is named by its id or by its name as the list shows it ("Plane 1").
 
 **How answers come back.** JSON, numbers kept to six significant digits. A refusal comes back as text `code: message`, marked as an error; in a batch as `{ tool, ok: false, error: { code, message } }` (see Errors). A tool that takes a file takes `path` (absolute, or relative to the agent's folder) and the server reads it; a tool that hands a file back takes `path?` and the server writes it there, answering where and how large.
 
@@ -11,7 +11,7 @@ The shapes behind SKILL.md. Every tool is a ScanRuler command with dots turned i
 
 ### The server's own tools
 
-**`scanruler_status`** `{}` — `backend` ("page" or "headless"), `connected`, `page: { app, version, origin, plugins, viewport, hidden, commands }`, `server`, and when it applies `howToConnect`, `hiddenNote`, `jobs: [{ job, tool, state: "running" | "done" | "failed", ms | runningMs }]`, newest first, the last 50 kept.
+**`scanruler_status`** `{}` — `backend` ("page" or "headless"), `connected`, `page: { app, version, origin, plugins, viewport, hidden, commands }`, `server` (`server.role`: `holder` — this copy holds the tab's connection; `relay` — another copy, another chat or AI app, holds it and this one sends its calls through it, `server.holder.version` saying which; `none` — neither yet, `server.error` saying why; the work runs in the tab either way), and when it applies `howToConnect`, `hiddenNote`, `jobs: [{ job, tool, state: "running" | "done" | "failed", ms | runningMs }]`, newest first, the last 50 kept.
 Example: `{}`
 
 **`scanruler_open`** `{}` — opens ScanRuler in the person's browser, paired, and waits; answers the status with `opened`. The first time the browser asks whether the site may reach apps on this computer; they must allow it.
@@ -56,7 +56,7 @@ Example: `{ box: { min: [0, -20, 9], max: [40, 20, 11] }, normal: { dir: [0, 0, 
 
 ### Alignment
 
-**`align_auto`** `{ detail?: "brief" | "full", wait? }` — a pose read off the scan: standing on its base, long side along X.
+**`align_auto`** `{ level?: "settled" | "largest", detail?: "brief" | "full", wait? }` — a pose read off the scan: standing on its base, long side along X. `square` says how square it came out: `largest` (the largest flat face, its axis and tilt) and per axis the faces square to it with their tilts, by area — a drafted wall leans by its draft, not by the alignment. `level: "largest"` squares the largest face exactly and settles the rest about it.
 Example: `{}`
 
 **`align_datum`** `{ primary: { element } | { points: [3 points] }, primaryAxis?, secondary?: { element } | { points: [2 points] }, secondaryAxis?, origin?: { element } | { point }, detail?, wait? }` — 3-2-1. Axes "x+", "x-" … "z-"; the primary's outward normal becomes `primaryAxis` (default z-), the secondary runs along `secondaryAxis` (default x+). An origin alone shifts without turning. Answers the transform and how many elements moved.
@@ -70,13 +70,13 @@ Example: `{}`
 
 ### Elements
 
-**`element_fit`** `{ kind: "plane" | "sphere" | "cylinder" | "cone" | "torus" | "point" | "circle", at: place | [place, …], sigma?: 3 | 2 | 1 | 0, assumed?, orient?: { to, relation?: "normal" | "inPlane" }, extend?, name?, wait? }` — a place is `{ point: [x, y, z] }` or `{ vertex: n }` (`{ screen }` and `{ candidate }` are not available yet). A circle goes through three or more places. `orient.to` is a plane element or "XY", "YZ", "ZX". `extend` draws a cylinder (`start`, `end`) or plane (`uMin`, `uMax`, `vMin`, `vMax`) past what was measured. Answers the element with its fit and the seed used.
+**`element_fit`** `{ kind: "plane" | "sphere" | "cylinder" | "cone" | "torus" | "point" | "circle", at: place | [place, …], sigma?: 3 | 2 | 1 | 0, knownDiameter?, assumed?, orient?: { to, relation?: "normal" | "inPlane" }, extend?, name?, wait? }` — a place is `{ point: [x, y, z] }` or `{ vertex: n }` (`{ screen }` and `{ candidate }` are not available yet). A circle goes through three or more places. `orient.to` is a plane element or "XY", "YZ", "XZ". `extend` draws a cylinder (`start`, `end`) or plane (`uMin`, `uMax`, `vMin`, `vMax`) past what was measured. `knownDiameter` (sphere) holds that diameter and fits the centre alone; the fit then has `held: { freeDiameter, shift }`. Answers the element with its fit and the seed used.
 Example: `{ kind: "plane", at: { point: [0, 0, 10] }, name: "Top" }`
 
-**`element_fit_marked`** `{ kind: "plane" | "sphere" | "cylinder" | "cone" | "torus", vertices: [n, …], sigma?, assumed?, orient?, extend?, name?, wait? }` — fits exactly those vertices.
+**`element_fit_marked`** `{ kind: "plane" | "sphere" | "cylinder" | "cone" | "torus", vertices: [n, …], sigma?, knownDiameter?, assumed?, orient?, extend?, name?, wait? }` — fits exactly those vertices.
 Example: `{ kind: "plane", vertices: [1023, 1024, 1090, 1102, 1150], name: "Datum A" }`
 
-**`element_construct`** `{ kind, method, refs?, params?, seed?, vertices?, assumed?, orient?, name?, wait? }` — point: point-coords, point-centroid, point-midpoint, point-line-plane; line: line-two-points, line-axis, line-plane-plane; plane: plane-three-points, plane-offset, plane-midplane, plane-coords, plane-symmetry; circle: circle-plane-cylinder, circle-plane-sphere, circle-coords. `refs` fill the slots in order; `params` in order or by key (x, y, z; offset; nx, ny, nz, px, py, pz; d, cx, cy, cz). plane-symmetry takes `seed` ("XY", "YZ", "ZX" or a plane) and answers `symmetry: { rms, matched, sampled }`.
+**`element_construct`** `{ kind, method, refs?, params?, seed?, vertices?, assumed?, orient?, name?, wait? }` — point: point-coords, point-centroid, point-midpoint, point-line-plane; line: line-two-points, line-axis, line-plane-plane; plane: plane-three-points, plane-offset, plane-midplane, plane-coords, plane-symmetry; circle: circle-plane-cylinder, circle-plane-sphere, circle-coords. `refs` fill the slots in order; `params` in order or by key (x, y, z; offset; nx, ny, nz, px, py, pz; d, cx, cy, cz). plane-symmetry takes `seed` ("XY", "YZ", "XZ" or a plane) and answers `symmetry: { rms, matched, sampled }`.
 Example: `{ kind: "plane", method: "plane-midplane", refs: ["Left face", "Right face"], name: "Mid" }`
 
 **`element_rename`** `{ element, name, wait? }` — dimensions keep pointing at it.
@@ -104,7 +104,7 @@ Example: `{ dimension: 4 }`
 
 ### Sections and the 2D sheet
 
-**`section_cut`** `{ across: element | "XY" | "YZ" | "ZX", offset?, name?, wait? }` — keeps a section; a coordinate plane goes through the part's centre unless `offset` gives the coordinate. Answers its plane and chain count.
+**`section_cut`** `{ across: element | "XY" | "YZ" | "XZ", offset?, name?, wait? }` — keeps a section; a coordinate plane goes through the part's centre unless `offset` gives the coordinate. Answers its plane and chain count.
 Example: `{ across: "XY", offset: 6.5, name: "Mid height" }`
 
 **`section_get`** `{ section, chains?, space?: "sheet" | "world" | "both", limit? }` — each chain's points in order ([u, v] mm on the section plane; [x, y, z] with world), closed or not, length, box, and the plane (origin, normal, basisU, basisV: a sheet point is origin + u·basisU + v·basisV). 4000 points by default, 50000 at most.
@@ -163,6 +163,9 @@ Example: `{}`
 **`deviation_hotspots`** `{ tolerance?, patches?, grain? }` — patches over tolerance (centre, box, area, vertices, mean, extreme, side, a few vertex numbers), `found`, `over`, and `far: { inside, outside, count }`, `unmeasured`. Read-only.
 Example: `{ patches: 12 }`
 
+**`deviation_volume`** `{ tolerance?, cell?, regions?, within?: { min, max }, kinds?: ["excess" | "missing" | "unsure"], wait? }` — the volume error: totals (mm³ and % of the reference), `cell`, `smallestSeen`, `found`, and the largest regions (8 by default): `kind`, `volume`, `maxDepth`, `thickness`, `shape`, `centroid`, `deepest`, `box`, `evidence`, `confidence`. Needs `deviation_align`; about 15 s on a 1.5M-triangle scan, less `within` a box. Read-only.
+Example: `{ regions: 12, kinds: ["excess", "missing"] }`
+
 **`deviation_set_target`** `{ element: element | null, side?: "outward" | "inward", facingDeg?, wait? }` — the map against one fitted element; null goes back to the reference.
 Example: `{ element: "Datum A" }`
 
@@ -212,6 +215,7 @@ Answer sizes measured on a real scan — a vacuum adapter, a plane fitted and a 
 | `section_get` `limit: 4000` (default) | 52,091 | 13,023 |  |
 | `section_get` `limit: 1000` | 18,000 | 4,500 |  |
 | `deviation_hotspots` defaults | not measured | — |  |
+| `deviation_volume` defaults (8 regions) | 2,180 | 545 | vacuum adapter, before the server rounds; about 15 s |
 | `flat_edges` `limit: 50` (default) | not measured | — |  |
 | `flat_edges` with `tolerance` | not measured | — | polylines |
 | `report_get` `format: "json"` | 5,795 | 1,449 |  |

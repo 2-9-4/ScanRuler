@@ -53,6 +53,9 @@ export interface Watchable {
 /** The stores a plugin's busy check reads, by its id — see watchSession. */
 const busyStores = new Map<string, readonly Watchable[]>()
 
+/** What stops a plugin's work, by its id — see registerBusy. */
+const busyStops = new Map<string, (done: Promise<unknown>) => Promise<void>>()
+
 /** The session's own stores, as the command host names them. */
 let sessionStores: readonly Watchable[] = []
 
@@ -71,18 +74,39 @@ export function watchSessionStores(stores: readonly Watchable[]): () => void {
  *  the guard on every command that changes the session, and the readout's
  *  `busy`. `stores`: those whose changes may change the answer, for a wait
  *  to look again on (watchSession) rather than only on its timer, which a
- *  hidden tab's browser slows to once a minute. Called from the plugin's
- *  install(); the returned function takes it out again. Two under one id
- *  throw. */
-export function registerBusy(id: string, check: () => string | null, stores: readonly Watchable[] = []): () => void {
+ *  hidden tab's browser slows to once a minute. `stop`, when the work can
+ *  be stopped: run before a change that throws the session's work away
+ *  (Command.discards) while the check says busy, resolving once the
+ *  plugin is no longer — `done` settles when that change has run, for
+ *  work the plugin would start again meanwhile to wait for. Called from
+ *  the plugin's install(); the returned function takes it out again. Two
+ *  under one id throw. */
+export function registerBusy(id: string, check: () => string | null, stores: readonly Watchable[] = [], stop?: (done: Promise<unknown>) => Promise<void>): () => void {
   if (busyChecks.has(id)) throw new Error(`Two busy checks share the id "${id}".`)
   busyChecks.set(id, check)
   busyStores.set(id, stores)
+  if (stop) busyStops.set(id, stop)
   return () => {
     if (busyChecks.get(id) !== check) return
     busyChecks.delete(id)
     busyStores.delete(id)
+    busyStops.delete(id)
   }
+}
+
+/** Before a change that throws the session's work away: what each plugin
+ *  is busy with stopped, where it can be — see registerBusy. A stop that
+ *  fails leaves the plugin busy, for the guard to say so. */
+export async function stopPluginWork(done: Promise<unknown>): Promise<void> {
+  const stops: Promise<void>[] = []
+  for (const [id, stop] of busyStops) {
+    try {
+      if (busyChecks.get(id)?.()) stops.push(stop(done).catch(() => {}))
+    } catch {
+      // A check or a stop that fails says nothing.
+    }
+  }
+  await Promise.all(stops)
 }
 
 /** Hear every change of the session's stores, the plugins' busy stores and

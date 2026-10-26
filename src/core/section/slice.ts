@@ -12,12 +12,18 @@
 // with its first point repeated at the end, so a polyline drawn through it
 // closes and a fit fed the whole chain gets the whole rim.
 //
+// Every point also carries the side the material is on: the scan's triangles
+// are wound so their normals point out of the material, so each segment takes
+// the direction in the plane square to it that its triangle faces, and a
+// point the mean of its segments' (by their lengths). That is what tells the
+// two skins of a thin wall apart on a sheet (skin.ts).
+//
 // Pure typed-array code, no DOM: the worker feeds it the welded scan, the
 // tests feed it synthetic meshes.
 
 import type { EdgeChains } from '../flat/edges'
 import type { Vec2 } from '../flat/types'
-import { rigidApplyToPoints, type Rigid } from '../deviation/rigid'
+import { rigidApplyToPoints, rigidRotateVectors, type Rigid } from '../deviation/rigid'
 import type { Vec3 } from '../types'
 import type { SectionFrame } from './frame'
 
@@ -26,6 +32,11 @@ export interface SectionCut {
   points: Float32Array
   /** Chain c covers point indices [offsets[c], offsets[c+1]). */
   offsets: Uint32Array
+  /** x,y,z per point: the unit direction in the plane, square to the chain,
+   *  that points out of the material — from the winding of the triangles
+   *  the point's segments were cut from. Zero where they disagree (a
+   *  flipped triangle). A cut made before the cut carried them has none. */
+  normals?: Float32Array
 }
 
 export interface SliceOptions {
@@ -34,7 +45,7 @@ export interface SliceOptions {
   minLength?: number
 }
 
-const emptyCut = (): SectionCut => ({ points: new Float32Array(0), offsets: new Uint32Array(1) })
+const emptyCut = (): SectionCut => ({ points: new Float32Array(0), offsets: new Uint32Array(1), normals: new Float32Array(0) })
 
 /**
  * Cut an indexed mesh with the plane through `origin` with normal `normal`.
@@ -103,6 +114,9 @@ export function sliceMesh(
   }
 
   const segs: number[] = []
+  // Per segment, the triangle it was cut from: its winding says which side
+  // of the segment the material is on.
+  const segTri: number[] = []
   for (let t = 0; t < triangleCount; t++) {
     const a = indices[t * 3]
     const b = indices[t * 3 + 1]
@@ -128,11 +142,47 @@ export function sliceMesh(
     // corner — a point, not a segment.
     if (p < 0 || q < 0 || p === q) continue
     segs.push(p, q)
+    segTri.push(t)
   }
 
   const pointCount = pts.length / 3
   const segCount = segs.length / 2
   if (segCount === 0) return emptyCut()
+
+  // The outward direction at each point: per segment, the direction in the
+  // plane square to it (plane normal × segment, as long as the segment)
+  // turned to the side its triangle's normal faces, summed at both ends —
+  // so a point's is its segments' mean by length.
+  const side = new Float64Array(pointCount * 3)
+  for (let s = 0; s < segCount; s++) {
+    const p = segs[s * 2]
+    const q = segs[s * 2 + 1]
+    const dx = pts[q * 3] - pts[p * 3]
+    const dy = pts[q * 3 + 1] - pts[p * 3 + 1]
+    const dz = pts[q * 3 + 2] - pts[p * 3 + 2]
+    let mx = ny * dz - nz * dy
+    let my = nz * dx - nx * dz
+    let mz = nx * dy - ny * dx
+    const t = segTri[s]
+    const a = indices[t * 3] * 3
+    const b = indices[t * 3 + 1] * 3
+    const c = indices[t * 3 + 2] * 3
+    const e1x = positions[b] - positions[a], e1y = positions[b + 1] - positions[a + 1], e1z = positions[b + 2] - positions[a + 2]
+    const e2x = positions[c] - positions[a], e2y = positions[c + 1] - positions[a + 1], e2z = positions[c + 2] - positions[a + 2]
+    const tx = e1y * e2z - e1z * e2y
+    const ty = e1z * e2x - e1x * e2z
+    const tz = e1x * e2y - e1y * e2x
+    if (mx * tx + my * ty + mz * tz < 0) {
+      mx = -mx
+      my = -my
+      mz = -mz
+    }
+    for (const at of [p, q]) {
+      side[at * 3] += mx
+      side[at * 3 + 1] += my
+      side[at * 3 + 2] += mz
+    }
+  }
 
   // Which segments meet at each point. Two on a manifold mesh; a non-manifold
   // edge can bring more, and the walk simply takes the first unused one.
@@ -191,6 +241,7 @@ export function sliceMesh(
   let total = 0
   for (const c of kept) total += c.length
   const points = new Float32Array(total * 3)
+  const normals = new Float32Array(total * 3)
   const offsets = new Uint32Array(kept.length + 1)
   let at = 0
   kept.forEach((chain, ci) => {
@@ -199,11 +250,18 @@ export function sliceMesh(
       points[at * 3] = pts[p * 3]
       points[at * 3 + 1] = pts[p * 3 + 1]
       points[at * 3 + 2] = pts[p * 3 + 2]
+      const l = Math.hypot(side[p * 3], side[p * 3 + 1], side[p * 3 + 2])
+      // Segments that disagree cancel; a point with no side left is zero.
+      if (l > 1e-12) {
+        normals[at * 3] = side[p * 3] / l
+        normals[at * 3 + 1] = side[p * 3 + 1] / l
+        normals[at * 3 + 2] = side[p * 3 + 2] / l
+      }
       at++
     }
   })
   offsets[kept.length] = at
-  return { points, offsets }
+  return { points, offsets, normals }
 }
 
 /** How many chains and points a cut holds — for the panel's readout. */
@@ -216,7 +274,10 @@ export function cutSummary(cut: SectionCut): { chains: number; points: number } 
 export function transformCut(cut: SectionCut, m: Rigid): SectionCut {
   const points = cut.points.slice()
   rigidApplyToPoints(m, points)
-  return { points, offsets: cut.offsets }
+  if (!cut.normals) return { points, offsets: cut.offsets }
+  const normals = cut.normals.slice()
+  rigidRotateVectors(m, normals)
+  return { points, offsets: cut.offsets, normals }
 }
 
 /**
@@ -239,6 +300,28 @@ export function projectCut(cut: SectionCut, frame: SectionFrame): EdgeChains {
     points[i * 2 + 1] = x * vx + y * vy + z * vz
   }
   return { points, offsets: cut.offsets }
+}
+
+/** The cut's outward directions laid flat with it: (u, v) per point, unit
+ *  length in the plane of the frame (zero where the point has none). Null
+ *  for a cut that carries none. */
+export function projectCutNormals(cut: SectionCut, frame: SectionFrame): Float32Array | null {
+  const nrm = cut.normals
+  if (!nrm || nrm.length !== cut.points.length) return null
+  const n = nrm.length / 3
+  const out = new Float32Array(n * 2)
+  const [ux, uy, uz] = frame.basisU
+  const [vx, vy, vz] = frame.basisV
+  for (let i = 0; i < n; i++) {
+    const u = nrm[i * 3] * ux + nrm[i * 3 + 1] * uy + nrm[i * 3 + 2] * uz
+    const v = nrm[i * 3] * vx + nrm[i * 3 + 1] * vy + nrm[i * 3 + 2] * vz
+    const l = Math.hypot(u, v)
+    if (l > 1e-9) {
+      out[i * 2] = u / l
+      out[i * 2 + 1] = v / l
+    }
+  }
+  return out
 }
 
 /** The extent of laid-flat chains, or null when there are none. */

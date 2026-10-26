@@ -98,14 +98,14 @@ test('copies on one port: the second sends its calls through the first, and take
   }
 })
 
-test('--tools compact, or SCANRULER_MCP_TOOLS, lists the server’s own six and the picture tools; another mode is refused', { timeout: 30_000 }, async () => {
+test('--tools compact, or SCANRULER_MCP_TOOLS, lists the server’s own seven and the picture tools; another mode is refused', { timeout: 30_000 }, async () => {
   const configDir = await mkdtemp(join(tmpdir(), 'scanruler-mcp-'))
   const env = { SCANRULER_MCP_TOKEN: TOKEN, SCANRULER_MCP_CONFIG_DIR: configDir }
   for (const how of [{ args: ['--tools', 'compact'] }, { env: { SCANRULER_MCP_TOOLS: 'compact' } }]) {
     const agent = await startAgent({ args: ['--port', String(await freePort()), ...(how.args ?? [])], env: { ...env, ...how.env }, stderr: 'pipe' })
     try {
       const { tools } = await agent.client.listTools()
-      assert.equal(tools.length, 6 + SNAPSHOT.filter((c) => c.returnsImage).length, JSON.stringify(how))
+      assert.equal(tools.length, 7 + SNAPSHOT.filter((c) => c.returnsImage).length, JSON.stringify(how))
       assert.ok(tools.some((t) => t.name === 'scanruler_tools'))
       assert.equal((await status(agent)).server.tools, 'compact')
     } finally {

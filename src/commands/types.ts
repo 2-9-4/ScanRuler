@@ -25,6 +25,8 @@ import type { JsonSchema } from './schema'
  *  - `timeout` — the command did not finish in its time and was given up
  *    on; it may have changed the session in part
  *  - `internal` — a fault of the app's own
+ *  - `stale_page` — the page could not load a part of the app it needed:
+ *    the app was rebuilt since the page loaded (stalePage.ts)
  */
 export type CommandErrorCode =
   | 'unknown_command'
@@ -38,6 +40,7 @@ export type CommandErrorCode =
   | 'not_implemented'
   | 'timeout'
   | 'internal'
+  | 'stale_page'
 
 export class CommandError extends Error {
   constructor(
@@ -72,6 +75,12 @@ export interface CommandContext {
    *  and its caller was answered `timeout`: a long command that looks at it
    *  between its steps stops rather than change the session further. */
   signal?: AbortSignal
+  /** The caller runs more changes straight after this one and asked for
+   *  work only the last of them needs — a rebuild, say — to be done once,
+   *  after it: a command may leave such work undone. What it left is
+   *  finished before the next run that is not deferred (registerSettle,
+   *  registry.ts). */
+  deferred?: boolean
 }
 
 export interface Command<I = Record<string, unknown>> {
@@ -94,6 +103,14 @@ export interface Command<I = Record<string, unknown>> {
    *  whoever called to look at rather than to keep: an agent's client shows
    *  it as an image. */
   returnsImage?: boolean
+  /** Sets the viewport or pictures what is on it — turns the camera, puts
+   *  things away and back, cuts the section view — or draws a picture of
+   *  what the stage holds: runs one at a time with every other such
+   *  command, never beside one (registry.ts), so two pictures asked for at
+   *  once never share the camera. Set on the commands that touch the
+   *  stage, not on every one that answers with a picture: one that draws
+   *  its own off the screen and runs long would hold the rest up. */
+  scene?: boolean
   /** Whether a run is one step of the undo history — the default for every
    *  command that is not read-only. False for those that walk the history
    *  themselves or start it afresh. */
@@ -102,6 +119,20 @@ export interface Command<I = Record<string, unknown>> {
    *  say — and must come through to the last digit: a caller that shortens
    *  numbers for reading leaves these alone. */
   exact?: boolean
+  /** A read-only command that may take long — a comparison over whole
+   *  bodies, say: an agent's server runs it as it runs a change, as a job
+   *  it can answer for before its client stops waiting. */
+  long?: boolean
+  /** Where an input names a new thing whose name may not repeat: `at`
+   *  paths into the input (`features[].name` for each item of a list),
+   *  `space` the things that share the names ("sketches and features"). An
+   *  agent's server refuses a batch whose calls would give one name twice
+   *  before it runs any of them. */
+  names?: CommandNames
+  /** What an answer too long to carry says to ask for next time, by this
+   *  command's own fields — "one section at a time (section)". An agent's
+   *  server writes such an answer to a file and puts this in its note. */
+  askForLess?: string
   /** Runs without the page — no scan, no viewport, no browser — so the
    *  app run headless offers it (src/headless/engine.ts). Off by default:
    *  a command is marked once it has been run so. */
@@ -110,6 +141,16 @@ export interface Command<I = Record<string, unknown>> {
    *  the commands after it run — COMMAND_TIMEOUT_MS (registry.ts) unless
    *  set. */
   timeoutMs?: number
+  /** Stops what the session is busy with: runs at once — not after the
+   *  change running, which may be waiting for the very work it stops — and
+   *  is not refused while the session is busy. Its undo step is the change
+   *  running's, when one is. */
+  interrupts?: boolean
+  /** Whether a run, as asked, throws away the work the session holds — a
+   *  project or a scan opened with discard: what a plugin is busy with is
+   *  stopped first (registerBusy's stop), not waited for, rather than the
+   *  command refused over it. */
+  discards?(input: I): boolean
   /** The undo step's name for this input; the title otherwise. */
   label?(input: I): string
   run(input: I, ctx: CommandContext): Promise<unknown>
@@ -126,4 +167,16 @@ export interface CommandInfo {
   returnsImage: boolean
   /** Only when true — see Command.exact. */
   exact?: boolean
+  /** Only when true — see Command.long. */
+  long?: boolean
+  /** Only when set — see Command.names. */
+  names?: CommandNames
+  /** Only when set — see Command.askForLess. */
+  askForLess?: string
+}
+
+/** See Command.names. */
+export interface CommandNames {
+  space: string
+  at: string[]
 }

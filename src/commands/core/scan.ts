@@ -7,20 +7,23 @@ import { useStore } from '../../state/store'
 import { useDeviation } from '../../state/deviationStore'
 import { commandHost } from '../host'
 import { locationSchema, requireScan, resolveLocation, type Location } from '../refs'
-import { arr, bool, bytes, enumOf, int, num, obj, oneOf, vec3 } from '../schema'
-import { acrossAxes, dominantFacing, robustPlane } from '../../core/geometry/scanQa'
+import { arr, bool, bytes, enumOf, int, num, obj, oneOf, str, vec3 } from '../schema'
+import { acrossAxes, dominantFacing, type RimCircle, robustPlane } from '../../core/geometry/scanQa'
 import { orthoBasis } from '../../core/fit/linalg'
 import { niceCeil } from '../../core/field/stats'
 import { scanBounds } from '../state'
 import { CommandError, type Command } from '../types'
 import { discardSchema, fileNameSchema, fileOf, lastError, requireDiscardable } from './common'
 import { roundTo } from '../../core/round'
-import { cellNoise, heightLevels, reliefGrid } from '../../core/geometry/heightGrid'
+import { cellNoise, heightLevels, rampsOf, reliefGrid, slopedCells } from '../../core/geometry/heightGrid'
 import { basePlaneOf } from '../../core/basePlanes'
-import { sketchFrameOn } from '../../core/section/frame'
+import { axisLineOf, boxOnSheet, pointOnSheet, RADIAL_AXIS_KINDS, radialFrame, sketchFrameOn, worldAxisDir, type WorldAxis } from '../../core/section/frame'
+import { projectCut } from '../../core/section/slice'
+import { EDGE_MIN_FEATURE_MM } from '../../core/flat/edges'
 import type { PlaneFit } from '../../core/types'
 import { usePrefs } from '../../state/prefsStore'
 import { elementRefSchema, findElement, planeRef, type ElementRef } from '../refs'
+import { setMarked } from '../marked'
 
 export const unitsSchema = enumOf(
   MESH_UNITS.map((u) => u.id),
@@ -58,6 +61,7 @@ const open: Command<{ bytes: Uint8Array; name: string; units?: MeshUnits; discar
     ['bytes', 'name'],
   ),
   history: false,
+  discards: ({ discard }) => discard === true,
   run: async ({ bytes: data, name, units, discard }) => {
     requireDiscardable(discard, 'opening another scan')
     const { session } = commandHost()
@@ -93,13 +97,15 @@ interface QueryIn {
   near?: { at: Vec3; radius: number }
   normal?: { dir: Vec3; withinDeg?: number }
   limit?: number
+  mark?: boolean
+  fields?: 'count' | 'ids' | 'all'
 }
 
 const query: Command<QueryIn> = {
   name: 'query',
   title: 'Read the scan’s points',
   description:
-    'The scan’s vertices inside a box, or within a radius of a point, with their outward normals — the points on a face, to measure a dimension or a draft angle off, or to see what the scan has where a model is being built. normal keeps only the vertices facing a direction (within withinDeg, 30 by default): the top face alone, say. At most limit come back (1000 by default, 20000 at most): past it every k-th matching vertex is kept, spread evenly, and step says which k. Returns how many matched, the vertices kept (their numbers, as scan.nearest and element.fit_marked name them), their points and normals in millimetres, in the frame the part is measured in now, the box round the points kept, their centroid and mean normal. Changes nothing.',
+    'The scan’s vertices inside a box, or within a radius of a point, with their outward normals — the points on a face, to measure a dimension or a draft angle off, or to see what the scan has where a model is being built. normal keeps only the vertices facing a direction (within withinDeg, 30 by default): the top face alone, say. At most limit come back (1000 by default, 20000 at most): past it every k-th matching vertex is kept, spread evenly, and step says which k. Returns how many matched, the vertices kept (their numbers, as scan.nearest and element.fit_marked name them), their points and normals in millimetres, in the frame the part is measured in now, the box round the points kept, their centroid and mean normal. fields: count gives the numbers alone, without the vertices, points and normals; ids adds the vertices; all everything — the default, but with mark, where count is. mark: true leaves every vertex that matched marked — all of them, not the limit’s thinned list; marked.points counts them — for element.fit_marked { marked: true } and whatever else takes the marked points, so the list need not come back at all. Changes nothing on the part.',
   input: obj({
     box: obj({ min: vec3('The lowest corner, mm.'), max: vec3('The highest corner, mm.') }, ['min', 'max'], 'A box in the frame the part is measured in now.'),
     near: obj({ at: vec3('The centre, mm.'), radius: num('How far from it, mm.', { exclusiveMinimum: 0 }) }, ['at', 'radius'], 'A ball about a point — in place of box.'),
@@ -109,9 +115,11 @@ const query: Command<QueryIn> = {
       'Keep only the vertices whose outward normal faces this way.',
     ),
     limit: int(`How many vertices at most; ${QUERY_LIMIT} by default, ${QUERY_MAX} at most.`, { minimum: 1, maximum: QUERY_MAX }),
+    mark: bool('Leave every vertex that matched marked — not only those kept — for element.fit_marked { marked: true }.'),
+    fields: enumOf(['count', 'ids', 'all'], 'What comes back: count (the numbers alone; the default with mark), ids (with the vertices), all (with points and normals too; the default otherwise).'),
   }),
   readOnly: true,
-  run: async ({ box, near, normal, limit = QUERY_LIMIT }) => {
+  run: async ({ box, near, normal, limit = QUERY_LIMIT, mark = false, fields = mark ? 'count' : 'all' }) => {
     requireScan()
     if ((box === undefined) === (near === undefined)) throw new CommandError('invalid_input', 'Give box or near — one of them.')
     const client = commandHost().session.clientRef.current
@@ -122,20 +130,34 @@ const query: Command<QueryIn> = {
     const cosLimit = normal ? Math.cos(((normal.withinDeg ?? QUERY_WITHIN_DEG) * Math.PI) / 180) : undefined
     // A ball is asked for as its box and the corners trimmed off here —
     // the limit then counts what is inside the ball.
-    const r = await client.query({ min, max, ...(normal && cosLimit !== undefined ? { normal: { dir: normal.dir, cosLimit } } : {}), limit: near ? Math.min(QUERY_MAX, Math.ceil(limit * 1.91)) : limit })
+    const facing = normal && cosLimit !== undefined ? { normal: { dir: normal.dir, cosLimit } } : {}
+    const r = await client.query({ min, max, ...facing, limit: near ? Math.min(QUERY_MAX, Math.ceil(limit * 1.91)) : limit })
+    /** The indices into a query's answer that lie inside the ball. */
+    const inBall = (q: { vertices: Uint32Array; positions: Float32Array }): number[] => {
+      const keep: number[] = []
+      for (let i = 0; i < q.vertices.length; i++) {
+        const d = Math.hypot(q.positions[i * 3] - near!.at[0], q.positions[i * 3 + 1] - near!.at[1], q.positions[i * 3 + 2] - near!.at[2])
+        if (d <= near!.radius) keep.push(i)
+      }
+      return keep
+    }
+    // Marked, every vertex that matched — the limit thins only what comes
+    // back: a fit to the marked points is to the whole face. Read again
+    // without a limit when the first answer was thinned.
+    let every: Uint32Array | null = null
+    if (mark) {
+      const all = r.step > 1 ? await client.query({ min, max, ...facing, limit: Math.max(1, useStore.getState().vertexCount) }) : r
+      every = near ? Uint32Array.from(inBall(all).map((i) => all.vertices[i])) : all.vertices
+    }
     let vertices = Array.from(r.vertices)
     let positions = r.positions
     let normals = r.normals
     let matched = r.matched
     if (near) {
-      const keep: number[] = []
-      for (let i = 0; i < vertices.length; i++) {
-        const d = Math.hypot(positions[i * 3] - near.at[0], positions[i * 3 + 1] - near.at[1], positions[i * 3 + 2] - near.at[2])
-        if (d <= near.radius) keep.push(i)
-      }
-      // What the ball holds, scaled up from the share of the box's sample
-      // that fell inside it.
-      matched = r.step > 1 ? Math.round((keep.length / Math.max(1, vertices.length)) * r.matched) : keep.length
+      const keep = inBall(r)
+      // What the ball holds — counted when every vertex was read, else
+      // scaled up from the share of the box's sample that fell inside it.
+      matched = every ? every.length : r.step > 1 ? Math.round((keep.length / Math.max(1, vertices.length)) * r.matched) : keep.length
       const stride = Math.max(1, Math.ceil(keep.length / limit))
       const kept = keep.filter((_, i) => i % stride === 0)
       positions = Float32Array.from(kept.flatMap((i) => [r.positions[i * 3], r.positions[i * 3 + 1], r.positions[i * 3 + 2]]))
@@ -157,6 +179,7 @@ const query: Command<QueryIn> = {
       }
     }
     const nl = Math.hypot(meanNormal[0], meanNormal[1], meanNormal[2])
+    const marked = every ? setMarked(every, `scan.query ${box ? 'box' : 'ball'}${normal ? ' facing a way' : ''}`) : undefined
     return {
       matched,
       returned: n,
@@ -168,9 +191,9 @@ const query: Command<QueryIn> = {
             meanNormal: nl > 0 ? meanNormal.map((v) => roundTo(v / nl, 4)) : null,
           }
         : {}),
-      vertices,
-      points: triples(positions, 4),
-      normals: triples(normals, 3),
+      ...(marked ? { marked } : {}),
+      ...(fields !== 'count' ? { vertices } : {}),
+      ...(fields === 'all' ? { points: triples(positions, 4), normals: triples(normals, 3) } : {}),
     }
   },
 }
@@ -252,29 +275,63 @@ const fitSurface: Command<{ vertices?: number[]; box?: { min: Vec3; max: Vec3 };
 /** How many scan points the draft is read off at most, spread evenly. */
 const DRAFT_LIMIT = 400_000
 
-const draft: Command<{ pull: Vec3; box?: { min: Vec3; max: Vec3 }; nearDeg?: number; patches?: number; minArea?: number }> = {
+type DraftSplitIn = ElementRef | { point: Vec3; normal: Vec3 }
+
+/** The plane a draft's patches are kept apart by: a plane element or a
+ *  coordinate plane, a point and normal, or "symmetry" — the scan's mirror
+ *  plane, as a measured symmetry plane has it or searched for on the scan. */
+async function draftSplit(split: DraftSplitIn): Promise<{ point: Vec3; normal: Vec3; from: string; rms?: number }> {
+  if (typeof split === 'object') {
+    if (!Array.isArray(split.point) || !Array.isArray(split.normal)) throw new CommandError('invalid_input', 'split: give a plane element, "XY", "YZ" or "XZ", "symmetry", or { point, normal }.')
+    if (!(Math.hypot(...split.normal) > 0)) throw new CommandError('invalid_input', 'split.normal: give a direction, not a zero vector.')
+    return { point: split.point, normal: split.normal, from: 'the plane given' }
+  }
+  if (typeof split === 'string' && split.trim().toLowerCase() === 'symmetry') {
+    const measured = [...useStore.getState().elements].reverse().find((e) => e.fit?.kind === 'plane' && e.source.type === 'constructed' && e.source.method === 'plane-symmetry')
+    if (measured?.fit?.kind === 'plane') return { point: measured.fit.center, normal: measured.fit.normal, from: measured.name }
+    const client = commandHost().session.clientRef.current
+    if (!client) throw new CommandError('unavailable', 'The mesh worker is not running.')
+    const r = await client.symmetry(null)
+    if (!Number.isFinite(r.rms) || r.sampled === 0 || r.matched / r.sampled < 0.5) {
+      throw new CommandError('failed', `The scan has no mirror plane — the best mirror image matched ${r.sampled ? Math.round((100 * r.matched) / r.sampled) : 0} % of the samples. Give split a plane instead.`)
+    }
+    return { point: r.point, normal: r.normal, from: 'the scan’s mirror plane', rms: r.rms }
+  }
+  const id = planeRef(split)
+  if (id < 0) {
+    const base = basePlaneOf(id)!
+    return { point: [0, 0, 0], normal: [...base.normal] as Vec3, from: base.name }
+  }
+  const el = findElement(id)
+  const fit = el.fit as PlaneFit
+  return { point: fit.center, normal: fit.normal, from: el.name }
+}
+
+const draft: Command<{ pull: Vec3; box?: { min: Vec3; max: Vec3 }; nearDeg?: number; patches?: number; minArea?: number; split?: DraftSplitIn }> = {
   name: 'draft',
   title: 'Read the draft against a pull',
   description:
-    'The scan’s walls that run near a pull direction — the sides a mould opens along, a side core slides along — gathered into patches, each with the angle it leans off the pull: draftDeg, positive where the wall faces partly along the pull (it lets go as the tool moves that way), negative where it faces back (a back draft, an undercut to that pull); sigmaDeg its standard error, spreadDeg the points’ own spread (mostly the scan’s normal noise); with centroid, box, area (mm²), count and facing (which way the wall faces across the pull). Neighbouring walls are parted where the way they face jumps, so a box’s four sides are four patches and a boss’s round side one. Read it early on a moulded or cast part, along each direction the tools open: walls that lean half a degree to a few explain fits that miss by the lean. pull: the direction, any length; box: only the scan inside it; nearDeg: how far off square to the pull a wall may lean and still count (10 by default); patches: how many, the largest first (12); minArea: smaller ones left out, mm² (1). Changes nothing.',
+    'The scan’s walls that run near a pull direction — the sides a mould opens along, a side core slides along — gathered into patches, each with the angle it leans off the pull: draftDeg, positive where the wall faces partly along the pull (it lets go as the tool moves that way), negative where it faces back (a back draft, an undercut to that pull); sigmaDeg its standard error, spreadDeg the points’ own spread (mostly the scan’s normal noise); with centroid, box, area (mm²), count, facing (which way the wall faces across the pull) and turnDeg (how far that turns across the patch). Neighbouring walls are parted where the way they face jumps, so a box’s four sides are four patches, and a thin wall’s two sides (a blade, a rib) two patches facing opposite ways; a point joins a patch only while it faces within 20° of the patch’s mean, so a smooth freeform wall comes in patches that turn 40° at most. A boss’s or a hole’s round side is one patch with round: true, its facing no one way. Read it early on a moulded or cast part, along each direction the tools open: walls that lean half a degree to a few explain fits that miss by the lean. pull: the direction, any length; box: only the scan inside it; nearDeg: how far off square to the pull a wall may lean and still count (10 by default); patches: how many, the largest first (12); minArea: smaller ones left out, mm² (1); split: no patch reaches across this plane — "symmetry" (the scan’s mirror plane: the last measured symmetry plane, else searched for), a plane element, "XY", "YZ", "XZ", or { point, normal } — each patch then says its side (1 along the plane’s normal, −1 against), and the answer the plane. Changes nothing.',
   input: obj({
     pull: vec3('The pull direction, any length — the way the tool opens.'),
     box: obj({ min: vec3('The lowest corner, mm.'), max: vec3('The highest corner, mm.') }, ['min', 'max'], 'Only the scan inside this box.'),
     nearDeg: num('Degrees; 10 by default.', { exclusiveMinimum: 0, maximum: 45 }),
     patches: int('How many patches; 12 by default.', { minimum: 1, maximum: 50 }),
     minArea: num('mm²; 1 by default.', { minimum: 0 }),
+    split: oneOf([str('"symmetry", a plane element’s name, or "XY", "YZ", "XZ".', { minLength: 1 }), int('A plane element’s id.', { minimum: 1 }), obj({ point: vec3('A point on it, mm.'), normal: vec3('Its normal, any length.') }, ['point', 'normal'])], 'Keep every patch to one side of this plane.'),
   }, ['pull']),
   readOnly: true,
-  run: async ({ pull, box, nearDeg, patches, minArea }) => {
+  run: async ({ pull, box, nearDeg, patches, minArea, split }) => {
     requireScan()
     if (!(Math.hypot(...pull) > 0)) throw new CommandError('invalid_input', 'pull: give a direction, not a zero vector.')
     const client = commandHost().session.clientRef.current
     if (!client) throw new CommandError('unavailable', 'The mesh worker is not running.')
+    const parted = split !== undefined ? await draftSplit(split) : undefined
     const inf = Infinity
     const found = await client.query({ min: box?.min ?? [-inf, -inf, -inf], max: box?.max ?? [inf, inf, inf], limit: DRAFT_LIMIT })
     if (!found.normals || found.positions.length < 9) throw new CommandError('invalid_input', 'Too few scan points lie there to read a wall off.')
     const { draftPatches } = await import('../../core/fit/draft')
-    const r = draftPatches(found.positions, found.normals, pull, { ...(nearDeg !== undefined ? { nearDeg } : {}), ...(patches !== undefined ? { limit: patches } : {}), ...(minArea !== undefined ? { minArea } : {}) })
+    const r = draftPatches(found.positions, found.normals, pull, { ...(nearDeg !== undefined ? { nearDeg } : {}), ...(patches !== undefined ? { limit: patches } : {}), ...(minArea !== undefined ? { minArea } : {}), ...(parted ? { split: parted } : {}) })
     const v3 = (v: readonly number[]) => v.map((x) => roundTo(x, 3))
     return {
       pull: v3(r.pull),
@@ -282,6 +339,7 @@ const draft: Command<{ pull: Vec3; box?: { min: Vec3; max: Vec3 }; nearDeg?: num
       points: r.points,
       walls: r.walls,
       found: r.found,
+      ...(parted && r.split ? { split: { point: v3(r.split.point), normal: v3(r.split.normal), from: parted.from, ...(parted.rms !== undefined ? { rms: roundTo(parted.rms, 4) } : {}) } } : {}),
       patches: r.patches.map((p) => ({
         draftDeg: roundTo(p.draftDeg, 3),
         sigmaDeg: roundTo(p.sigmaDeg, 3),
@@ -291,6 +349,9 @@ const draft: Command<{ pull: Vec3; box?: { min: Vec3; max: Vec3 }; nearDeg?: num
         centroid: v3(p.centroid),
         box: { min: v3(p.min), max: v3(p.max) },
         facing: v3(p.facing),
+        turnDeg: roundTo(p.turnDeg, 1),
+        ...(p.round ? { round: true } : {}),
+        ...(p.side ? { side: p.side } : {}),
       })),
     }
   },
@@ -307,12 +368,50 @@ const HEIGHT_SIDE_FINE = 160
 const HEIGHT_LEVELS = 12
 /** The least gap between two levels, mm, however clean the scan. */
 const LEVEL_GAP_MIN = 0.02
+/** How steep a cell of a height map may be and still count towards its
+ *  levels, degrees, unless told otherwise. */
+const LEVEL_SLOPE_DEG = 10
+/** The share of the map's cells on a slope past which levels say where
+ *  the ramps are, and how many they name, the largest first. */
+const RAMP_SHARE = 0.2
+const RAMPS_NAMED = 3
 /** How many scan vertices a plane's map looks at for its box and side. */
 const PLANE_SAMPLE = 20_000
 const AXIS_NAMES = ['+x', '-x', '+y', '-y', '+z', '-z'] as const
 type AxisName = (typeof AXIS_NAMES)[number]
 type HeightOf = 'height' | 'deviation' | 'relief'
 type PlaneIn = ElementRef | { origin: Vec3; normal: Vec3; u?: Vec3 }
+/** A map's box as given: min and max — in the plane's frame with a plane,
+ *  [u, v, height] — or world: { min, max }, the box in the world. */
+type BoxIn = { min?: Vec3; max?: Vec3; world?: { min: Vec3; max: Vec3 } }
+
+/** The box schema of the maps: in the plane's frame with a plane, or a
+ *  box of the world laid onto it. */
+const mapBoxSchema = (description: string) =>
+  obj(
+    {
+      min: vec3('The lowest corner, mm — [u, v, height] with plane.'),
+      max: vec3('The highest corner, mm — [u, v, height] with plane.'),
+      world: obj({ min: vec3('The lowest corner, [x, y, z] mm.'), max: vec3('The highest corner, [x, y, z] mm.') }, ['min', 'max'], 'The box in the world, in place of min and max: with plane, the box round its corners in the plane’s frame.'),
+    },
+    [],
+    description,
+  )
+
+/** A map's box checked: min and max, or world, each with its min below
+ *  its max. */
+function boxOf(box: BoxIn | undefined): { min: Vec3; max: Vec3; world: boolean } | undefined {
+  if (!box) return undefined
+  if (box.world && (box.min || box.max)) throw new CommandError('invalid_input', 'box: give min and max, or world: { min, max } — not both.')
+  const b = box.world ?? (box.min && box.max ? { min: box.min, max: box.max } : null)
+  if (!b) throw new CommandError('invalid_input', 'box: give min and max (in the plane’s frame with plane, [u, v, height]), or world: { min, max } ([x, y, z] in the world).')
+  for (let k = 0; k < 3; k++) if (!(b.min[k] <= b.max[k])) throw new CommandError('invalid_input', 'The box’s min lies past its max.')
+  return { min: b.min, max: b.max, world: Boolean(box.world) }
+}
+
+/** Under this share of a map's cells meeting the scan, the answer says
+ *  where the scan lies in the map's frame. */
+const SPARSE_SHARE = 0.2
 
 /** A grid of cells over the box across axis `k`, centred on it: the cell
  *  asked for, or the round size that makes the longer side `side` cells —
@@ -341,17 +440,21 @@ const unit = (i: number, s = 1): Vec3 => [i === 0 ? s : 0, i === 1 ? s : 0, i ==
  *  plane element (its normal turned to the side the scan is not, so the
  *  map looks at the face it was fitted on), or a plane given by a point and
  *  a normal; laid as a sketch on it is (sketchFrameOn), `flip` turning it
- *  over. */
+ *  over. `center` is where the element's centre, or the origin given,
+ *  lies in its [u, v] — the frame's zero is the world origin's foot, not
+ *  that. */
 function planeFrame(plane: PlaneIn, flip: boolean, sample: Float32Array) {
   let point: Vec3
   let normal: Vec3
   let seedU: Vec3 | undefined
   let name: string | undefined
   let element = false
+  let centred = false
   if (typeof plane === 'object') {
     point = plane.origin
     normal = plane.normal
     seedU = plane.u
+    centred = true
   } else {
     const id = planeRef(plane)
     if (id < 0) {
@@ -366,6 +469,7 @@ function planeFrame(plane: PlaneIn, flip: boolean, sample: Float32Array) {
       normal = fit.normal
       name = el.name
       element = true
+      centred = true
     }
   }
   const len = Math.hypot(normal[0], normal[1], normal[2])
@@ -381,7 +485,20 @@ function planeFrame(plane: PlaneIn, flip: boolean, sample: Float32Array) {
   if (flip) normal = [-normal[0], -normal[1], -normal[2]]
   const f = sketchFrameOn({ origin: point, normal }, seedU)
   if (!f) throw new CommandError('invalid_input', 'plane.normal: give a direction, not a zero vector.')
-  return { name, origin: f.origin, u: f.basisU, v: f.basisV, normal: f.normal }
+  return { name, origin: f.origin, u: f.basisU, v: f.basisV, normal: f.normal, ...(centred ? { center: pointOnSheet(f, point).at } : {}) }
+}
+
+/** A map's plane as the answer gives it: its frame in the world, and
+ *  where the element's centre (or the origin given) lies in [u, v]. */
+function planeOut(frame: ReturnType<typeof planeFrame>) {
+  return {
+    ...(frame.name ? { name: frame.name } : {}),
+    origin: frame.origin.map((x) => roundTo(x, 4)),
+    u: frame.u.map((x) => roundTo(x, 6)),
+    v: frame.v.map((x) => roundTo(x, 6)),
+    normal: frame.normal.map((x) => roundTo(x, 6)),
+    ...(frame.center ? { center: frame.center.map((x) => roundTo(x, 4)) } : {}),
+  }
 }
 
 /** The deviation map in hand, per scan vertex, and the search distance
@@ -395,8 +512,109 @@ function deviationValues() {
   return { values, search: d.maxDistance, source: d.source, range: d.range }
 }
 
+/** The grid of rays a map is read over: looking along an axis, or square
+ *  onto a plane (its frame), over the box asked for or the whole scan;
+ *  `cell` as asked, or a round size giving `side` cells on the longer
+ *  side, widened to keep `most` cells at most. Each ray's distance d to
+ *  its hit is the height from + sign·d. A world box with a plane is the
+ *  box round its corners in the plane's frame. `scanIn` is the box round
+ *  the scan in the grid's frame — [u, v, height] on a plane, [u, v] and
+ *  the coordinate looked along on an axis. */
+async function rayGrid(
+  client: NonNullable<ReturnType<typeof commandHost>['session']['clientRef']['current']>,
+  { box, axis, plane, flip, cell, side, most }: { box?: { min: Vec3; max: Vec3; world: boolean }; axis?: AxisName; plane?: PlaneIn; flip: boolean; cell?: number; side: number; most: number },
+) {
+  // The grid's frame: start corner, the way the rays run, u and v, and
+  // the height at the start with the way it counts along a ray.
+  let frame: ReturnType<typeof planeFrame> | null = null
+  let g: ReturnType<typeof gridOver>
+  let start: Vec3
+  let dir: Vec3
+  let du: Vec3
+  let dv: Vec3
+  let from: number
+  let sign: number
+  let far: number
+  let k: 0 | 1 | 2 = 2
+  let scanIn: { min: Vec3; max: Vec3 }
+  const look = axis ?? '-z'
+  if (plane !== undefined) {
+    const sample = (await client.query({ min: [-Infinity, -Infinity, -Infinity], max: [Infinity, Infinity, Infinity], limit: PLANE_SAMPLE })).positions
+    frame = planeFrame(plane, flip, sample)
+    const sheet = { origin: frame.origin, normal: frame.normal, basisU: frame.u, basisV: frame.v }
+    let lo: Vec3 = [Infinity, Infinity, Infinity]
+    let hi: Vec3 = [-Infinity, -Infinity, -Infinity]
+    for (let i = 0; i + 2 < sample.length; i += 3) {
+      const d: Vec3 = [sample[i] - frame.origin[0], sample[i + 1] - frame.origin[1], sample[i + 2] - frame.origin[2]]
+      const p: Vec3 = [dot3(d, frame.u), dot3(d, frame.v), dot3(d, frame.normal)]
+      for (let j = 0; j < 3; j++) {
+        lo[j] = Math.min(lo[j], p[j])
+        hi[j] = Math.max(hi[j], p[j])
+      }
+    }
+    if (!Number.isFinite(lo[0])) throw new CommandError('invalid_state', 'The scan has no vertices to map.')
+    // The sample is every k-th vertex: a little room round it for the
+    // ones between.
+    const pad = 0.01 * Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) + 1e-3
+    lo = [lo[0] - pad, lo[1] - pad, lo[2] - pad]
+    hi = [hi[0] + pad, hi[1] + pad, hi[2] + pad]
+    scanIn = { min: lo, max: hi }
+    if (box) {
+      const b = box.world ? boxOnSheet(sheet, box) : box
+      lo = b.min
+      hi = b.max
+    }
+    g = gridOver(lo, hi, 2, cell, side, most)
+    const { origin: o, u, v, normal: n } = frame
+    start = [0, 1, 2].map((j) => o[j] + g.u0 * u[j] + g.v0 * v[j] + hi[2] * n[j]) as Vec3
+    dir = [-n[0], -n[1], -n[2]]
+    du = u
+    dv = v
+    from = hi[2]
+    sign = -1
+    far = hi[2] - lo[2]
+  } else {
+    const whole = await client.bounds()
+    const b = box ?? whole
+    k = 'xyz'.indexOf(look[1]) as 0 | 1 | 2
+    sign = look[0] === '+' ? 1 : -1
+    g = gridOver(b.min, b.max, k, cell, side, most)
+    scanIn = { min: [whole.min[g.ua], whole.min[g.va], whole.min[k]], max: [whole.max[g.ua], whole.max[g.va], whole.max[k]] }
+    from = sign > 0 ? b.min[k] : b.max[k]
+    const to = sign > 0 ? b.max[k] : b.min[k]
+    start = unit(k, from)
+    start[g.ua] = g.u0
+    start[g.va] = g.v0
+    dir = unit(k, sign)
+    du = unit(g.ua)
+    dv = unit(g.va)
+    far = Math.abs(to - from)
+  }
+  const rays = { origin: start, dir, u: du, v: dv, cell: g.cell, cols: g.cols, rows: g.rows, far }
+  return { frame, g, k, look, from, sign, rays, scanIn }
+}
+
+/** Where the scan lies in a map's frame, said when few of its cells met
+ *  it — a box given in one frame and read in another lands off the part:
+ *  the share met, the scan's box in the frame and the grid's. */
+function sparseWords(hit: number, g: ReturnType<typeof gridOver>, scanIn: { min: Vec3; max: Vec3 }, onPlane: boolean, along: string) {
+  const r = (x: number) => roundTo(x, 2)
+  const cells = g.cols * g.rows
+  if (cells === 0 || hit / cells >= SPARSE_SHARE) return undefined
+  const [lo, hi] = [scanIn.min, scanIn.max]
+  const u1 = g.u0 + g.cols * g.cell
+  const v1 = g.v0 + g.rows * g.cell
+  const third = onPlane ? `height ${r(lo[2])}…${r(hi[2])}` : `${along} ${r(lo[2])}…${r(hi[2])}`
+  return {
+    hitPct: roundTo((100 * hit) / cells, 1),
+    min: lo.map(r),
+    max: hi.map(r),
+    note: `Only ${roundTo((100 * hit) / cells, 1)} % of the cells met the scan. In this map’s frame the scan lies at u ${r(lo[0])}…${r(hi[0])}, v ${r(lo[1])}…${r(hi[1])}, ${third}; the grid spans u ${r(g.u0)}…${r(u1)}, v ${r(g.v0)}…${r(v1)}.${onPlane ? ' A box in world coordinates goes as box: { world: { min, max } }.' : ''}`,
+  }
+}
+
 const heightmap: Command<{
-  box?: { min: Vec3; max: Vec3 }
+  box?: BoxIn
   axis?: AxisName
   plane?: PlaneIn
   flip?: boolean
@@ -406,18 +624,19 @@ const heightmap: Command<{
   grid?: boolean
   levels?: boolean
   gap?: number
+  slopeDeg?: number
   picture?: boolean
 }> = {
   name: 'heightmap',
   title: 'Map the scan’s heights',
   description:
-    `Where the scan is first met looking along an axis, or square onto a plane, over a grid of cells: pocket floors, ledges, a step's height, a face's tilt, a pad's tiers, an icon on a key in one call. axis is the way looked: -z (the default) looks down from above and gives the top surface's z; +z looks up from below and gives the underside's; ±x, ±y likewise. Cells lie on the two other axes in order — x, y for z; y, z for x; x, z for y — as u and v. plane, in place of axis: a plane element (id or name; its normal turned to the side the scan is not, so it looks at the face it was fitted on), a coordinate plane "XY", "YZ", "ZX", or any other — a face of a model, say — as { origin, normal, u? }; the map then looks down the normal onto it, height is the distance from the plane along the normal, and u, v are the plane's own, laid as a sketch on that plane has them (section.render { plane } draws the same sheet) — u seeds its direction; flip turns the plane over. The answer's plane gives its frame in world: a cell's point is origin + u·U + v·V + height·normal. box: the part looked at, the scan's box by default; rays start at its face and stop at the far one. With plane, box is in the plane's frame: min and max are [u, v, height], and by default it takes in the whole scan. of: height (the default); deviation — the scan's signed deviation where each ray lands (the map deviation.align or deviation.set_target measured, read off the triangle met), null where the map has no reading within its search distance; relief — the height less the surface round it (at each cell a plane fitted to its neighbours, weighed by a Gaussian smooth mm wide, three cells by default; make it about the width of what is looked for): icons, grooves, lettering and parting lines stand out of a face that curves or leans, positive proud and negative sunk. cell: mm (by default a round size that makes ${HEIGHT_SIDE} cells on the longer side; widened to keep ${HEIGHT_CELLS} cells at most — and ${HEIGHT_SIDE_FINE} and ${HEIGHT_CELLS_FINE} when the numbers are not returned). Returns along, across, cell, origin [u0, v0] (the grid's low corner), cols, rows and grid: rows of values (mm; heights to 0.01, deviation and relief to 0.001) from the low v up, null where there is none — grid[r][c] stands at u0 + (c + ½)·cell, v0 + (r + ½)·cell — with min, max, hit (cells met) and valued (cells with a value). levels: true returns, in place of the grid, the values gathered into levels — a pad's tiers, a pocket's floor, the face round them — the largest first (${HEIGHT_LEVELS} at most): each its height (the median), sigma, range, cells, area (mm²), sharePct of the cells with a value, and box ([u, v] min and max); two levels lie at least gap apart (mm; three times the cell-to-cell noise by default, ${LEVEL_GAP_MIN} at least), and unassigned counts the cells in none (walls, edges). grid: true keeps the grid as well, false leaves it out and returns the picture. picture: true adds the map coloured by its values with coordinates in the margins and a scale (a deviation in the workspace's colour map over its range); needs the browser. Changes nothing.`,
+    `Where the scan is first met looking along an axis, or square onto a plane, over a grid of cells: pocket floors, ledges, a step's height, a face's tilt, a pad's tiers, an icon on a key in one call. axis is the way looked: -z (the default) looks down from above and gives the top surface's z; +z looks up from below and gives the underside's; ±x, ±y likewise. Cells lie on the two other axes in order — x, y for z; y, z for x; x, z for y — as u and v. plane, in place of axis: a plane element (id or name; its normal turned to the side the scan is not, so it looks at the face it was fitted on), a coordinate plane "XY", "YZ", "XZ", or any other — a face of a model, say — as { origin, normal, u? }; the map then looks down the normal onto it, height is the distance from the plane along the normal, and u, v are the plane's own, laid as a sketch on that plane has them (section.render { plane } draws the same sheet) — u seeds its direction; flip turns the plane over. The answer's plane gives its frame in world: a cell's point is origin + u·U + v·V + height·normal — and, for an element or a plane given by its origin, center: where the element's centre (or that origin) lies in [u, v], for the frame's zero is the world origin's foot on the plane, not the element's centre. box: the part looked at, the scan's box by default; rays start at its face and stop at the far one. With plane, box is in the plane's frame: min and max are [u, v, height], and by default it takes in the whole scan; or box: { world: { min, max } } gives it in the world, [x, y, z] — the map takes the box round its corners in the plane's frame, so a box round a place on the part needs no working out. Where under a fifth of the cells meet the scan, scanLies says where the scan lies in the map's frame (min and max, [u, v, height] — or along the axis looked) beside the grid's span. of: height (the default); deviation — the scan's signed deviation where each ray lands (the map deviation.align or deviation.set_target measured, read off the triangle met), null where the map has no reading within its search distance; relief — the height less the surface round it (at each cell a plane fitted to its neighbours, weighed by a Gaussian smooth mm wide, three cells by default; make it about the width of what is looked for): icons, grooves, lettering and parting lines stand out of a face that curves or leans, positive proud and negative sunk. cell: mm (by default a round size that makes ${HEIGHT_SIDE} cells on the longer side; widened to keep ${HEIGHT_CELLS} cells at most — and ${HEIGHT_SIDE_FINE} and ${HEIGHT_CELLS_FINE} when the numbers are not returned). Returns along, across, cell, origin [u0, v0] (the grid's low corner), cols, rows and grid: rows of values (mm; heights to 0.01, deviation and relief to 0.001) from the low v up, null where there is none — grid[r][c] stands at u0 + (c + ½)·cell, v0 + (r + ½)·cell — with min, max, hit (cells met) and valued (cells with a value). levels: true returns, in place of the grid, the values gathered into levels — a pad's tiers, a pocket's floor, the face round them — the largest first (${HEIGHT_LEVELS} at most): each its height (the median), sigma, range, cells, area (mm²), sharePct of the cells counted, and box ([u, v] min and max). Of a height, the cells sloped more than slopeDeg (${LEVEL_SLOPE_DEG}° by default; 90 keeps every one) are left out first and counted as sloped — a fillet's ramp, a cone, a wall met at a glance — so two tiers a ramp joins stay two levels; a face that leans more is read by looking square onto it (plane). Two levels lie at least gap apart (mm; three times the cell-to-cell noise on the cells counted by default, ${LEVEL_GAP_MIN} at least), and unassigned counts the cells counted that fall in none (walls, edges). Where the sloped cells are more than a fifth of those with a value, or one run of them borders a single level (a ramp off a tier that meets no other), ramps says so — "ramps between tiers (sloped 34 %) — a section along them gives their profile" — with the largest runs: cells, area, box and joins (the heights of the levels each borders). grid: true keeps the grid as well, false leaves it out and returns the picture. picture: true adds the map coloured by its values with coordinates in the margins and a scale (a deviation in the workspace's colour map over its range); needs the browser. Changes nothing.`,
   input: obj({
-    box: obj({ min: vec3('The lowest corner, mm — [u, v, height] with plane.'), max: vec3('The highest corner, mm — [u, v, height] with plane.') }, ['min', 'max'], 'The part looked at; the scan’s box by default. In the plane’s frame with plane.'),
+    box: mapBoxSchema('The part looked at; the scan’s box by default. In the plane’s frame with plane — or world: { min, max } in the world.'),
     axis: enumOf(AXIS_NAMES, 'The way looked: -z (the default) from above, +z from below, and so on.'),
     plane: oneOf(
       [
-        elementRefSchema('A plane element, or a coordinate plane "XY", "YZ", "ZX".'),
+        elementRefSchema('A plane element, or a coordinate plane "XY", "YZ", "XZ".'),
         obj({ origin: vec3('A point on the plane, mm.'), normal: vec3('Its normal: the side looked from.'), u: vec3('A direction for u, flattened into the plane; a sketch’s by default.') }, ['origin', 'normal']),
       ],
       'Look square onto this plane instead of along an axis: heights along its normal, cells in its own u, v.',
@@ -429,91 +648,30 @@ const heightmap: Command<{
     grid: bool('The grid of numbers: returned unless levels is asked for; false returns the picture alone.'),
     levels: bool('Gather the values into levels with their areas, the largest first, in place of the grid.'),
     gap: num('levels: the least gap between two levels, mm.', { exclusiveMinimum: 0 }),
+    slopeDeg: num(`levels of a height: cells steeper than this are left out, degrees; ${LEVEL_SLOPE_DEG} by default, 90 keeps every one.`, { exclusiveMinimum: 0, maximum: 90 }),
     picture: bool('Add a picture of the map with a scale.'),
   }),
   readOnly: true,
   returnsFile: true,
   returnsImage: true,
-  run: async ({ box, axis, plane, flip = false, of = 'height', smooth, cell, grid, levels = false, gap, picture }) => {
+  run: async ({ box, axis, plane, flip = false, of = 'height', smooth, cell, grid, levels = false, gap, slopeDeg, picture }) => {
     requireScan()
     const client = commandHost().session.clientRef.current
     if (!client) throw new CommandError('unavailable', 'The mesh worker is not running.')
     if (plane !== undefined && axis !== undefined) throw new CommandError('invalid_input', 'Give axis, or plane — one of them.')
     if (flip && plane === undefined) throw new CommandError('invalid_input', 'flip turns a plane over — give plane.')
     if (smooth !== undefined && of !== 'relief') throw new CommandError('invalid_input', 'smooth is the relief’s — give of: "relief".')
+    if (slopeDeg !== undefined && !(levels && of === 'height')) throw new CommandError('invalid_input', 'slopeDeg is for the levels of a height — give levels: true, of: "height".')
     const showGrid = grid ?? !levels
     const showPicture = picture || grid === false
-    if (box) for (let k = 0; k < 3; k++) if (!(box.min[k] <= box.max[k])) throw new CommandError('invalid_input', 'The box’s min lies past its max.')
+    const boxed = boxOf(box)
     // Read up front, so a map with nothing to read refuses before it rays.
     const dev = of === 'deviation' ? deviationValues() : null
     const side = showGrid ? HEIGHT_SIDE : HEIGHT_SIDE_FINE
     const most = showGrid ? HEIGHT_CELLS : HEIGHT_CELLS_FINE
 
-    // The grid's frame: start corner, the way the rays run, u and v, and
-    // the height at the start with the way it counts along a ray.
-    let frame: ReturnType<typeof planeFrame> | null = null
-    let g: ReturnType<typeof gridOver>
-    let start: Vec3
-    let dir: Vec3
-    let du: Vec3
-    let dv: Vec3
-    let from: number
-    let sign: number
-    let far: number
+    const { frame, g, k, look, from, sign, rays, scanIn } = await rayGrid(client, { box: boxed, axis, plane, flip, cell, side, most })
     const names = 'xyz'
-    let k: 0 | 1 | 2 = 2
-    const look = axis ?? '-z'
-    if (plane !== undefined) {
-      const sample = (await client.query({ min: [-Infinity, -Infinity, -Infinity], max: [Infinity, Infinity, Infinity], limit: PLANE_SAMPLE })).positions
-      frame = planeFrame(plane, flip, sample)
-      let lo: Vec3
-      let hi: Vec3
-      if (box) {
-        lo = box.min
-        hi = box.max
-      } else {
-        lo = [Infinity, Infinity, Infinity]
-        hi = [-Infinity, -Infinity, -Infinity]
-        for (let i = 0; i + 2 < sample.length; i += 3) {
-          const d: Vec3 = [sample[i] - frame.origin[0], sample[i + 1] - frame.origin[1], sample[i + 2] - frame.origin[2]]
-          const p: Vec3 = [dot3(d, frame.u), dot3(d, frame.v), dot3(d, frame.normal)]
-          for (let j = 0; j < 3; j++) {
-            lo[j] = Math.min(lo[j], p[j])
-            hi[j] = Math.max(hi[j], p[j])
-          }
-        }
-        if (!Number.isFinite(lo[0])) throw new CommandError('invalid_state', 'The scan has no vertices to map.')
-        // The sample is every k-th vertex: a little room round it for the
-        // ones between.
-        const pad = 0.01 * Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) + 1e-3
-        lo = [lo[0] - pad, lo[1] - pad, lo[2] - pad]
-        hi = [hi[0] + pad, hi[1] + pad, hi[2] + pad]
-      }
-      g = gridOver(lo, hi, 2, cell, side, most)
-      const { origin: o, u, v, normal: n } = frame
-      start = [0, 1, 2].map((j) => o[j] + g.u0 * u[j] + g.v0 * v[j] + hi[2] * n[j]) as Vec3
-      dir = [-n[0], -n[1], -n[2]]
-      du = u
-      dv = v
-      from = hi[2]
-      sign = -1
-      far = hi[2] - lo[2]
-    } else {
-      const b = box ?? (await client.bounds())
-      k = 'xyz'.indexOf(look[1]) as 0 | 1 | 2
-      sign = look[0] === '+' ? 1 : -1
-      g = gridOver(b.min, b.max, k, cell, side, most)
-      from = sign > 0 ? b.min[k] : b.max[k]
-      const to = sign > 0 ? b.max[k] : b.min[k]
-      start = unit(k, from)
-      start[g.ua] = g.u0
-      start[g.va] = g.v0
-      dir = unit(k, sign)
-      du = unit(g.ua)
-      dv = unit(g.va)
-      far = Math.abs(to - from)
-    }
-    const rays = { origin: start, dir, u: du, v: dv, cell: g.cell, cols: g.cols, rows: g.rows, far }
     let values: Float32Array
     let heights: Float32Array
     if (dev) {
@@ -555,20 +713,9 @@ const heightmap: Command<{
       hi = Math.max(hi, v)
     }
     const places = of === 'height' ? 2 : 3
+    const sparse = sparseWords(hit, g, scanIn, frame !== null, names[k])
     const out: Record<string, unknown> = {
-      ...(frame
-        ? {
-            plane: {
-              ...(frame.name ? { name: frame.name } : {}),
-              origin: frame.origin.map((x) => roundTo(x, 4)),
-              u: frame.u.map((x) => roundTo(x, 6)),
-              v: frame.v.map((x) => roundTo(x, 6)),
-              normal: frame.normal.map((x) => roundTo(x, 6)),
-            },
-            along: 'normal',
-            across: ['u', 'v'],
-          }
-        : { axis: look, along: names[k], across: [names[g.ua], names[g.va]] }),
+      ...(frame ? { plane: planeOut(frame), along: 'normal', across: ['u', 'v'] } : { axis: look, along: names[k], across: [names[g.ua], names[g.va]] }),
       of,
       ...(of === 'relief' ? { smooth: roundTo(smooth ?? 3 * g.cell, 4) } : {}),
       ...(dev ? { source: dev.source, searchDistance: dev.search } : {}),
@@ -581,6 +728,7 @@ const heightmap: Command<{
       valued,
       min: valued ? roundTo(lo, 3) : null,
       max: valued ? roundTo(hi, 3) : null,
+      ...(sparse ? { scanLies: sparse } : {}),
     }
     if (showGrid) {
       const rowsOut: (number | null)[][] = []
@@ -595,8 +743,29 @@ const heightmap: Command<{
       out.grid = rowsOut
     }
     if (levels) {
-      const noise = cellNoise(values, g.cols, g.rows)
-      const found = heightLevels(values, { cols: g.cols, cell: g.cell, u0: g.u0, v0: g.v0 }, gap ?? Math.max(3 * noise, LEVEL_GAP_MIN))
+      // Of a height, the cells on a slope are left out before anything is
+      // counted: a fillet's ramp would fill the bins between two tiers and
+      // join them, and its steps would read as noise and widen the gap.
+      // A relief has the lean taken off already, and a deviation is read
+      // on every face alike.
+      let counted = values
+      let sloped = 0
+      let steep: Uint8Array | null = null
+      if (of === 'height') {
+        steep = slopedCells(values, g.cols, g.rows, g.cell, slopeDeg ?? LEVEL_SLOPE_DEG)
+        counted = values.slice()
+        for (let i = 0; i < steep.length; i++) {
+          if (!steep[i]) continue
+          counted[i] = Number.NaN
+          sloped++
+        }
+      }
+      const noise = cellNoise(counted, g.cols, g.rows)
+      const found = heightLevels(counted, { cols: g.cols, cell: g.cell, u0: g.u0, v0: g.v0 }, gap ?? Math.max(3 * noise, LEVEL_GAP_MIN))
+      if (of === 'height') {
+        out.slopeDeg = slopeDeg ?? LEVEL_SLOPE_DEG
+        out.sloped = sloped
+      }
       out.noise = roundTo(noise, 4)
       out.gap = roundTo(found.gap, 4)
       out.levels = found.levels.slice(0, HEIGHT_LEVELS).map((l) => ({
@@ -610,6 +779,20 @@ const heightmap: Command<{
       }))
       if (found.levels.length > HEIGHT_LEVELS) out.moreLevels = found.levels.length - HEIGHT_LEVELS
       out.unassigned = found.unassigned
+      // The sloped cells left out are the ramps between the tiers, which
+      // the levels do not say: past a share of the map, or a ramp off one
+      // tier that leads to none, the answer says where they are.
+      if (steep) {
+        const r = rampsOf(values, steep, g, found.levels)
+        const share = r.sloped / Math.max(1, r.valued)
+        if (share > RAMP_SHARE || r.ramps.some((x) => x.joins.length === 1)) {
+          out.ramps = {
+            note: `ramps between tiers (sloped ${Math.round(100 * share)} %) — a section along them gives their profile`,
+            found: r.ramps.length,
+            largest: r.ramps.slice(0, RAMPS_NAMED).map((x) => ({ cells: x.cells, area: roundTo(x.cells * g.cell * g.cell, 2), box: { min: x.box.min.map((v) => roundTo(v, 3)), max: x.box.max.map((v) => roundTo(v, 3)) }, joins: x.joins.map((h) => roundTo(h, 3)) })),
+          }
+        }
+      }
     }
     if (!showPicture) return out
     if (typeof OffscreenCanvas === 'undefined') throw new CommandError('unavailable', 'A picture of the height map needs the browser.')
@@ -640,6 +823,195 @@ const heightmap: Command<{
   },
 }
 
+/** The outline's tolerance unless told otherwise, mm; the cells are half
+ *  of it, widened to keep OUTLINE_CELLS at most. How many loops are
+ *  answered unless told otherwise. */
+const OUTLINE_TOLERANCE = 0.2
+const OUTLINE_CELLS = 250_000
+const OUTLINE_LOOPS = 4
+
+const outline: Command<{ axis?: AxisName; plane?: PlaneIn; flip?: boolean; box?: BoxIn; tolerance?: number; loops?: number }> = {
+  name: 'outline',
+  title: 'Read the scan’s outline',
+  description: `The scan’s outline seen along an axis, or square onto a plane, read as a sketch would draw it: a flange’s plan, a bezel’s opening, a gasket’s shape. Rays over a grid of cells (half the tolerance, widened to keep ${OUTLINE_CELLS} at most) find where the scan is and where it is not; the line between is traced round and each loop read as the fewest lines and arcs that follow it within tolerance (mm, ${OUTLINE_TOLERANCE} by default): straight sides are fitted as lines and met at sharp corners; an arc between two sides is that corner’s round (rounds: at, the corner’s index in points, radius and center); any other arc is a side of its own (arcs: from, the index of the point it starts at, running to the next, radius and center) — a slot’s ends; and a loop that is round all the way is one circle. axis, plane, flip and box as scan.heightmap takes them, box: { world: { min, max } } too — the coordinates are u, v as it lays them (the two other axes in order, or the plane’s own; plane.center is the element’s centre in them). Returns loops, the largest first (loops: how many, ${OUTLINE_LOOPS} by default): each with hole (true for one inside another), area (mm²), box, points ([u, v] corners in order), rounds and arcs, or circle { center, radius, rms }, and worst — how far the traced outline strays from what is drawn, mm, with worstAt where, when it is past the tolerance. Changes nothing.`,
+  input: obj({
+    axis: enumOf(AXIS_NAMES, 'The way looked: -z (the default) from above, and so on.'),
+    plane: oneOf(
+      [
+        elementRefSchema('A plane element, or a coordinate plane "XY", "YZ", "XZ".'),
+        obj({ origin: vec3('A point on the plane, mm.'), normal: vec3('Its normal: the side looked from.'), u: vec3('A direction for u, flattened into the plane.') }, ['origin', 'normal']),
+      ],
+      'Look square onto this plane instead of along an axis.',
+    ),
+    flip: bool('With plane: look from its other side.'),
+    box: mapBoxSchema('Only the scan inside it; the whole scan by default. In the plane’s frame with plane — or world: { min, max } in the world.'),
+    tolerance: num(`How closely the sketch follows the outline, mm; ${OUTLINE_TOLERANCE} by default.`, { exclusiveMinimum: 0 }),
+    loops: int(`How many loops, the largest first; ${OUTLINE_LOOPS} by default.`, { minimum: 1, maximum: 50 }),
+  }),
+  readOnly: true,
+  run: async ({ axis, plane, flip = false, box, tolerance = OUTLINE_TOLERANCE, loops: most = OUTLINE_LOOPS }) => {
+    requireScan()
+    const client = commandHost().session.clientRef.current
+    if (!client) throw new CommandError('unavailable', 'The mesh worker is not running.')
+    if (plane !== undefined && axis !== undefined) throw new CommandError('invalid_input', 'Give axis, or plane — one of them.')
+    if (flip && plane === undefined) throw new CommandError('invalid_input', 'flip turns a plane over — give plane.')
+    const { frame, g, look, rays } = await rayGrid(client, { box: boxOf(box), axis, plane, flip, cell: tolerance / 2, side: 1, most: OUTLINE_CELLS })
+    const hits = await client.heights(rays)
+    const mask = new Uint8Array(hits.length)
+    for (let i = 0; i < hits.length; i++) mask[i] = Number.isNaN(hits[i]) ? 0 : 1
+    const { maskLoops, loopShape } = await import('../../core/geometry/outline')
+    const found = maskLoops(mask, { cols: g.cols, rows: g.rows, cell: g.cell, u0: g.u0, v0: g.v0 }, (3 * g.cell) ** 2)
+    // A widened grid traces coarser than asked: the sketch follows it to
+    // its own steps, no closer.
+    const tol = Math.max(tolerance, g.cell)
+    const r3 = (x: number) => roundTo(x, 3)
+    const pt = (p: readonly number[]) => [r3(p[0]), r3(p[1])]
+    const names = 'xyz'
+    return {
+      ...(frame
+        ? { plane: planeOut(frame), across: ['u', 'v'] }
+        : { axis: look, across: [names[g.ua], names[g.va]] }),
+      cell: g.cell,
+      tolerance: roundTo(tol, 4),
+      ...(g.widened ? { note: `cell widened to ${g.cell} mm to keep ${OUTLINE_CELLS} cells at most; the outline is read to ${roundTo(tol, 3)} mm — give a box round the part looked for to read it finer` } : {}),
+      loops: found.slice(0, most).map((l) => {
+        const shape = loopShape(l.points, tol, g.cell)
+        const us = l.points.map((p) => p[0])
+        const vs = l.points.map((p) => p[1])
+        return {
+          hole: l.hole,
+          area: roundTo(l.area, 1),
+          box: { min: pt([Math.min(...us), Math.min(...vs)]), max: pt([Math.max(...us), Math.max(...vs)]) },
+          ...(shape.circle
+            ? { circle: { center: pt(shape.circle.center), radius: r3(shape.circle.radius), rms: roundTo(shape.circle.rms, 4) } }
+            : {
+                points: shape.points.map(pt),
+                ...(shape.rounds.length > 0 ? { rounds: shape.rounds.map((r) => ({ at: r.at, radius: r3(r.radius), center: pt(r.center) })) } : {}),
+                ...(shape.arcs.length > 0 ? { arcs: shape.arcs.map((a) => ({ from: a.from, radius: r3(a.radius), center: pt(a.center) })) } : {}),
+              }),
+          worst: r3(shape.worst),
+          ...(shape.worstAt && shape.worst > tol ? { worstAt: pt(shape.worstAt) } : {}),
+        }
+      }),
+      ...(found.length > most ? { more: found.length - most } : {}),
+    }
+  },
+}
+
+/** How many heights a pattern is read at unless told, and at most; the
+ *  most copies looked for unless told. */
+const PATTERN_HEIGHTS = 6
+const PATTERN_HEIGHTS_MAX = 12
+const PATTERN_COUNT = 60
+
+type AxisIn = ElementRef | { origin: Vec3; dir: Vec3 }
+
+/** An axis as scan.pattern takes it, as a line: its direction turned to
+ *  the + end of the coordinate axis it lies nearest (as a plane through an
+ *  axis takes it), and its origin the world origin's foot on it — so a
+ *  height along it is the coordinate itself on a coordinate axis. */
+function axisLine(axis: AxisIn): { origin: Vec3; dir: Vec3; name?: string } {
+  let line: { origin: Vec3; dir: Vec3 } | null
+  let name: string | undefined
+  if (typeof axis === 'object') line = axis
+  else if (typeof axis === 'string' && /^\s*[xyz]\s*$/i.test(axis) && !useStore.getState().elements.some((e) => e.name.trim().toLowerCase() === axis.trim().toLowerCase())) {
+    const world = axis.trim().toLowerCase() as WorldAxis
+    line = { origin: [0, 0, 0], dir: worldAxisDir(world) }
+    name = world.toUpperCase()
+  } else {
+    const el = findElement(axis)
+    line = el.fit && RADIAL_AXIS_KINDS.includes(el.kind) ? axisLineOf(el.fit) : null
+    if (!line) throw new CommandError('invalid_input', `${el.name} has no axis — choose a cylinder, cone, line or circle.`)
+    name = el.name
+  }
+  const l = Math.hypot(line.dir[0], line.dir[1], line.dir[2])
+  if (!(l > 1e-9)) throw new CommandError('invalid_input', 'axis.dir: give a direction, not a zero vector.')
+  let dir: Vec3 = [line.dir[0] / l, line.dir[1] / l, line.dir[2] / l]
+  const big = [0, 1, 2].reduce((m, i) => (Math.abs(dir[i]) > Math.abs(dir[m]) ? i : m), 0)
+  if (dir[big] < 0) dir = [-dir[0], -dir[1], -dir[2]]
+  const along = dot3(line.origin, dir)
+  return { origin: [line.origin[0] - along * dir[0], line.origin[1] - along * dir[1], line.origin[2] - along * dir[2]], dir, ...(name ? { name } : {}) }
+}
+
+const pattern: Command<{ axis: AxisIn; at?: (number | Vec3)[]; radius?: { min?: number; max?: number }; maxCount?: number; instances?: boolean }> = {
+  name: 'pattern',
+  title: 'Count the repeats round an axis',
+  description: `Rotational repeats about an axis — a fan's blades, a flange's holes and pads, a wheel's spokes, a gear's teeth — counted from the scan. The scan is cut square to the axis at each height in at, and each cut (only what lies between radius.min and radius.max) is turned against itself: count, the number of copies whose outlines land on each other going round (up to maxCount, ${PATTERN_COUNT} by default); pitchDeg, 360/count; phaseDeg, where the first copy's middle lies (under one pitch), and betweenDeg midway to the next — angles about the axis as section.cut { across: { axis, angleDeg } } takes them: 0° the coordinate axis next round (X about Z), turning by the right hand. score, 0 to 1, is how well the copies' outlines land on each other; under 0.5 nothing is taken to repeat and count is 1 (tried gives the best count and its score). Each copy in instances: angleDeg and radius of its outline's middle, offDeg from where an even spacing puts it, rms and worst — how far its outline lies from the other copies' turned onto it (the median over them), mm — and share, its outline's length against the median copy's (well under 1: the scan misses part of it, or the copy is not there). rms, worst and worstInstance over all the copies. Round outlines about the axis — a bore, a hub, a rim — are not copies: they come back as rings, each its radius, off (how far its centre lies off the axis, mm), towardDeg (which way) and rms. axis: a cylinder, cone, line or circle element, by id or name, a coordinate axis "X", "Y" or "Z" through the origin, or { origin, dir }. at: heights along the axis, mm, counted from the world origin's foot on it (the coordinate itself on a coordinate axis) — or points [x, y, z] in the world, each the height of its foot on the axis; by default ${PATTERN_HEIGHTS} spread over the scan, ${PATTERN_HEIGHTS_MAX} at most. Features lie at different heights and radii: cut through each, and keep radius to the ring one lies in where two share a height — in one cut the feature with the most outline sets the count, and the other reads as what its copies miss (worst). instances: false leaves the copies out. Changes nothing.`,
+  input: obj(
+    {
+      axis: oneOf(
+        [
+          elementRefSchema('A cylinder, cone, line or circle element, or a coordinate axis "X", "Y", "Z".'),
+          obj({ origin: vec3('A point on the axis, mm.'), dir: vec3('Its direction, any length.') }, ['origin', 'dir']),
+        ],
+        'The axis the copies repeat round.',
+      ),
+      at: arr(oneOf([num('mm along the axis.'), vec3('A point in the world, mm: the height of its foot on the axis.')]), `Heights to cut at; ${PATTERN_HEIGHTS} spread over the scan by default.`, { minItems: 1, maxItems: PATTERN_HEIGHTS_MAX }),
+      radius: obj({ min: num('mm', { minimum: 0 }), max: num('mm', { exclusiveMinimum: 0 }) }, [], 'Only the cut between these distances from the axis.'),
+      maxCount: int(`The most copies looked for; ${PATTERN_COUNT} by default.`, { minimum: 2, maximum: 120 }),
+      instances: bool('List each copy (the default true).'),
+    },
+    ['axis'],
+  ),
+  readOnly: true,
+  run: async ({ axis, at, radius, maxCount = PATTERN_COUNT, instances = true }) => {
+    requireScan()
+    const client = commandHost().session.clientRef.current
+    if (!client) throw new CommandError('unavailable', 'The mesh worker is not running.')
+    if (radius?.min !== undefined && radius.max !== undefined && !(radius.min < radius.max)) throw new CommandError('invalid_input', 'radius.min must lie below radius.max.')
+    const line = axisLine(axis)
+    const zero = radialFrame(line, 0)!.basisU
+    const quarter = radialFrame(line, 90)!.basisU
+    // A point in the world is the height of its foot on the axis.
+    let heights = at?.map((a) => (typeof a === 'number' ? a : roundTo(dot3([a[0] - line.origin[0], a[1] - line.origin[1], a[2] - line.origin[2]], line.dir), 4)))
+    if (!heights) {
+      // Spread over the scan's run along the axis, clear of its ends.
+      const sample = (await client.query({ min: [-Infinity, -Infinity, -Infinity], max: [Infinity, Infinity, Infinity], limit: PLANE_SAMPLE })).positions
+      let lo = Infinity
+      let hi = -Infinity
+      for (let i = 0; i + 2 < sample.length; i += 3) {
+        const h = sample[i] * line.dir[0] + sample[i + 1] * line.dir[1] + sample[i + 2] * line.dir[2]
+        lo = Math.min(lo, h)
+        hi = Math.max(hi, h)
+      }
+      if (!Number.isFinite(lo)) throw new CommandError('invalid_state', 'The scan has no vertices to cut.')
+      heights = Array.from({ length: PATTERN_HEIGHTS }, (_, i) => roundTo(lo + ((i + 0.5) / PATTERN_HEIGHTS) * (hi - lo), 3))
+    }
+    const { rotationalRepeat } = await import('../../core/geometry/rotationalRepeat')
+    const r3 = (x: number) => roundTo(x, 3)
+    const out = []
+    for (const h of heights) {
+      const origin: Vec3 = [line.origin[0] + h * line.dir[0], line.origin[1] + h * line.dir[1], line.origin[2] + h * line.dir[2]]
+      const cut = await client.section(origin, line.dir, EDGE_MIN_FEATURE_MM)
+      const flat = projectCut(cut, { origin, normal: line.dir, basisU: zero, basisV: quarter })
+      const r = rotationalRepeat(flat, { ...(radius?.min !== undefined ? { minRadius: radius.min } : {}), ...(radius?.max !== undefined ? { maxRadius: radius.max } : {}), maxCount })
+      const rings = r.rings.map((g) => ({ radius: r3(g.radius), off: r3(g.off), towardDeg: roundTo(g.towardDeg, 1), rms: roundTo(g.rms, 4) }))
+      if (r.count === 1) {
+        out.push({ at: h, count: 1, length: roundTo(r.length, 1), ...(r.tried ? { tried: { count: r.tried.count, score: r3(r.tried.score) } } : {}), rings })
+        continue
+      }
+      out.push({
+        at: h,
+        count: r.count,
+        pitchDeg: roundTo(r.pitchDeg, 4),
+        phaseDeg: roundTo(r.phaseDeg, 2),
+        betweenDeg: roundTo((r.phaseDeg + r.pitchDeg / 2) % 360, 2),
+        score: r3(r.score),
+        rms: roundTo(r.rms, 4),
+        worst: r3(r.worst),
+        worstInstance: r.worstInstance,
+        length: roundTo(r.length, 1),
+        ...(instances
+          ? { instances: r.instances.map((c) => ({ angleDeg: roundTo(c.angleDeg, 2), offDeg: roundTo(c.offDeg, 3), radius: r3(c.radius), rms: roundTo(c.rms, 4), worst: r3(c.worst), share: roundTo(c.share, 2) })) }
+          : {}),
+        rings,
+      })
+    }
+    const v6 = (v: readonly number[]) => v.map((x) => roundTo(x, 6) + 0)
+    return { axis: { ...(line.name ? { name: line.name } : {}), origin: v6(line.origin), dir: v6(line.dir), zeroDir: v6(zero) }, heights: out }
+  },
+}
+
 /** A scan's checks: how many vertices the noise is read on, how many rims
  *  are named, and how many cells a side the thickness is read over. */
 const QA_NOISE_SAMPLE = 4000
@@ -649,11 +1021,14 @@ const QA_SAMPLE = 60_000
 /** Faces this far out of parallel are worth a note, degrees. */
 const QA_TILT_NOTE = 0.2
 
+/** A rim's circle as an answer gives it. */
+const circleOut = (c: RimCircle) => ({ center: c.center.map((x) => roundTo(x, 3)), axis: c.axis.map((x) => roundTo(x, 4)), radius: roundTo(c.radius, 3), rms: roundTo(c.rms, 3) })
+
 const qa: Command<{ axis?: 'x' | 'y' | 'z' | Vec3 }> = {
   name: 'qa',
   title: 'Check the scan before modelling',
   description:
-    'One call before modelling, to know what the scan will and will not give: rims — the open edges of its holes (count, total length, the longest few with length, centre and size, mm); noise — the median scatter of small plane fits round a sample of vertices (mm; near 0 is a CAD tessellation) and its 90th percentile; thickness through the part along axis (x, y, z or a direction; by default the alignment’s z when the part is aligned, else the way most of the surface faces — a plate’s faces) over a grid — p5, p50, p95 (mm), and on the cells near the median (the main faces) the thickness’s linear trend as tiltDeg, how far apart faces that should be parallel are, with the way it thickens and its run from end to end; faces gives each face’s own tilt off square to the axis (topDeg, bottomDeg), so a lean of the whole part shows apart from faces out of parallel. notes: what looks wrong, plainly. Changes nothing.',
+    'One call before modelling, to know what the scan will and will not give: rims — the open edges of its holes (count, total length, the longest few with their number rim, length, centre and size, mm; circles: other rims a circle fits — a hole the scan did not see into); a rim that lies on a circle has circle { center, axis, radius, rms } (rms its scatter off the circle, mm), and element.fit { kind: "circle", rim } makes it an element; noise — the median scatter of small plane fits round a sample of vertices (mm; near 0 is a CAD tessellation) and its 90th percentile; thickness through the part along axis (x, y, z or a direction; by default the alignment’s z when the part is aligned, else the way most of the surface faces — a plate’s faces) over a grid — p5, p50, p95 (mm), and on the cells near the median (the main faces) the thickness’s linear trend as tiltDeg, how far apart faces that should be parallel are, with the way it thickens and its run from end to end; faces gives each face’s own tilt off square to the axis (topDeg, bottomDeg), so a lean of the whole part shows apart from faces out of parallel. notes: what looks wrong, plainly — a scanned skin with no rims at all among it, since a wrap bridges the holes it did not see through. Changes nothing.',
   input: obj({ axis: oneOf([enumOf(['x', 'y', 'z'], 'A world axis.'), vec3('A direction, any length.')], 'The thickness axis; see above.') }),
   readOnly: true,
   run: async ({ axis }) => {
@@ -729,12 +1104,24 @@ const qa: Command<{ axis?: 'x' | 'y' | 'z' | Vec3 }> = {
     const axisName = d[0] === 1 ? 'x' : d[1] === 1 ? 'y' : d[2] === 1 ? 'z' : `[${v3(d).join(', ')}]`
     const notes: string[] = []
     const out: Record<string, unknown> = {
-      rims: { count: rims.count, total: roundTo(rims.total, 1), largest: rims.largest.map((r) => ({ length: roundTo(r.length, 1), at: v3(r.at), size: roundTo(r.size, 1) })) },
+      rims: {
+        count: rims.count,
+        total: roundTo(rims.total, 1),
+        largest: rims.largest.map((r) => ({ rim: r.index, length: roundTo(r.length, 1), at: v3(r.at), size: roundTo(r.size, 1), ...(r.circle ? { circle: circleOut(r.circle) } : {}) })),
+        ...(rims.circles.length > 0 ? { circles: rims.circles.map((r) => ({ rim: r.index, length: roundTo(r.length, 1), circle: circleOut(r.circle!) })) } : {}),
+        ...(rims.moreCircles > 0 ? { moreCircles: rims.moreCircles } : {}),
+      },
       noise: { median: roundTo(noise.median, 4), p90: roundTo(noise.p90, 4), sampled: noise.sampled },
     }
     if (rims.count > 0) {
       const l = rims.largest[0]
       notes.push(`${rims.count} open rim${rims.count === 1 ? '' : 's'}, ${roundTo(rims.total, 1)} mm in all — the longest ${roundTo(l.length, 1)} mm round [${v3(l.at).join(', ')}]: the scan has holes there; fits and sections near them see less surface.`)
+    }
+    // A scan closed all round was wrapped: the skin runs across every hole
+    // the scanner did not see through. A CAD tessellation is closed by
+    // nature, and says so below.
+    if (rims.count === 0 && !(noise.median < 1e-4)) {
+      notes.push('Closed skin, no open rims: a wrap bridges holes it did not see through — read each hole from both ends (scan.heightmap along its axis each way); element.fit on a bore answers closed where its axis runs into the skin.')
     }
     if (noise.median > 0.03) notes.push(`Noisy surface: ${roundTo(noise.median, 3)} mm median scatter — read sizes from fits over large patches, not single points.`)
     else if (noise.median < 1e-4) notes.push('The surface has no noise — a CAD tessellation, not a scan: read its numbers exactly.')
@@ -793,4 +1180,4 @@ const qa: Command<{ axis?: 'x' | 'y' | 'z' | Vec3 }> = {
   },
 }
 
-export const scanCommands = [open, nearest, query, fitSurface, draft, heightmap, qa]
+export const scanCommands = [open, nearest, query, fitSurface, draft, heightmap, outline, pattern, qa]

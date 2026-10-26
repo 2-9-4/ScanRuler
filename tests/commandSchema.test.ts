@@ -52,6 +52,58 @@ describe('command input schemas', () => {
     expect(validate(ref, 3)).toEqual([])
   })
 
+  it('refuses a value by the branch of its own type, not by the first branch as near', () => {
+    const query = { ...obj({ kind: str(), sides: obj({}) }), title: 'query' }
+    const pick = oneOf([int('i', { minimum: 0 }), { ...obj({ mid: vec3('m'), dir: vec3('d') }, ['mid', 'dir']), title: 'fingerprint' }, query])
+    // An object as far from the query as an integer is from a number: the query says why.
+    expect(validate(pick, { where: { sides: {} } }, 'input.edges[0]')).toEqual([
+      'input.edges[0]: expected one of integer, fingerprint, query',
+      'input.edges[0].where: not a known field',
+    ])
+    // Further off the query than any number is: still the query, as an object.
+    expect(validate(pick, { where: 1, more: 2 }).slice(1)).toEqual(['input.where: not a known field', 'input.more: not a known field'])
+    expect(validate(pick, -1).slice(1)).toEqual(['input: must be at least 0'])
+    // A value no branch's type fits: the nearest, as before.
+    expect(validate(oneOf([int(), str()]), true)).toEqual(['input: expected one of integer, string', 'input: expected a finite number'])
+    // A branch is of a type through its own oneOf, and an enum by its values.
+    expect(validate(oneOf([num(), oneOf([enumOf(['all']), arr(int())])]), 'some').at(-1)).toBe('input: expected one of "all"')
+  })
+
+  it('takes "true" and "false" for a boolean where the string does not fit, and hands on the boolean', () => {
+    const schema = obj({ audit: oneOf([bool(), enumOf(['full'])]), on: bool(), flags: arr(bool()), name: oneOf([bool(), str()]) })
+    const input: Record<string, unknown> = { audit: 'false', on: 'true', flags: ['false', true], name: 'false' }
+    expect(validate(schema, input)).toEqual([])
+    // Mended in place, so the command gets the booleans; a string that
+    // fits as a string stays one.
+    expect(input).toEqual({ audit: false, on: true, flags: [false, true], name: 'false' })
+    expect(validate(schema, { audit: 'full' })).toEqual([])
+    expect(validate(bool(), 'yes')).toEqual(['input: expected true or false'])
+    expect(validate(obj({ on: bool() }), { on: 'False' })).toEqual(['input.on: expected true or false'])
+  })
+
+  it('refuses a name given for a number another field takes it in, saying how to write it', () => {
+    const schema = { ...obj({ radius: num(), count: int(), extent: obj({ to: oneOf([num(), enumOf(['fit'])]) }), exprs: obj({}) }, ['radius']), names: { field: 'exprs', slots: ['radius', 'extent.to'] } }
+    expect(validate(schema, { radius: 'r' }, 'input.feature')).toEqual(['input.feature.radius: "r" is a name or an expression, and this field takes a number — give exprs: { radius: "r" }, with any number here (the expression sets it)'])
+    expect(validate(schema, { radius: 1, extent: { to: 'h / 2' } })).toEqual(['input.extent.to: "h / 2" is a name or an expression, and this field takes a number — give exprs: { "extent.to": "h / 2" }'])
+    // A string the field takes stays; a field with no slot says what it did.
+    expect(validate(schema, { radius: 1, extent: { to: 'fit' } })).toEqual([])
+    expect(validate(schema, { radius: 1, count: 'n' })).toEqual(['input.count: expected a finite number'])
+    expect(validate(obj({ radius: num() }), { radius: 'r' })).toEqual(['input.radius: expected a finite number'])
+  })
+
+  it('refuses a name given for an id that has a name beside it, saying where the name goes', () => {
+    const byIdOrName = (k: string) => obj({ kind: enumOf([k]), id: int(), name: str(undefined, { minLength: 1 }) }, ['kind'])
+    const plane = oneOf([{ ...byIdOrName('section'), title: 'section' }, { ...byIdOrName('plane'), title: 'plane' }])
+    const errors = validate(obj({ plane }), { plane: { kind: 'plane', id: 'Key top' } })
+    expect(errors.at(-1)).toBe('input.plane.id: "Key top" is a name, and id takes a number — a name goes in name: give name: "Key top" in place of id')
+    expect(validate(obj({ plane }), { plane: { kind: 'plane', name: 'Key top' } })).toEqual([])
+    // A number written as a string, an id with no name beside it, or an id
+    // that takes a string itself: as before.
+    expect(validate(byIdOrName('plane'), { kind: 'plane', id: '12' })).toEqual(['input.id: expected a finite number'])
+    expect(validate(obj({ id: int() }), { id: 'Key top' })).toEqual(['input.id: expected a finite number'])
+    expect(validate(obj({ id: oneOf([num(), str()]), name: str() }), { id: 'Key top' })).toEqual([])
+  })
+
   it('stays plain JSON, as it goes out to a tool list', () => {
     const schema = obj({ at: oneOf([obj({ vertex: int() }, ['vertex'])]), file: bytes('f') }, ['at'], 'A command.')
     expect(JSON.parse(JSON.stringify(schema))).toEqual(schema)

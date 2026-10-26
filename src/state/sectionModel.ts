@@ -2,7 +2,7 @@
 // Sections — the scan cut by a plane, along an element or a coordinate plane —
 // as the store keeps them, and the draft one is set up in.
 
-import { type CutAxis, frameKey, type SectionFrame, sectionFrameAlong, sectionPlane, type SectionRef } from '../core/section/frame'
+import { type CutAxis, frameKey, type SectionFrame, sectionFrameAlong, sectionPlane, type SectionPlaneRef } from '../core/section/frame'
 import type { SectionCut } from '../core/section/slice'
 import type { ElementKind, FitData, Vec3 } from '../core/types'
 import { elementColor } from './elementModel'
@@ -23,8 +23,9 @@ export interface Section {
   visible: boolean
   frame: SectionFrame
   /** What it was cut across — an element, if that still exists, or a
-   *  coordinate plane — and how far along its direction. */
-  ref: SectionRef | null
+   *  coordinate plane — or the axis it was laid through and the angle
+   *  about it; and how far along its direction. */
+  ref: SectionPlaneRef | null
   offset: number
   /** The direction the reference gave when the section was made, so the
    *  record can say how far the plane was turned off it by hand — see
@@ -41,7 +42,7 @@ export interface Section {
  *  (off the reference, or off its own frozen plane), the offset, and the
  *  cut the worker has taken for the plane those give. */
 export interface SectionDraft {
-  ref: SectionRef | null
+  ref: SectionPlaneRef | null
   offset: number
   /** The line the plane slides along: the reference's, or where the gizmo's
    *  rings have turned it to. */

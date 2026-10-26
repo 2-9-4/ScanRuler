@@ -34,17 +34,30 @@ import type { GripSide, PickHit, SceneManager } from '../viewer/SceneManager'
 // code path as the plugin's panel, one step of the undo history, and returns
 // what the stores hold afterwards; see commands/types.ts. registerBusy(
 // plugin.id, check) says what the plugin's own machinery is busy with, so no
-// command runs over it and the readout's `busy` says so; registerViewToggles(
+// command runs over it and the readout's `busy` says so — and, given a stop,
+// lets a change that throws the work away stop it; registerViewToggles(
 // plugin.id, toggles) adds the keys view.set and view.render take to show or
-// put away what the plugin draws.
+// put away what the plugin draws. registerSheetPlanes(plugin.id, planes)
+// lets section.render { plane: { sketch } } lie on a plane the plugin keeps,
+// in its frame. registerMapReport(workspace, report) says which map a
+// view.render picture of the plugin's workspace shows, or why none.
+// registerSettle(settle) finishes what the
+// plugin's commands left for later when run deferred (a run of changes that
+// builds once, after the last) before a command that is not. registerGuide(
+// guide) adds a guide guide.read serves an agent before a task — the
+// plugin's workflow in Markdown, loaded when first read.
 
-export { registerCommands } from '../commands/registry'
+export { registerCommands, registerSettle, runningChange } from '../commands/registry'
 export { registerStateSection } from '../commands/stateSections'
 export { registerBusy } from '../commands/activity'
 export { registerViewToggles } from '../commands/viewToggles'
 export type { ViewToggle } from '../commands/viewToggles'
-export { registerSectionLayers } from '../commands/sectionLayers'
-export type { SectionLayer, SectionLayerDrawing, SectionOutline, SectionPiece, SectionSheet } from '../commands/sectionLayers'
+export { registerMapReport } from '../commands/mapReports'
+export type { MapReport } from '../commands/mapReports'
+export { registerSectionLayers, registerSheetPlanes } from '../commands/sectionLayers'
+export { registerGuide } from '../commands/guides'
+export type { Guide } from '../commands/guides'
+export type { SectionLayer, SectionLayerDrawing, SectionOutline, SectionPiece, SectionSheet, SheetPlanes } from '../commands/sectionLayers'
 export { CommandError } from '../commands/types'
 export type { Command, CommandContext, CommandErrorCode, FileOut } from '../commands/types'
 export type { JsonSchema } from '../commands/schema'
@@ -55,7 +68,7 @@ export interface WorkspaceTab {
    *  and what a project file says it was saved in. */
   id: string
   label: string
-  /** The tab's tooltip: what the workspace is for, in a sentence. */
+  /** The tab's tooltip under its label: what the workspace is for, in a sentence. */
   title: string
   icon: IconName
   /** Where the tab stands among the plugins' tabs, which follow the app's
@@ -146,6 +159,10 @@ export interface PluginRuntime {
   overlay?: ReactNode
   /** The 3D viewport put away, while the stage covers it. */
   hideViewport?: boolean
+  /** A view beside the viewport: the viewport becomes the left half where
+   *  it stands — it is not remounted — and this the right, as the
+   *  Deviation workspace's reference does. Null or absent for none. */
+  split?: ReactNode
   /** The stage's front door with no scan loaded; null for none — the
    *  workspace has something to show without one. */
   startPane?: StartPaneContent | null
@@ -153,6 +170,12 @@ export interface PluginRuntime {
   hoverReadout?: boolean
   /** The reading under the pointer, on the map the workspace shows. */
   readingAt?(hit: PickHit): (HoverReading & { value: number }) | null
+  /** Whether the pointer is tested over the scan every frame it moves, for
+   *  `hover`, with no map to read — a line drawn after it, say. */
+  hovers?: boolean
+  /** The scan under the pointer as it moves, or null off it — while there
+   *  is a map to read, or while `hovers` asks for it. */
+  hover?(hit: PickHit | null): void
   /** A click on the scan. */
   pick?(hit: PickHit): void
   /** A click on a measured element, while element picking is on. */

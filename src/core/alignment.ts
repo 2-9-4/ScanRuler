@@ -224,6 +224,46 @@ export function computeDatumAlignment(
   return rigid
 }
 
+/** How far either side of a levelling plane another face counts as near it,
+ *  mm, and the half-width of the band a face's points are gathered in. */
+const PARALLEL_REACH = 5
+const PARALLEL_BAND = 0.3
+
+/**
+ * A face parallel to a levelling plane, a few millimetres off it, that holds
+ * more of the scan than the plane itself — the plane may be a pad's floor or
+ * a step, and the face the part stands on the other one.
+ *
+ * `points` are scan points facing the way the plane does (thinned evenly, so
+ * their count stands for area). Those within PARALLEL_BAND of the plane are
+ * its own; the densest band as wide as that, clear of it, is the other face. Returns that face's offset along the plane's normal (mm,
+ * negative behind it) and how many times the plane's points it holds — or
+ * null when no such face holds half as many again.
+ */
+export function parallelFaceNear(points: Float32Array, center: Vec3, normal: Vec3): { offset: number; times: number } | null {
+  const n = normalize(normal)
+  if (!n) return null
+  const offsets: number[] = []
+  let own = 0
+  for (let i = 0; i + 2 < points.length; i += 3) {
+    const d = (points[i] - center[0]) * n[0] + (points[i + 1] - center[1]) * n[1] + (points[i + 2] - center[2]) * n[2]
+    if (Math.abs(d) <= PARALLEL_BAND) own++
+    else if (Math.abs(d) >= 2 * PARALLEL_BAND && Math.abs(d) <= PARALLEL_REACH) offsets.push(d)
+  }
+  offsets.sort((a, b) => a - b)
+  // The densest window two band-widths wide, by two pointers over the sorted offsets.
+  let best = { count: 0, from: 0, to: 0 }
+  for (let lo = 0, hi = 0; lo < offsets.length; lo++) {
+    while (hi < offsets.length && offsets[hi] - offsets[lo] <= 2 * PARALLEL_BAND) hi++
+    if (hi - lo > best.count) best = { count: hi - lo, from: lo, to: hi }
+  }
+  // A handful of points is no face, and one barely larger is no reason to doubt.
+  if (own === 0 || best.count < 20 || best.count < 1.5 * own) return null
+  let sum = 0
+  for (let i = best.from; i < best.to; i++) sum += offsets[i]
+  return { offset: sum / best.count, times: best.count / own }
+}
+
 /** The translation that puts the given point at 0, 0, 0 — an alignment made of
  *  nothing but a zero point, for the user who only wants to say where zero is. */
 export function translationToOrigin(point: Vec3): Rigid {

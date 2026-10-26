@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // What the status says holds an agent up: a tool list the client got before
-// the page changed and never listed again, no jobs in a fresh copy of the
+// the page changed and never listed again — what was added, removed and
+// changed, and which page it came from — no jobs in a fresh copy of the
 // server, and a change dropped when the page went away before answering —
 // which may have been made all the same.
 import assert from 'node:assert/strict'
@@ -63,13 +64,45 @@ test('the status says the tools the client holds are stale until it lists them a
   try {
     const s = await status()
     assert.equal(s.tools.stale, true)
-    assert.equal(s.tools.listed, 7)
-    assert.equal(s.tools.now, 8)
+    assert.equal(s.tools.listed, 8)
+    assert.equal(s.tools.now, 9)
     assert.deepEqual(s.tools.added, ['demo_added'])
     assert.equal(s.tools.removed, undefined)
+    assert.equal(s.tools.changed, undefined)
+    assert.equal(s.tools.listedFrom, 'the page, ScanRuler 0.0.0-test')
     assert.match(s.tools.note, /start a new chat to get the current tools/)
+    // Named once; counted after, with a short note.
+    const later = await status()
+    assert.equal(later.tools.added, 1)
+    assert.equal(later.tools.listedFrom, 'the page, ScanRuler 0.0.0-test')
+    assert.match(later.tools.note, /^Still stale, as an earlier answer named them/)
     await client.listTools()
     assert.equal((await status()).tools, undefined, 'listed again: not stale')
+  } finally {
+    second.page.close()
+    await new Promise((resolve) => link.once('disconnected', resolve))
+  }
+})
+
+test('a tool whose input changed is named in changed, and the list says which page it came from', async () => {
+  const port = http.address().port
+  const first = await fakePage(port, { token: TOKEN, commands: AFTER })
+  await link.waitForPage(2_000)
+  await client.listTools()
+  first.page.close()
+  await new Promise((resolve) => link.once('disconnected', resolve))
+  // The same names; one takes a field more.
+  const widened = AFTER.map((c) => (c.name === 'demo.change' ? { ...c, input: obj({ more: { type: 'number' } }) } : c))
+  const second = await fakePage(port, { token: TOKEN, commands: widened })
+  try {
+    const s = await status()
+    assert.equal(s.tools.stale, true)
+    assert.deepEqual(s.tools.changed, ['demo_change'])
+    assert.equal(s.tools.added, undefined)
+    assert.equal(s.tools.listed, s.tools.now)
+    assert.equal(s.tools.listedFrom, 'the page, ScanRuler 0.0.0-test')
+    await client.listTools()
+    assert.equal((await status()).tools, undefined)
   } finally {
     second.page.close()
     await new Promise((resolve) => link.once('disconnected', resolve))

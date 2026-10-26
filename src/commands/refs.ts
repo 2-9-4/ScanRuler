@@ -14,6 +14,7 @@
 
 import { BASE_PLANES } from '../core/basePlanes'
 import type { ScanSpot } from '../core/geometry/nearest'
+import type { WorldAxis } from '../core/section/frame'
 import type { ElementKind } from '../core/types'
 import { useFlat } from '../state/flatStore'
 import { useStore, type Element } from '../state/store'
@@ -28,18 +29,42 @@ export type ElementRef = number | string
 export const elementRefSchema = (description: string): JsonSchema =>
   oneOf([int('The element’s id.', { minimum: 1 }), str('The element’s name, as the list shows it — "Sphere 1".', { minLength: 1 })], description)
 
+/** A reference by id or name as it was meant: an id sent as a string — "185",
+ *  as some agents' clients send every number — is the id when nothing in
+ *  `list` is named so. Every lookup by id or name starts here. */
+export function refOf(list: readonly { name?: string }[], ref: number | string): number | string {
+  if (typeof ref === 'number' || !/^\s*\d+\s*$/.test(ref)) return ref
+  const want = ref.trim()
+  return list.some((x) => x.name?.trim() === want) ? ref : Number(want)
+}
+
+/**
+ * A coordinate plane by name, as the axis it is square to: "XY" (z), "YZ"
+ * (x), "XZ" or "ZX" (y) — the two letters either way round, any case, with
+ * or without " plane". Null for anything else, an element's name, say.
+ * Every command that takes a coordinate plane by name reads it here; the
+ * answers spell it "XY", "YZ", "XZ" (worldPlaneName).
+ */
+export function parsePlaneName(name: string): WorldAxis | null {
+  const key = name.trim().toUpperCase().replace(/[\s_-]*PLANE$/, '')
+  if (key.length !== 2 || key[0] === key[1] || !/^[XYZ]{2}$/.test(key)) return null
+  return (['x', 'y', 'z'] as const).find((a) => !key.includes(a.toUpperCase()))!
+}
+
 /** The coordinate planes by name, for wherever a plane is asked for as a
- *  reference: "XY", "YZ", "ZX" (also "XZ"), with or without " plane". */
+ *  reference (parsePlaneName): the base plane's id. */
 function basePlaneId(name: string): number | null {
-  const key = name.trim().toUpperCase().replace(/\s*PLANE$/, '')
-  const canonical = key === 'XZ' ? 'ZX' : key
-  return BASE_PLANES.find((p) => p.name.toUpperCase() === `${canonical} PLANE`)?.id ?? null
+  const axis = parsePlaneName(name)
+  if (!axis) return null
+  const k = 'xyz'.indexOf(axis)
+  return BASE_PLANES.find((p) => p.normal[k] === 1)?.id ?? null
 }
 
 /** The element an id or a name stands for. Names are matched whole, case
  *  aside; a name two elements share is refused rather than guessed. */
-export function findElement(ref: ElementRef): Element {
+export function findElement(given: ElementRef): Element {
   const { elements } = useStore.getState()
+  const ref = refOf(elements, given)
   if (typeof ref === 'number') {
     const el = elements.find((e) => e.id === ref)
     if (!el) throw new CommandError('not_found', `There is no element ${ref}.`)

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// The session as a whole: reading it out, starting it over, the workspace on
-// screen, the report, and the undo history.
+// The session as a whole: reading it out, starting it over, what an agent's
+// recent jobs did, the workspace on screen, the report, and the undo
+// history.
 
 import { runImport } from '../../app/imports'
 import { historyBlocked, redo, undo, useHistory } from '../../state/historyStore'
@@ -8,7 +9,8 @@ import { useShell } from '../../state/shellStore'
 import { useStore } from '../../state/store'
 import { commandHost } from '../host'
 import { reportJson, reportText, REPORT_WORKSPACES, type ReportWorkspace } from '../report'
-import { enumOf, obj, str } from '../schema'
+import { RECENT_KEPT, RECENT_RESULT_CHARS, recentOutcomes } from '../registry'
+import { enumOf, int, obj, str } from '../schema'
 import { internalWorkspace, publicWorkspace, sessionState, workspaceNames } from '../state'
 import { CommandError, type Command } from '../types'
 import { discardSchema, requireDiscardable, waitFor } from './common'
@@ -31,6 +33,7 @@ const reset: Command<{ discard?: boolean }> = {
     'Close the scan, the reference part and the 2D image, and with them every measurement and the project’s name, as opening an empty project does. Refuses while the session holds measurements unless discard is true. Not undoable: the history starts over too.',
   input: obj({ discard: discardSchema }),
   history: false,
+  discards: ({ discard }) => discard === true,
   run: async ({ discard }) => {
     requireDiscardable(discard, 'starting over')
     const { session, flat } = commandHost()
@@ -110,7 +113,22 @@ const redoCommand: Command = {
   run: () => travel(false),
 }
 
-export const sessionCommands = [state, reset]
+const recent: Command<{ job?: string; limit?: number }> = {
+  name: 'recent',
+  title: 'What recent jobs did',
+  description: `What became of the commands an agent’s server ran under its jobs — each change and each batch is one, and the server names it — newest first: the job, the command, running, done or failed, when it started and its ms, and its result or its error { code, message }. A result past ${RECENT_RESULT_CHARS.toLocaleString('en-US')} characters is left out (resultOmitted says its size). The page keeps the last ${RECENT_KEPT} for as long as it stays open, so a server started after the one that asked can still say what a job did. job: only that job’s.`,
+  input: obj({
+    job: str('Only this job’s commands, as the server named it.', { minLength: 1 }),
+    limit: int('How many at most, newest first — 20 by default.', { minimum: 1, maximum: RECENT_KEPT }),
+  }),
+  readOnly: true,
+  run: async ({ job, limit = 20 }) => {
+    const all = recentOutcomes(job)
+    return { outcomes: all.slice(0, limit), ...(all.length > limit ? { more: all.length - limit } : {}) }
+  },
+}
+
+export const sessionCommands = [state, reset, recent]
 export const workspaceCommands = [workspace]
 export const reportCommands = [report]
 /** The history as a checkpoint found it: the step on top by itself, the

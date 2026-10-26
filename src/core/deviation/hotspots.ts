@@ -13,9 +13,14 @@
 // median distance to the nearest other vertex over tolerance — and gives
 // the area too, as count × spacing², the area a vertex stands for on an
 // evenly sampled surface.
+//
+// Each patch says how deep it lies (the median reading), how much lies
+// past the tolerance in mm³, and so whether it is a feature or texture
+// (patchKind.ts).
 
 import type { Vec3 } from '../types'
 import { makeUnionFind } from '../geometry/unionFind'
+import { FEATURE_DEPTH, patchKind, type PatchKind } from './patchKind'
 
 export interface Hotspot {
   /** How many entries of the field lie in the patch. */
@@ -32,6 +37,14 @@ export interface Hotspot {
   excess: number
   /** mm², from the point spacing. */
   area: number
+  /** mm³ past the tolerance: the excess times the area a vertex stands
+   *  for — the ranking key in units a person reads. */
+  volume: number
+  /** The median |reading| over the patch: how deep it lies, the odd spike
+   *  aside. */
+  depth: number
+  /** A feature (broad and deep — patchKind.ts) or texture. */
+  kind: PatchKind
   /** Where the extreme reading is, and which field entry it is. */
   at: Vec3
   index: number
@@ -53,6 +66,11 @@ export interface HotspotOptions {
    *  never one patch, whatever their distance — the face each lies nearest,
    *  say, so a patch never runs off one face onto the next. */
   group?: (i: number) => number
+  /** How deep a patch has to lie, median |reading|, to be a feature;
+   *  FEATURE_DEPTH × the tolerance by default. A caller gathering what lies
+   *  past some other line than the tolerance — the search distance — gives
+   *  the map's own here. */
+  featureDepth?: number
 }
 
 export interface HotspotReport {
@@ -61,6 +79,9 @@ export interface HotspotReport {
   found: number
   /** How many entries lie over the tolerance. */
   over: number
+  /** The feature patches among all found, and their share of everything
+   *  past the tolerance (Σ excess over every entry over it), 0–1. */
+  features: { count: number; shareOfExcess: number }
   /** The point spacing read, mm, and the grain used. */
   spacing: number
   grain: number
@@ -89,7 +110,7 @@ export function hotspots(points: Float32Array, values: Float32Array, tolerance: 
     if (only && !only(i)) continue
     sel.push(i)
   }
-  const empty = { patches: [], found: 0, over: sel.length, spacing: 0, grain: options.grain ?? 0 }
+  const empty = { patches: [], found: 0, over: sel.length, features: { count: 0, shareOfExcess: 0 }, spacing: 0, grain: options.grain ?? 0 }
   if (sel.length === 0) return empty
   const spacing = pointSpacing(points, sel)
   const grain = options.grain ?? Math.max(spacing * GRAIN_SPACINGS, 1e-6)
@@ -125,7 +146,12 @@ export function hotspots(points: Float32Array, values: Float32Array, tolerance: 
     list.push(i)
   }
   const minCount = options.minCount ?? DEFAULT_MIN_COUNT
+  const featureDepth = options.featureDepth ?? FEATURE_DEPTH * tolerance
   const patches: Hotspot[] = []
+  let allExcess = 0
+  for (const e of sel) allExcess += Math.abs(values[e]) - tolerance
+  let featureExcess = 0
+  let featureCount = 0
   for (const list of byRoot.values()) {
     if (list.length < minCount) continue
     const min: Vec3 = [Infinity, Infinity, Infinity]
@@ -133,11 +159,13 @@ export function hotspots(points: Float32Array, values: Float32Array, tolerance: 
     const centroid: Vec3 = [0, 0, 0]
     let sum = 0, excess = 0, extreme = 0, index = -1
     const members = new Uint32Array(list.length)
+    const abs = new Float32Array(list.length)
     list.forEach((i, k) => {
       const e = sel[i]
       members[k] = e
       const v = values[e]
       sum += v
+      abs[k] = Math.abs(v)
       excess += Math.abs(v) - tolerance
       if (Math.abs(v) > Math.abs(extreme)) {
         extreme = v
@@ -150,6 +178,15 @@ export function hotspots(points: Float32Array, values: Float32Array, tolerance: 
         if (p > max[c]) max[c] = p
       }
     })
+    abs.sort()
+    const half = list.length >> 1
+    const depth = list.length % 2 ? abs[half] : (abs[half - 1] + abs[half]) / 2
+    const area = list.length * spacing * spacing
+    const kind = patchKind(area, depth, spacing, featureDepth)
+    if (kind === 'feature') {
+      featureCount++
+      featureExcess += excess
+    }
     patches.push({
       count: list.length,
       centroid,
@@ -158,23 +195,33 @@ export function hotspots(points: Float32Array, values: Float32Array, tolerance: 
       mean: sum / list.length,
       extreme,
       excess,
-      area: list.length * spacing * spacing,
+      area,
+      volume: excess * spacing * spacing,
+      depth,
+      kind,
       at: [points[index * 3], points[index * 3 + 1], points[index * 3 + 2]],
       index,
       members,
     })
   }
   patches.sort((a, b) => b.excess - a.excess)
-  return { patches: patches.slice(0, options.limit ?? DEFAULT_LIMIT), found: patches.length, over: m, spacing, grain }
+  const features = { count: featureCount, shareOfExcess: allExcess > 0 ? featureExcess / allExcess : 0 }
+  return { patches: patches.slice(0, options.limit ?? DEFAULT_LIMIT), found: patches.length, over: m, features, spacing, grain }
 }
 
+/** How many cells a side the grid's numeric keys tell apart exactly. */
+const KEY_SIDE = 131072
+const KEY_HALF = KEY_SIDE / 2
+
 /** A hash grid over the selected entries, for asking what lies in the
- *  cell about a point and the 26 around it. */
-function gridOf(points: Float32Array, sel: readonly number[], cell: number) {
-  const cells = new Map<string, number[]>()
-  const key = (x: number, y: number, z: number) => `${Math.floor(x / cell)},${Math.floor(y / cell)},${Math.floor(z / cell)}`
+ *  cell about a point and the 26 around it. A cell's key is a number, much
+ *  quicker to look up than a string; past KEY_SIDE cells a side two cells
+ *  may share a key, which only hands a caller more entries to measure. */
+export function gridOf(points: Float32Array, sel: readonly number[], cell: number) {
+  const cells = new Map<number, number[]>()
+  const keyOf = (cx: number, cy: number, cz: number) => ((cx + KEY_HALF) * KEY_SIDE + (cy + KEY_HALF)) * KEY_SIDE + (cz + KEY_HALF)
   sel.forEach((e, i) => {
-    const k = key(points[e * 3], points[e * 3 + 1], points[e * 3 + 2])
+    const k = keyOf(Math.floor(points[e * 3] / cell), Math.floor(points[e * 3 + 1] / cell), Math.floor(points[e * 3 + 2] / cell))
     let list = cells.get(k)
     if (!list) cells.set(k, (list = []))
     list.push(i)
@@ -186,7 +233,7 @@ function gridOf(points: Float32Array, sel: readonly number[], cell: number) {
       for (let dx = -1; dx <= 1; dx++)
         for (let dy = -1; dy <= 1; dy++)
           for (let dz = -1; dz <= 1; dz++) {
-            const list = cells.get(`${cx + dx},${cy + dy},${cz + dz}`)
+            const list = cells.get(keyOf(cx + dx, cy + dy, cz + dz))
             if (list) for (const j of list) visit(j)
           }
     },

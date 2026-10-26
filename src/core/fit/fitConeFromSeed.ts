@@ -8,7 +8,7 @@
 import type { AxialWindow, Cone, ConeFit, FitBase, FitSettings, MeshGraph } from '../types'
 import { coneAxisFromNormals, coneResidual, fitConeClipped, fitConeOnAxis, ransacCone } from './cone'
 import { FitError } from './errors'
-import { axisAgrees, guidedEstimate, guidedSeeds, guideRefusal, hasGuide, judgeRound, type FitGuide, type GuideSeen } from './guide'
+import { axisAgrees, axisOff, guidedEstimate, guidedSeeds, guideRefusal, hasGuide, judgeRound, type FitGuide, type GuideSeen } from './guide'
 import { axialExtents } from './extents'
 import { growConeRegion, seededFit } from './regionGrow'
 import { requireSelection } from './selection'
@@ -85,7 +85,7 @@ export function fitConeFromSeed(
             (p) => ransacCone(g.positions, g.normals, p, { seed }),
             (c) =>
               !axisAgrees(guided, [c.cone.ax, c.cone.ay, c.cone.az])
-                ? { radius: c.cone.r, why: 'axis off' }
+                ? axisOff(guided, c.cone.r, [c.cone.ax, c.cone.ay, c.cone.az], [c.cone.px, c.cone.py, c.cone.pz], c.inliers.length)
                 : judgeRound(g, guided, c.cone.r, c.inliers, coneOutward(c.cone), true),
             (c, v) => {
               const j = v * 3
@@ -117,7 +117,7 @@ export function fitConeFromSeed(
       if (!(report.coverage >= 29)) return null
       if (guided) {
         const no = !axisAgrees(guided, report.axis)
-          ? { radius: report.radius, why: 'axis off' }
+          ? axisOff(guided, report.radius, report.axis, report.center, grown.region.length)
           : judgeRound(g, guided, report.radius, grown.region, coneOutward(c), false)
         if (no) {
           seen.push(no)

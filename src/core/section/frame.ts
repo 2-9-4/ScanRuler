@@ -4,7 +4,8 @@
 //
 // A section is taken along an element that has a direction — a plane's
 // normal, the axis of a cylinder, cone or line, a circle's normal — moved
-// along that direction by an offset. The frame is frozen the moment the
+// along that direction by an offset; or through an axis, at an angle about
+// it, as a half section of a turned part. The frame is frozen the moment the
 // section is made: the reference element is remembered for the editor and
 // the record, but re-fitting or deleting it afterwards leaves the cut where
 // it was. What does move the frame is the part itself — a datum alignment
@@ -13,7 +14,8 @@
 // The in-plane X axis is chosen once and kept: a plane hands over its own
 // patch axes, everything else gets a deterministic perpendicular. An edit
 // re-projects the axis it already had, so a section that is nudged by a
-// millimetre does not turn its sheet under the measurements taken on it.
+// millimetre does not turn its sheet under the measurements taken on it. A
+// plane through an axis has its X along the radius whatever it had before.
 // U × V = normal, so laid flat the sheet is seen from the side the normal
 // points to — for a plane fitted on a face, from outside the part.
 
@@ -41,14 +43,37 @@ export function canCutAlong(kind: ElementKind): boolean {
  *  datum's. */
 export type WorldAxis = 'x' | 'y' | 'z'
 
+/** A plane through an axis rather than across it: the axis of an element, by
+ *  id, or a coordinate axis through the origin, and the angle turned about
+ *  it — see radialFrame. */
+export interface RadialRef {
+  axis: number | WorldAxis
+  angleDeg: number
+}
+
 /** What a section is taken across: an element, by id, or a coordinate axis
  *  — the plane square to it, the way a CAD sketch is put on the XY plane. */
 export type SectionRef = number | WorldAxis
+
+/** What a section's plane is laid by: across a SectionRef, or through an
+ *  axis at an angle about it. */
+export type SectionPlaneRef = SectionRef | RadialRef
 
 export const WORLD_AXES: readonly WorldAxis[] = ['x', 'y', 'z']
 
 export function isWorldAxis(ref: unknown): ref is WorldAxis {
   return ref === 'x' || ref === 'y' || ref === 'z'
+}
+
+export function isRadialRef(ref: unknown): ref is RadialRef {
+  return typeof ref === 'object' && ref !== null && 'axis' in ref && 'angleDeg' in ref
+}
+
+/** The element a reference names, if it names one: the one cut across, or
+ *  the one whose axis a plane is laid through. */
+export function sectionRefElement(ref: SectionPlaneRef | null): number | null {
+  if (typeof ref === 'number') return ref
+  return isRadialRef(ref) && typeof ref.axis === 'number' ? ref.axis : null
 }
 
 export function worldAxisDir(axis: WorldAxis): Vec3 {
@@ -79,13 +104,19 @@ export function worldCutAxis(axis: WorldAxis, through: Vec3 = [0, 0, 0]): CutAxi
 /** What a reference reads as in the list and the report: the element's
  *  name, a coordinate plane's, or null for an element since deleted. */
 export function sectionRefName(
-  ref: SectionRef | null,
+  ref: SectionPlaneRef | null,
   elements: readonly { id: number; name: string }[],
 ): string | null {
   if (ref === null) return null
   if (isWorldAxis(ref)) return worldPlaneName(ref)
+  if (isRadialRef(ref)) {
+    const axis = isWorldAxis(ref.axis) ? `the ${ref.axis.toUpperCase()} axis` : elements.find((e) => e.id === ref.axis)?.name
+    return axis ? `${axis}, radial at ${round3(ref.angleDeg)}°` : null
+  }
   return elements.find((e) => e.id === ref)?.name ?? null
 }
+
+const round3 = (v: number) => Math.round(v * 1000) / 1000
 
 /** The line a section slides along: a point on it, the direction the offset
  *  counts positive in, and — from a plane — the in-plane X its patch is
@@ -112,6 +143,79 @@ export function cutAxisOf(fit: FitData): CutAxis | null {
     default:
       return null
   }
+}
+
+/** The kinds a plane can be laid through the axis of. */
+export const RADIAL_AXIS_KINDS: readonly ElementKind[] = ['cylinder', 'cone', 'line', 'circle']
+
+/** An element's axis as a line: a cylinder's or cone's axis, a line itself,
+ *  a circle's normal through its centre. Null for the kinds with none. */
+export function axisLineOf(fit: FitData): { origin: Vec3; dir: Vec3 } | null {
+  switch (fit.kind) {
+    case 'cylinder':
+    case 'cone':
+      return { origin: fit.center, dir: fit.axis }
+    case 'line':
+      return { origin: fit.center, dir: fit.dir }
+    case 'circle':
+      return { origin: fit.center, dir: fit.normal }
+    default:
+      return null
+  }
+}
+
+/**
+ * The frame of a plane through an axis, turned `angleDeg` about it: U runs
+ * out along the radius, V up the axis and the normal is U × V — a half
+ * section with the radius to the right and the axis up, at every angle,
+ * never seen from behind. Up the axis is towards the + end of the
+ * coordinate axis it lies nearest, whichever way a fit happened to point
+ * it, so a bore fitted pointing down still has V = +Z. Zero degrees is the
+ * coordinate axis next round from that one (X about Z, Y about X, Z about
+ * Y, as the coordinate planes take their X) laid square to the axis, and
+ * the angle turns from it by the right hand about the axis — about Z, from
+ * +X towards +Y. The origin is the one given, a point on the axis, so u is
+ * the distance out from the axis.
+ */
+export function radialFrame(axis: { origin: Vec3; dir: Vec3 }, angleDeg: number): SectionFrame | null {
+  let up = normalize(axis.dir)
+  if (!up || !Number.isFinite(angleDeg)) return null
+  let k = 0
+  for (let i = 1; i < 3; i++) if (Math.abs(up[i]) > Math.abs(up[k])) k = i
+  if (up[k] < 0) up = [-up[0], -up[1], -up[2]]
+  const zero = inPlaneX(up, sketchXAxis(up))
+  const quarter = cross(up, zero)
+  const a = (angleDeg * Math.PI) / 180
+  const basisU = normalize(addScaled([zero[0] * Math.cos(a), zero[1] * Math.cos(a), zero[2] * Math.cos(a)], quarter, Math.sin(a)))!
+  return { origin: axis.origin, normal: cross(basisU, up), basisU, basisV: up }
+}
+
+/** The line a plane through an axis slides along: its normal, from the
+ *  point on the axis — so offset 0 is the plane through the axis. */
+export function radialCutAxis(axis: { origin: Vec3; dir: Vec3 }, angleDeg: number): CutAxis | null {
+  const f = radialFrame(axis, angleDeg)
+  return f && { origin: f.origin, dir: f.normal, basisU: f.basisU }
+}
+
+/** The line a reference gives as the elements stand now — a coordinate
+ *  axis's through `centre`, a radial plane's about its axis (a coordinate
+ *  axis's through the origin) — or null where the element is gone or has
+ *  no direction. */
+export function sectionRefAxis(
+  ref: SectionPlaneRef,
+  elements: readonly { id: number; kind: ElementKind; fit?: FitData | null }[],
+  centre: Vec3,
+): CutAxis | null {
+  if (isWorldAxis(ref)) return worldCutAxis(ref, centre)
+  if (isRadialRef(ref)) {
+    const { axis } = ref
+    if (isWorldAxis(axis)) return radialCutAxis({ origin: [0, 0, 0], dir: worldAxisDir(axis) }, ref.angleDeg)
+    const fit = elements.find((e) => e.id === axis)?.fit
+    const line = fit ? axisLineOf(fit) : null
+    return line && radialCutAxis(line, ref.angleDeg)
+  }
+  const el = elements.find((e) => e.id === ref)
+  return el?.fit && canCutAlong(el.kind) ? cutAxisOf(el.fit) : null
 }
 
 /**
@@ -243,6 +347,33 @@ export function tiltOf(refDir: Vec3 | null | undefined, normal: Vec3): number {
   const deg = angleBetween(a, b)
   // The hair a rotation and its inverse leave behind is not a tilt.
   return deg < 0.005 ? 0 : deg
+}
+
+/** A point of the world on a sheet: its [u, v], and how far it lies off
+ *  the plane along the normal — what a place given in world coordinates
+ *  is on a picture or a map laid on that sheet. */
+export function pointOnSheet(frame: SectionFrame, p: Vec3): { at: [number, number]; off: number } {
+  const d: Vec3 = [p[0] - frame.origin[0], p[1] - frame.origin[1], p[2] - frame.origin[2]]
+  return { at: [dot(d, frame.basisU), dot(d, frame.basisV)], off: dot(d, frame.normal) }
+}
+
+/** A box of the world laid on a sheet: the box round its eight corners in
+ *  the sheet's [u, v] and the height along its normal — [u, v, height]
+ *  min and max, which takes in all of the world box and, where the sheet
+ *  is turned off the world's axes, some room round it. */
+export function boxOnSheet(frame: SectionFrame, box: { min: Vec3; max: Vec3 }): { min: Vec3; max: Vec3 } {
+  const min: Vec3 = [Infinity, Infinity, Infinity]
+  const max: Vec3 = [-Infinity, -Infinity, -Infinity]
+  for (let c = 0; c < 8; c++) {
+    const corner: Vec3 = [c & 1 ? box.max[0] : box.min[0], c & 2 ? box.max[1] : box.min[1], c & 4 ? box.max[2] : box.min[2]]
+    const { at, off } = pointOnSheet(frame, corner)
+    const q = [at[0], at[1], off]
+    for (let k = 0; k < 3; k++) {
+      min[k] = Math.min(min[k], q[k])
+      max[k] = Math.max(max[k], q[k])
+    }
+  }
+  return { min, max }
 }
 
 /** The axis carried through a rigid motion of the scan. */

@@ -3,6 +3,13 @@
 // start, then the orthogonal-distance fixed-point iteration that makes it the
 // Gaussian best fit, once per round of the "used points" clipping. The robust
 // estimate a click starts from lives in ransac.ts.
+//
+// A ball whose diameter is known — a gauge ball, a ballbar's — can be fitted
+// with it held: the free fit is the start, and only the centre moves. On a
+// partial scan that is what keeps the centre where it belongs, since there
+// the radius and the centre's place along the cap's axis trade off against
+// each other, and a surface that reads a little off towards the grazing rim
+// moves both of them several times as far as it is off.
 
 import type { Sphere } from '../types'
 import { clippedRefit } from './clip'
@@ -101,6 +108,49 @@ function refineSphereGeometric(
   return { cx, cy, cz, r }
 }
 
+/** The centre of the sphere of radius `r` that fits best — Gauss–Newton on
+ *  Σ(|p − c| − r)² over the centre alone, from `start`. */
+function fitSphereCentre(
+  positions: Float32Array,
+  idx: ArrayLike<number>,
+  r: number,
+  start: Sphere,
+  maxIter = 50,
+): Sphere | null {
+  const n = idx.length
+  let cx = start.cx, cy = start.cy, cz = start.cz
+  for (let iter = 0; iter < maxIter; iter++) {
+    let axx = 0, axy = 0, axz = 0, ayy = 0, ayz = 0, azz = 0
+    let bx = 0, by = 0, bz = 0
+    for (let i = 0; i < n; i++) {
+      const j = idx[i] * 3
+      const dx = positions[j] - cx
+      const dy = positions[j + 1] - cy
+      const dz = positions[j + 2] - cz
+      const d = Math.sqrt(dx * dx + dy * dy + dz * dz)
+      if (d < 1e-12) continue
+      const ux = dx / d, uy = dy / d, uz = dz / d
+      const e = d - r
+      axx += ux * ux
+      axy += ux * uy
+      axz += ux * uz
+      ayy += uy * uy
+      ayz += uy * uz
+      azz += uz * uz
+      bx += ux * e
+      by += uy * e
+      bz += uz * e
+    }
+    const step = solveLinear(3, new Float64Array([axx, axy, axz, axy, ayy, ayz, axz, ayz, azz]), new Float64Array([bx, by, bz]))
+    if (!step) return null
+    cx += step[0]
+    cy += step[1]
+    cz += step[2]
+    if (Math.hypot(step[0], step[1], step[2]) < 1e-10 * Math.max(1, r)) break
+  }
+  return Number.isFinite(cx) && Number.isFinite(cy) && Number.isFinite(cz) ? { cx, cy, cz, r } : null
+}
+
 export interface ClippedFit {
   sphere: Sphere
   /** RMS of radial residuals over the used points. */
@@ -112,22 +162,32 @@ export interface ClippedFit {
   min: number
   max: number
   used: Uint32Array
+  /** With the radius held: the sphere the same used points give when it is
+   *  free — how far its radius is off the held one says how far the scan
+   *  sits off the ball. */
+  free?: Sphere
 }
 
 /** Gaussian best-fit with GOM-style "used points" clipping (see
- *  `clippedRefit`), each round an algebraic fit polished geometrically. */
+ *  `clippedRefit`), each round an algebraic fit polished geometrically —
+ *  and, with `held` (a radius), the centre then fitted with that radius. */
 export function fitSphereClipped(
   positions: Float32Array,
   idx: Uint32Array | ArrayLike<number>,
   k: number,
+  held?: number,
 ): ClippedFit | null {
+  const freeFit = (used: ArrayLike<number>) => {
+    const alg = fitSphereAlgebraic(positions, used)
+    return alg && refineSphereGeometric(positions, used, alg)
+  }
   const r = clippedRefit<Sphere>(
     positions,
     idx,
     k,
     (used) => {
-      const alg = fitSphereAlgebraic(positions, used)
-      return alg && refineSphereGeometric(positions, used, alg)
+      const free = freeFit(used)
+      return free && held !== undefined ? fitSphereCentre(positions, used, held, free) : free
     },
     (s, x, y, z) => {
       const dx = x - s.cx
@@ -136,5 +196,7 @@ export function fitSphereClipped(
       return Math.sqrt(dx * dx + dy * dy + dz * dz) - s.r
     },
   )
-  return r && { sphere: r.model, sigma: r.sigma, span: r.span, min: r.min, max: r.max, used: r.used }
+  if (!r) return null
+  const free = held !== undefined ? freeFit(r.used) : null
+  return { sphere: r.model, sigma: r.sigma, span: r.span, min: r.min, max: r.max, used: r.used, ...(free ? { free } : {}) }
 }

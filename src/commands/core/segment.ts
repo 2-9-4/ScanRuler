@@ -2,18 +2,20 @@
 // The scan's flat faces found all at once: scan.segment grows planar regions
 // over it in the mesh worker (core/fit/segment) and answers each region's
 // plane, σ, area, box and neighbours — no vertex lists, which cost more to
-// read than they say. One region's points can be left marked for
-// element.fit_marked instead. Mirror twins are paired across a plane given.
+// read than they say. One region's points, or several regions' together,
+// can be left marked for element.fit_marked instead; the answer is then the
+// marked region, not the list again. Mirror twins are paired across a
+// plane given.
 
-import { BASE_PLANES } from '../../core/basePlanes'
+import { worldAxisDir } from '../../core/section/frame'
 import type { Segmentation, SegmentedPlane } from '../../core/fit/segment'
 import { roundTo } from '../../core/round'
 import type { Vec3 } from '../../core/types'
 import { useStore } from '../../state/store'
 import { commandHost } from '../host'
 import { setMarked } from '../marked'
-import { elementRefSchema, measuredElement, requireScan, type ElementRef } from '../refs'
-import { enumOf, int, num, obj, vec3 } from '../schema'
+import { elementRefSchema, measuredElement, parsePlaneName, requireScan, type ElementRef } from '../refs'
+import { arr, bool, enumOf, int, num, obj, oneOf, vec3 } from '../schema'
 import { CommandError, type Command } from '../types'
 
 /** Unless told otherwise: the angle a vertex normal may lean off its
@@ -40,7 +42,8 @@ interface SegmentIn {
   maxDeg?: number
   limit?: number
   symmetric?: ElementRef
-  mark?: number
+  mark?: number | number[]
+  list?: boolean
 }
 
 /** The last segmentation, kept for a follow-up `mark` with the same
@@ -60,11 +63,8 @@ const dot = (a: readonly number[], b: readonly number[]) => a[0] * b[0] + a[1] *
 /** The plane mirror twins are paired across: a plane element, or a
  *  coordinate plane through the origin. */
 function mirrorPlane(ref: ElementRef): { point: Vec3; normal: Vec3 } {
-  if (typeof ref === 'string') {
-    const key = ref.trim().toUpperCase().replace(/\s*PLANE$/, '')
-    const base = BASE_PLANES.find((p) => p.name.toUpperCase() === `${key === 'XZ' ? 'ZX' : key} PLANE`)
-    if (base) return { point: [0, 0, 0], normal: base.normal }
-  }
+  const world = typeof ref === 'string' ? parsePlaneName(ref) : null
+  if (world) return { point: [0, 0, 0], normal: worldAxisDir(world) }
   const fit = measuredElement(ref, ['plane']).fit
   if (fit?.kind !== 'plane') throw new CommandError('invalid_input', 'symmetric takes a plane.')
   return { point: fit.center, normal: fit.normal }
@@ -120,7 +120,7 @@ const segment: Command<SegmentIn> = {
   name: 'segment',
   title: 'Find the scan’s flat regions',
   description:
-    `The scan’s planar regions, found all at once: grown from the flattest places outward, a vertex joining while its normal lies within maxDeg of the region’s plane (${SEGMENT_DEG}° by default) and it lies inside the region’s noise band; each vertex goes to one region; a region rougher than maxRms off its plane (mm, ${SEGMENT_RMS} by default) or smaller than minArea (mm², by default a square 2 % of the scan’s diagonal on a side) is given back. box: only the scan inside it. The largest first, at most limit (${SEGMENT_LIMIT}); each with id (1 is the largest), normal (out of the part), point (its centroid, on the plane), sigma (RMS off the plane, mm), area (mm²), box, vertices (a count) and neighbours: the regions it meets across an edge or its rounding, each { id, deg } with the angle between their normals. symmetric: a plane element, or "XY", "YZ", "ZX" — each region gets mirror { id, deg, mm }: its twin across that plane ("self" when it straddles it), how far their planes differ in angle once mirrored and in place. mark: a region’s id leaves its points marked — element.fit_marked { marked: true } fits to them; with the same options it reuses the last run. Returns found (regions in all), considered and claimed (vertices looked at and held by regions). Changes nothing.`,
+    `The scan’s planar regions, found all at once: grown from the flattest places outward, a vertex joining while its normal lies within maxDeg of the region’s plane (${SEGMENT_DEG}° by default) and it lies inside the region’s noise band; each vertex goes to one region; a region rougher than maxRms off its plane (mm, ${SEGMENT_RMS} by default) or smaller than minArea (mm², by default a square 2 % of the scan’s diagonal on a side) is given back. box: only the scan inside it. The largest first, at most limit (${SEGMENT_LIMIT}); each with id (1 is the largest), normal (out of the part), point (its centroid, on the plane), sigma (RMS off the plane, mm), area (mm²), box, vertices (a count) and neighbours: the regions it meets across an edge or its rounding, each { id, deg } with the angle between their normals. symmetric: a plane element, or "XY", "YZ", "XZ" — each region gets mirror { id, deg, mm }: its twin across that plane ("self" when it straddles it), how far their planes differ in angle once mirrored and in place. mark: a region’s id, or several (their points together), leaves its points marked — element.fit_marked { marked: true } fits to them; with the same options it reuses the last run, and answers marked { points, from } and region, the marked region (a list of them for several), without the list of regions unless list: true. Returns found (regions in all), considered and claimed (vertices looked at and held by regions). Changes nothing.`,
   input: obj({
     kind: enumOf(['plane'], 'What to find; plane, the default and for now the only one.'),
     box: obj({ min: vec3('The lowest corner, mm.'), max: vec3('The highest corner, mm.') }, ['min', 'max'], 'Only the scan inside this box.'),
@@ -128,11 +128,12 @@ const segment: Command<SegmentIn> = {
     maxRms: num('mm.', { exclusiveMinimum: 0 }),
     maxDeg: num('Degrees.', { exclusiveMinimum: 0, maximum: 60 }),
     limit: int(`How many regions are listed; ${SEGMENT_LIMIT} by default.`, { minimum: 1, maximum: SEGMENT_LIMIT_MAX }),
-    symmetric: elementRefSchema('Pair regions mirrored across this plane: a plane element, or "XY", "YZ", "ZX".'),
-    mark: int('Leave this region’s points marked, by its id.', { minimum: 1 }),
+    symmetric: elementRefSchema('Pair regions mirrored across this plane: a plane element, or "XY", "YZ", "XZ".'),
+    mark: oneOf([int('A region’s id.', { minimum: 1 }), arr(int(undefined, { minimum: 1 }), 'Several regions’ ids: their points together.', { minItems: 1 })], 'Leave this region’s points marked, by its id — or several regions’.'),
+    list: bool('With mark: the list of regions too, as without it.'),
   }),
   readOnly: true,
-  run: async ({ box, minArea, maxRms = SEGMENT_RMS, maxDeg = SEGMENT_DEG, limit = SEGMENT_LIMIT, symmetric, mark }, ctx) => {
+  run: async ({ box, minArea, maxRms = SEGMENT_RMS, maxDeg = SEGMENT_DEG, limit = SEGMENT_LIMIT, symmetric, mark, list }, ctx) => {
     requireScan()
     const client = commandHost().session.clientRef.current
     if (!client) throw new CommandError('unavailable', 'The mesh worker is not running.')
@@ -149,21 +150,28 @@ const segment: Command<SegmentIn> = {
       last = { key, result }
     }
     const { regions } = result
+    // Each vertex is in one region, so the regions' points together are
+    // their lists one after the other.
+    const ids = mark === undefined ? [] : [...new Set(typeof mark === 'number' ? [mark] : mark)]
     let marked: { points: number; from: string } | undefined
-    if (mark !== undefined) {
-      if (mark > regions.length) throw new CommandError('invalid_input', `There is no region ${mark} — ${regions.length} were found.`)
-      marked = setMarked(result.vertices.subarray(result.offsets[mark - 1], result.offsets[mark]), `scan.segment region ${mark}`)
+    if (ids.length) {
+      const missing = ids.filter((id) => id > regions.length)
+      if (missing.length) throw new CommandError('invalid_input', `There is no region ${missing.join(', ')} — ${regions.length} were found.`)
+      const points = new Uint32Array(ids.reduce((n, id) => n + result.offsets[id] - result.offsets[id - 1], 0))
+      let at = 0
+      for (const id of ids) {
+        const part = result.vertices.subarray(result.offsets[id - 1], result.offsets[id])
+        points.set(part, at)
+        at += part.length
+      }
+      marked = setMarked(points, `scan.segment region${ids.length > 1 ? 's' : ''} ${ids.join(', ')}`)
     }
     const shown = Math.min(limit, regions.length)
     const twins = mirror ? pairMirrors(regions, mirror) : null
     const v = (p: readonly number[], places: number) => p.map((x) => roundTo(x, places))
-    return {
-      found: regions.length,
-      ...(shown < regions.length ? { shown } : {}),
-      considered: result.considered,
-      claimed: result.claimed,
-      ...(marked ? { marked } : {}),
-      regions: regions.slice(0, shown).map((r, i) => ({
+    const row = (i: number) => {
+      const r = regions[i]
+      return {
         id: i + 1,
         normal: v(r.normal, 5),
         point: v(r.point, 4),
@@ -173,7 +181,18 @@ const segment: Command<SegmentIn> = {
         vertices: r.count,
         neighbours: r.neighbours.filter((n) => n.id <= shown).map((n) => ({ id: n.id, deg: roundTo(n.deg, 1) })),
         ...(twins?.[i] ? { mirror: twins[i] } : {}),
-      })),
+      }
+    }
+    // A mark answers the region it marked; the list, which a mark follows
+    // and need not repeat, only when asked for.
+    const listed = !marked || list === true
+    return {
+      found: regions.length,
+      ...(listed && shown < regions.length ? { shown } : {}),
+      considered: result.considered,
+      claimed: result.claimed,
+      ...(marked ? { marked, region: ids.length === 1 ? row(ids[0] - 1) : ids.map((id) => row(id - 1)) } : {}),
+      ...(listed ? { regions: regions.slice(0, shown).map((_, i) => row(i)) } : {}),
     }
   },
 }

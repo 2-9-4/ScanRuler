@@ -5,8 +5,11 @@
 // change nothing). On a 40 mm box and a pair of balls, in the in-process
 // worker — see commandKit.ts.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { sheetThrough } from '../src/commands/core/section'
+import { sheetPlaneOf, sheetThrough } from '../src/commands/core/section'
 import { listCommands } from '../src/commands/registry'
+import { parsePlaneName } from '../src/commands/refs'
+import { BASE_PLANES } from '../src/core/basePlanes'
+import { worldPlaneName } from '../src/core/section/frame'
 import { registerStateSection } from '../src/commands/stateSections'
 import { useHistory } from '../src/state/historyStore'
 import { useShell } from '../src/state/shellStore'
@@ -196,6 +199,21 @@ describe('elements', () => {
     expect((await refused('element.fit', { kind: 'sphere', at: { point: [0, 0, 20] }, orient: { to: 'XY' } })).code).not.toBe('internal')
   })
 
+  it('element.fit holds a sphere’s known diameter, and refuses one on another kind or far off the ball', async () => {
+    await run('scan.open', { bytes: BALLS, name: 'balls.stl', discard: true })
+    expect((await refused('element.fit', { kind: 'plane', at: { point: [-30, 0, 5] }, knownDiameter: 10 })).code).toBe('invalid_input')
+    type Held = El & { fit: { radius: number; held?: { freeDiameter: number; shift: number } }; source: { knownDiameter?: number } }
+    const ball = (await run<{ element: Held }>('element.fit', { kind: 'sphere', at: { point: [-30, 0, 5] }, knownDiameter: 10 })).element
+    expect(ball.fit.radius).toBe(5)
+    expect(ball.fit.held!.freeDiameter).toBeCloseTo(10, 1)
+    expect(ball.source.knownDiameter).toBe(10)
+    // The element's own: the next new box starts free.
+    expect(useStore.getState().settings.knownDiameter).toBeUndefined()
+    const free = (await run<{ element: Held }>('element.fit', { kind: 'sphere', at: { point: [30, 0, 5] }, sigma: 2 })).element
+    expect(free.fit.held).toBeUndefined()
+    expect((await refused('element.fit', { kind: 'sphere', at: { point: [30, 0, 5] }, knownDiameter: 14 })).message).toMatch(/known Ø 14/)
+  })
+
   it('element.fit_marked fits exactly the vertices given', async () => {
     const seed = await run<{ vertex: number }>('scan.nearest', { at: { point: [0, 0, 20] } })
     const face = await headless.session.clientRef.current!.flood(seed.vertex, 10)
@@ -342,8 +360,12 @@ describe('alignment', () => {
   })
 
   it('align.auto and align.symmetry apply the pose read off the scan, a step each', async () => {
-    const auto = await run<{ note?: string; applied: unknown }>('align.auto')
+    const auto = await run<{ note?: string; applied: unknown; square: { largest: { axis: string; tiltDeg: number } | null; axes: { axis: string }[] } }>('align.auto', { level: 'largest' })
     expect(auto.note).toMatch(/Read off the scan/)
+    // How square it came out: a box's faces all square, the largest exactly.
+    expect(auto.note).toMatch(/Squared to its largest face/)
+    expect(auto.square.largest!.tiltDeg).toBeLessThan(0.01)
+    expect(auto.square.axes.map((a) => a.axis).sort()).toEqual(['x', 'y', 'z'])
     expect(useStore.getState().alignDraft).toBeNull()
     const sym = await run<{ note?: string }>('align.symmetry')
     expect(sym.note).toMatch(/Settled on/)
@@ -351,6 +373,65 @@ describe('alignment', () => {
     await undo()
     await undo()
     expect(useStore.getState().appliedAlignment).toBeNull()
+  })
+})
+
+describe('coordinate planes by name', () => {
+  it('reads every spelling of one as the axis it is square to, and nothing else', () => {
+    expect(['XY', 'xy', ' YX plane', 'XY Plane'].map(parsePlaneName)).toEqual(['z', 'z', 'z', 'z'])
+    expect(['YZ', 'zy', 'yz plane'].map(parsePlaneName)).toEqual(['x', 'x', 'x'])
+    expect(['ZX', 'XZ', 'xz plane', 'ZX plane', 'xz_plane'].map(parsePlaneName)).toEqual(['y', 'y', 'y', 'y', 'y'])
+    expect(['XX', 'X', 'XYZ', 'Plane 1', 'plane', ''].map(parsePlaneName)).toEqual([null, null, null, null, null, null])
+    // The answers' spelling, which each command takes back.
+    expect(parsePlaneName(worldPlaneName('y'))).toBe('y')
+    expect(BASE_PLANES.map((p) => p.name)).toEqual(['XY plane', 'YZ plane', 'XZ plane'])
+  })
+
+  it('element.construct takes one in a plane’s slot: made a plane element once, taken again after', async () => {
+    await openBox()
+    type Made = { element: El; made?: { id: number; name: string }[] }
+    const first = await run<Made>('element.construct', { kind: 'plane', method: 'plane-offset', refs: ['XY'], params: [5] })
+    expect(first.made).toHaveLength(1)
+    expect(first.made![0].name).toBe('XY plane')
+    expect(first.element.fit!.center[2]).toBeCloseTo(5, 6)
+    expect(first.element.source.refs).toEqual([first.made![0].id])
+    // "zx plane" is the same one as "XZ"; the XY plane made above is taken
+    // again, by its own name too.
+    const edge = await run<Made>('element.construct', { kind: 'line', method: 'line-plane-plane', refs: ['zx plane', 'XY'] })
+    expect(edge.made!.map((m) => m.name)).toEqual(['XZ plane'])
+    expect(edge.element.source.refs?.[1]).toBe(first.made![0].id)
+    const again = await run<Made>('element.construct', { kind: 'plane', method: 'plane-offset', refs: ['XY plane'], params: [-2] })
+    expect(again.made).toBeUndefined()
+    expect(useStore.getState().elements.filter((e) => e.name === 'XY plane')).toHaveLength(1)
+    // A coordinate plane in a slot that takes no plane is refused, nothing made.
+    const before = useStore.getState().elements.length
+    expect((await refused('element.construct', { kind: 'point', method: 'point-midpoint', refs: ['YZ', 'YZ'] })).code).toBe('invalid_input')
+    expect(useStore.getState().elements).toHaveLength(before)
+    // One undo step takes the construction and the plane made for it.
+    await undo()
+    await undo()
+    expect(useStore.getState().elements.some((e) => e.name === 'XZ plane')).toBe(false)
+    expect(useStore.getState().elements.some((e) => e.name === 'XY plane')).toBe(true)
+  })
+
+  it('section.cut answers a coordinate plane by a name it takes back, and section.render’s plane takes one', async () => {
+    await openBox()
+    type S = { section: { id: number; across: unknown; plane: { origin: Vec3; normal: Vec3 } } }
+    const s = await run<S>('section.cut', { across: 'zx', offset: 1 })
+    expect(s.section.across).toBe('XZ plane')
+    const back = await run<S>('section.cut', { across: s.section.across as string, offset: 2 })
+    expect(back.section.plane.normal.map((v) => v + 0)).toEqual([0, 1, 0])
+    expect(back.section.plane.origin[1]).toBeCloseTo(2)
+    // The picture's plane: through the part's centre, as section.cut lays
+    // it, on a sketch's sheet — u = Z, v = X, zero at the origin's foot.
+    useStore.setState({ modelCenter: [1, 2, 3] })
+    const { name, frame } = sheetPlaneOf('ZX')
+    expect(name).toBe('XZ plane')
+    expect(frame.normal).toEqual([0, 1, 0])
+    expect(frame.origin.map((v) => v + 0)).toEqual([0, 2, 0])
+    expect(frame.basisU).toEqual([0, 0, 1])
+    expect(sheetPlaneOf('xy plane').frame.origin.map((v) => v + 0)).toEqual([0, 0, 3])
+    expect(() => sheetPlaneOf('XX')).toThrow(/no element named "XX"/)
   })
 })
 

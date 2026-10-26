@@ -225,9 +225,13 @@ export class Overlays {
   }
 
   /** Put the element overlays away, or back — for a picture of the part on
-   *  its own. The next updateOverlays sets it again as the workspace has it. */
+   *  its own — and with them the selection strokes and the ghost of a
+   *  pending fit, which are elements too. The next updateOverlays sets it
+   *  again as the workspace has it. */
   setShown(on: boolean): void {
     this.overlayGroup.visible = on
+    this.selectionGroup.visible = on
+    this.previewGroup.visible = on
   }
 
   /** The overlay meshes a click may resolve to an element through — a fresh
@@ -251,6 +255,8 @@ export class Overlays {
     this.shellMaterials.clear()
     this.calloutMaterials = []
     this.overlayGroup.visible = visible
+    this.selectionGroup.visible = true
+    this.previewGroup.visible = true
     this.lastOverlayElements = visible ? elements : []
     if (!visible) {
       this.rebuildSelectionOutlines()

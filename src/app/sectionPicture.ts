@@ -182,7 +182,8 @@ export function sectionPictureModel(input: SectionPictureInput): SectionPictureM
   let sum = 0
   let lo: Vec2 = [Infinity, Infinity]
   let hi: Vec2 = [-Infinity, -Infinity]
-  const closed = outlines.filter((o) => o.closed && o.points.length > 2)
+  // A surface's cut has no inside, even where it closes on itself.
+  const closed = outlines.filter((o) => o.closed && !o.surface && o.points.length > 2)
   for (let p = 0; p < n; p++) {
     const x = scan[p * 2]
     const y = scan[p * 2 + 1]
@@ -250,6 +251,7 @@ const SCAN_ON = '#8a929c'
 const SCAN_UNREAD = '#c4c9cf'
 const OVER = '#e0301e'
 const OUTLINE = '#1f4fa8'
+const SURFACE = '#0f8f7a'
 const PIECE = '#c47a12'
 
 /** Text broken into lines at its spaces, each no wider than `width`. */
@@ -355,16 +357,22 @@ export function drawSectionPicture(ctx: Ctx, input: SectionPictureInput, model: 
   }
 
   // The outlines, then the scan over them: the points off the outlines
-  // last and largest, so nothing hides one.
-  ctx.strokeStyle = OUTLINE
+  // last and largest, so nothing hides one. A surface's cut is a line in a
+  // colour of its own, its ends marked, so it does not read as a solid's
+  // wall.
   ctx.lineWidth = 1.5
   for (const o of input.outlines) {
     if (o.points.length < 2) continue
+    ctx.strokeStyle = o.surface ? SURFACE : OUTLINE
     ctx.beginPath()
     ctx.moveTo(X(o.points[0][0]), Y(o.points[0][1]))
     for (let i = 1; i < o.points.length; i++) ctx.lineTo(X(o.points[i][0]), Y(o.points[i][1]))
     if (o.closed) ctx.closePath()
     ctx.stroke()
+    if (o.surface && !o.closed) {
+      ctx.fillStyle = SURFACE
+      for (const q of [o.points[0], o.points[o.points.length - 1]]) ctx.fillRect(X(q[0]) - 2.5, Y(q[1]) - 2.5, 5, 5)
+    }
   }
   const n = model.reading.length
   const dot = (p: number, r: number) => ctx.fillRect(X(input.scan[p * 2]) - r, Y(input.scan[p * 2 + 1]) - r, 2 * r, 2 * r)

@@ -41,6 +41,10 @@ export type FitMethodId = 'gaussian'
 export interface FitSettings {
   method: FitMethodId
   sigma: SigmaPreset
+  /** A sphere's diameter as it is known to be, mm — a gauge ball's, a
+   *  ballbar's — held by the fit, which then places the centre alone. An
+   *  element's own, never the default a new one starts on. */
+  knownDiameter?: number
 }
 
 /** The span a cylinder's best fit is confined to, as millimetres past each
@@ -162,6 +166,12 @@ export interface SphereFit extends FitBase {
   kind: 'sphere'
   center: Vec3
   radius: number
+  /** Set when the fit held a known diameter (FitSettings.knownDiameter) —
+   *  `radius` is then half of it, and the residuals are against it. The
+   *  same points fitted with the radius free: their diameter, against the
+   *  known one, says how far the scan sits off the ball; `shift` is how far
+   *  holding it moved the centre, mm. */
+  held?: { freeDiameter: number; shift: number }
 }
 
 export interface CylinderFit extends FitBase {
@@ -266,6 +276,20 @@ export type ElementSource =
 
 interface WithRegion {
   region: Uint32Array
+  /** What the fit has to say beyond its numbers, for the answer that reports
+   *  it; like the region, never kept with the fit. */
+  told?: FitTold
+}
+
+/** What a fit from a click did that its numbers do not show. */
+export interface FitTold {
+  /** In a sentence: a cylinder whose first region took in two surfaces,
+   *  fitted again on the one the seed is on. */
+  note: string
+  /** The other surface that region took in — a bore's wider step: its
+   *  radius, where it lies along the fit's axis from the fit's centre (mm)
+   *  and its share of that region. */
+  second?: { radius: number; band: [number, number]; share: number }
 }
 
 /** Fit result plus the mesh region it was measured on. Picked points carry an

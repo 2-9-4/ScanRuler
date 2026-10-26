@@ -7,9 +7,11 @@ import { SNAPSHOT } from '../src/mcp.js'
 
 /** Connect to `port`; resolves once the server has answered the hello —
  *  with `{ page, welcome }` or `{ page, refused, code }`. `answer(name,
- *  input, progress)` makes each result, `progress(text)` sending a progress
- *  line before it; a thrown `{ code, message }` is the error. */
-export function fakePage(port, { token, origin = 'https://scanruler.com', commands = SNAPSHOT, answer = () => ({}) } = {}) {
+ *  input, progress, message)` makes each result, `progress(text)` sending a
+ *  progress line before it — `message` the server's whole request, its job
+ *  among it; a thrown `{ code, message }` is the error. `hello` adds to
+ *  what the page says of itself — its pageId and since, say. */
+export function fakePage(port, { token, origin = 'https://scanruler.com', commands = SNAPSHOT, answer = () => ({}), hello = {} } = {}) {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(`ws://127.0.0.1:${port}/`, { origin })
     const page = { ws, runs: [], close: () => ws.close() }
@@ -25,7 +27,7 @@ export function fakePage(port, { token, origin = 'https://scanruler.com', comman
       page.runs.push(message)
       try {
         const progress = (text) => ws.send(JSON.stringify({ event: 'progress', id: message.id, text }))
-        const result = await answer(message.name, message.input, progress)
+        const result = await answer(message.name, message.input, progress, message)
         const binary = result?.file?.bytes instanceof Uint8Array ? 'result.file.bytes' : undefined
         for (const frame of encode({ id: message.id, result }, binary)) ws.send(frame)
       } catch (e) {
@@ -33,7 +35,7 @@ export function fakePage(port, { token, origin = 'https://scanruler.com', comman
       }
     })
     ws.on('message', (data, isBinary) => read(isBinary ? new Uint8Array(data) : data.toString('utf8')))
-    ws.on('open', () => ws.send(JSON.stringify({ hello: { app: 'ScanRuler', version: '0.0.0-test', token, commands, plugins: [], viewport: true } })))
+    ws.on('open', () => ws.send(JSON.stringify({ hello: { app: 'ScanRuler', version: '0.0.0-test', token, commands, plugins: [], viewport: true, ...hello } })))
     ws.on('unexpected-response', (_req, res) => resolve({ page, refused: `HTTP ${res.statusCode}`, code: res.statusCode }))
     ws.on('error', (e) => {
       if (!greeted) reject(e)

@@ -10,7 +10,8 @@ history, so you can take any of it back.
 Nothing goes anywhere but your own computer: the scan travels from your disk
 to your browser through this server, as it does when you open it yourself.
 What the agent reads — the figures, the report — goes to the agent's model
-provider, like everything else it reads.
+provider, like everything else it reads. The server's one request of its own
+asks npm, once a day, for its latest version (see *Staying current*).
 
 ## Setting up
 
@@ -22,7 +23,7 @@ Firefox.
 **Claude Code**
 
 ```bash
-claude mcp add --scope user scanruler -- npx -y scanruler-mcp
+claude mcp add --scope user scanruler -- npx -y scanruler-mcp@latest
 ```
 
 `--scope user` has it in every project; leave it out for this one only.
@@ -32,7 +33,7 @@ unless the agent names a path.
 **Codex** — the CLI, the IDE extension and the app share one setting:
 
 ```bash
-codex mcp add scanruler -- npx -y scanruler-mcp
+codex mcp add scanruler -- npx -y scanruler-mcp@latest
 ```
 
 or, in `~/.codex/config.toml`, with room for the first start (npx fetches the
@@ -42,7 +43,7 @@ call 60 unless told otherwise:
 ```toml
 [mcp_servers.scanruler]
 command = "npx"
-args = ["-y", "scanruler-mcp"]
+args = ["-y", "scanruler-mcp@latest"]
 startup_timeout_sec = 60
 tool_timeout_sec = 300
 ```
@@ -55,7 +56,7 @@ tool_timeout_sec = 300
   "mcpServers": {
     "scanruler": {
       "command": "npx",
-      "args": ["-y", "scanruler-mcp", "--out", "/Users/you/Documents/ScanRuler"]
+      "args": ["-y", "scanruler-mcp@latest", "--out", "/Users/you/Documents/ScanRuler"]
     }
   }
 }
@@ -76,7 +77,7 @@ tab connects to it, and the other sends its calls through that one — see
   "mcpServers": {
     "scanruler": {
       "command": "npx",
-      "args": ["-y", "scanruler-mcp"]
+      "args": ["-y", "scanruler-mcp@latest"]
     }
   }
 }
@@ -85,7 +86,7 @@ tab connects to it, and the other sends its calls through that one — see
 **From a clone of the ScanRuler repository**, to try a change: run
 `npm --prefix mcp ci` once, then use
 `node /path/to/scanruler/mcp/bin/scanruler-mcp.js` where the examples say
-`npx -y scanruler-mcp` — in Claude Code,
+`npx -y scanruler-mcp@latest` — in Claude Code,
 `claude mcp add scanruler -- node /path/to/scanruler/mcp/bin/scanruler-mcp.js`.
 
 ### 2. Let the agent open ScanRuler
@@ -102,7 +103,7 @@ When the default browser is not the one you use ScanRuler in, or the agent
 runs somewhere it cannot open one, pair by hand:
 
 ```bash
-npx -y scanruler-mcp --pair
+npx -y scanruler-mcp@latest --pair
 ```
 
 prints the port, the pairing token and a link. Open the link once in the
@@ -123,6 +124,32 @@ access* for the site in the site settings (the icon left of the address) and
 reload. **Safari** does not let a page from the web reach the computer it
 runs on at all; use `--serve` below.
 
+### Staying current
+
+With `@latest` in the setting, npx asks npm for the newest version at every
+start and fetches it when there is one, so quitting the app and opening it
+again updates the server. Offline, npx starts the copy it has; on a network
+that turns connections away rather than having none, it tries for about a
+minute first. (npm 9.7 and newer treat a bare `scanruler-mcp` the same way.)
+
+The server also keeps itself current — for a setting without `@latest` on an
+older npm, or a copy installed with `npm install -g`. Once a day, in the
+background, it asks npm's registry (registry.npmjs.org, or the one npm is set
+to) for its latest version: that one request, given 2 seconds. When there is
+a newer one, npm fetches it into its cache, and the next start runs it in
+place of the old copy, without waiting on the network. What it found is kept
+in `update.json` in the config folder, and `scanruler_status` says it:
+`server.version`, `server.latest`, and `server.handedOffFrom` when an older
+copy started this one. A version pinned in the setting
+(`scanruler-mcp@0.4.0`) is left as it is, and so is a copy run from a clone
+of the repository. To turn it off: `--no-update`, or
+`SCANRULER_MCP_NO_UPDATE=1`.
+
+When ScanRuler shows **Your ScanRuler connector is out of date**, the server
+your app starts is older than the page needs: change the setting to the
+`@latest` line it shows, then quit the app completely — not just its window —
+and open it again.
+
 ### Several agents
 
 Any number of copies of the server can share the tab. The first to start
@@ -131,7 +158,10 @@ connects to that one, with the same token, and sends its calls through it.
 When the copy holding the port stops, another takes the port over, and the
 tab — which keeps trying — connects to it within ten seconds.
 `scanruler_status` says which this copy is (`server.role`: `holder`,
-`relay`, or `none` with `server.error` saying why). Copies with different
+`relay` — with the holding copy's version as `server.holder.version` —, or
+`none` with `server.error` saying why). The page judges the copy holding
+its connection: when that one is out of date, a relaying copy's status says
+so, and quitting the app that started it lets a current copy take over. Copies with different
 tokens cannot share a port: give them the same `SCANRULER_MCP_TOKEN`, or
 each its own `--port`. Changes from several agents run one after another in
 the tab, each one step of the same undo history.
@@ -139,7 +169,7 @@ the tab, each one step of the same undo history.
 ### Serving the app yourself
 
 ```bash
-npx scanruler-mcp --serve /path/to/scanruler/dist
+npx -y scanruler-mcp@latest --serve /path/to/scanruler/dist
 ```
 
 serves a built ScanRuler (`npm run build` in a clone) at
@@ -151,7 +181,7 @@ no browser permission, and `--pair` then gives a link to it.
 
 ```bash
 npm run build:engine                       # in a clone of ScanRuler
-npx scanruler-mcp --engine /path/to/scanruler/dist-engine/engine.mjs
+npx -y scanruler-mcp@latest --engine /path/to/scanruler/dist-engine/engine.mjs
 ```
 
 runs ScanRuler itself inside the server, with no browser and no tab: the
@@ -168,7 +198,7 @@ Files still go by `path`. The server's instructions say it runs headless,
 `scanruler_open` has nothing to open. Each server is a session of its own —
 an agent's subagents can each start one and work side by side, sharing
 nothing — and what the app logs goes to stderr with the server's own lines.
-`--tools compact` works headless too: the server's five tools are listed, and
+`--tools compact` works headless too: the server's own tools are listed, and
 the engine's are read through `scanruler_tools` and run through
 `scanruler_batch` (see *Small local models*).
 ### Small local models
@@ -179,9 +209,10 @@ tools and 25k tokens of schema in the open-source build, over a hundred and
 frontier model takes that in its stride. A local model with a 128k window
 runs out of room within a few tool rounds, and picks less reliably among so
 many. For such a model, start the server with `--tools compact` (or set
-`SCANRULER_MCP_TOOLS=compact`). It then lists eight tools, about 3k tokens:
-the server's five, `scanruler_tools`, and the tab's tools that return a
-picture — `view_render` and `flat_render`.
+`SCANRULER_MCP_TOOLS=compact`). It then lists about a dozen tools, a few
+thousand tokens: the server's six, `scanruler_tools`, and the tab's tools
+that return a picture — `view_render`, `section_render`, `flat_render` and
+`scan_heightmap`.
 
 - `scanruler_tools` with no arguments lists the tab's tools, a name and a
   line each, about 1.5k tokens for a hundred. With `names` it gives those
@@ -193,8 +224,9 @@ picture — `view_render` and `flat_render`.
   lets the model call a tool it was not given can call them directly too.
 - The tools that return a picture are listed so the model calls them
   directly and sees the picture. In a batch a picture is not shown: it is
-  written to a file, the call's `path` or a new file in the output folder
-  (`--out`), and the call's result names it. A tab that connects with
+  written to a file, the call's `path` or a new file in the open scan's
+  folder (the output folder, `--out`, while no scan or project was opened
+  from one), and the call's result names it. A tab that connects with
   another picture tool has the client list the tools again.
 
 **LM Studio**: add `--tools` and `compact` to the server's arguments as two
@@ -205,7 +237,7 @@ separate entries. In `mcp.json`:
   "mcpServers": {
     "scanruler": {
       "command": "npx",
-      "args": ["-y", "scanruler-mcp", "--tools", "compact"]
+      "args": ["-y", "scanruler-mcp@latest", "--tools", "compact"]
     }
   }
 }
@@ -214,10 +246,10 @@ separate entries. In `mcp.json`:
 **Codex** with a local model:
 
 ```bash
-codex mcp add scanruler -- npx -y scanruler-mcp --tools compact
+codex mcp add scanruler -- npx -y scanruler-mcp@latest --tools compact
 ```
 
-or `args = ["-y", "scanruler-mcp", "--tools", "compact"]` in
+or `args = ["-y", "scanruler-mcp@latest", "--tools", "compact"]` in
 `~/.codex/config.toml`.
 
 ## Options
@@ -234,7 +266,10 @@ or `args = ["-y", "scanruler-mcp", "--tools", "compact"]` in
 | `--tools <mode>` | `full`, the default: every command the tab offers is a tool. `compact`: the server's own and the tab's tools that return a picture; the rest are read through `scanruler_tools` and run through `scanruler_batch` — see *Small local models*. Also `SCANRULER_MCP_TOOLS`. |
 | `--trace <dir>` | Write a line per tool call — tool, ms, bytes each way, error, whether the tab was hidden — into a new file in `<dir>`, for measuring a run; off unless given. `scripts/trace-summary.mjs` in the ScanRuler repository sums a run up. Also `SCANRULER_MCP_TRACE`. |
 | `--trace-args` | With `--trace`, each call's arguments too; otherwise only their size. |
+| `--answer-within <s>` | Hold a call at most this many seconds, 45 unless given: a change, a batch or a long read still running then answers `{ queued: true, job, after }` and runs on, and `scanruler_wait` waits no longer either. A client, or a bridge between it and this computer, may cut a call at a minute; a cut call says nothing. `0` holds every call to its end. Also `SCANRULER_MCP_ANSWER_WITHIN`. |
+| `--no-update` | Do not keep the server current (see *Staying current*). Also `SCANRULER_MCP_NO_UPDATE=1`. |
 | `--pair` | Print the port, the token and the pairing link, and exit. |
+| `--version` | Print the server's version, and exit. |
 | `--help` | The options. |
 
 `SCANRULER_MCP_TOKEN` overrides the stored token; `SCANRULER_MCP_CONFIG_DIR`
@@ -250,19 +285,25 @@ with more commands lists more. Before a tab is there it is the list of the
 last tab that connected, which the server keeps in its config folder
 (`tools.json`), or, the first time, the app's own; a client that lists the
 tools once, when it starts, sees them all that way, and one that listens is
-told when the list changes. Five more are the server's: `scanruler_status`
-(is a tab connected, which version, how to pair one, and what the tab's
-session holds — its scan, project, unsaved changes and work counted),
+told when the list changes. Six more are the server's: `scanruler_status`
+(is a tab connected, which version, how to pair one, what the tab's
+session holds — its scan, project, unsaved changes and work counted — the
+time on this computer with its offset from UTC (`server.now`), and,
+when the client's list is out of date, which tools were added, removed or
+changed since and which page it came from),
 `scanruler_open` (open ScanRuler in the default browser, paired, and wait
 for it), `scanruler_wait` (until a tab is connected, or also idle),
 `scanruler_batch` (several of the tab's tools in one call, in order — a run
 of `scan_nearest` or `element_fit` calls — each answer in its place, stopped
-at the first refused unless told to go on) and `scanruler_write` (a text
+at the first refused unless told to go on), `scanruler_write` (a text
 file — `.md`, `.txt`, `.csv` or `.json`, a report say — written in the folder
-the server last opened a scan or a project from, and nowhere else). With
-`--tools compact` only the tab's tools that return a picture are listed; the
-rest are read through a sixth of the server's own, `scanruler_tools` — see
-*Small local models*.
+the server last opened a scan or a project from, and nowhere else) and
+`scanruler_files` (that folder's files — name, size, kind — newest first).
+The folders are kept beside `tools.json` (`folders.json`), so a server
+started afresh still writes and lists there, and `scanruler_status` lists
+them. With `--tools compact` only the tab's tools that return a picture are
+listed; the rest are read through a seventh of the server's own,
+`scanruler_tools` — see *Small local models*.
 
 - **Places on the scan** are `{ "point": [x, y, z] }` in millimetres — the
   scan vertex nearest it is taken — or `{ "vertex": n }`. `scan_query` reads
@@ -274,10 +315,44 @@ rest are read through a sixth of the server's own, `scanruler_tools` — see
   the server reads it and streams it to the tab. The exports and
   `project_save` take an optional `path` — a file, or a folder for the name
   ScanRuler gives it — and the server writes the file there and returns where.
+  `scan_open` and `project_load` take a folder too, and open the one mesh,
+  or the one `.scanruler`, in it; with none or several the answer lists what
+  is there.
   A tool that replaces the session (`scan_open`, `project_load`,
   `session_reset`) takes `saveTo`: the session is saved as a project file
   there first, then replaced — one call to keep what a tab someone left
   holds.
+- **Arguments from a file.** `{ "$file": path }` anywhere in a tool's
+  arguments — an object of that one key — is replaced by the JSON the file
+  holds: a long list of stations a script wrote need not pass through the
+  conversation.
+- **Relative paths** — a batch's `file`, `$file`, a file to open, an
+  output's `path` — are taken from the open scan's folder, or from the folder
+  the server was started in while no scan is open; `scanruler_status` gives
+  both (`server.relativeTo`, `server.cwd`). A picture or file written into a
+  folder is numbered past one already there (`-2`, `-3`), never written over.
+- **Long answers.** An answer past what one carries (40 k characters; a
+  guide 90 k — several guides asked for together come while they fit about
+  80 k, the rest named in `next`) is written whole to a JSON file in the
+  open scan's folder, where an agent that may only read there can open it —
+  in the output folder (`--out`) while the scan open now was not opened from
+  a folder through this server. The answer says
+  `truncated: true`, the `file`, its short fields and the person's notes,
+  and its `note` says which folder it went to and how to ask for less — by
+  the command's own fields, as the command says it (a guide a section at a
+  time).
+- **Strings of JSON.** A client that sends a large nested value as a string
+  — a batch's `calls`, a call in it, or a call's `arguments` — has it read as
+  the JSON it holds; one that is not JSON is refused saying so, with nothing
+  run.
+- **A tab that reloaded.** A tab says who it is each time it loads. When a
+  tab that held work comes back as another — reloaded by the person, by the
+  dev server after an edit, or unloaded by the browser — the next answer
+  says so (`pageReloaded`), with the project file last opened or saved here,
+  which `scanruler_status` gives too (`lastProject`, kept in
+  `folders.json`). A tab older than the app it came from, which could not
+  load a part of it, answers `stale_page`, and the status says so from then
+  on (`page.stale`): save the project before the tab is reloaded.
 - **Pictures.** `view_render` comes back as an image the agent sees — the
   3D view as the tab shows it, after `view_set` has turned it if asked — and
   is written to a file only when the call gives `path`. `show` puts the
@@ -301,23 +376,39 @@ rest are read through a sixth of the server's own, `scanruler_tools` — see
   an image and measures them; `flat_profile` reads an outline round a centre
   or along an axis and counts its peaks — a knurl's teeth, say.
 - **Batches stand or fall whole.** `scanruler_batch` stops at the first
-  refused call, and with `rollback` (the default) undoes what the calls
-  before it changed — the answer names `failed: { index, tool, error }` and
-  `undone`, the steps taken back, newest first (`history_checkpoint` and
-  `history_restore` do the same by hand across several calls). `timings:
+  refused call — the answer names `failed: { index, tool, error }`. When
+  that call is a change, `rollback` (the default) undoes what the calls
+  before it changed, once the tab is idle: `undone` lists the steps taken
+  back, newest first (`history_checkpoint` and `history_restore` do the same
+  by hand across several calls). A refused read — a `section_get` of a
+  section that is not there — undoes nothing, and `kept` says what came
+  before it stands. A call refused `busy` (the tab working out something of
+  its own) is run again once, when the tab is idle, and says
+  `retried: "busy"`. `timings:
   true` gives each call its `ms`, the batch its `total_ms`, and a change's
   build the steps it played with their milliseconds (`result.steps.played`;
-  otherwise only how many it played and took up from a state held).
-- **Long changes.** Every tool that changes the session takes `wait`;
-  `wait: false` answers at once with `{ queued: true, job }` while the
-  change runs on, a batch too, and `scanruler_wait { for: "job", job }`
-  gives its answer when it is done. The server keeps every change as a job,
-  so a call the client stopped waiting for keeps running and keeps its
+  otherwise only how many it played and took up from a state held). The
+  notes left for the agent (`notes`), when a call answers with them, are
+  repeated at the batch's top as the last call gave them.
+- **Long changes.** Every tool that changes the session takes `wait`, and
+  so does a read the tab marks long (a comparison over whole bodies, say);
+  `wait: false` answers at once with `{ queued: true, job }` while the call
+  runs on, a batch too, and `scanruler_wait { for: "job", job }` gives its
+  answer when it is done. Still running at the answer limit
+  (`--answer-within`, 45 s), a call answers the same way with `after`, its
+  seconds; `scanruler_wait` waits no longer than that either and answers
+  `state: "running"` — call it again. The server keeps every change as a
+  job, so a call the client stopped waiting for keeps running and keeps its
   answer: `scanruler_status` lists the latest jobs, running, done or failed.
+  The tab keeps a record of the commands run under each job too
+  (`session_recent`, the last hundred), so a server started afresh — whose
+  own jobs are gone — still answers `scanruler_wait` for a job of the copy
+  before it, from that record (`from` says so).
   `scanruler_wait { for: "idle" }` waits for the changes still running too,
   and answers `finished`: every change done or failed since it last said —
   a failed one with its error, a batch with the call it stopped at — each
-  once, so a run of `wait: false` changes is read back in one call. A
+  once, so a run of `wait: false` changes is read back in one call, and
+  `state`: `idle`, or `running` when the limit came first. A
   change called on its own takes `timings: true` as well: its answer adds
   the call's `ms` and the steps its build played. The tab answers what only
   reads — `session_state` — while a change runs.

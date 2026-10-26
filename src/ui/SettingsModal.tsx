@@ -446,10 +446,15 @@ export function SettingsModal() {
             onChange={(e) => setAgentToken(e.target.value)}
           />
           <small data-test="agent-status">
-            {agentLink ? <b>{AGENT_STATUS[link.status]}.</b> : null}{' '}
+            {agentLink ? (
+              <b>
+                {AGENT_STATUS[link.status]}
+                {link.status === 'connected' && link.server?.version ? ` (scanruler-mcp ${link.server.version})` : ''}.
+              </b>
+            ) : null}{' '}
             {link.detail ?? (
               <>
-                <code>npx scanruler-mcp --pair</code> prints the port and the token, and a link
+                <code>npx -y scanruler-mcp@latest --pair</code> prints the port and the token, and a link
                 that fills them in.
               </>
             )}

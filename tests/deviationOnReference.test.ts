@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest'
 import { identityRigid } from '../src/core/deviation/rigid'
 import { NominalSurface } from '../src/core/deviation/surface'
-import { MAX_SAMPLE_TRIANGLES, meshArea, readReference, referenceCoverage, sampleSpacing, subdivideForMap, wantedSpacing } from '../src/core/deviation/onReference'
+import { MAX_SAMPLE_TRIANGLES, meshArea, meshLongEdges, readReference, referenceCoverage, sampleSpacing, subdivideForMap, wantedSpacing } from '../src/core/deviation/onReference'
 
 type Quad = [number, number, number][]
 
@@ -52,10 +52,89 @@ describe('the reference cut finer', () => {
     expect(fine.parent).toHaveLength(fine.indices.length / 3)
   })
 
-  it('cuts a sliver by its area, not its length', () => {
+  it('makes a point two triangles share one vertex where they face alike, two across a sharp edge', () => {
+    // The cube's faces as separate quads, as a kernel meshes face by face.
+    const { positions, indices } = meshOf(Object.values(boxFaces(0, 0, 0, 10, 10, 10)))
+    const fine = subdivideForMap(positions, indices, null, 1)
+    const byPlace = new Map<string, number[]>()
+    for (let v = 0; v < fine.positions.length / 3; v++) {
+      const key = [0, 1, 2].map((k) => fine.positions[v * 3 + k].toFixed(4)).join(',')
+      byPlace.set(key, [...(byPlace.get(key) ?? []), v])
+    }
+    let edges = 0
+    for (const same of byPlace.values()) {
+      // Never two vertices at one place facing the same way.
+      for (let i = 0; i < same.length; i++)
+        for (let j = i + 1; j < same.length; j++) {
+          const dot = [0, 1, 2].reduce((s, k) => s + fine.normals[same[i] * 3 + k] * fine.normals[same[j] * 3 + k], 0)
+          expect(dot).toBeLessThan(0.99)
+        }
+      if (same.length > 1) edges++
+    }
+    // The points on the cube's edges: one vertex for each face there.
+    expect(edges).toBeGreaterThan(12 * 4)
+    // A quad's two triangles share their diagonal's points: far fewer
+    // vertices than three a triangle.
+    expect(fine.positions.length / 3).toBeLessThan(fine.indices.length / 2)
+  })
+
+  it('welds alike far from the origin', () => {
+    const near = meshOf(Object.values(boxFaces(0, 0, 0, 10, 10, 10)))
+    const far = meshOf(Object.values(boxFaces(30_000, -30_000, 25_000, 30_010, -29_990, 25_010)))
+    const a = subdivideForMap(near.positions, near.indices, null, 1)
+    const b = subdivideForMap(far.positions, far.indices, null, 1)
+    expect(b.positions.length).toBe(a.positions.length)
+    expect(Array.from(b.indices)).toEqual(Array.from(a.indices))
+  })
+
+  /** The longest edge of each triangle cut, over the spacing, the worst. */
+  const longestOver = (fine: ReturnType<typeof subdivideForMap>) => {
+    let worst = 0
+    for (let t = 0; t < fine.indices.length; t += 3)
+      for (const [a, b] of [[0, 1], [1, 2], [2, 0]]) {
+        const i = fine.indices[t + a], j = fine.indices[t + b]
+        worst = Math.max(worst, Math.hypot(...[0, 1, 2].map((k) => fine.positions[i * 3 + k] - fine.positions[j * 3 + k])) / fine.spacing)
+      }
+    return worst
+  }
+
+  it('cuts a sliver by its longest edge into pieces about the spacing long, not a fan from its far corner', () => {
+    // 30 × 0.05, the far corner near one end and in the middle; and a quad
+    // 100 × 0.5 cut on its diagonal.
+    for (const c of [29, 15]) {
+      const fine = subdivideForMap(Float32Array.from([0, 0, 0, 30, 0, 0, c, 0.05, 0]), Uint32Array.from([0, 1, 2]), null, 0.5)
+      expect(longestOver(fine), `corner at ${c}`).toBeLessThanOrEqual(1.5)
+      expect(meshArea(fine.positions, fine.indices)).toBeCloseTo(0.75, 6)
+      // A few triangles a spacing along it, not hundreds.
+      expect(fine.indices.length / 3).toBeLessThan(4 * 60)
+    }
     const { positions, indices } = meshOf([[[0, 0, 0], [100, 0, 0], [100, 0.5, 0], [0, 0.5, 0]]])
+    const quad = subdivideForMap(positions, indices, null, 0.5)
+    expect(longestOver(quad)).toBeLessThanOrEqual(1.5)
+    expect(quad.indices.length / 3).toBeLessThan(2000)
+  })
+
+  it('cuts a fan of slivers from one corner of a face bounded by an arc as finely, with no fan of its own', () => {
+    // A flat face between a chord and a quarter arc of R30, fanned from the
+    // arc's end on the chord — as a kernel meshes it.
+    const N = 96
+    const R = 30
+    const pos: number[] = []
+    for (let k = 0; k <= N; k++) pos.push(R * Math.cos((k / N) * (Math.PI / 2)), R * Math.sin((k / N) * (Math.PI / 2)), 0)
+    const idx: number[] = []
+    for (let k = 1; k < N; k++) idx.push(0, k, k + 1)
+    const positions = Float32Array.from(pos)
+    const indices = Uint32Array.from(idx)
     const fine = subdivideForMap(positions, indices, null, 0.5)
-    expect(fine.indices.length / 3).toBeLessThan(2000)
+    expect(longestOver(fine)).toBeLessThanOrEqual(1.5)
+    expect(meshArea(fine.positions, fine.indices)).toBeCloseTo(meshArea(positions, indices), 3)
+    // A sliver costs a few triangles a spacing of its length, not of its
+    // area: here about four times the two a square spacing the area takes.
+    expect(fine.indices.length / 3).toBeLessThan((5 * 2 * meshArea(positions, indices)) / 0.25)
+    // What the spacing is opened by: two a square spacing of area and two a
+    // spacing of each triangle's longest edge hold it.
+    const s = 0.5
+    expect(fine.indices.length / 3).toBeLessThanOrEqual((2 * meshArea(positions, indices)) / s ** 2 + (2 * meshLongEdges(positions, indices)) / s)
   })
 
   it('opens the spacing on a large reference, in steps a small edit does not cross', () => {
@@ -67,6 +146,10 @@ describe('the reference cut finer', () => {
     expect(sampleSpacing(9_900_000, 0.5)).toBe(3.2)
     // Still under the triangle budget.
     expect((2 * 10_000_000) / sampleSpacing(10_000_000, 0.5) ** 2).toBeLessThanOrEqual(MAX_SAMPLE_TRIANGLES)
+    // Slivers open it further: their long edges count too.
+    const s = sampleSpacing(1_000_000, 0.5, 2_000_000)
+    expect(s).toBeGreaterThan(sampleSpacing(1_000_000, 0.5))
+    expect((2 * 1_000_000) / s ** 2 + (2 * 2_000_000) / s).toBeLessThanOrEqual(MAX_SAMPLE_TRIANGLES)
   })
 
   it('wants twice the tolerance, within a quarter and two millimetres', () => {
@@ -124,6 +207,29 @@ describe('the reference read against the scan', () => {
       if (Number.isNaN(values[v])) expect(inside[v]).toBeNaN()
       else expect(inside[v]).toBeCloseTo(values[v], 5)
     }
+  })
+})
+
+describe('a facing scan face further off than the nearest', () => {
+  it('is found past the first look round the point, and read', () => {
+    // The reference: a 30 × 10 mm plate's top, facing up. The scan: its top
+    // 3 mm lower, facing up — and over a tenth of it a sheet 0.2 mm above,
+    // facing down: nearest to the reference there, and no evidence of it.
+    const ref = meshOf([[[0, 0, 0], [30, 0, 0], [30, 10, 0], [0, 10, 0]]])
+    const scanMesh = meshOf([
+      [[-1, -1, -3], [31, -1, -3], [31, 11, -3], [-1, 11, -3]],
+      [[-1, -1, 0.2], [-1, 11, 0.2], [3, 11, 0.2], [3, -1, 0.2]],
+    ])
+    const scan = new NominalSurface(scanMesh.positions, scanMesh.indices)
+    const fine = subdivideForMap(ref.positions, ref.indices, null, 0.5)
+    const values = readReference(scan, fine, { toScan: identityRigid(), reach: 5, facingDeg: 60 })
+    let under = 0
+    for (let v = 0; v < values.length; v++) {
+      const x = fine.positions[v * 3]
+      if (x < 2.5) under++
+      expect(values[v]).toBeCloseTo(3, 4)
+    }
+    expect(under).toBeGreaterThan(10)
   })
 })
 

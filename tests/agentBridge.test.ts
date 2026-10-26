@@ -2,7 +2,11 @@
 // The page's end of the agent link (commands/bridge.ts), on a socket of the
 // test's own, against the headless session — the server's end is mcp/'s.
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { takePairingLink, useAgentLink } from '../src/commands/agentLink'
+import { serverTooOld, takePairingLink, useAgentLink, WANTS_SERVER } from '../src/commands/agentLink'
+import { registerGuide } from '../src/commands/guides'
+import { runCommand } from '../src/commands/registry'
+import { isStaleImport, resetPageStale } from '../src/commands/stalePage'
+import { CommandError } from '../src/commands/types'
 import { startBridge } from '../src/commands/bridge'
 import { decoder, encode, type Message } from '../src/commands/framing'
 import { usePrefs } from '../src/state/prefsStore'
@@ -88,9 +92,45 @@ describe('the agent bridge', () => {
     const hello = socket.messages()[0].hello as { app: string; token: string; commands: { name: string }[]; viewport: boolean }
     expect(hello).toMatchObject({ app: 'ScanRuler', token: 'the-token', viewport: false })
     expect(hello.commands.map((c) => c.name)).toContain('element.fit')
+    // The page's own name, kept while it lives, and when it loaded.
+    const { pageId, since } = hello as unknown as { pageId: string; since: string }
+    expect(pageId).toMatch(/\S{8,}/)
+    expect(Number.isFinite(Date.parse(since))).toBe(true)
     expect(useAgentLink.getState().status).toBe('waiting')
-    socket.say({ welcome: { server: 'scanruler-mcp' } })
+    socket.say({ welcome: { server: 'scanruler-mcp', version: '0.4.0' } })
     expect(useAgentLink.getState().status).toBe('connected')
+    expect(useAgentLink.getState().server).toEqual({ version: '0.4.0' })
+  })
+
+  it('tells an out of date server by its welcome: older than wanted, or a scanruler-mcp that gives no version', async () => {
+    const welcomed = async (welcome: Record<string, unknown>) => {
+      const socket = await connect()
+      socket.say({ welcome })
+      const server = useAgentLink.getState().server
+      const tooOld = serverTooOld()
+      const state = (await runCommand('session.state', {})) as { serverTooOld?: string }
+      stop!()
+      stop = null
+      FakeSocket.made = []
+      return { server, tooOld, inState: state.serverTooOld }
+    }
+    // Before 0.4.0 the welcome said what it was, but no version.
+    const old = await welcomed({ server: 'scanruler-mcp' })
+    expect(old.server).toEqual({ version: null })
+    expect(old.tooOld).toMatch(/^Your ScanRuler connector is out of date: .*older than 0\.4\.0/)
+    expect(old.tooOld).toContain('npx -y scanruler-mcp@latest')
+    expect(old.tooOld).toContain('quit the app completely and open it again')
+    expect(old.inState).toBe(old.tooOld)
+    const older = await welcomed({ server: 'scanruler-mcp', version: '0.3.9' })
+    expect(older.tooOld).toMatch(/version 0\.3\.9, and this ScanRuler needs 0\.4\.0 or newer/)
+    // Current and newer servers, and a welcome from something else, are not.
+    for (const welcome of [{ server: 'scanruler-mcp', version: WANTS_SERVER }, { server: 'scanruler-mcp', version: '1.0.0' }, {}]) {
+      const ok = await welcomed(welcome)
+      expect(ok.tooOld).toBeNull()
+      expect(ok.inState).toBeUndefined()
+    }
+    // Switched off, it is forgotten.
+    expect(useAgentLink.getState().server).toBeNull()
   })
 
   it('runs what the server sends — bytes in, bytes out — and answers errors as codes', async () => {
@@ -121,11 +161,52 @@ describe('the agent bridge', () => {
     expect((list.result as unknown[]).length).toBeGreaterThan(40)
   })
 
+  it('answers stale_page for a part of the app it can no longer load, and says so in the session from then on', async () => {
+    // As the dev server answers a page that loaded before the guide was
+    // edited: the import is turned down.
+    const off = registerGuide({ id: 'edited-since', title: 'Edited since', when: 'testing a stale page', text: () => Promise.reject(new TypeError('Failed to fetch dynamically imported module: http://localhost:5173/guides/edited-since.md?raw&t=1761318480000')) })
+    try {
+      const socket = await connect()
+      socket.say({ welcome: {} })
+      expect(((await runCommand('session.state', {})) as { stale?: unknown }).stale).toBeUndefined()
+      socket.say({ id: 1, method: 'run', name: 'guide.read', input: { topic: 'edited-since' } })
+      const { error } = (await until(() => answerTo(socket, 1), 'guide.read')) as { error: { code: string; message: string } }
+      expect(error.code).toBe('stale_page')
+      expect(error.message).toMatch(/^This tab is older than the app it came from \(rebuilt since\) — save the project \(project_save\), then ask the person to reload/)
+      expect(error.message).toContain('Failed to fetch dynamically imported module')
+      const { stale } = (await runCommand('session.state', {})) as { stale?: { since: string; note: string } }
+      expect(stale?.note).toMatch(/^this tab is older than the app/)
+      expect(Number.isFinite(Date.parse(stale!.since))).toBe(true)
+      // A refusal of the command's own is not one.
+      expect(isStaleImport(new CommandError('failed', 'Failed to fetch dynamically imported module'))).toBe(false)
+    } finally {
+      off()
+      resetPageStale()
+    }
+  })
+
+  it('keeps a run sent under a job among the recent outcomes, which session.recent reads', async () => {
+    const socket = await connect()
+    socket.say({ welcome: {} })
+    socket.say({ id: 1, method: 'run', name: 'session.state', input: {}, job: 'j1-bridge' })
+    socket.say({ id: 2, method: 'run', name: 'element.fit', input: { kind: 'blob' }, job: 'j1-bridge' })
+    socket.say({ id: 3, method: 'run', name: 'session.state', input: {} })
+    await until(() => answerTo(socket, 3), 'the reads')
+    await until(() => answerTo(socket, 2), 'the refusal')
+    socket.say({ id: 4, method: 'run', name: 'session.recent', input: { job: 'j1-bridge' } })
+    const { outcomes } = (await until(() => answerTo(socket, 4), 'session.recent')).result as { outcomes: { job: string; name: string; state: string; error?: { code: string } }[] }
+    expect(outcomes.map((o) => [o.name, o.state])).toEqual([
+      ['element.fit', 'failed'],
+      ['session.state', 'done'],
+    ])
+    expect(outcomes[0].error?.code).toBe('invalid_input')
+  })
+
   it('shows a refusal, and tries again after a lost connection', async () => {
     const socket = await connect()
     socket.say({ refused: 'The pairing token does not match.' })
     socket.close(4001)
-    expect(useAgentLink.getState()).toEqual({ status: 'refused', detail: 'The pairing token does not match.' })
+    expect(useAgentLink.getState()).toEqual({ status: 'refused', detail: 'The pairing token does not match.', server: null })
     stop!()
     expect(useAgentLink.getState().status).toBe('off')
     stop = null

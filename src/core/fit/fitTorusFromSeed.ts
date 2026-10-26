@@ -39,11 +39,26 @@ function output(g: MeshGraph, t: Torus, fin: { sigma: number; span: number; min:
   }
 }
 
-/** A torus whose tube is wider than its spine is a spindle, whose two
- *  sheets cross; a scan of a round never is one. */
-function plausible(t: Torus, g: MeshGraph): boolean {
-  return Number.isFinite(t.R) && Number.isFinite(t.r) && t.r > 0 && t.R > t.r * 0.999 && t.R < 0.8 * g.bboxDiag && t.r < 0.5 * g.bboxDiag
+/** How far the spine may reach, in scan diagonals: a large shroud or a
+ *  bowed panel is a torus whose spine lies well outside the part (R592 on a
+ *  part whose diagonal is a fraction of that), while past a few diagonals a
+ *  patch curves too little the long way for R to mean anything. */
+export const TORUS_MAX_R_DIAGS = 5
+
+/** Why a torus is not taken for a scanned round, or null when it may be:
+ *  one whose tube is wider than its spine is a spindle, whose two sheets
+ *  cross, and a scan of a round never is one; a spine or a tube far larger
+ *  than the scan is a surface too flat to place them. */
+function implausible(t: Torus, g: MeshGraph): { why: string; size: boolean } | null {
+  if (!Number.isFinite(t.R) || !Number.isFinite(t.r) || !(t.r > 0)) return { why: 'no torus', size: false }
+  if (!(t.R > t.r * 0.999)) return { why: `R ${round(t.R)} is no larger than r ${round(t.r)} — a spindle, not a round`, size: false }
+  const maxR = TORUS_MAX_R_DIAGS * g.bboxDiag
+  if (!(t.R < maxR)) return { why: `R ${round(t.R)} is past the limit of ${TORUS_MAX_R_DIAGS} × the scan's diagonal (${round(maxR)} mm) — the surface bends too little the long way to place the spine; fit a cylinder or a B-spline surface`, size: true }
+  if (!(t.r < 0.5 * g.bboxDiag)) return { why: `r ${round(t.r)} is past the limit of half the scan's diagonal (${round(0.5 * g.bboxDiag)} mm)`, size: true }
+  return null
 }
+
+const round = (x: number) => (Math.abs(x) >= 100 ? Math.round(x) : Math.round(x * 100) / 100)
 
 /** Whether the clicked vertices lie on the torus and face with it. */
 function onIt(g: MeshGraph, seeds: number[], t: Torus, sigma: number): boolean {
@@ -68,15 +83,23 @@ const SEED_COS_MAX = Math.cos((32 * Math.PI) / 180)
 export function fitTorusFromSeed(g: MeshGraph, seeds: number[], settings: FitSettings, _window?: AxialWindow, guide?: FitGuide): TorusFitOutput {
   // A torus takes a box alone of the guide.
   const within = guide?.within ? { within: guide.within } : undefined
+  // The last torus turned down for its size, to name the limit in the
+  // refusal.
+  let refused = null as string | null
+  const plausible = (t: Torus) => {
+    const no = implausible(t, g)
+    if (no?.size) refused = no.why
+    return !no
+  }
   const fit = seededFit(g, seeds, {
     estimate: (patch, seed) => {
       const cand = ransacTorus(g.positions, g.normals, within ? guidePatch(g, patch, within) : patch, { seed })
-      return cand && plausible(cand.torus, g) ? cand : null
+      return cand && plausible(cand.torus) ? cand : null
     },
     grow: (cand) => growTorusRegion(g, within ? cand.inliers : seeds, cand.torus, cand.sigma, cand.inliers.length, within),
     finish: (grown) => {
       const fin = fitTorusClipped(g.positions, grown.region, settings.sigma, grown.model)
-      if (!fin || !plausible(fin.torus, g)) return null
+      if (!fin || !plausible(fin.torus)) return null
       // Noisier than a few percent of the tube radius it is not the round
       // the click was on — a flat, a cylinder, a corner.
       if (fin.sigma > 0.05 * fin.torus.r) return null
@@ -89,6 +112,7 @@ export function fitTorusFromSeed(g: MeshGraph, seeds: number[], settings: FitSet
     },
   })
   if (fit) return fit
+  if (refused) throw new FitError(`Couldn't fit a torus at this point: the one found was turned down — ${refused}.`)
   throw new FitError("Couldn't fit a torus at this point — try clicking on the middle of a round or a bend.")
 }
 
@@ -98,7 +122,9 @@ export function fitTorusOnSelection(g: MeshGraph, selection: Uint32Array, settin
   requireSelection(selection, 'round')
   const cand = ransacTorus(g.positions, g.normals, selection, { seed: selection[0] ?? 1 })
   const fin = cand ? fitTorusClipped(g.positions, selection, settings.sigma, cand.torus) : null
-  if (!fin || !plausible(fin.torus, g)) {
+  const no = fin ? implausible(fin.torus, g) : null
+  if (no?.size) throw new FitError(`Couldn't fit a torus to the marked surface: ${no.why}.`)
+  if (!fin || no) {
     throw new FitError("Couldn't fit a torus to the marked surface — it has to curve two ways, like a fillet's round or a bend. Mark more of it.")
   }
   return output(g, fin.torus, fin, selection)

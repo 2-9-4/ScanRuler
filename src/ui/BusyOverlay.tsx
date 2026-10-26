@@ -21,15 +21,18 @@ export function BusyOverlay() {
     (s) => s.draft?.status === 'fitting' || s.elements.some((e) => e.status === 'fitting'),
   )
   const statusText = useStore((s) => s.statusText)
+  // How far the job has got, when it says: a bar under the spinner.
+  const progress = useStore((s) => s.progress)
   const nominalBusy = useDeviation((s) => s.nominalBusy)
   const aligning = useDeviation((s) => s.alignStatus === 'running')
   const mapping = useDeviation((s) => s.mapStatus === 'running')
+  const volume = useDeviation((s) => s.volumeStatus === 'running')
   const measuring = useThickness((s) => s.status === 'running')
   // The split picker owns the whole stage while it is up, and runs the
   // alignment it was opened for from its own buttons.
   const picking = useDeviation((s) => s.picking)
 
-  const busy = loading || nominalBusy || working !== null || fitting || aligning || mapping || measuring
+  const busy = loading || nominalBusy || working !== null || fitting || aligning || mapping || measuring || volume
   if (!busy || picking) return null
 
   const label =
@@ -41,7 +44,9 @@ export function BusyOverlay() {
           ? 'FITTING…'
           : aligning
             ? 'ALIGNING…'
-            : 'MEASURING…'
+            : volume && !mapping && !measuring
+              ? 'FINDING VOLUME ERRORS…'
+              : 'MEASURING…'
 
   // A fit is short and reports nothing, so the strip still holds the
   // instruction that started it — repeating that under the spinner would read
@@ -53,6 +58,11 @@ export function BusyOverlay() {
       <div className="busycard">
         <span className="spinner big" />
         <b>{label}</b>
+        {progress !== null && (
+          <div className="busybar" data-test="busy-progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}>
+            <span style={{ width: `${Math.max(2, Math.min(100, progress * 100))}%` }} />
+          </div>
+        )}
         {note && <span className="busynote">{note}</span>}
       </div>
     </div>

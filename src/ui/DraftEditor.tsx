@@ -14,6 +14,7 @@ import { useMark } from '../state/markStore'
 import { blockedRefs, draftColorOf, orientedDraft, useStore, type SelectMode } from '../state/store'
 import { usePulse } from '../app/useHints'
 import { AssumedField } from './AssumedField'
+import { KnownDiameterField } from './KnownDiameterField'
 import { DroValue } from './DroValue'
 import { ExtendFields } from './ExtendFields'
 import { InfoDot } from './InfoDot'
@@ -25,6 +26,7 @@ import { tintStyle } from './tint'
 export function DraftEditor({
   onSelectMode,
   onDraftSigma,
+  onDraftKnownDiameter,
   onClearPaint,
   onUndoPick,
   onCancelDraft,
@@ -35,6 +37,8 @@ export function DraftEditor({
   onSelectMode: (mode: SelectMode) => void
   /** The draft's outlier cut-off changed: it re-fits on what it has. */
   onDraftSigma: (k: SigmaPreset) => void
+  /** The sphere's known diameter changed: it re-fits holding it, or free. */
+  onDraftKnownDiameter: (mm: number | undefined) => void
   /** Rub out the whole hand-marked surface. */
   onClearPaint: () => void
   onUndoPick: () => void
@@ -428,6 +432,7 @@ export function DraftEditor({
               ))}
             </select>
           </label>
+          {draft.kind === 'sphere' && <KnownDiameterField busy={busy} onChange={onDraftKnownDiameter} />}
         </div>
       )}
     </>

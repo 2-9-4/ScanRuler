@@ -332,7 +332,7 @@ describe('an element aligned to a coordinate plane', () => {
   })
   const elementById = (id: number) => store().elements.find((e) => e.id === id)!
   const XY = BASE_PLANES.find((p) => p.name === 'XY plane')!.id
-  const ZX = BASE_PLANES.find((p) => p.name === 'ZX plane')!.id
+  const ZX = BASE_PLANES.find((p) => p.name === 'XZ plane')!.id
 
   function fitted(fit: FitData, orientTo?: number): number {
     store().startDraft(fit.kind)
@@ -395,7 +395,7 @@ describe('an element aligned to a coordinate plane', () => {
 
   it('follows the part onto the plane its reference was turned onto', () => {
     const id = fitted(bore, XY)
-    // Stood on its side: z becomes −y, so the old XY plane is the ZX plane.
+    // Stood on its side: z becomes −y, so the old XY plane is the XZ plane.
     store().applyAlignment(aboutX(90))
     const el = elementById(id)
     if (el.fit?.kind !== 'cylinder' || el.measured?.kind !== 'cylinder') throw new Error()

@@ -68,7 +68,46 @@ export interface AutoAlignResult {
   wallShare: number
   /** Whether the origin was put on a common axis of the round walls. */
   onAxis: boolean
+  /** The flat faces of the scan square to the axes, the largest first —
+   *  what autoAlignTilts says how square the pose came out by, and what
+   *  autoAlignLevel squares the pose to. */
+  faces: AutoAlignFace[]
 }
+
+/** A flat face of the scan, read after settling: a connected patch of the
+ *  surface facing within a few degrees of one of the axes, its plane fitted
+ *  to its points. In the frame the scan is in now. */
+export interface AutoAlignFace {
+  /** The fitted plane's unit normal, facing out of the part. */
+  normal: Vec3
+  /** The middle of the patch, by area. */
+  center: Vec3
+  /** Its area, mm². */
+  area: number
+}
+
+/** How square the pose came out, axis by axis: the faces square to each
+ *  axis, each one's tilt off it (the angle between its fitted normal and
+ *  the axis, degrees), and their tilt weighted by area. */
+export interface AutoAlignTilts {
+  axes: {
+    axis: 'x' | 'y' | 'z'
+    /** The faces' tilts off the axis, weighted by their areas, degrees. */
+    tiltDeg: number
+    /** The area of all the faces square to the axis, mm². */
+    area: number
+    /** The largest of them: area, tilt and middle, in the aligned frame. */
+    faces: { area: number; tiltDeg: number; center: Vec3 }[]
+  }[]
+  /** The largest face of all: which axis it is square to, its area and
+   *  its tilt. Null when the scan has no flat face square to an axis. */
+  largest: { axis: 'x' | 'y' | 'z'; area: number; tiltDeg: number } | null
+}
+
+/** How the pose is levelled once the axes are read: settled on all the
+ *  faces at once (an area-weighted best fit — the default), or square to
+ *  the largest face exactly, the others settled about its normal. */
+export type AutoAlignLevel = 'settled' | 'largest'
 
 /** Bins along one edge of a cube-map face. With the equal-angle warp a bin is
  *  90° / 64 ≈ 1.4° wide. */
@@ -883,6 +922,8 @@ function axisPoint(pre: Prepared, size: number, z: Vec3, x: Vec3, y: Vec3): [num
 export interface AutoAlignOptions {
   /** Passes of neighbourhood averaging over the vertex normals. */
   smoothing?: number
+  /** settled (the default) or largest — see AutoAlignLevel. */
+  level?: AutoAlignLevel
 }
 
 /** Propose the coordinate system of a scan — see the head of this file. */
@@ -953,7 +994,160 @@ export function autoAlign(g: MeshGraph, opts: AutoAlignOptions = {}): AutoAlignR
   }
 
   const standing = stand(g, pre, frame, mainAxis)
-  return { ...standing, method, planeShare, wallShare }
+  const faces = method === 'principal' ? [] : flatFaces(g, pre, standing.axes)
+  const out: AutoAlignResult = { ...standing, method, planeShare, wallShare, faces }
+  return opts.level === 'largest' ? autoAlignLevel(out) : out
+}
+
+// ---------------------------------------------------------------------------
+// How square it came out
+
+/** A face holding less of the surface than this is not read as one. */
+const MIN_FACE_SHARE = 0.002
+/** At most this many faces are kept, the largest. */
+const MAX_FACES = 24
+
+/** The flat faces square to a frame: the vertices whose normal lies within
+ *  the vote's cap of an axis, either way, gathered into patches joined
+ *  across the mesh — the vertices on an edge of the part vote with no
+ *  weight of their own, so two faces meeting at an edge, or a face and a
+ *  step off it, stay apart — and each patch's plane fitted to its points,
+ *  so a flange a degree off square reads as its own face with its own
+ *  normal. The largest first. */
+function flatFaces(g: MeshGraph, pre: Prepared, f: Triad): AutoAlignFace[] {
+  const cosCap = Math.cos(rad(CAP_DEG))
+  const n = pre.normals
+  const p = pre.pos
+  const label = new Int8Array(g.vertexCount).fill(-1)
+  for (let v = 0; v < g.vertexCount; v++) {
+    if (!(pre.weight[v] > 0)) continue
+    for (let k = 0; k < 3; k++) {
+      const c = n[v * 3] * f[k][0] + n[v * 3 + 1] * f[k][1] + n[v * 3 + 2] * f[k][2]
+      if (Math.abs(c) < cosCap) continue
+      label[v] = k * 2 + (c < 0 ? 1 : 0)
+      break
+    }
+  }
+  const seen = new Uint8Array(g.vertexCount)
+  const stack: number[] = []
+  const members: number[] = []
+  const faces: AutoAlignFace[] = []
+  for (let s = 0; s < g.vertexCount; s++) {
+    if (label[s] < 0 || seen[s]) continue
+    const l = label[s]
+    members.length = 0
+    seen[s] = 1
+    stack.push(s)
+    while (stack.length > 0) {
+      const v = stack.pop()!
+      members.push(v)
+      for (let i = g.adjOffsets[v]; i < g.adjOffsets[v + 1]; i++) {
+        const u = g.adjList[i]
+        if (seen[u] || label[u] !== l) continue
+        seen[u] = 1
+        stack.push(u)
+      }
+    }
+    let area = 0
+    const c: Vec3 = [0, 0, 0]
+    const mean: Vec3 = [0, 0, 0]
+    for (const v of members) {
+      const w = pre.weight[v]
+      area += w
+      for (let k = 0; k < 3; k++) {
+        c[k] += w * p[v * 3 + k]
+        mean[k] += w * n[v * 3 + k]
+      }
+    }
+    if (members.length < 3 || area < MIN_FACE_SHARE * pre.total) continue
+    for (let k = 0; k < 3; k++) c[k] /= area
+    const m = new Float64Array(9)
+    for (const v of members) {
+      const w = pre.weight[v]
+      const x = p[v * 3] - c[0], y = p[v * 3 + 1] - c[1], z = p[v * 3 + 2] - c[2]
+      m[0] += w * x * x; m[1] += w * x * y; m[2] += w * x * z
+      m[4] += w * y * y; m[5] += w * y * z
+      m[8] += w * z * z
+    }
+    m[3] = m[1]; m[6] = m[2]; m[7] = m[5]
+    let normal = symmetricEigen3(m).vectors[0]
+    if (dot(normal, mean) < 0) normal = scaleVec(normal, -1)
+    faces.push({ normal, center: c, area })
+  }
+  return faces.sort((a, b) => b.area - a.area).slice(0, MAX_FACES)
+}
+
+/** The axis of a frame a face is square to, and the face's normal turned to
+ *  face along it: null when it faces within the vote's cap (and a degree)
+ *  of none. */
+function faceAxis(axes: readonly Vec3[], normal: Vec3): { k: number; d: Vec3 } | null {
+  const cosCap = Math.cos(rad(CAP_DEG + 1))
+  let k = 0
+  for (let i = 1; i < 3; i++) if (Math.abs(dot(normal, axes[i])) > Math.abs(dot(normal, axes[k]))) k = i
+  const c = dot(normal, axes[k])
+  if (Math.abs(c) < cosCap) return null
+  return { k, d: c < 0 ? scaleVec(normal, -1) : normal }
+}
+
+const degBetween = (a: Vec3, b: Vec3) => (Math.acos(Math.min(1, Math.abs(dot(a, b)))) * 180) / Math.PI
+
+/** How square a pose came out on its faces — see AutoAlignTilts. `perAxis`
+ *  faces are listed for each axis, the largest first. */
+export function autoAlignTilts(a: Pick<AutoAlignResult, 'axes' | 'origin' | 'faces'>, perAxis = 3): AutoAlignTilts {
+  const names = ['x', 'y', 'z'] as const
+  const rows = names.map((axis) => ({ axis, tiltDeg: 0, area: 0, faces: [] as { area: number; tiltDeg: number; center: Vec3 }[] }))
+  let largest: AutoAlignTilts['largest'] = null
+  for (const f of a.faces) {
+    const on = faceAxis(a.axes, f.normal)
+    if (!on) continue
+    const tiltDeg = degBetween(f.normal, a.axes[on.k])
+    const row = rows[on.k]
+    row.tiltDeg += f.area * tiltDeg
+    row.area += f.area
+    const rel: Vec3 = [f.center[0] - a.origin[0], f.center[1] - a.origin[1], f.center[2] - a.origin[2]]
+    if (row.faces.length < perAxis) row.faces.push({ area: f.area, tiltDeg, center: [dot(rel, a.axes[0]), dot(rel, a.axes[1]), dot(rel, a.axes[2])] })
+    if (!largest || f.area > largest.area) largest = { axis: names[on.k], area: f.area, tiltDeg }
+  }
+  for (const r of rows) if (r.area > 0) r.tiltDeg /= r.area
+  return { axes: rows.filter((r) => r.area > 0), largest }
+}
+
+/** The pose squared exactly to its largest face: the axis that face is
+ *  square to turned onto the face's normal, and the other two turned about
+ *  it onto the faces square to them — the one turn about that normal that
+ *  best lays their normals on their axes, by area — as the axis path
+ *  settles a turned part's faces about its walls' axis. The origin stays
+ *  where it was; the faces are the same faces. Unchanged when there is no
+ *  face to square to. */
+export function autoAlignLevel<T extends Pick<AutoAlignResult, 'axes' | 'faces'>>(a: T): T {
+  const big = a.faces.map((f) => ({ f, on: faceAxis(a.axes, f.normal) })).find((x) => x.on !== null)
+  if (!big || !big.on) return a
+  const k = big.on.k
+  const d = big.on.d
+  const f = squareUp(a.axes, k, d)
+  // The turn about d: every other face pulls the axis it is square to
+  // towards its normal, seen across d.
+  const ia = (k + 1) % 3, ib = (k + 2) % 3
+  let sa = 0, sb = 0
+  for (const face of a.faces) {
+    const on = faceAxis(f, face.normal)
+    if (!on || on.k === k) continue
+    const m = addScaled(on.d, d, -dot(on.d, d))
+    // R(θ) f[a] = cos θ f[a] + sin θ f[b]; R(θ) f[b] = cos θ f[b] − sin θ f[a].
+    if (on.k === ia) {
+      sa += face.area * dot(m, f[ia])
+      sb += face.area * dot(m, f[ib])
+    } else {
+      sa += face.area * dot(m, f[ib])
+      sb -= face.area * dot(m, f[ia])
+    }
+  }
+  if (!(Math.hypot(sa, sb) > 0)) return { ...a, axes: f }
+  const th = Math.atan2(sb, sa)
+  const out: Triad = [f[0], f[1], f[2]]
+  out[ia] = normalize(addScaled(scaleVec(f[ia], Math.cos(th)), f[ib], Math.sin(th)))!
+  out[ib] = cross(d, out[ia])
+  return { ...a, axes: out }
 }
 
 /** The transform the proposal stands for: its axes onto the global ones, its

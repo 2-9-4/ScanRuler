@@ -68,11 +68,48 @@ export function collectPatch(g: MeshGraph, seeds: ArrayLike<number>, limit: numb
  *  before was too small or too flat to pin the surface down. */
 const SEED_PATCHES = [1500, 6000, 24000]
 
+/** The seeds that grew nothing, of a region grown from them: a click on
+ *  another surface than the one the estimate found, among several clicks
+ *  — its vertices are in the region only as the places the growing
+ *  started from, standing alone. Seeds joined to one another (a click's
+ *  triangle) go together, and stay while one of them meets a vertex of the
+ *  region that is no seed. */
+export function strandedSeeds(g: MeshGraph, region: Uint32Array, seeds: ArrayLike<number>): Set<number> {
+  const { stamp, gen } = acquireStamps(g, g.vertexCount)
+  for (let i = 0; i < region.length; i++) stamp[region[i]] = gen
+  const isSeed = new Set<number>()
+  for (let i = 0; i < seeds.length; i++) if (stamp[seeds[i]] === gen) isSeed.add(seeds[i])
+  const stranded = new Set<number>()
+  const seen = new Set<number>()
+  for (const s of isSeed) {
+    if (seen.has(s)) continue
+    seen.add(s)
+    const joined = [s]
+    let grew = false
+    for (let k = 0; k < joined.length; k++) {
+      const v = joined[k]
+      const end = g.adjOffsets[v + 1]
+      for (let e = g.adjOffsets[v]; e < end; e++) {
+        const nb = g.adjList[e]
+        if (stamp[nb] !== gen) continue
+        if (!isSeed.has(nb)) grew = true
+        else if (!seen.has(nb)) {
+          seen.add(nb)
+          joined.push(nb)
+        }
+      }
+    }
+    if (!grew) for (const v of joined) stranded.add(v)
+  }
+  return stranded
+}
+
 /**
  * A fit from a click, the steps every kind shares: a patch round the seeds,
  * a robust estimate on it, the region that estimate grows to — 60 points at
- * least — and the kind's own best fit and checks. A step that comes back
- * null moves on to the next patch size; null when none is left.
+ * least, seeds that grew nothing left out of it (strandedSeeds) — and the
+ * kind's own best fit and checks. A step that comes back null moves on to
+ * the next patch size; null when none is left.
  */
 export function seededFit<C, G extends { region: Uint32Array }, R>(
   g: MeshGraph,
@@ -89,8 +126,13 @@ export function seededFit<C, G extends { region: Uint32Array }, R>(
     if (patch.length < 30) break
     const cand = steps.estimate(patch, (seeds[0] ?? 1) + patchSize)
     if (!cand) continue
-    const grown = steps.grow(cand)
+    let grown = steps.grow(cand)
     if (!grown || grown.region.length < 60) continue
+    // Clicks on two surfaces grow the one the estimate found; the other's
+    // seeds would stand in its region alone, in its box, extents and fit.
+    const stranded = seeds.length > 1 ? strandedSeeds(g, grown.region, seeds) : null
+    if (stranded?.size) grown = { ...grown, region: grown.region.filter((v) => !stranded.has(v)) }
+    if (grown.region.length < 60) continue
     const fit = steps.finish(grown)
     if (fit) return fit
   }

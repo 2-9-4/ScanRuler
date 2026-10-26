@@ -23,6 +23,7 @@ import { DEFAULT_REFERENCE_FACING_DEG, wantedSpacing } from '../core/deviation/o
 import { detectMaterialSide } from '../core/deviation/elementField'
 import { targetFitOf } from './useElementField'
 import type { SourceFiles } from './project'
+import type { Vec3 } from '../core/types'
 
 /** What the status strip says the moment the marking tools come out — the
  *  same tools, and so the same instruction, whichever workspace offered them. */
@@ -160,11 +161,25 @@ export function deviationWorkspace({
   /** The map the other way round: the reference cut finer and read against
    *  the scan under the alignment in hand — see core/deviation/onReference.
    *  The readings lie about twice the tolerance apart, at least a quarter
-   *  and at most two millimetres, and a large reference opens it. */
-  const runReferenceMap = async () => {
+   *  and at most two millimetres, and a large reference opens it. Asked
+   *  while a run is going, it returns that run, so whoever asked waits for
+   *  the map rather than finding none. */
+  const runReferenceMap = (): Promise<void> => {
+    if (useDeviation.getState().referenceStatus === 'running') return running ?? Promise.resolve()
+    const run = measureReferenceMap().finally(() => {
+      if (running === run) running = null
+    })
+    running = run
+    return run
+  }
+
+  /** The run of the map on the reference going now. */
+  let running: Promise<void> | null = null
+
+  const measureReferenceMap = async () => {
     const client = clientRef.current
     const dev = useDeviation.getState()
-    if (!client || !dev.align || dev.source !== 'reference' || dev.referenceStatus === 'running') return
+    if (!client || !dev.align || dev.source !== 'reference') return
     triedUnder = dev.align
     const { scanVersion, nominalVersion } = client
     const align = dev.align
@@ -181,6 +196,31 @@ export function deviationWorkspace({
     } catch (e) {
       if (!current()) return
       useDeviation.getState().failReferenceMap(e instanceof Error ? e.message : String(e))
+      useStore.getState().setStatus('')
+    }
+  }
+
+  /** The deviation as volumes under the alignment in hand — material the
+   *  reference has and the part has not, and the other way round, each
+   *  region with its volume and depth (core/deviation/volume). Measured on
+   *  asking only: it takes seconds, not the map's moment. */
+  const runVolume = async (options: { tolerance?: number; cell?: number; within?: { min: Vec3; max: Vec3 } } = {}) => {
+    const client = clientRef.current
+    const dev = useDeviation.getState()
+    if (!client || !dev.align || dev.source !== 'reference' || dev.volumeStatus === 'running') return
+    const { scanVersion, nominalVersion } = client
+    const align = dev.align
+    const tolerance = options.tolerance ?? dev.tolerance
+    const current = () => scanVersion === client.scanVersion && nominalVersion === client.nominalVersion && useDeviation.getState().align === align
+    dev.beginVolume()
+    try {
+      const volume = await client.deviateVolume(align.transform, tolerance, { cell: options.cell, within: options.within })
+      if (!current()) return
+      useDeviation.getState().resolveVolume({ ...volume, tolerance })
+      useStore.getState().setStatus(`Volume error measured in ${(volume.timings.total / 1000).toFixed(1)} s.`)
+    } catch (e) {
+      if (!current()) return
+      useDeviation.getState().failVolume(e instanceof Error ? e.message : String(e))
       useStore.getState().setStatus('')
     }
   }
@@ -203,16 +243,7 @@ export function deviationWorkspace({
   const setMapOn = async (side: MapSide) => {
     useDeviation.getState().setMapOn(side)
     const dev = useDeviation.getState()
-    if (side === 'reference' && dev.align && dev.referenceStatus !== 'ready') {
-      if (dev.referenceStatus === 'running') await new Promise<void>((done) => {
-        const stop = useDeviation.subscribe((d) => {
-          if (d.referenceStatus === 'running') return
-          stop()
-          done()
-        })
-      })
-      else await runReferenceMap()
-    }
+    if (side === 'reference' && dev.align && dev.referenceStatus !== 'ready') await runReferenceMap()
   }
 
   /** The facing limit decides which surface each point is measured against,
@@ -468,6 +499,7 @@ export function deviationWorkspace({
     stopPicking,
     runDeviation,
     runReferenceMap,
+    runVolume,
     setMapOn,
     watch,
     setMapFacing,

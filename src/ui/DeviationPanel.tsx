@@ -24,6 +24,8 @@ import { NumberField } from './NumberField'
 import { ProbeList } from './ProbeList'
 import { ScaleControls } from './ScaleControls'
 import { TargetSection } from './TargetSection'
+import { VolumeSection } from './VolumeSection'
+import type { Vec3 } from '../core/types'
 
 /** How the fit in hand was arrived at, for the readout. */
 const SOURCE_LABEL = {
@@ -58,6 +60,8 @@ export function DeviationPanel({
   onGoToMeasure,
   onCopy,
   onExportStl,
+  onMeasureVolume,
+  onFrame,
 }: {
   onOpenScan: (file: File) => void
   onOpenNominal: (file: File) => void
@@ -93,6 +97,10 @@ export function DeviationPanel({
   /** Save the scan as an STL in the pose it is currently shown in — here, that
    *  means with the best fit onto the reference baked in. */
   onExportStl: () => void
+  /** Measure the deviation as volumes under the alignment in hand. */
+  onMeasureVolume: () => void
+  /** Frame a box of the reference's frame in the viewport. */
+  onFrame: (min: Vec3, max: Vec3) => void
 }) {
   const scanName = useStore((s) => s.fileName)
   const scanTriangles = useStore((s) => s.triangleCount)
@@ -552,6 +560,8 @@ export function DeviationPanel({
           )}
         </div>
       )}
+
+      {!onElement && aligned && <VolumeSection className={aside} onMeasure={onMeasureVolume} onFrame={onFrame} />}
 
       {hasMap && (
         <>

@@ -16,6 +16,7 @@ import { DEFAULT_FACING_DEG, type MaterialSide } from '../core/deviation/element
 import type { FieldHistogram } from '../core/field/stats'
 import type { StepInfo } from '../core/parsers/step'
 import type { Vec3 } from '../core/types'
+import type { VolumeDeviation } from '../core/deviation/volume'
 import { PALETTE } from './palette'
 import { probeSlice, type Probe, type ProbeSlice } from './probes'
 
@@ -94,6 +95,16 @@ interface DeviationState extends ProbeSlice {
   mapOn: MapSide
   referenceStatus: MapStatus
   referenceVersion: number
+  /** The deviation as volumes (core/deviation/volume), measured on asking
+   *  under the alignment in hand and gone with it, like the map on the
+   *  reference; the tolerance it was measured with beside it. */
+  volume: (VolumeDeviation & { tolerance: number }) | null
+  volumeStatus: MapStatus
+  volumeMessage: string | null
+  /** Its regions drawn over the parts, and the one under the pointer in
+   *  the list, by its index in `volume.regions`. */
+  showVolume: boolean
+  volumeHover: number | null
   stats: DeviationStats | null
   histogram: FieldHistogram | null
   /** Bumped whenever a fresh deviation field lands, so the view repaints. */
@@ -229,8 +240,14 @@ interface DeviationState extends ProbeSlice {
   beginReferenceMap: () => void
   resolveReferenceMap: () => void
   failReferenceMap: (message: string) => void
-  /** The map on the reference is gone — the scan or the alignment moved. */
+  /** The map on the reference is gone — the scan or the alignment moved —
+   *  and the volumes with it. */
   clearReferenceMap: () => void
+  beginVolume: () => void
+  resolveVolume: (volume: VolumeDeviation & { tolerance: number }) => void
+  failVolume: (message: string) => void
+  setShowVolume: (show: boolean) => void
+  setVolumeHover: (region: number | null) => void
   /** Only the setting: the map it changes is measured again by whoever owns
    *  it. */
   setMapFacing: (deg: number | null) => void
@@ -259,6 +276,9 @@ interface DeviationState extends ProbeSlice {
   clearPairs: () => void
 }
 
+/** No volumes: what an alignment, scan or reference that moves leaves. */
+const NO_VOLUME = { volume: null, volumeStatus: 'idle' as MapStatus, volumeMessage: null, volumeHover: null }
+
 const CLEARED = {
   alignStatus: 'idle' as AlignStatus,
   align: null,
@@ -267,6 +287,10 @@ const CLEARED = {
   globalAlign: null,
   mapStatus: 'idle' as MapStatus,
   referenceStatus: 'idle' as MapStatus,
+  volume: null,
+  volumeStatus: 'idle' as MapStatus,
+  volumeMessage: null,
+  volumeHover: null,
   stats: null,
   histogram: null,
   probes: [] as Probe[],
@@ -316,6 +340,7 @@ export const useDeviation = create<DeviationState>()((set, get) => ({
   mapVersion: 0,
   mapOn: 'scan' as MapSide,
   referenceVersion: 0,
+  showVolume: true,
   elementVersion: 0,
   targetScope: 'all',
   scopeCount: 0,
@@ -468,6 +493,7 @@ export const useDeviation = create<DeviationState>()((set, get) => ({
       globalAlign: align.source === 'local' ? s.globalAlign : align,
       mapStatus: 'idle',
       referenceStatus: 'idle',
+      ...NO_VOLUME,
       stats: null,
       histogram: null,
       probes: [],
@@ -506,6 +532,7 @@ export const useDeviation = create<DeviationState>()((set, get) => ({
             alignMessage: null,
             mapStatus: 'idle',
             referenceStatus: 'idle',
+            ...NO_VOLUME,
             stats: null,
             histogram: null,
             probes: [],
@@ -540,7 +567,15 @@ export const useDeviation = create<DeviationState>()((set, get) => ({
   beginReferenceMap: () => set({ referenceStatus: 'running' }),
   resolveReferenceMap: () => set((s) => ({ referenceStatus: 'ready', referenceVersion: s.referenceVersion + 1, ...(s.mapOn === 'reference' ? { probes: [] } : {}) })),
   failReferenceMap: (alignMessage) => set({ referenceStatus: 'idle', alignMessage }),
-  clearReferenceMap: () => set({ referenceStatus: 'idle' }),
+  clearReferenceMap: () => set({ referenceStatus: 'idle', ...NO_VOLUME }),
+  beginVolume: () => set({ volumeStatus: 'running', volumeMessage: null }),
+  // The regions are drawn in the map's red and blue: over the colour plot
+  // they could not be told from it, so it is put away — one key on the view
+  // bar brings it back.
+  resolveVolume: (volume) => set({ volume, volumeStatus: 'ready', volumeMessage: null, volumeHover: null, showVolume: true, showMap: false }),
+  failVolume: (volumeMessage) => set({ volumeStatus: 'idle', volumeMessage }),
+  setShowVolume: (showVolume) => set({ showVolume }),
+  setVolumeHover: (volumeHover) => set({ volumeHover }),
 
   setMapFacing: (mapFacingDeg) =>
     set({ mapFacingDeg: mapFacingDeg === null ? null : Math.min(90, Math.max(1, mapFacingDeg)) }),

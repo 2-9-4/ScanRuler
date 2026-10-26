@@ -164,20 +164,45 @@ export function keepWhere(idx: ArrayLike<number>, keep: (v: number) => boolean):
 export const GUIDED_TRIES = 4
 
 /** Why a guided fit found nothing: the sizes it saw and turned down, said
- *  plainly with what to try. */
-export function guideRefusal(kind: string, g: FitGuide, seen: { radius: number; why: string }[]): string {
+ *  plainly with what to try — those in the radius range first, so a right
+ *  size turned down for its noise is not crowded out by the junk a larger
+ *  patch found. */
+export function guideRefusal(kind: string, g: FitGuide, seen: GuideSeen[]): string {
   const range = g.radius
     ? `${g.radius.min !== undefined ? `R${g.radius.min}` : ''}–${g.radius.max !== undefined ? `R${g.radius.max}` : ''}`
     : ''
-  const found = [...new Map(seen.map((s) => [`${s.radius.toFixed(2)} ${s.why}`, s])).values()].slice(0, 3)
-  const said = found.length ? ` Found ${found.map((s) => `R${s.radius.toFixed(2)} (${s.why})`).join(', ')}.` : ''
-  return `No ${kind} there within the guide${range ? ` (radius ${range})` : ''}.${said} Seed on the surface itself, widen radius, or check side${g.within ? ' and within' : ''}.`
+  const found = [...new Map(seen.map((s) => [`${s.radius.toFixed(2)} ${s.why}`, s])).values()]
+    .sort((a, b) => Number(!radiusInRange(g, a.radius)) - Number(!radiusInRange(g, b.radius)))
+    .slice(0, 3)
+  const fixed = (v: readonly number[], d: number) => `[${v.map((x) => +x.toFixed(d)).join(', ')}]`
+  const seenAs = (s: GuideSeen) =>
+    s.axis && s.center
+      ? `R${s.radius.toFixed(2)} (axis off by ${s.offDeg?.toFixed(1)}°: axis ${fixed(s.axis, 3)} through ${fixed(s.center, 2)}, ${s.inliers} points)`
+      : `R${s.radius.toFixed(2)} (${s.why})`
+  const said = found.length ? ` Found ${found.map(seenAs).join(', ')}.` : ''
+  const offAxis = found.some((s) => s.axis) ? ' If that is the surface, give that axis or drop axis.' : ''
+  return `No ${kind} there within the guide${range ? ` (radius ${range})` : ''}.${said}${offAxis} Seed on the surface itself, widen radius, or check side${g.within ? ' and within' : ''}.`
 }
 
-/** A size the guided search saw and turned down, and why. */
+/** A size the guided search saw and turned down, and why — for a round
+ *  whose axis lay off the guide's, that axis, a point on it, how far off it
+ *  lay and how many points it held, so it can be asked for after all. */
 export interface GuideSeen {
   radius: number
   why: string
+  axis?: Vec3
+  center?: Vec3
+  offDeg?: number
+  inliers?: number
+}
+
+/** A round turned down for its axis: see GuideSeen. */
+export function axisOff(g: FitGuide, radius: number, axis: Vec3, center: Vec3, inliers: number): GuideSeen {
+  const u = unitAxis(g)
+  const l = Math.hypot(axis[0], axis[1], axis[2]) || 1
+  const a: Vec3 = [axis[0] / l, axis[1] / l, axis[2] / l]
+  const cos = u ? Math.min(1, Math.abs(u[0] * a[0] + u[1] * a[1] + u[2] * a[2])) : 1
+  return { radius, why: 'axis off', axis: a, center, offDeg: (Math.acos(cos) * 180) / Math.PI, inliers }
 }
 
 /**

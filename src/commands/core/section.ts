@@ -1,37 +1,65 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Sections: the scan cut with a plane, for measuring in 2D.
 
-import { canCutAlong, frameTurnedUp, type SectionFrame, type SectionRef, sketchFrameOn, type WorldAxis } from '../../core/section/frame'
-import { projectCut } from '../../core/section/slice'
+import { boxOnSheet, canCutAlong, cutAxisOf, frameTurnedUp, pointOnSheet, RADIAL_AXIS_KINDS, type SectionFrame, type SectionPlaneRef, sketchFrameOn, type WorldAxis, worldAxisDir, worldPlaneName } from '../../core/section/frame'
+import { FACING_DEG, runIndices, sideMask, sidedChains, type Skin } from '../../core/section/skin'
+import { projectCut, projectCutNormals } from '../../core/section/slice'
 import { useDeviation } from '../../state/deviationStore'
 import { useFlat } from '../../state/flatStore'
 import { sectionDraftReady, useStore, type Section } from '../../state/store'
 import { commandHost } from '../host'
-import { elementRefSchema, findElement, requireScan, type ElementRef } from '../refs'
+import { elementRefSchema, findElement, parsePlaneName, refOf, requireScan, type ElementRef } from '../refs'
 import { arr, enumOf, int, num, obj, oneOf, str, vec3 } from '../schema'
 import { describeSection } from '../state'
 import { CommandError, type Command } from '../types'
-import { sectionLayers, type SectionOutline, type SectionPiece, type SectionSheet } from '../sectionLayers'
+import { findSheetPlane, sectionLayers, type SectionOutline, type SectionPiece, type SectionSheet } from '../sectionLayers'
 import { EDGE_MIN_FEATURE_MM } from '../../core/flat/edges'
 import type { Vec3 } from '../../core/types'
 import { requireMeasureFree, showWorkspace, waitFor } from './common'
 import { round4 } from '../../core/round'
 import type { SectionPictureInput, SectionPictureModel, SheetAxis } from '../../app/sectionPicture'
 
-/** A coordinate plane by name, as the axis it is square to. */
-export function worldAxisOf(name: string): WorldAxis | null {
-  const key = name.trim().toUpperCase().replace(/\s*PLANE$/, '')
-  return key === 'XY' ? 'z' : key === 'YZ' ? 'x' : key === 'ZX' || key === 'XZ' ? 'y' : null
+/** A plane through an axis, as section.cut takes it: the axis an element's
+ *  (by id or name) or a coordinate axis's, "X", "Y" or "Z". */
+type RadialIn = { axis: ElementRef; angleDeg: number }
+
+/** What section.cut is told to cut through an axis, as the section keeps
+ *  it. */
+function radialRefOf(across: RadialIn): SectionPlaneRef {
+  const { axis, angleDeg } = across
+  if (!Number.isFinite(angleDeg)) throw new CommandError('invalid_input', 'across.angleDeg: give the angle about the axis in degrees.')
+  if (typeof axis === 'string' && /^\s*[xyz]\s*$/i.test(axis) && !useStore.getState().elements.some((e) => e.name.trim().toLowerCase() === axis.trim().toLowerCase())) {
+    return { axis: axis.trim().toLowerCase() as WorldAxis, angleDeg }
+  }
+  const el = findElement(axis)
+  if (!el.fit || !RADIAL_AXIS_KINDS.includes(el.kind)) {
+    throw new CommandError('invalid_input', `${el.name} has no axis to lay a plane through — choose a cylinder, cone, line or circle.`)
+  }
+  return { axis: el.id, angleDeg }
 }
 
-const cut: Command<{ across: ElementRef; offset?: number; name?: string }> = {
+const cut: Command<{ across: ElementRef | RadialIn; offset?: number; name?: string }> = {
   name: 'cut',
   title: 'Cut a section',
   description:
-    'Cut the scan with a plane and keep the cut as a section, measured in the 2D workspace (flat) — where it is put on the sheet. across is what the plane is taken across: an element with a direction (a plane, cylinder, cone, line or circle) by id or name, or a coordinate plane "XY", "YZ" or "ZX", which is laid through the part’s centre. offset slides the plane along its normal, mm — from the element, or for a coordinate plane the coordinate itself. Returns the section: its plane and how many chains the cut has. One undo step.',
+    'Cut the scan with a plane and keep the cut as a section, measured in the 2D workspace (flat) — where it is put on the sheet. across is what the plane is taken across: an element with a direction (a plane, cylinder, cone, line or circle) by id or name, or a coordinate plane "XY", "YZ" or "XZ" (also "ZX"), which is laid through the part’s centre. Or { axis, angleDeg }: a plane through an axis — a cylinder’s, cone’s, line’s or circle’s, by id or name, or the coordinate axis "X", "Y" or "Z" through the origin — turned angleDeg about it: a half section of a turned part, u the distance out from the axis and v up it (towards the + end of the coordinate axis it lies nearest, whichever way the element points), normal u × v, at every angle. 0° is the coordinate axis next round (X about Z, Y about X, Z about Y) and the angle turns by the right hand about the axis — about Z, from +X towards +Y. offset slides the plane along its normal, mm — from the element, or for a coordinate plane the coordinate itself; through an axis, 0 by default. Returns the section: its plane and how many chains the cut has. One undo step.',
   input: obj(
     {
-      across: elementRefSchema('An element with a direction, or a coordinate plane "XY", "YZ", "ZX".'),
+      across: oneOf(
+        [
+          int('An element’s id.', { minimum: 1 }),
+          str('An element’s name, or a coordinate plane "XY", "YZ", "XZ".', { minLength: 1 }),
+          obj(
+            {
+              axis: elementRefSchema('A cylinder, cone, line or circle, or a coordinate axis "X", "Y", "Z".'),
+              angleDeg: num('Degrees about the axis.'),
+            },
+            ['axis', 'angleDeg'],
+            'A plane through an axis.',
+          ),
+        ],
+        'An element with a direction, a coordinate plane, or { axis, angleDeg } through an axis.',
+      ),
       offset: num('Where along the normal the plane lies, mm.'),
       name: str('A name for it; otherwise it is numbered — "Section 2".', { minLength: 1 }),
     },
@@ -41,9 +69,10 @@ const cut: Command<{ across: ElementRef; offset?: number; name?: string }> = {
   run: async ({ across, offset, name }) => {
     requireScan()
     requireMeasureFree()
-    let ref: SectionRef
-    const world = typeof across === 'string' ? worldAxisOf(across) : null
+    let ref: SectionPlaneRef
+    const world = typeof across === 'string' ? parsePlaneName(across) : null
     if (world) ref = world
+    else if (typeof across === 'object') ref = radialRefOf(across)
     else {
       const el = findElement(across)
       if (!el.fit || !canCutAlong(el.kind)) {
@@ -84,8 +113,9 @@ const cut: Command<{ across: ElementRef; offset?: number; name?: string }> = {
 
 /** The section an id or a name stands for — whole names, case aside; a
  *  name two sections share is refused rather than guessed. */
-export function findSection(ref: number | string): Section {
+export function findSection(given: number | string): Section {
   const { sections } = useStore.getState()
+  const ref = refOf(sections, given)
   if (typeof ref === 'number') {
     const sec = sections.find((x) => x.id === ref)
     if (!sec) throw new CommandError('not_found', `There is no section ${ref} — there are ${sections.map((x) => `${x.id} (${x.name})`).join(', ') || 'none'}.`)
@@ -103,22 +133,28 @@ export function findSection(ref: number | string): Section {
 const GET_LIMIT = 4000
 const GET_MAX = 50_000
 
-const get: Command<{ section: number | string; chains?: number[]; space?: 'sheet' | 'world' | 'both'; limit?: number }> = {
+const get: Command<{ section: number | string; chains?: number[]; space?: 'sheet' | 'world' | 'both'; limit?: number; skin?: Skin; facing?: { dir: [number, number]; withinDeg?: number } }> = {
   name: 'get',
   title: 'Read a section’s polylines',
   description:
-    'A section’s cut as the polylines it is: each chain’s points in order, as the 2D sheet lays them flat — [u, v] millimetres in the section’s plane, what flat.fit and a sketch on the section take — and, with space "world" or "both", as [x, y, z] in the frame the part is measured in now. With them the plane (origin, normal, basisU, basisV: a sheet point is origin + u·basisU + v·basisV), and for each chain whether it is closed (a loop; its first point is repeated at the end), its length along the path, how many points it has and the box round it on the sheet. At most limit points come back over all the chains (4000 by default, 50000 at most): past it every k-th point of a chain is kept, its ends always, and step says which k. chains picks chains by their index. Changes nothing.',
+    'A section’s cut as the polylines it is: each chain’s points in order, as the 2D sheet lays them flat — [u, v] millimetres in the section’s plane, what flat.fit and a sketch on the section take — and, with space "world" or "both", as [x, y, z] in the frame the part is measured in now. With them the plane (origin, normal, basisU, basisV: a sheet point is origin + u·basisU + v·basisV), and for each chain whether it is closed (a loop; its first point is repeated at the end), its length along the path, how many points it has and the box round it on the sheet. At most limit points come back over all the chains (4000 by default, 50000 at most): past it every k-th point of a chain is kept, its ends always, and step says which k. chains picks chains by their index. skin: "outer" or "inner" reads one skin of a thin wall alone — outer, the points whose way out of the material (the scan’s triangles say which way that is) faces away from the middle of the cut and looks out past the rest of it; inner, the points facing the middle whose way back through the material comes out on the outer skin within about the wall’s thickness; ribs and bosses are neither, and a solid has no inner skin — and facing { dir: [u, v], withinDeg } the points whose way out lies within that angle of a direction on the sheet; with both, a point must pass both. Each chain then comes back as its runs on that side, each with run (its place along the chain) and four points at least. Changes nothing.',
   input: obj(
     {
       section: oneOf([int('The section’s id.', { minimum: 1 }), str('The section’s name, as the list shows it — "Section 1".', { minLength: 1 })], 'The section, by id or name.'),
       chains: arr(int('A chain’s index.', { minimum: 0 }), 'Which chains; every one when left out.', { minItems: 1 }),
       space: enumOf(['sheet', 'world', 'both'], 'sheet (the default): [u, v] on the section’s plane; world: [x, y, z]; both.'),
       limit: int(`How many points at most, over every chain asked for; ${GET_LIMIT} by default, ${GET_MAX} at most.`, { minimum: 2, maximum: GET_MAX }),
+      skin: enumOf(['outer', 'inner'], 'One skin of a thin wall alone.'),
+      facing: obj(
+        { dir: arr(num(), '[u, v] on the sheet.', { minItems: 2, maxItems: 2 }), withinDeg: num(`Degrees; ${FACING_DEG} by default.`, { exclusiveMinimum: 0, maximum: 180 }) },
+        ['dir'],
+        'Only the points whose way out of the material lies within withinDeg of dir.',
+      ),
     },
     ['section'],
   ),
   readOnly: true,
-  run: async ({ section, chains: which, space = 'sheet', limit = GET_LIMIT }) => {
+  run: async ({ section, chains: which, space = 'sheet', limit = GET_LIMIT, skin, facing }) => {
     requireScan()
     const id = findSection(section).id
     // A section loaded from a project, or whose plane was just moved, is cut
@@ -133,28 +169,46 @@ const get: Command<{ section: number | string; chains?: number[]; space?: 'sheet
     const count = cut.offsets.length - 1
     const picked = which ?? Array.from({ length: count }, (_, i) => i)
     for (const c of picked) if (c >= count) throw new CommandError('not_found', `${sec.name} has no chain ${c} — it has ${count}${count > 0 ? ` (0 to ${count - 1})` : ''}.`)
-    const total = picked.reduce((n, c) => n + (cut.offsets[c + 1] - cut.offsets[c]), 0)
+    const loopsAt = (from: number, last: number) => last - from > 1 && cut.points[from * 3] === cut.points[last * 3] && cut.points[from * 3 + 1] === cut.points[last * 3 + 1] && cut.points[from * 3 + 2] === cut.points[last * 3 + 2]
+    // What is read of each chain, as the indices of its points in the cut:
+    // all of it, or its runs on the side skin or facing asks for.
+    let parts: { index: number; run?: number; at: number[] }[]
+    if (skin || facing) {
+      const fl = facing ? Math.hypot(facing.dir[0], facing.dir[1]) : 1
+      if (!(fl > 0)) throw new CommandError('invalid_input', 'facing.dir: give a direction on the sheet, not [0, 0].')
+      const normals = projectCutNormals(cut, sec.frame)
+      if (!normals) throw new CommandError('failed', `${sec.name}’s cut does not say which side the material is on — it was taken before cuts did. Move the section a hair and ask again.`)
+      const sided = sidedChains(flat, normals)
+      const mask = sideMask(sided.chains, sided.normals, { ...(skin ? { skin } : {}), ...(facing ? { facing: { dir: facing.dir, withinDeg: facing.withinDeg ?? FACING_DEG } } : {}) })
+      parts = picked.flatMap((c) => {
+        const from = cut.offsets[c]
+        const to = cut.offsets[c + 1]
+        return runIndices(to - from, loopsAt(from, to - 1), (i) => mask[c][i]).map((run, k) => ({ index: c, run: k, at: run.map((i) => from + i) }))
+      })
+    } else parts = picked.map((c) => ({ index: c, at: Array.from({ length: cut.offsets[c + 1] - cut.offsets[c] }, (_, i) => cut.offsets[c] + i) }))
+    const total = parts.reduce((n, p) => n + p.at.length, 0)
     const step = total > limit ? Math.ceil(total / limit) : 1
-    const chains = picked.map((c) => {
-      const from = cut.offsets[c]
-      const to = cut.offsets[c + 1]
-      const n = to - from
+    const chains = parts.map(({ index, run, at }) => {
+      const n = at.length
       let length = 0
       let lo: [number, number] = [Infinity, Infinity]
       let hi: [number, number] = [-Infinity, -Infinity]
-      for (let i = from; i < to; i++) {
+      at.forEach((i, k) => {
         const u = flat.points[i * 2]
         const v = flat.points[i * 2 + 1]
         lo = [Math.min(lo[0], u), Math.min(lo[1], v)]
         hi = [Math.max(hi[0], u), Math.max(hi[1], v)]
-        if (i > from) length += Math.hypot(cut.points[i * 3] - cut.points[i * 3 - 3], cut.points[i * 3 + 1] - cut.points[i * 3 - 2], cut.points[i * 3 + 2] - cut.points[i * 3 - 1])
-      }
-      const closed = n > 2 && cut.points[from * 3] === cut.points[(to - 1) * 3] && cut.points[from * 3 + 1] === cut.points[(to - 1) * 3 + 1] && cut.points[from * 3 + 2] === cut.points[(to - 1) * 3 + 2]
+        const j = at[k - 1]
+        if (k > 0) length += Math.hypot(cut.points[i * 3] - cut.points[j * 3], cut.points[i * 3 + 1] - cut.points[j * 3 + 1], cut.points[i * 3 + 2] - cut.points[j * 3 + 2])
+      })
+      // A run is closed only where it is the whole loop.
+      const closed = n > 2 && at[n - 1] - at[0] === n - 1 && loopsAt(at[0], at[n - 1])
       const kept: number[] = []
-      for (let i = from; i < to; i += step) kept.push(i)
-      if (kept[kept.length - 1] !== to - 1) kept.push(to - 1)
+      for (let k = 0; k < n; k += step) kept.push(at[k])
+      if (kept[kept.length - 1] !== at[n - 1]) kept.push(at[n - 1])
       return {
-        index: c,
+        index,
+        ...(run !== undefined ? { run } : {}),
         closed,
         points: n,
         kept: kept.length,
@@ -328,27 +382,127 @@ function turnedUp<T extends SectionFrame>(sheet: T, up: WorldAxis | undefined): 
  *  of a plane no section stands on. With `up`, the sheet is turned so that
  *  axis runs up it (frameTurnedUp), its zero where it was. */
 export async function sheetThrough(origin: Vec3, normal: Vec3, name: string, up?: WorldAxis): Promise<{ sheet: SectionSheet; flat: Float32Array }> {
-  requireScan()
   const on = sketchFrameOn({ origin, normal })
   if (!on) throw new CommandError('invalid_input', 'plane.normal: give a direction, not a zero vector.')
+  return sheetOn(on, name, up)
+}
+
+/** The scan cut on a frame already in hand — a sketch's own — laid on it
+ *  as sheetThrough lays it. */
+async function sheetOn(on: SectionFrame, name: string, up?: WorldAxis): Promise<{ sheet: SectionSheet; flat: Float32Array }> {
+  requireScan()
   const frame = turnedUp(on, up)
   const worker = commandHost().session.clientRef.current
   if (!worker) throw new CommandError('unavailable', 'The mesh worker is not running.')
-  const cut = await worker.section(origin, frame.normal, EDGE_MIN_FEATURE_MM)
+  const cut = await worker.section(frame.origin, frame.normal, EDGE_MIN_FEATURE_MM)
   return { sheet: { id: 0, name, ...frame }, flat: projectCut(cut, frame).points }
 }
 
-const render: Command<{ section?: number | string; plane?: { origin: Vec3; normal: Vec3 }; offsets?: number[]; up?: WorldAxis; frame?: { at: [number, number]; size: number }; tolerance?: number; layers?: string[]; width?: number; height?: number }> = {
+/** What section.render's plane is given as: a plane by a point and its
+ *  normal, an element by id or name, a coordinate plane by name, or a plane
+ *  a workspace keeps — a sketch's. */
+type PlaneIn = { origin: Vec3; normal: Vec3 } | number | string | { sketch: number | string }
+
+/** What section.render's frame is given as: a square of the sheet by its
+ *  middle — [u, v] on the sheet, or [x, y, z] in the world — and its side,
+ *  or a box of the world. */
+type FrameIn = { at?: number[]; size?: number; world?: { min: Vec3; max: Vec3 } }
+
+/** How much wider than a world box laid on a sheet the square framed
+ *  round it is. */
+const BOX_ROOM = 1.1
+
+/**
+ * A picture's frame on its sheet, as the picture takes it: a square by its
+ * middle and side, the middle given on the sheet or in the world — laid
+ * square onto the sheet, so a place on the part needs no working out of
+ * where the sheet counts from — or the square round a box of the world
+ * laid onto the sheet, a tenth wider. `framed` says, for a frame given in
+ * the world, where it came out on the sheet, and how far off the plane a
+ * point lay.
+ */
+export function frameOnSheet(given: FrameIn, sheet: SectionFrame): { frame: { at: [number, number]; size: number }; framed?: Record<string, unknown> } {
+  if (given.world) {
+    if (given.at !== undefined || given.size !== undefined) throw new CommandError('invalid_input', 'frame: give at and size, or world: { min, max } — not both.')
+    const { min, max } = given.world
+    for (let k = 0; k < 3; k++) if (!(min[k] <= max[k])) throw new CommandError('invalid_input', 'frame.world: min lies past max.')
+    const b = boxOnSheet(sheet, given.world)
+    const at: [number, number] = [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2]
+    const size = Math.max(BOX_ROOM * Math.max(b.max[0] - b.min[0], b.max[1] - b.min[1]), 1e-3)
+    return { frame: { at, size }, framed: { at: at.map(round4), size: round4(size) } }
+  }
+  const at = given.at
+  if (!at || (at.length !== 2 && at.length !== 3) || given.size === undefined) {
+    throw new CommandError('invalid_input', 'frame: give at — [u, v] on the sheet, or [x, y, z] in the world — and size, or world: { min, max }.')
+  }
+  if (at.length === 2) return { frame: { at: [at[0], at[1]], size: given.size } }
+  const p = pointOnSheet(sheet, at as Vec3)
+  return { frame: { at: p.at, size: given.size }, framed: { at: p.at.map(round4), size: given.size, offPlane: round4(p.off) } }
+}
+
+/** A sheet in the world, as an answer gives it: a sheet point [u, v] is
+ *  origin + u·basisU + v·basisV. */
+const sheetOut = (s: SectionFrame) => ({ origin: s.origin.map(round4), normal: s.normal.map(round4), basisU: s.basisU.map(round4), basisV: s.basisV.map(round4) })
+
+/** The frame a picture's plane lies on, and its name: a sketch's on that
+ *  plane (sketchFrameOn) — for an element, the plane through its centre
+ *  square to its direction, as a sketch on a plane element takes it, not
+ *  the fitter's own axes; for a coordinate plane, the one through the
+ *  part's centre, as section.cut lays it — or the sketch's own frame. */
+export function sheetPlaneOf(plane: PlaneIn): { name: string; frame: SectionFrame } {
+  const frameOn = (origin: Vec3, normal: Vec3, name: string) => {
+    const frame = sketchFrameOn({ origin, normal })
+    if (!frame) throw new CommandError('invalid_input', 'plane.normal: give a direction, not a zero vector.')
+    return { name, frame }
+  }
+  if (typeof plane === 'object' && 'sketch' in plane) {
+    const { plane: found, kinds } = findSheetPlane(plane.sketch)
+    if (!found) throw new CommandError('not_found', kinds.length > 0 ? `There is no sketch ${typeof plane.sketch === 'number' ? plane.sketch : `named "${plane.sketch}"`} among ${kinds.join(', ')}.` : 'No workspace here keeps sketches — give an element, a coordinate plane or { origin, normal }.')
+    const { name, ...frame } = found
+    return { name, frame }
+  }
+  if (typeof plane === 'object') return frameOn(plane.origin, plane.normal, 'Cut')
+  const world = typeof plane === 'string' ? parsePlaneName(plane) : null
+  if (world) {
+    const c = useStore.getState().modelCenter
+    const n = worldAxisDir(world)
+    const k = 'xyz'.indexOf(world)
+    const origin: Vec3 = [k === 0 ? c[0] : 0, k === 1 ? c[1] : 0, k === 2 ? c[2] : 0]
+    return frameOn(origin, n, worldPlaneName(world))
+  }
+  const el = findElement(plane)
+  const axis = el.fit && canCutAlong(el.kind) ? cutAxisOf(el.fit) : null
+  if (!axis) throw new CommandError('invalid_input', `${el.name} has no direction to lay a plane square to — choose a plane, cylinder, cone, line or circle.`)
+  return frameOn(axis.origin, axis.dir, el.name)
+}
+
+const render: Command<{ section?: number | string; plane?: PlaneIn; offsets?: number[]; up?: WorldAxis; frame?: FrameIn; tolerance?: number; layers?: string[]; width?: number; height?: number }> = {
   name: 'render',
   title: 'Picture a section',
   description:
-    'A picture of a section as a PNG, for checking a slice against what was built on it: the scan’s cut as points on the section’s sheet ([u, v] mm as section.get gives them, +u right, +v up), a grid ruled in millimetres with its values at the top and left margins — world coordinates where the sheet’s u or v runs along a world axis, sheet mm otherwise — the world direction across and up named in the margins (axes in the answer: per sheet axis the world axis it runs nearest, offDeg and, along it, at0, the world coordinate at the sheet’s 0), a scale bar, and over it what the workspaces’ layers draw — a model’s cut by the section’s plane as outlines, a sketch’s pieces with their ids where the sketch lies in that plane, whatever it was drawn on. Every scan point within ten tolerances of an outline is read against it: on it within ± tolerance (grey), or off it (red), outside the outline or inside it; points with no outline near are pale. The answer gives gap: points (the cut’s), read, over (red), outside and inside (of a closed outline — inside is scan within the model’s material, so the model stands proud there; outside, the model is short), max and rms (mm) and overBox (the sheet box round the red, to frame the next look); layers: each layer drawn by key, its outlines and pieces counted; map: picture pixel (column c, row r from the top) is the sheet place [left + c·unitsPerPx, top − r·unitsPerPx]. section names a section; or plane { origin, normal } cuts the scan there for the picture alone — no section is made, and the sheet is a sketch’s on that plane: zero at the world origin’s foot, u along the coordinate axis next round from the normal (YZ: u = Y, v = Z; ZX: u = Z, v = X; XY: u = X, v = Y), so on a coordinate plane [u, v] are world coordinates (the answer’s sheet gives them). A section’s own sheet counts from the part’s centre instead. up: "x", "y" or "z" turns the picture’s sheet in its plane so that world axis runs up it — a side view with Z up: v is that axis laid into the plane, u the direction square to it running + to the right, the plane seen from whichever side gives that (the ZX plane with up "z": u = X, v = Z, seen from −Y, as a front view; a section’s sheet keeps its zero) — and everything the picture says in [u, v] (frame, map, overBox, axes) is then on that turned sheet, which the answer gives as sheet. Without up the sheet lies as above. offsets: 2 to 9 cuts in one picture — the section’s or plane’s slid along its normal by each, mm — side by side, each tile labelled with its offset, all on one frame and scale (the square round every cut unless frame is given); the answer gives per tile its offset, origin and gap, and map.tile and map.cols (map holds for each tile from its own corner). frame { at: [u, v], size } looks at a square of the sheet; everything by default. tolerance: the Deviation workspace’s by default. layers: the keys to draw; every one by default, [] for the scan alone. 800 px on the long side by default, up to 2048. Needs the browser. Changes nothing.',
+    'A picture of a section as a PNG, for checking a slice against what was built on it: the scan’s cut as points on the section’s sheet ([u, v] mm as section.get gives them, +u right, +v up), a grid ruled in millimetres with its values at the top and left margins — world coordinates where the sheet’s u or v runs along a world axis, sheet mm otherwise — the world direction across and up named in the margins (axes in the answer: per sheet axis the world axis it runs nearest, offDeg and, along it, at0, the world coordinate at the sheet’s 0), a scale bar, and over it what the workspaces’ layers draw — a model’s cut by the section’s plane as outlines, a sketch’s pieces with their ids where the sketch lies in that plane, whatever it was drawn on. Every scan point within ten tolerances of an outline is read against it: on it within ± tolerance (grey), or off it (red), outside the outline or inside it; points with no outline near are pale. The answer gives gap: points (the cut’s), read, over (red), outside and inside (of a closed outline — inside is scan within the model’s material, so the model stands proud there; outside, the model is short), max and rms (mm) and overBox (the sheet box round the red, to frame the next look); layers: each layer drawn by key, its outlines and pieces counted; map: picture pixel (column c, row r from the top) is the sheet place [left + c·unitsPerPx, top − r·unitsPerPx]. section names a section; or plane cuts the scan for the picture alone — no section is made, and the sheet is a sketch’s on that plane: zero at the world origin’s foot, u along the coordinate axis next round from the normal (YZ: u = Y, v = Z; XZ: u = Z, v = X; XY: u = X, v = Y), so on a coordinate plane [u, v] are world coordinates (the answer’s sheet gives them). plane is { origin, normal }, a coordinate plane "XY", "YZ" or "XZ" (also "ZX"; through the part’s centre, as section.cut lays it — the answer’s sheet gives its origin), an element by id or name (the plane through its centre square to its direction — a plane element’s normal, a cylinder’s axis — on the sheet a sketch on it takes, not the fitter’s own axes), or { sketch } by id or name: the scan cut on that sketch’s plane, in its own frame, so [u, v] are its pieces’. A section’s own sheet counts from the part’s centre instead (across an element or through its axis, from the element’s centre). up: "x", "y" or "z" turns the picture’s sheet in its plane so that world axis runs up it — a side view with Z up: v is that axis laid into the plane, u the direction square to it running + to the right, the plane seen from whichever side gives that (the XZ plane with up "z": u = X, v = Z, seen from −Y, as a front view; a section’s sheet keeps its zero) — and everything the picture says in [u, v] (frame, map, overBox, axes) is then on that turned sheet, which the answer gives as sheet. Without up the sheet lies as above. The answer’s sheet gives the sheet in the world every time — origin, normal, basisU and basisV: a sheet point [u, v] is origin + u·basisU + v·basisV. offsets: 2 to 9 cuts in one picture — the section’s or plane’s slid along its normal by each, mm — side by side, each tile labelled with its offset, all on one frame and scale (the square round every cut unless frame is given); the answer gives per tile its offset, origin and gap, and map.tile and map.cols (map holds for each tile from its own corner). frame { at, size } looks at a square of the sheet — at as [u, v] on the sheet, or as [x, y, z] in the world, laid square onto the sheet, so a place on the part needs no working out of where the sheet counts from (framed gives where it came out on the sheet, and offPlane how far off the plane the point lay, mm) — or frame { world: { min, max } } at the square round a box of the world laid onto the sheet, a tenth wider; everything by default. tolerance: the Deviation workspace’s by default. layers: the keys to draw; every one by default, [] for the scan alone. 800 px on the long side by default, up to 2048. Needs the browser. Changes nothing.',
   input: obj({
     section: oneOf([int('The section’s id.', { minimum: 1 }), str('The section’s name — "Section 1".', { minLength: 1 })], 'The section, by id or name.'),
-    plane: obj({ origin: vec3('A point on the plane, mm.'), normal: vec3('Its normal.') }, ['origin', 'normal'], 'A plane to cut the scan by for the picture alone, in place of a section.'),
+    plane: oneOf(
+      [
+        obj({ origin: vec3('A point on the plane, mm.'), normal: vec3('Its normal.') }, ['origin', 'normal']),
+        int('An element’s id.', { minimum: 1 }),
+        str('A coordinate plane "XY", "YZ", "XZ", or an element’s name.', { minLength: 1 }),
+        obj({ sketch: oneOf([int(undefined, { minimum: 1 }), str(undefined, { minLength: 1 })], 'A sketch’s id or name.') }, ['sketch']),
+      ],
+      'A plane to cut the scan by for the picture alone, in place of a section: { origin, normal }, a coordinate plane, an element, or { sketch }.',
+    ),
     offsets: arr(num(), 'Several parallel cuts in one picture: mm along the normal from the section or plane.', { minItems: 2, maxItems: OFFSETS_MAX }),
     up: enumOf(['x', 'y', 'z'], 'The world axis that runs up the picture; the sheet as it lies by default.'),
-    frame: obj({ at: arr(num(), 'The sheet place in the middle, [u, v] mm.', { minItems: 2, maxItems: 2 }), size: num('The side of the square looked at, mm.', { exclusiveMinimum: 0 }) }, ['at', 'size'], 'Look at a square of the sheet.'),
+    frame: obj(
+      {
+        at: arr(num(), 'The place in the middle: [u, v] mm on the sheet, or [x, y, z] mm in the world, laid square onto the sheet.', { minItems: 2, maxItems: 3 }),
+        size: num('The side of the square looked at, mm.', { exclusiveMinimum: 0 }),
+        world: obj({ min: vec3('The lowest corner, [x, y, z] mm.'), max: vec3('The highest corner, [x, y, z] mm.') }, ['min', 'max'], 'A box in the world, in place of at and size: the square round it on the sheet.'),
+      },
+      [],
+      'Look at a square of the sheet: { at, size }, or { world: { min, max } }.',
+    ),
     tolerance: num('± mm a scan point may lie off the outlines and still be on them.', { exclusiveMinimum: 0 }),
     layers: arr(str(undefined, { minLength: 1 }), 'The layers to draw, by key; every one by default.'),
     width: int('Pixels across, 64 to 2048.', { minimum: 64, maximum: 2048 }),
@@ -357,33 +511,36 @@ const render: Command<{ section?: number | string; plane?: { origin: Vec3; norma
   readOnly: true,
   returnsFile: true,
   returnsImage: true,
+  scene: true,
   run: async ({ section, plane, offsets, up, frame, tolerance, layers, width, height }) => {
     if (typeof OffscreenCanvas === 'undefined') throw new CommandError('unavailable', 'A picture of a section needs the browser.')
     if ((section === undefined) === (plane === undefined)) throw new CommandError('invalid_input', 'Give section, or plane — one of them.')
     requireScan()
     if (offsets) {
       let base: SectionSheet
-      if (plane) {
-        const f = sketchFrameOn({ origin: plane.origin, normal: plane.normal })
-        if (!f) throw new CommandError('invalid_input', 'plane.normal: give a direction, not a zero vector.')
-        base = { id: 0, name: 'Cut', ...f }
+      if (plane !== undefined) {
+        const { name, frame: f } = sheetPlaneOf(plane)
+        base = { id: 0, name, ...f }
       } else {
         const sec = findSection(section!)
         base = { id: sec.id, name: sec.name, origin: sec.frame.origin, normal: sec.frame.normal, basisU: sec.frame.basisU, basisV: sec.frame.basisV }
       }
       const along = base.normal
       base = turnedUp(base, up)
-      const picture = await pictureOfOffsets(base, offsets, { ...(frame ? { frame } : {}), ...(tolerance !== undefined ? { tolerance } : {}), ...(layers ? { layers } : {}), width, height, along })
+      const onSheet = frame ? frameOnSheet(frame, base) : undefined
+      const picture = await pictureOfOffsets(base, offsets, { ...(onSheet ? { frame: onSheet.frame } : {}), ...(tolerance !== undefined ? { tolerance } : {}), ...(layers ? { layers } : {}), width, height, along })
       return {
         ...picture,
-        ...(plane || up ? { sheet: { normal: base.normal.map(round4), basisU: base.basisU.map(round4), basisV: base.basisV.map(round4) } } : {}),
-        ...(plane ? {} : { section: { id: base.id, name: base.name } }),
+        sheet: sheetOut(base),
+        ...(onSheet?.framed ? { framed: onSheet.framed } : {}),
+        ...(plane !== undefined ? {} : { section: { id: base.id, name: base.name } }),
       }
     }
     let sheet: SectionSheet
     let flat: Float32Array
-    if (plane) {
-      ;({ sheet, flat } = await sheetThrough(plane.origin, plane.normal, 'Cut', up))
+    if (plane !== undefined) {
+      const { name, frame: f } = sheetPlaneOf(plane)
+      ;({ sheet, flat } = await sheetOn(f, name, up))
     } else {
       const id = findSection(section!).id
       const sec = await waitFor(() => {
@@ -394,11 +551,13 @@ const render: Command<{ section?: number | string; plane?: { origin: Vec3; norma
       sheet = turnedUp({ id: sec.id, name: sec.name, origin: sec.frame.origin, normal: sec.frame.normal, basisU: sec.frame.basisU, basisV: sec.frame.basisV }, up)
       flat = projectCut(sec.cut, sheet).points
     }
-    const picture = await pictureOfSheet(sheet, flat, { ...(frame ? { frame } : {}), ...(tolerance !== undefined ? { tolerance } : {}), ...(layers ? { layers } : {}), width, height })
+    const onSheet = frame ? frameOnSheet(frame, sheet) : undefined
+    const picture = await pictureOfSheet(sheet, flat, { ...(onSheet ? { frame: onSheet.frame } : {}), ...(tolerance !== undefined ? { tolerance } : {}), ...(layers ? { layers } : {}), width, height })
     return {
       ...picture,
-      ...(plane || up ? { sheet: { origin: sheet.origin.map(round4), normal: sheet.normal.map(round4), basisU: sheet.basisU.map(round4), basisV: sheet.basisV.map(round4) } } : {}),
-      ...(plane ? {} : { section: { id: sheet.id, name: sheet.name } }),
+      sheet: sheetOut(sheet),
+      ...(onSheet?.framed ? { framed: onSheet.framed } : {}),
+      ...(plane !== undefined ? {} : { section: { id: sheet.id, name: sheet.name } }),
     }
   },
 }

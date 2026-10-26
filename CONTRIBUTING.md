@@ -8,18 +8,20 @@ please read them before opening a PR.
 This project is dual-licensed: open source under AGPL-3.0-only for everyone,
 with commercial exceptions sold to companies that want to embed it in
 proprietary software (see [COMMERCIAL.md](COMMERCIAL.md)). That model only
-works if the project owner holds the licensing rights to the whole codebase.
+works if one person — Stefan Hermann (CNC Kitchen), the project's author and
+licensor — holds the right to license the whole codebase.
 
-Therefore every contribution requires agreeing to the CLA: you keep the
-copyright to your contribution, but you grant the project owner a perpetual,
-irrevocable, worldwide right to license your contribution under any terms,
-including proprietary ones. By submitting a pull request you confirm:
+So every contribution needs the [Contributor License Agreement](CLA.md)
+signed once. You keep the copyright to what you wrote; you grant the licensor
+a perpetual, irrevocable, worldwide right to license it under any terms,
+including commercial ones, and you promise it is your own work and contains
+no copyleft code. The document is two screens long; please read it.
 
-> I have the right to submit this contribution, and I grant Stefan Hermann
-> (CNC Kitchen) a perpetual, worldwide, non-exclusive, irrevocable,
-> royalty-free license to use, modify, sublicense, and relicense my
-> contribution under licenses of his choosing, including the AGPL-3.0-only
-> and commercial licenses.
+Signing is a comment on your first pull request. A bot posts the request and
+the exact sentence to reply with, marks the check green once you have, and
+records your login, the date, the pull request and the commit on the
+`cla-signatures` branch. Pull requests from anyone not on file cannot merge.
+If the bot missed your reply, comment `recheck`.
 
 We're transparent about why: without this, a single outside patch would
 legally block the commercial-exception model that funds development.

@@ -15,6 +15,7 @@ import type { SeedPlane, SymmetryPlane } from './symmetry'
 import type { AutoAlignResult } from './autoAlign'
 import type { AlignResult, PointPair } from './deviation/align'
 import type { Rigid } from './deviation/rigid'
+import type { VolumeDeviation } from './deviation/volume'
 import { mmPerUnit, type MeshUnits } from './meshUnits'
 import type { StepInfo } from './parsers/step'
 import type { SectionCut } from './section/slice'
@@ -71,6 +72,13 @@ export interface ReferenceDeviationResult {
   values: Float32Array
 }
 
+/** A mesh of the reference's surface: the corners of each triangle in
+ *  `indices`, the positions in millimetres in the reference's frame. */
+export interface ReferenceMesh {
+  positions: Float32Array
+  indices: Uint32Array
+}
+
 export interface ThicknessResult {
   values: Float32Array
   suggestedLow: number
@@ -113,7 +121,7 @@ export class MeshWorkerClient {
   /** Async callers must not apply a result to a different imported session. */
   scanVersion = 0
   nominalVersion = 0
-  onProgress: ((text: string) => void) | null = null
+  onProgress: ((text: string, fraction?: number) => void) | null = null
   /** Poses from part-way through an alignment. Not a request result — they
    *  arrive while the request is still open, so they must not settle it. */
   onAlignProgress: ((transform: Rigid, iteration: number, meanDistance: number) => void) | null =
@@ -122,7 +130,7 @@ export class MeshWorkerClient {
   constructor() {
     this.rpc = new WorkerRpc(() => new Worker(new URL('./meshWorker.ts', import.meta.url), { type: 'module' }), 'Mesh worker', (data) => {
       const msg = data as WorkerResponse
-      if (msg.type === 'progress') { this.onProgress?.(msg.text); return true }
+      if (msg.type === 'progress') { this.onProgress?.(msg.text, msg.fraction); return true }
       if (msg.type === 'align-progress') { this.onAlignProgress?.(msg.transform, msg.iteration, msg.meanDistance); return true }
       return false
     })
@@ -322,10 +330,57 @@ export class MeshWorkerClient {
   }
 
   /** The reference read against the scan under this alignment — or `mesh`,
-   *  given in the reference's frame, in its place. */
-  async deviateReference(transform: Rigid, facingDeg: number | null, spacing: number, mesh?: { positions: Float32Array; indices: Uint32Array }): Promise<ReferenceDeviationResult> {
+   *  given in the reference's frame, in its place; with none given, the
+   *  reference's own mesh for its map when one was set for it
+   *  (setReferenceMapMesh). */
+  async deviateReference(transform: Rigid, facingDeg: number | null, spacing: number, mesh?: ReferenceMesh): Promise<ReferenceDeviationResult> {
     const requestId = this.nextId++
-    return this.request<ReferenceDeviationResult>({ type: 'deviate-reference', requestId, transform, facingDeg, spacing, ...(mesh ? { mesh } : {}) })
+    const own = mesh ?? this.referenceMapMesh(spacing)
+    return this.request<ReferenceDeviationResult>({ type: 'deviate-reference', requestId, transform, facingDeg, spacing, ...(own ? { mesh: own } : {}) })
+  }
+
+  /** The deviation as volumes under this alignment, with each kind's
+   *  regions as a surface to draw — against the reference loaded, or
+   *  `mesh` in its place; over the whole part, or `within` a box of the
+   *  reference's frame. */
+  async deviateVolume(transform: Rigid, tolerance: number, options: { cell?: number; within?: { min: Vec3; max: Vec3 }; mesh?: ReferenceMesh } = {}): Promise<VolumeDeviation> {
+    const requestId = this.nextId++
+    const { cell, within, mesh } = options
+    const res = await this.request<{ volume: VolumeDeviation }>({
+      type: 'deviate-volume',
+      requestId,
+      transform,
+      tolerance,
+      ...(cell !== undefined ? { cell } : {}),
+      ...(within ? { within } : {}),
+      ...(mesh ? { mesh } : {}),
+    })
+    return res.volume
+  }
+
+  /**
+   * Another mesh of the reference loaded now, for its map alone: the same
+   * surface, in the reference's frame, more coarsely tessellated. The map
+   * cuts the reference into readings about its spacing apart whatever it is
+   * given, so a tessellation far finer than that — one made fine for the
+   * distances measured to it from the scan — only adds readings where its
+   * triangles are small; a coarser one, its chord well within the
+   * tolerance, gives the same map from fewer readings. It serves maps cut
+   * `minSpacing` apart or further — a finer map reads the reference itself
+   * — and goes with the reference it was set for: a reference loaded after
+   * it drops it. Null drops it now.
+   */
+  setReferenceMapMesh(mesh: ReferenceMesh | null, minSpacing = 0): void {
+    this.mapMesh = mesh ? { nominalVersion: this.nominalVersion, mesh, minSpacing } : null
+  }
+
+  private mapMesh: { nominalVersion: number; mesh: ReferenceMesh; minSpacing: number } | null = null
+
+  /** The mesh set for the map on the reference loaded now, when it serves
+   *  a map at this spacing. */
+  private referenceMapMesh(spacing: number): ReferenceMesh | undefined {
+    const m = this.mapMesh
+    return m && m.nominalVersion === this.nominalVersion && spacing >= m.minSpacing * (1 - 1e-9) ? m.mesh : undefined
   }
 
   /** Wall thickness at every scan vertex. Every setting here shapes the search
@@ -342,7 +397,8 @@ export class MeshWorkerClient {
   }
 
   /** Cut the scan with a plane: the polylines where it crosses the mesh, in
-   *  scan coordinates. Chains shorter than `minLength` mm are dropped. */
+   *  scan coordinates, each point with the side the material is on.
+   *  Chains shorter than `minLength` mm are dropped. */
   async section(origin: Vec3, normal: Vec3, minLength: number): Promise<SectionCut> {
     const requestId = this.nextId++
     const res = await this.request<Extract<WorkerResponse, { type: 'section-ok' }>>({
@@ -352,7 +408,7 @@ export class MeshWorkerClient {
       normal,
       minLength,
     })
-    return { points: res.points, offsets: res.offsets }
+    return { points: res.points, offsets: res.offsets, ...(res.normals ? { normals: res.normals } : {}) }
   }
 
   /** The centroid of the volume the scan encloses, on the scan as it now
@@ -368,11 +424,22 @@ export class MeshWorkerClient {
   }
 
   /** What a grown region holds: its area and box, and with the plane's
-   *  normal the spread of its normals and whether it is two surfaces — see
-   *  fit/segment. The vertex list is copied, not transferred. */
-  async planeRegion(vertices: Uint32Array, plane?: { normal: Vec3; seed?: number }): Promise<PlaneRegionReport> {
+   *  normal the spread of its normals and whether it is two surfaces, with
+   *  a cylinder whether it is two cylinders — see fit/segment. The vertex
+   *  list is copied, not transferred. */
+  async planeRegion(
+    vertices: Uint32Array,
+    plane?: { normal: Vec3; seed?: number },
+    cylinder?: { center: Vec3; axis: Vec3; radius: number; seed?: number },
+  ): Promise<PlaneRegionReport> {
     const requestId = this.nextId++
-    const res = await this.request<Extract<WorkerResponse, { type: 'plane-region-ok' }>>({ type: 'plane-region', requestId, vertices, ...(plane ? { normal: plane.normal, seed: plane.seed } : {}) })
+    const res = await this.request<Extract<WorkerResponse, { type: 'plane-region-ok' }>>({
+      type: 'plane-region',
+      requestId,
+      vertices,
+      ...(plane ? { normal: plane.normal, seed: plane.seed } : {}),
+      ...(cylinder ? { cylinder: { center: cylinder.center, axis: cylinder.axis, radius: cylinder.radius }, seed: cylinder.seed } : {}),
+    })
     return res.result
   }
 
@@ -429,6 +496,13 @@ export class MeshWorkerClient {
     const requestId = this.nextId++
     const { rims: r, noise } = await this.request<Extract<WorkerResponse, { type: 'scan-qa-ok' }>>({ type: 'scan-qa', requestId, sample, rims })
     return { rims: r, noise }
+  }
+
+  /** One open rim by its number among the scan's rims, longest first, as
+   *  scanQa numbers them: its loop in order, null past the last. */
+  async scanRim(index: number): Promise<Extract<WorkerResponse, { type: 'scan-rim-ok' }>['rim']> {
+    const requestId = this.nextId++
+    return (await this.request<Extract<WorkerResponse, { type: 'scan-rim-ok' }>>({ type: 'scan-rim', requestId, index })).rim
   }
 
   async curvature(): Promise<Float32Array> {

@@ -10,6 +10,9 @@
  *  matches the way the pins are offset in the first place — outward from the
  *  feature, up the screen — so a stack of concentric flags reads in the same
  *  order as the rings themselves. */
+/** Sub-pixel distances two labels may still be apart and count as clear. */
+const SLACK = 1e-6
+
 export function spreadLabels(labelDom: HTMLElement, gap = 2): void {
   const els = Array.from(labelDom.querySelectorAll<HTMLElement>('.viewport-label')).filter(
     (el) => el.style.display !== 'none',
@@ -29,23 +32,24 @@ export function spreadLabels(labelDom: HTMLElement, gap = 2): void {
   boxes.sort((a, b) => b.y1 - a.y1)
   const placed: typeof boxes = []
   for (const b of boxes) {
-    let moved = true
-    while (moved) {
-      moved = false
+    // Lift the box clear of every placed box it still touches, then look
+    // again: the lift may have carried it into boxes further up. Each round
+    // leaves the box above at least one more of the placed boxes for good,
+    // so the rounds are counted rather than run until the arithmetic says
+    // the box is free — the offset is computed from the same numbers the
+    // overlap test reads back, and rounding can leave the two a last bit
+    // apart in the wrong direction forever. The slack covers that bit.
+    for (let round = 0; round <= placed.length; round++) {
+      let lift = b.dy
       for (const p of placed) {
-        const overlapX = b.x0 < p.x1 + gap && b.x1 > p.x0 - gap
-        const overlapY = b.y0 + b.dy < p.y1 + p.dy + gap && b.y1 + b.dy > p.y0 + p.dy - gap
-        if (overlapX && overlapY) {
-          const nextDy = p.y0 + p.dy - gap - b.y1
-          // Rounding can leave the overlap test true after this exact offset
-          // was applied. Retry only when the box actually moves upward. Each placed
-          // box supplies one fixed offset, so strict progress bounds retries.
-          if (nextDy < b.dy) {
-            b.dy = nextDy
-            moved = true
-          }
-        }
+        if (b.x0 >= p.x1 + gap || b.x1 <= p.x0 - gap) continue
+        const above = p.y0 + p.dy - gap
+        const below = p.y1 + p.dy + gap
+        if (b.y1 + b.dy <= above + SLACK || b.y0 + b.dy >= below - SLACK) continue
+        lift = Math.min(lift, above - b.y1)
       }
+      if (lift > b.dy - SLACK) break
+      b.dy = lift
     }
     placed.push(b)
     b.el.style.top = b.dy ? `${b.dy}px` : ''

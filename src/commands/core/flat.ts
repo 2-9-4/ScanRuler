@@ -24,6 +24,7 @@ import { sheetCounts, sheetDimensions, sheetElements, sheetFrame, sheetNotes, sh
 import { docToPx } from '../../state/flatModel'
 import { useFlat, type CalMode } from '../../state/flatStore'
 import { commandHost } from '../host'
+import { refOf } from '../refs'
 import { arr, bool, bytes, enumOf, int, num, obj, oneOf, str, type JsonSchema } from '../schema'
 import { describeFlat } from '../state'
 import { CommandError, type Command } from '../types'
@@ -50,8 +51,9 @@ function requireSheet() {
   }
 }
 
-function findFlatElement(ref: number | string) {
+function findFlatElement(given: number | string) {
   const { elements } = useFlat.getState()
+  const ref = refOf(elements, given)
   const hits =
     typeof ref === 'number'
       ? elements.filter((e) => e.id === ref)
@@ -63,7 +65,8 @@ function findFlatElement(ref: number | string) {
 
 /** A dimension, a note or a tally by id — or, for those that have one, by
  *  name — on the sheet on the stage. */
-function findOnSheet<T extends { id: number; name?: string }>(list: readonly T[], ref: number | string, what: string): T {
+function findOnSheet<T extends { id: number; name?: string }>(list: readonly T[], given: number | string, what: string): T {
+  const ref = refOf(list, given)
   const hits =
     typeof ref === 'number'
       ? list.filter((x) => x.id === ref)
@@ -583,6 +586,7 @@ const render: Command<{
   readOnly: true,
   returnsFile: true,
   returnsImage: true,
+  scene: true,
   run: async ({ frame, width, height, show }) => {
     const flat = commandHost().flat
     if (!flat || typeof OffscreenCanvas === 'undefined') throw new CommandError('unavailable', 'A picture of the sheet needs the browser.')

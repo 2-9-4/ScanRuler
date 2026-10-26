@@ -18,8 +18,15 @@
 // the fetch — which Chrome, besides, never reports finished to DevTools,
 // so a check that waits for the network to go quiet would wait forever.
 //
-// Messages: the page's `{ hello }`; the server's `{ welcome }` or
-// `{ refused }`; then the server's `{ id, method: 'run', name, input }` and
+// Messages: the page's `{ hello }` — with `pageId`, new each time the page
+// loads, and `since`, when it did, by which the server tells a page that
+// came back empty (reloaded) from one that only reconnected; the server's
+// `{ welcome }` (with its `version` from 0.4.0 on) or
+// `{ refused }`; then the server's `{ id, method: 'run', name, input, job }`
+// — `job` the server's name for the change or batch the run is part of,
+// which keeps the run among the recent outcomes (session.recent), and
+// `deferred: true` on a run more changes follow straight after (see
+// CommandContext.deferred) — and
 // `{ id, method: 'list' }`, answered `{ id, result }` or `{ id, error }`, and
 // the page's `{ event: 'progress', id, text }` while a command runs, and
 // `{ event: 'visibility', hidden }` when the tab is hidden or shown again.
@@ -76,6 +83,12 @@ async function loopbackDenied(): Promise<boolean> {
   return false
 }
 
+/** This page's name for itself, new each time it loads, and when it
+ *  loaded: what the server tells a reloaded page by (see the messages). */
+const PAGE_ID =
+  typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+const PAGE_SINCE = new Date(typeof performance !== 'undefined' && performance.timeOrigin ? performance.timeOrigin : Date.now()).toISOString()
+
 /** Whether the tab is hidden — in the background, its window covered or
  *  minimised, the screen locked — where the browser stops drawing it. */
 const tabHidden = () => typeof document !== 'undefined' && document.visibilityState === 'hidden'
@@ -102,7 +115,8 @@ export function startBridge({ port, token, socket = (url) => new WebSocket(url),
       if (s.statusText && s.statusText !== prev.statusText) progress(s.statusText)
     })
     try {
-      const result = await runCommand(String(message.name), message.input ?? {}, progress)
+      const job = typeof message.job === 'string' && message.job ? message.job : undefined
+      const result = await runCommand(String(message.name), message.input ?? {}, progress, job, message.deferred === true)
       const file = (result as { file?: { bytes?: unknown } } | null)?.file
       send({ id, result: result as unknown }, file?.bytes instanceof Uint8Array ? 'result.file.bytes' : undefined)
     } catch (e) {
@@ -119,7 +133,11 @@ export function startBridge({ port, token, socket = (url) => new WebSocket(url),
     if (message.welcome) {
       attempt = 0
       refusal = null
-      useAgentLink.setState({ status: 'connected', detail: null })
+      // The server's version, for the page to tell an out of date one: a
+      // scanruler-mcp before 0.4.0 says what it is, but not its version.
+      const welcome = message.welcome as { server?: unknown; version?: unknown }
+      const server = typeof welcome.version === 'string' ? { version: welcome.version } : welcome.server === 'scanruler-mcp' ? { version: null } : null
+      useAgentLink.setState({ status: 'connected', detail: null, server })
     } else if (typeof message.refused === 'string') {
       refusal = message.refused
     } else if (message.method === 'run') {
@@ -162,6 +180,8 @@ export function startBridge({ port, token, socket = (url) => new WebSocket(url),
           plugins: plugins().map((p) => p.id),
           viewport: sceneOf() !== null,
           hidden: tabHidden(),
+          pageId: PAGE_ID,
+          since: PAGE_SINCE,
         },
       })
     here.onmessage = (event: MessageEvent) => {
@@ -193,6 +213,6 @@ export function startBridge({ port, token, socket = (url) => new WebSocket(url),
     clearTimeout(timer)
     ws?.close(1000, 'Switched off')
     ws = null
-    useAgentLink.setState({ status: 'off', detail: null })
+    useAgentLink.setState({ status: 'off', detail: null, server: null })
   }
 }

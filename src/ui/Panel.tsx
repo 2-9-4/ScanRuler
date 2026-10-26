@@ -42,6 +42,7 @@ export function Panel({
   onStartDraft,
   onSelectMode,
   onDraftSigma,
+  onDraftKnownDiameter,
   onClearPaint,
   onUndoPick,
   onCancelDraft,
@@ -73,6 +74,8 @@ export function Panel({
   onSelectMode: (mode: SelectMode) => void
   /** The open draft's outlier cut-off changed: it re-fits on what it has. */
   onDraftSigma: (k: SigmaPreset) => void
+  /** The open sphere's known diameter was typed in or cleared: it re-fits. */
+  onDraftKnownDiameter: (mm: number | undefined) => void
   /** Rub out the whole hand-marked surface. */
   onClearPaint: () => void
   onUndoPick: () => void
@@ -290,6 +293,7 @@ export function Panel({
       <DraftEditor
         onSelectMode={onSelectMode}
         onDraftSigma={onDraftSigma}
+        onDraftKnownDiameter={onDraftKnownDiameter}
         onClearPaint={onClearPaint}
         onUndoPick={onUndoPick}
         onCancelDraft={onCancelDraft}

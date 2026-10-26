@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { describe, expect, it } from 'vitest'
 import { computeDatumAlignment, fitFromAlignPicks } from '../src/core/alignment'
-import { autoAlign, autoAlignPicks, autoAlignRigid } from '../src/core/autoAlign'
+import { autoAlign, autoAlignLevel, autoAlignPicks, autoAlignRigid, autoAlignTilts } from '../src/core/autoAlign'
 import { rigidApply, rigidApplyToPoints, rigidFromAxisAngle, type Rigid } from '../src/core/deviation/rigid'
 import { mulberry32 } from '../src/core/fit/ransac'
 import { buildMeshGraph } from '../src/core/geometry/buildGraph'
@@ -255,5 +255,67 @@ describe('auto alignment', () => {
     useStore.getState().beginAlignmentPick('secondary')
     expect(useStore.getState().alignDraft!.proposal).toBeUndefined()
     useStore.getState().cancelAlignment()
+  })
+})
+
+describe('how square the auto alignment came out', () => {
+  // A slab 60 × 40 standing on its bottom, its top 30 wide and leaning 1°
+  // about Y: a face a degree off square beside the base.
+  const leaning = () => {
+    const c = cuboid(60, 40, 10)
+    const tan1 = Math.tan((1 * Math.PI) / 180)
+    for (const i of [4, 5, 6, 7]) {
+      c[i][1] = i & 2 ? 15 : -15
+      c[i][2] = 5 + c[i][0] * tan1
+    }
+    return posed(blockMesh(c, 40, 0.02, 21))
+  }
+
+  it('gives each axis its faces’ tilt, and the largest face’s: by default the leaning top shares its error with the base', () => {
+    const r = autoAlign(leaning())
+    expect(r.faces.length).toBeGreaterThanOrEqual(4)
+    // The base, the largest face, comes first, its normal facing down.
+    expect(r.faces[0].area).toBeGreaterThan(2000)
+    expect(r.faces[0].area).toBeLessThan(2400)
+    expect(offDeg(r.faces[0].normal, posedDir([0, 0, 1]))).toBeLessThan(0.05)
+    const t = autoAlignTilts(r)
+    expect(t.largest!.axis).toBe('z')
+    expect(t.largest!.area).toBeCloseTo(r.faces[0].area, 6)
+    // The best fit of base, top and ends leans a third of a degree or so off
+    // the base, towards the top.
+    expect(t.largest!.tiltDeg).toBeGreaterThan(0.2)
+    expect(t.largest!.tiltDeg).toBeLessThan(0.6)
+    const z = t.axes.find((a) => a.axis === 'z')!
+    expect(z.faces).toHaveLength(2)
+    expect(z.faces[0].tiltDeg + z.faces[1].tiltDeg).toBeCloseTo(1, 1)
+    // Centres in the new frame: the base on zero, the top above it.
+    expect(Math.abs(z.faces[0].center[2])).toBeLessThan(0.3)
+    expect(z.faces[1].center[2]).toBeGreaterThan(9)
+    expect(t.axes.find((a) => a.axis === 'x')!.faces).toHaveLength(2)
+  })
+
+  it('level largest squares the base exactly, settles the ends about it, and leaves the top its degree', () => {
+    const g = leaning()
+    const r = autoAlign(g, { level: 'largest' })
+    const t = autoAlignTilts(r)
+    expect(t.largest!.axis).toBe('z')
+    expect(t.largest!.tiltDeg).toBeLessThan(0.05)
+    expect(offDeg(r.axes[2], posedDir([0, 0, 1]))).toBeLessThan(0.05)
+    expect(offDeg(r.axes[0], posedDir([1, 0, 0]))).toBeLessThan(0.05)
+    const z = t.axes.find((a) => a.axis === 'z')!
+    expect(z.faces[1].tiltDeg).toBeCloseTo(1, 1)
+    // Right-handed still, and the same as levelling the default afterwards.
+    const [x, y, zz] = r.axes
+    const c = [x[1] * y[2] - x[2] * y[1], x[2] * y[0] - x[0] * y[2], x[0] * y[1] - x[1] * y[0]]
+    expect(c[0] * zz[0] + c[1] * zz[1] + c[2] * zz[2]).toBeCloseTo(1, 9)
+    const later = autoAlignLevel(autoAlign(g))
+    for (let k = 0; k < 3; k++) for (let i = 0; i < 3; i++) expect(later.axes[k][i]).toBeCloseTo(r.axes[k][i], 12)
+  })
+
+  it('a part with no flat face has nothing to square to', () => {
+    const ball = icosphere(4, 20)
+    const r = autoAlign(buildMeshGraph({ kind: 'indexed', positions: ball.positions, indices: ball.indices }), { level: 'largest' })
+    expect(r.faces).toEqual([])
+    expect(autoAlignTilts(r)).toEqual({ axes: [], largest: null })
   })
 })

@@ -10,7 +10,7 @@
 
 import * as THREE from 'three'
 import type { LinkedView } from './cameraLink'
-import { OrthoViewport, STANDARD_VIEWS, type StandardView } from './orthoViewport'
+import { OrthoViewport, STANDARD_VIEWS, viewAcross, type StandardView } from './orthoViewport'
 import { AxisGizmo, type GizmoAxis } from './axisGizmo'
 import { DatumStage } from './datumStage'
 import { RegionColors } from './regionColors'
@@ -65,6 +65,8 @@ import { CAP_SLOT, closedPartOf, cutColor, SliceCap, type ClosedPart } from './s
 import { clippedRaycast } from './clipRaycast'
 import { clipTree } from './clipTree'
 import { CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js'
+import { VolumeLayer } from './volumeLayer'
+import type { VolumeDeviation } from '../core/deviation/volume'
 
 declare module 'three' {
   interface BufferGeometry {
@@ -110,6 +112,10 @@ export type { SectionOverlayItem } from './sections'
 export interface PickHit {
   vertices: [number, number, number]
   weights: [number, number, number]
+  /** The triangle the ray met, as the scan's index numbers it — the same
+   *  triangle in scanMesh(). With the weights it anchors a point to the
+   *  surface itself. */
+  faceIndex: number
   point: Vec3
   /** Which way the scanned surface faces at the hit (unit vector, scan
    *  coordinates) — what tells an alignment which side of a picked face is
@@ -263,6 +269,8 @@ export class SceneManager {
    *  whether its colours were laid on it: 'unfit' when they were not one a
    *  vertex of it. */
   private referenceMapMesh: THREE.Mesh | null = null
+  /** The deviation as volumes, its regions over the parts. */
+  private volumeLayer = new VolumeLayer()
   private referenceMapColored: 'painted' | 'unfit' | null = null
   /** The plane a tool cuts the part open at — see setSlicePlane — its cap's
    *  colour, and whether the cut is closed with one (setSliceCapped). */
@@ -401,7 +409,7 @@ export class SceneManager {
   /** Who currently owns the plain left-drag. The brush and the grips both need
    *  it and must not fight over handing it back — the navigator is told once,
    *  from whether anyone is holding it at all. */
-  private dragClaims = new Set<'paint' | 'handle' | 'gizmo'>()
+  private dragClaims = new Set<'paint' | 'handle' | 'gizmo' | 'layer'>()
 
   onPick: ((hit: PickHit) => void) | null = null
   onHover: ((hit: PickHit | null) => void) | null = null
@@ -488,6 +496,7 @@ export class SceneManager {
 
     this.partGroup.matrixAutoUpdate = false
     this.scene.add(this.partGroup)
+    this.scene.add(this.volumeLayer.group)
 
     this.marking = new SurfaceMarking({
       container,
@@ -1275,6 +1284,15 @@ export class SceneManager {
     return { width: el.clientWidth || 1, height: el.clientHeight || 1 }
   }
 
+  /** What a picture of the view as it stands spans at `width` × `height`
+   *  pixels — the viewport's own shape by default: millimetres across and
+   *  down. */
+  viewAcross(width?: number, height?: number): [number, number] {
+    const size = this.viewSize()
+    const link = this.viewport.viewLink()
+    return viewAcross(link.extents(), (width ?? size.width) / (height ?? size.height), link.camera.zoom)
+  }
+
   /** The view as it stands as the bytes of a PNG, `width` × `height` pixels
    *  — the canvas's own size by default. See OrthoViewport.capture. */
   async capture(width?: number, height?: number): Promise<Uint8Array> {
@@ -1703,6 +1721,7 @@ export class SceneManager {
     return {
       vertices,
       weights,
+      faceIndex: hit.faceIndex,
       point: [local.x, local.y, local.z],
       normal: [n.x, n.y, n.z],
       clientX,
@@ -2030,7 +2049,7 @@ export class SceneManager {
 
   /** Take the plain left-drag away from the camera, or give it back, for one
    *  reason among several. The navigator only ever hears the total. */
-  private claimDrag(reason: 'paint' | 'handle' | 'gizmo', on: boolean): void {
+  private claimDrag(reason: 'paint' | 'handle' | 'gizmo' | 'layer', on: boolean): void {
     const had = this.dragClaims.size > 0
     if (on) this.dragClaims.add(reason)
     else this.dragClaims.delete(reason)
@@ -2060,6 +2079,44 @@ export class SceneManager {
   scanGeometry(): THREE.BufferGeometry | null {
     if (this.editedShown && this.other) return this.other.geometry
     return (this.mesh?.geometry as THREE.BufferGeometry) ?? null
+  }
+
+  /** The welded scan, per geometry — see scanMesh. */
+  private welded = new WeakMap<
+    THREE.BufferGeometry,
+    { from: ArrayLike<number>; positions: Float32Array; indices: Uint32Array; normals: Float32Array }
+  >()
+
+  /**
+   * The scan on screen as one welded surface: its own vertices — without the
+   * copies sharp edges were split into for shading — and the triangles in
+   * the order a pick's faceIndex counts them, every corner put through
+   * graphVertex. For work that walks the surface across its edges on a copy
+   * of its own (a worker's, say); positions and normals are views of the
+   * render buffers, not clones. The same arrays come back for as long as the
+   * scan is the same one, so their identity says whether it changed.
+   */
+  scanMesh(): { positions: Float32Array; indices: Uint32Array; normals: Float32Array } | null {
+    if (!this.mesh) return null
+    const g = this.mesh.geometry as THREE.BufferGeometry
+    const index = g.getIndex()
+    if (!index) return null
+    const pos = (g.getAttribute('position') as THREE.BufferAttribute).array as Float32Array
+    const held = this.welded.get(g)
+    if (held && held.from === pos) return held
+    const nrm = (g.getAttribute('normal') as THREE.BufferAttribute).array as Float32Array
+    const drawn = index.array
+    const indices = new Uint32Array(drawn.length)
+    for (let i = 0; i < drawn.length; i++) indices[i] = this.graphVertex(drawn[i])
+    const n = this.scanVertices * 3
+    const mesh = {
+      from: pos,
+      positions: pos.length === n ? pos : pos.subarray(0, n),
+      indices,
+      normals: nrm.length === n ? nrm : nrm.subarray(0, n),
+    }
+    this.welded.set(g, mesh)
+    return mesh
   }
 
   /**
@@ -2331,6 +2388,23 @@ export class SceneManager {
     this.invalidate()
   }
 
+  /** The deviation as volumes drawn over the parts (see VolumeLayer), or
+   *  none; shown or not; one region lit, by its index in the list. */
+  setVolumeRegions(volume: VolumeDeviation | null): void {
+    this.volumeLayer.set(volume)
+    this.invalidate()
+  }
+
+  setVolumeVisible(visible: boolean): void {
+    this.volumeLayer.setVisible(visible)
+    this.invalidate()
+  }
+
+  highlightVolumeRegion(region: number | null): void {
+    this.volumeLayer.highlight(region)
+    this.invalidate()
+  }
+
   /** The colours of the map on the reference, three bytes a vertex of its
    *  finer mesh. */
   setReferenceMapColors(colors: Uint8Array): void {
@@ -2416,14 +2490,15 @@ export class SceneManager {
    *  planes go on taking in everything they did, the box added should it
    *  reach further. Planes bracketing the box alone slice away all in front
    *  of it and behind it, and the view turned or zoomed back out shows the
-   *  part cut to a slab round the place. */
-  fitBox(min: Vec3, max: Vec3): void {
+   *  part cut to a slab round the place. With `across`, a square that many
+   *  millimetres on a side fits the view, the box in its middle. */
+  fitBox(min: Vec3, max: Vec3, across?: number): void {
     const box = new THREE.Box3(new THREE.Vector3(...min), new THREE.Vector3(...max))
     if (box.isEmpty()) return
     const place = box.getBoundingSphere(new THREE.Sphere())
     const clip = new THREE.Sphere(this.clipSphere.center.clone(), this.clipSphere.radius).union(place)
     const framed = new THREE.Sphere(this.framedClip.center.clone(), this.framedClip.radius).union(place)
-    this.viewport.fitCamera(box)
+    this.viewport.fitCamera(box, across)
     this.clipSphere.center.copy(clip.center)
     this.clipSphere.radius = clip.radius
     this.framedClip.center.copy(framed.center)
@@ -2837,6 +2912,7 @@ export class SceneManager {
   }
 
   dispose(): void {
+    this.volumeLayer.dispose()
     for (const layer of [...this.layers]) layer.dispose()
     this.layers = []
     this.marking.dispose()
@@ -2884,6 +2960,7 @@ export class SceneManager {
       setCursor: (cursor) => {
         this.viewport.renderer.domElement.style.cursor = cursor
       },
+      claimDrag: (on) => this.claimDrag('layer', on),
       theme: () => this.theme,
       modelRadius: () => this.modelRadius,
       modelCenter: () => this.modelCenter(),

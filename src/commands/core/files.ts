@@ -132,6 +132,7 @@ const load: Command<{ bytes: Uint8Array; name?: string; discard?: boolean }> = {
     'Open a .scanruler project in place of the session — its models, then every measurement in it, refitted and remeasured. Refuses while the session holds measurements unless discard is true. Needs the browser. Returns the session. Not undoable: an opened project starts a new history.',
   input: obj({ bytes: bytes('The project file’s contents.'), name: str('Its name, for the status line.', { minLength: 1 }), discard: discardSchema }, ['bytes']),
   history: false,
+  discards: ({ discard }) => discard === true,
   run: async ({ bytes: data, name, discard }) => {
     const project = commandHost().project
     if (!project) throw new CommandError('unavailable', 'Opening a project needs the browser.')

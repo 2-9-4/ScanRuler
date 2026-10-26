@@ -336,3 +336,194 @@ export function ransacCylinder(
     sigma: Math.max(refined.sigma, core.sigmaEst, 1e-9),
   }
 }
+
+// ---- One cylinder, or two -----------------------------------------------------
+
+/** Two cylinders are taken over one when they leave this share of its RMS
+ *  or less, part by this many times their own RMS over most of the region,
+ *  and the smaller holds this share of the points — as splitTwoPlanes has
+ *  it. */
+const TWO_CYL_OVER_ONE = 0.75
+const TWO_CYL_PARTED = 6
+const TWO_CYL_SHARE = 0.08
+/** How many points the split is searched on, and how many rounds of
+ *  assigning each to the nearer cylinder and refitting both it runs. */
+const TWO_CYL_SAMPLE = 4000
+const TWO_CYL_ROUNDS = 6
+
+export interface TwoCylinderSplit {
+  /** The two cylinders, the larger part first, each with its points
+   *  (indices into the `idx` given). */
+  cylinders: [Cylinder, Cylinder]
+  members: [Uint32Array, Uint32Array]
+  /** RMS of each point off the nearer of the two, and off the one. */
+  rmsTwo: number
+  rmsOne: number
+  /** How far apart the two lie over most of the region (the 90th
+   *  percentile, at its points), mm. */
+  parted: number
+}
+
+/** Every k-th of the points, to at most `most` of them. */
+function thinned(idx: ArrayLike<number>, most: number): ArrayLike<number> {
+  if (idx.length <= most) return idx
+  const out = new Uint32Array(most)
+  const step = idx.length / most
+  for (let i = 0; i < most; i++) out[i] = idx[Math.floor(i * step)]
+  return out
+}
+
+/** A cylinder on some points: fresh, from the axis their normals give (or
+ *  the start's), else refined from the start. */
+function cylinderOn(positions: Float32Array, normals: Float32Array, idx: ArrayLike<number>, start: Cylinder, fresh: boolean): Cylinder | null {
+  const axis: Vec3 = (fresh && axisFromNormals(normals, idx)) || [start.ax, start.ay, start.az]
+  const seeded = fresh ? fitCylinderOnAxis(positions, idx, axis) : start
+  if (!seeded) return null
+  const c = refineCylinderGeometric(positions, idx, seeded, 15)
+  return c.r > 0 && Number.isFinite(c.r) && Number.isFinite(c.px) ? c : null
+}
+
+/** Whether a region fitted as one cylinder is two: an opening whose lip
+ *  leans while its wall stands, or whose one side stands and the other
+ *  leans, grows as one surface and fits as one cylinder tilted between
+ *  them, its σ saying neither. So the points are split into two cylinders,
+ *  each point to the nearer, refitted until the split stands, from several
+ *  starts: bands along the axis (a lip above a wall), halves across it (one
+ *  side against the other), and by how far the normals lean off square to
+ *  the axis. The split is kept when the two lie clearly nearer to the
+ *  points than the one, part by far more than the points scatter off them,
+ *  both hold a real share, and a radius that changes smoothly along the
+ *  axis — a cone, a barrel — does no better. Null when the region is one
+ *  surface. */
+export function splitTwoCylinders(positions: Float32Array, normals: Float32Array, idx: ArrayLike<number>, one: Cylinder): TwoCylinderSplit | null {
+  if (idx.length < 120) return null
+  const sample = thinned(idx, TWO_CYL_SAMPLE)
+  const n = sample.length
+  const [u, v] = orthoBasis([one.ax, one.ay, one.az])
+  const t = new Float64Array(n)
+  const cu = new Float64Array(n)
+  const cv = new Float64Array(n)
+  const lean = new Float64Array(n)
+  for (let i = 0; i < n; i++) {
+    const j = sample[i] * 3
+    const r = radial(one, positions[j], positions[j + 1], positions[j + 2])
+    t[i] = r.t
+    cu[i] = r.wx * u[0] + r.wy * u[1] + r.wz * u[2]
+    cv[i] = r.wx * v[0] + r.wy * v[1] + r.wz * v[2]
+    lean[i] = Math.abs(normals[j] * one.ax + normals[j + 1] * one.ay + normals[j + 2] * one.az)
+  }
+  const quantile = (a: Float64Array, q: number) => {
+    const s = Float64Array.from(a).sort()
+    return s[Math.floor(q * (s.length - 1))]
+  }
+  const starts: Uint8Array[] = []
+  for (const q of [0.3, 0.5, 0.7]) {
+    const cut = quantile(t, q)
+    starts.push(Uint8Array.from(t, (x) => (x > cut ? 1 : 0)))
+  }
+  for (let k = 0; k < 4; k++) {
+    const a = (k * Math.PI) / 4, du = Math.cos(a), dv = Math.sin(a)
+    starts.push(Uint8Array.from(cu, (x, i) => (x * du + cv[i] * dv > 0 ? 1 : 0)))
+  }
+  const leanCut = quantile(lean, 0.5)
+  starts.push(Uint8Array.from(lean, (x) => (x > leanCut ? 1 : 0)))
+
+  let best: { cyl: [Cylinder, Cylinder]; rms: number } | null = null
+  for (const side of starts) {
+    let cyl: [Cylinder, Cylinder] | null = null
+    for (let round = 0; round < TWO_CYL_ROUNDS; round++) {
+      const parts: [number[], number[]] = [[], []]
+      for (let i = 0; i < n; i++) parts[side[i]].push(sample[i])
+      if (parts[0].length < 30 || parts[1].length < 30) {
+        cyl = null
+        break
+      }
+      const c0 = cylinderOn(positions, normals, parts[0], cyl ? cyl[0] : one, !cyl)
+      const c1 = cylinderOn(positions, normals, parts[1], cyl ? cyl[1] : one, !cyl)
+      if (!c0 || !c1) {
+        cyl = null
+        break
+      }
+      cyl = [c0, c1]
+      let moved = 0
+      for (let i = 0; i < n; i++) {
+        const j = sample[i] * 3
+        const x = positions[j], y = positions[j + 1], z = positions[j + 2]
+        const s = Math.abs(radial(c1, x, y, z).e) < Math.abs(radial(c0, x, y, z).e) ? 1 : 0
+        if (s !== side[i]) moved++
+        side[i] = s
+      }
+      if (moved === 0) break
+    }
+    if (!cyl) continue
+    let ss = 0
+    for (let i = 0; i < n; i++) {
+      const j = sample[i] * 3
+      const x = positions[j], y = positions[j + 1], z = positions[j + 2]
+      ss += Math.min(Math.abs(radial(cyl[0], x, y, z).e), Math.abs(radial(cyl[1], x, y, z).e)) ** 2
+    }
+    const rms = Math.sqrt(ss / n)
+    if (Number.isFinite(rms) && (!best || rms < best.rms)) best = { cyl, rms }
+  }
+  if (!best) return null
+  const [c0, c1] = best.cyl
+
+  // Every point to the nearer, the RMS over all, how far apart the two lie
+  // at each point, and the one's residual with a radius that changes
+  // smoothly along the axis taken out: e ≈ a + b t + c t², least squares.
+  const total = idx.length
+  const side = new Uint8Array(total)
+  const apart = new Float32Array(total)
+  const eOne = new Float64Array(total)
+  const tOne = new Float64Array(total)
+  const m = new Float64Array(9)
+  const rhs = new Float64Array(3)
+  let ssOne = 0, ssTwo = 0, count1 = 0
+  for (let i = 0; i < total; i++) {
+    const j = idx[i] * 3
+    const x = positions[j], y = positions[j + 1], z = positions[j + 2]
+    const e0 = radial(c0, x, y, z).e
+    const e1 = radial(c1, x, y, z).e
+    const r = radial(one, x, y, z)
+    if (!Number.isFinite(e0) || !Number.isFinite(e1) || !Number.isFinite(r.e)) continue
+    if (Math.abs(e1) < Math.abs(e0)) {
+      side[i] = 1
+      count1++
+    }
+    apart[i] = Math.abs(e0 - e1)
+    ssTwo += Math.min(e0 * e0, e1 * e1)
+    ssOne += r.e * r.e
+    eOne[i] = r.e
+    tOne[i] = r.t
+    const row = [1, r.t, r.t * r.t]
+    for (let a = 0; a < 3; a++) {
+      rhs[a] += row[a] * r.e
+      for (let b = 0; b < 3; b++) m[a * 3 + b] += row[a] * row[b]
+    }
+  }
+  const rmsOne = Math.sqrt(ssOne / total)
+  const rmsTwo = Math.sqrt(ssTwo / total)
+  if (!(rmsOne > 0) || !(rmsTwo < TWO_CYL_OVER_ONE * rmsOne)) return null
+  if (Math.min(count1, total - count1) < Math.max(30, TWO_CYL_SHARE * total)) return null
+  apart.sort()
+  const parted = apart[Math.floor(0.9 * (total - 1))]
+  if (!(parted >= TWO_CYL_PARTED * rmsTwo)) return null
+  const coef = solveLinear(3, m, rhs)
+  if (coef) {
+    let ssSmooth = 0
+    for (let i = 0; i < total; i++) ssSmooth += (eOne[i] - coef[0] - coef[1] * tOne[i] - coef[2] * tOne[i] * tOne[i]) ** 2
+    if (!(rmsTwo < TWO_CYL_OVER_ONE * Math.sqrt(ssSmooth / total))) return null
+  }
+
+  const a: number[] = []
+  const b: number[] = []
+  for (let i = 0; i < total; i++) (side[i] ? b : a).push(i)
+  const big = a.length >= b.length
+  return {
+    cylinders: big ? [c0, c1] : [c1, c0],
+    members: big ? [Uint32Array.from(a), Uint32Array.from(b)] : [Uint32Array.from(b), Uint32Array.from(a)],
+    rmsTwo,
+    rmsOne,
+    parted,
+  }
+}

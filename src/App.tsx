@@ -52,6 +52,7 @@ import { Viewer } from './ui/Viewer'
 import { Panel } from './ui/Panel'
 import { TopBar } from './ui/TopBar'
 import { RecoveryBar } from './ui/RecoveryBar'
+import { ConnectorBar } from './ui/ConnectorBar'
 import { StatusStrip } from './ui/StatusStrip'
 import { BusyOverlay } from './ui/BusyOverlay'
 import { ImprintModal } from './ui/Imprint'
@@ -186,7 +187,7 @@ export default function App() {
       } : null,
       nominal: sources.current.reference,
     })
-    clientRef.current!.onProgress = (text) => useStore.getState().setStatus(text)
+    clientRef.current!.onProgress = (text, fraction) => useStore.setState({ statusText: text, progress: fraction ?? null })
     // Each refinement pose, straight onto the scan's group. The reference is
     // the datum and stays put, so watching the fit means watching the scan
     // walk onto it — and it costs one matrix write per pass.
@@ -581,6 +582,7 @@ export default function App() {
     startPicking,
     stopPicking,
     runDeviation,
+    runVolume,
     setMapFacing,
     runLocalAlign,
     handleStartMarking,
@@ -689,6 +691,7 @@ export default function App() {
   }
 
   const handleHover = (hit: PickHit | null) => {
+    activeRef.current?.hover?.(hit)
     hoverSink.current?.(hit ? readingAt(hit) : null)
   }
 
@@ -1028,13 +1031,22 @@ export default function App() {
   // was measured with. The choice is also remembered for the next new element.
   const handleDraftSigma = (k: SigmaPreset) => {
     useStore.getState().setDraftSigma(k)
+    refitDraft()
+  }
+  // A known diameter typed in or cleared works the same way: the draft alone
+  // re-fits on the surface it has, now holding it or no longer.
+  const handleDraftKnownDiameter = (mm: number | undefined) => {
+    useStore.getState().setDraftKnownDiameter(mm)
+    refitDraft()
+  }
+  const refitDraft = () => {
     const store = useStore.getState()
     const draft = store.draft
     if (!draft || creationMethod(draft.kind, draft.method).mode !== 'fit') return
     if (draft.selection) void runDraftPaintFit(draft.kind, draft.selection)
     else if (draft.picks.length > 0) {
-      // The picks are unchanged and so are the marks on them — only the
-      // outlier cut-off moved.
+      // The picks are unchanged and so are the marks on them — only how
+      // the fit is made moved.
       store.setDraftPicks(draft.picks, draft.pickPoints)
       void runDraftFit(draft.kind, draft.picks)
     }
@@ -1438,6 +1450,9 @@ export default function App() {
   // picker has the stage to itself while it is up.
   const splitOpen =
     split && onDeviation && source === 'reference' && !picking && Boolean(nominalGeometry)
+  // A plugin's workspace may put a view of its own beside the viewport.
+  const pluginSplit = !picking && active?.split ? active.split : null
+  const anySplit = splitOpen || pluginSplit !== null
   // Stable, so the readout's subscription is not torn down every render.
   const registerHover = useRef((fn: ((r: HoverReading | null) => void) | null) => {
     hoverSink.current = fn
@@ -1480,6 +1495,7 @@ export default function App() {
         savable={(fileName !== null && vertexCountLoaded) || flatImageName !== null || runtimes.some((r) => r.canSave)}
       />
       <RecoveryBar recovery={recovery} />
+      <ConnectorBar />
       <div className="mid">
         {onDeviation ? (
           <DeviationPanel
@@ -1502,6 +1518,8 @@ export default function App() {
             onGoToMeasure={() => useShell.getState().setWorkspace('elements')}
             onCopy={handleCopyReport}
             onExportStl={handleExportStl}
+            onMeasureVolume={() => void runVolume()}
+            onFrame={(min, max) => sceneRef.current?.fitBox(min, max)}
           />
         ) : onThickness ? (
           <ThicknessPanel
@@ -1525,6 +1543,7 @@ export default function App() {
             onStartDraft={handleStartDraft}
             onSelectMode={handleSelectMode}
             onDraftSigma={handleDraftSigma}
+            onDraftKnownDiameter={handleDraftKnownDiameter}
             onClearPaint={clearPaint}
             onUndoPick={handleUndoPick}
             onCancelDraft={handleCancelDraft}
@@ -1551,13 +1570,13 @@ export default function App() {
             onFindSymmetry={() => void handleFindSymmetry()}
           />
         )}
-        <div className={splitOpen ? 'stage split' : 'stage'}>
+        <div className={anySplit ? 'stage split' : 'stage'}>
           {/* The viewport stays mounted behind the picker: unmounting it would
               throw away the mesh and its BVH, and both are expensive. It keeps
               its place in the tree when the split view opens for the same
               reason — it becomes the left half where it stands, rather than
               being moved into one. */}
-          <div className={splitOpen ? 'viewslot split' : 'viewslot'} hidden={picking || onFlat || Boolean(active?.hideViewport)}>
+          <div className={anySplit ? 'viewslot split' : 'viewslot'} hidden={picking || onFlat || Boolean(active?.hideViewport)}>
             <Viewer
               onReady={(s) => {
                 sceneRef.current = s
@@ -1573,6 +1592,7 @@ export default function App() {
               onPaintChange={handlePaintChange}
               onExtendDrag={handleExtendDrag}
             />
+            {!splitOpen && pluginSplit}
             {splitOpen && (
               <>
                 <div className="splitcap">

@@ -74,4 +74,17 @@ describe('a fit told the axis', () => {
   it('refuses a bore on another axis', () => {
     expect(() => fitCylinderFromSeed(graph, [seed], SETTINGS, undefined, { axis: [1, 0, 0] })).toThrow(/No cylinder there/)
   })
+
+  it('names the axis it turned down, where it runs and how far off, to be asked for after all', () => {
+    let said = ''
+    try {
+      fitCylinderFromSeed(graph, [seed], SETTINGS, undefined, { axis: [0, 0.5, 1] })
+    } catch (e) {
+      said = (e as Error).message
+    }
+    expect(said).toMatch(/R3\.\d\d \(axis off by \d+\.\d°: axis \[-?0(\.\d+)?, -?0(\.\d+)?, -?(1|0\.99\d*)\] through \[.+\], \d+ points\)/)
+    // The bore stands on Z; the axis given leans 26.6° off it.
+    expect(said).toMatch(/axis off by 26\.\d°/)
+    expect(said).toMatch(/give that axis or drop axis/)
+  })
 })

@@ -14,7 +14,7 @@ import { fitWindow } from '../core/elements/extend'
 import { circleFromPoints } from '../core/fit/circle'
 import type { FitGuide } from '../core/fit/guide'
 import { baseSeedPlane } from '../core/symmetry'
-import type { ElementKind, Vec3 } from '../core/types'
+import type { ElementKind, FitTold, Vec3 } from '../core/types'
 import type { MeshWorkerClient } from '../core/workerClient'
 import { draftColorOf, useStore } from '../state/store'
 import { useMark } from '../state/markStore'
@@ -107,23 +107,27 @@ export function measureWorkspace({ clientRef, sceneRef }: MeasureDeps) {
 
   /** Fit the draft from every picked point at once and show it as a preview.
    *  Picks may sit on unconnected patches — a partial scan of one feature —
-   *  and the region growing seeds from all of them. */
-  const runDraftFit = async (kind: ElementKind, picks: [number, number, number][], guide?: FitGuide) => {
+   *  and the region growing seeds from all of them. Returns what the fit
+   *  told besides its numbers, for a command's answer; undefined when it
+   *  told nothing, failed or was overtaken. */
+  const runDraftFit = async (kind: ElementKind, picks: [number, number, number][], guide?: FitGuide): Promise<FitTold | undefined> => {
     const seq = ++draftSeq.current
     const settings = draftSettings()
     const seeds = picks.flat()
     const window = fitWindow(useStore.getState().draft?.extend)
     try {
       const result = await clientRef.current!.fit(kind, seeds, settings, window, guide)
-      if (seq !== draftSeq.current || !useStore.getState().draft) return
+      if (seq !== draftSeq.current || !useStore.getState().draft) return undefined
       draftRegion.current = result.region
       sceneRef.current?.setPreviewRegion(result.region, draftColorOf(useStore.getState()))
       useStore.getState().resolveDraft(result)
+      return result.told
     } catch (e) {
-      if (seq !== draftSeq.current || !useStore.getState().draft) return
+      if (seq !== draftSeq.current || !useStore.getState().draft) return undefined
       draftRegion.current = null
       sceneRef.current?.setPreviewRegion(null)
       useStore.getState().failDraft(e instanceof Error ? e.message : String(e))
+      return undefined
     }
   }
 

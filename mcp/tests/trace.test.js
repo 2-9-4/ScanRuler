@@ -106,7 +106,7 @@ test('every call path gets its line: direct, own, batch entries, queued jobs, th
     assert.equal(start.backend, 'page')
     assert.equal(start.tools, 'full')
     const list = lines.find((l) => l.ev === 'list')
-    assert.equal(list.tools, COMMANDS.length + 5)
+    assert.equal(list.tools, COMMANDS.length + 6)
     assert.ok(list.bytes > 500)
 
     const calls = lines.filter((l) => l.ev === 'call')
@@ -126,7 +126,7 @@ test('every call path gets its line: direct, own, batch entries, queued jobs, th
     assert.deepEqual(read.hidden, [false, false])
     assert.equal(read.in, JSON.stringify({ q: 'a secret path' }).length)
     assert.equal(read.error, null)
-    assert.match(changed.job, /^j\d+$/)
+    assert.match(changed.job, /^j\d+-[0-9a-f]{4}$/)
     assert.equal(changed.queued, undefined)
     assert.equal(refused.error, 'invalid_state')
     assert.equal(picture.images, 1)
