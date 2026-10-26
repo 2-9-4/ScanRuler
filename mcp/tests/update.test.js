@@ -161,8 +161,17 @@ test('the registry is asked within 2 s, and a failure is no answer', async () =>
   assert.equal(await fetchLatest({ env: {}, fetchFn: async () => ({ ok: false }) }), null)
   assert.equal(await fetchLatest({ env: {}, fetchFn: async () => ({ ok: true, json: async () => ({ version: 'x' }) }) }), null)
   const slow = (url, { signal }) => new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason)))
+  // AbortSignal.timeout's timer holds nothing open, and a fetch that never
+  // answers holds no socket: on its own the event loop would run dry before
+  // the abort, and Node 22's runner cancels the test. A real fetch has its
+  // socket.
+  const awake = setTimeout(() => {}, 1000)
   const t0 = Date.now()
-  assert.equal(await fetchLatest({ env: {}, fetchFn: slow, within: 50 }), null)
+  try {
+    assert.equal(await fetchLatest({ env: {}, fetchFn: slow, within: 50 }), null)
+  } finally {
+    clearTimeout(awake)
+  }
   assert.ok(Date.now() - t0 < 1000)
 })
 
