@@ -9,8 +9,9 @@
 // workspace still needs after that has a row of its own in the panel to say so.
 
 import { useRef, useState } from 'react'
-import { MESH_ACCEPT } from '../core/formats'
+import { SCAN_ACCEPT } from '../core/formats'
 import { usePulse } from '../app/useHints'
+import { bundleFiles, droppedFiles } from '../app/scanFiles'
 import { HiddenFileInput } from './ModelSlot'
 
 export interface StartSlot {
@@ -22,7 +23,7 @@ export interface StartSlot {
   onOpen: (file: File) => void
 }
 
-function Tile({ role, what, name, accept = MESH_ACCEPT, onOpen }: StartSlot) {
+function Tile({ role, what, name, accept = SCAN_ACCEPT, onOpen }: StartSlot) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [over, setOver] = useState(false)
   // Keyed to the step rather than to this pane, so that the tile and the
@@ -44,11 +45,19 @@ function Tile({ role, what, name, accept = MESH_ACCEPT, onOpen }: StartSlot) {
         e.preventDefault()
         e.stopPropagation()
         setOver(false)
-        const file = e.dataTransfer?.files?.[0]
-        if (file) onOpen(file)
+        // The scan's tile takes a textured OBJ's files, or their folder.
+        if (accept !== SCAN_ACCEPT) {
+          const file = e.dataTransfer?.files?.[0]
+          if (file) onOpen(file)
+          return
+        }
+        void droppedFiles(e.dataTransfer).then((files) => {
+          const file = bundleFiles(files)
+          if (file) onOpen(file)
+        })
       }}
     >
-      <HiddenFileInput inputRef={inputRef} accept={accept} onOpen={onOpen} />
+      <HiddenFileInput inputRef={inputRef} accept={accept} onOpen={onOpen} multiple={accept === SCAN_ACCEPT} />
       <div className="starttile-role">{role}</div>
       <div className="starttile-what">{what}</div>
       {name ? (

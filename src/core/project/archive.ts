@@ -81,7 +81,7 @@ export function unpackProject(bytes: Uint8Array, limits = PROJECT_LIMITS): Unpac
     throw new Error('Malformed project: project.json is not JSON.')
   }
   const manifest = validateManifest(parsed)
-  for (const entry of [manifest.scan, manifest.deviation.reference, manifest.flat.image]) {
+  for (const entry of [manifest.scan, ...(manifest.scan?.companions ?? []), manifest.deviation.reference, manifest.flat.image]) {
     if (entry && !Object.hasOwn(files, entry.member)) throw new Error(`Project is missing ${entry.member}.`)
   }
   const members = new Map<string, Uint8Array>()

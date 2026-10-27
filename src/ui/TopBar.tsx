@@ -16,7 +16,8 @@ import { plugins } from '../plugins/registry'
 import { UndoRedo } from './UndoRedo'
 import { AGENT_STATUS, useAgentLink } from '../commands/agentLink'
 import { Icon, type IconName } from './icons'
-import { IMAGE_ACCEPT, MESH_ACCEPT, isImageFile, isMeshFile, isStepFile } from '../core/formats'
+import { IMAGE_ACCEPT, SCAN_ACCEPT, isImageFile, isModelFile, isTextureFile } from '../core/formats'
+import { bundleFiles } from '../app/scanFiles'
 import { PROJECT_EXTENSION, projectStem } from '../core/project/manifest'
 import { isProjectFile } from '../app/useProject'
 import { APP_VERSION } from '../version'
@@ -182,14 +183,14 @@ export function TopBar({
       if (isProjectFile(file.name)) onOpenProject(file)
       else if (isImageFile(file.name)) {
         onOpenImage(file)
-      } else if (isMeshFile(file.name)) onOpenScan(file)
+      } else if (isModelFile(file.name)) onOpenScan(file)
       else
         useStore
           .getState()
           .setError(
-            isStepFile(file.name)
-              ? 'A STEP file is CAD, not a scan — load it as the reference in the Deviation workspace.'
-              : `Unsupported file type — use a .${PROJECT_EXTENSION} project, STL, PLY, OBJ, PNG or JPEG.`,
+            isTextureFile(file.name)
+              ? `${file.name} is part of a textured scan — open it together with its OBJ (select the OBJ, the .mtl and the image at once).`
+              : `Unsupported file type — use a .${PROJECT_EXTENSION} project, STL, PLY, OBJ, STEP, PNG or JPEG.`,
           )
     }
     // Allow re-picking the same file.
@@ -266,10 +267,11 @@ export function TopBar({
       <input
         ref={openRef}
         type="file"
-        accept={`.${PROJECT_EXTENSION},${MESH_ACCEPT},${IMAGE_ACCEPT}`}
+        accept={`.${PROJECT_EXTENSION},${SCAN_ACCEPT},${IMAGE_ACCEPT}`}
+        multiple
         hidden
         data-test="project-input"
-        onChange={(e) => onLoad(e.target.files?.[0] ?? undefined)}
+        onChange={(e) => onLoad(bundleFiles(Array.from(e.target.files ?? [])) ?? undefined)}
       />
       <button
         className="ghost withicon"

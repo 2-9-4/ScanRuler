@@ -3162,6 +3162,9 @@ button.x:disabled {
   border-radius: var(--r);
   padding: 3px;
   gap: 0;
+  /* The legend lets clicks through to the stage; the bars take the hover. */
+  position: relative;
+  pointer-events: auto;
 }
 
 .devhist-row {
@@ -3178,7 +3181,41 @@ button.x:disabled {
   align-self: stretch;
 }
 
+.devhist-row.hover {
+  background: rgba(var(--glass), 1);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+
+.devhist-row.hover span {
+  opacity: 1;
+}
+
+/* What a hovered bar counts, to its left, level with it. */
+.devhist-readout {
+  position: absolute;
+  right: calc(100% + 6px);
+  transform: translateY(50%);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  padding: 4px 7px;
+  font-size: 10.5px;
+  line-height: 1.25;
+  white-space: nowrap;
+  color: var(--ink);
+  background: rgba(var(--glass), 0.96);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r);
+  pointer-events: none;
+}
+
+.devhist-readout span {
+  color: var(--dim);
+}
+
 .devramp {
+  position: relative;
   width: 17px;
   display: flex;
   flex-direction: column;
@@ -3219,6 +3256,32 @@ button.x:disabled {
 .devticks span.zero {
   font-weight: 700;
   color: var(--green);
+}
+
+/* A value called out on the ramp — a band's edge inside the scale — and the
+   stretch it opens, hatched along the ramp's edge. */
+.devramp-mark {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 2px solid var(--ink);
+  box-shadow: 0 0 0 1px rgba(var(--glass), 0.85);
+  transform: translateY(1px);
+  pointer-events: auto;
+}
+
+.devramp-band {
+  position: absolute;
+  left: 0;
+  width: 5px;
+  background: repeating-linear-gradient(45deg, var(--ink) 0 2px, transparent 2px 4px);
+  opacity: 0.75;
+  pointer-events: auto;
+}
+
+.devticks span.mark {
+  font-weight: 700;
+  z-index: 1;
 }
 
 /* An end of the scale the user sets: the figure, as a key, where the figure

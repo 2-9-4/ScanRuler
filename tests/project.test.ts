@@ -76,6 +76,28 @@ describe('the project archive', () => {
     expect(() => validateManifest({ ...scaled.manifest, deviation: { ...scaled.manifest.deviation, reference: { ...scaled.manifest.deviation.reference, units: 3 } } })).toThrow('deviation.reference.units')
   })
 
+  it('keeps the files a textured scan came with, under the names they came under', () => {
+    const src = sources()
+    const mtl = new TextEncoder().encode('newmtl a\nmap_Kd Skin.png\n')
+    const png = new Uint8Array([137, 80, 78, 71])
+    const textured = { ...src, scan: { ...src.scan, name: 'part.obj', companions: [{ name: 'part.mtl', bytes: mtl }, { name: 'Skin.png', bytes: png }] } }
+    const { manifest, members } = collectProject(textured, null, '0.1.0')
+    expect(manifest.scan?.companions).toEqual([
+      { fileName: 'part.mtl', member: 'scan-1.mtl' },
+      { fileName: 'Skin.png', member: 'scan-2.png' },
+    ])
+    const back = unpackProject(packProject(manifest, members))
+    expect(back.manifest.scan?.companions).toEqual(manifest.scan?.companions)
+    expect(back.members.get('scan-1.mtl')).toEqual(mtl)
+    expect(back.members.get('scan-2.png')).toEqual(png)
+    // A plain scan says nothing of them, and a member that is not there is
+    // refused like the scan's own.
+    expect(collectProject(src, null, '0.1.0').manifest.scan).not.toHaveProperty('companions')
+    const lost = members.filter((m) => m.name !== 'scan-2.png')
+    expect(() => unpackProject(packProject(manifest, lost))).toThrow('scan-2.png')
+    expect(() => validateManifest({ ...manifest, scan: { ...manifest.scan, companions: [{ fileName: 'x.png', member: '../x.png' }] } })).toThrow('scan.companions')
+  })
+
   it('refuses what is not a project', () => {
     expect(() => unpackProject(new Uint8Array([1, 2, 3]))).toThrow('Not a ScanRuler project')
     expect(() => validateManifest({ app: 'filaSim', schemaVersion: 1 })).toThrow(

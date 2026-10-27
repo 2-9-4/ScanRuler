@@ -12,11 +12,12 @@ import type { Rigid } from '../core/deviation/rigid'
 import type { SceneManager } from '../viewer/SceneManager'
 import { grayscaleOf } from '../core/flat/edgeClient'
 import { imagePixelsPerMm } from '../core/flat/image'
-import { isMeshFile, isReferenceFile, isStepFile } from '../core/formats'
+import { isModelFile, isReferenceFile, isTextureFile } from '../core/formats'
 import type { MeshUnits } from '../core/meshUnits'
 import { useStore } from '../state/store'
 import { ImportQueue, type PreparedView } from './importQueue'
 import type { SourceFiles } from './project'
+import { companionBytes, companionsOf, readCompanions } from './scanFiles'
 
 export interface PreparedScan {
   id: number
@@ -64,17 +65,20 @@ const NO_VIEW: PreparedView = { commit() {}, dispose() {} }
 
 /** `units` is what the file's coordinates are in; the worker reads it in
  *  millimetres, and the source remembers the units so a project or a worker
- *  restart reads the same bytes the same way. Without a viewport — a test, a
+ *  restart reads the same bytes the same way. The files that came with a
+ *  textured OBJ (see scanFiles) are kept in the source beside it, and the
+ *  part wears the colours they give it. Without a viewport — a test, a
  *  headless run — the model goes to the worker alone. */
 export async function prepareScan(client: MeshWorkerClient, scene: SceneManager | null, file: File, crease: CreaseSetting, transform?: Rigid, units: MeshUnits = 'mm'): Promise<PreparedScan> {
-  if (!isMeshFile(file.name)) throw new Error(isStepFile(file.name)
-    ? 'A STEP file is CAD, not a scan — load it as the reference in the Deviation workspace.'
-    : 'Unsupported file type — use STL, PLY, or OBJ.')
+  if (!isModelFile(file.name)) throw new Error(isTextureFile(file.name)
+    ? `${file.name} is part of a textured scan — open it together with its OBJ (pick or drop the OBJ, the .mtl and the image at once, or drop their folder).`
+    : 'Unsupported file type — use STL, PLY, OBJ, or STEP.')
   const buffer = await file.arrayBuffer()
-  const source = { name: file.name, bytes: new Uint8Array(buffer.slice(0)), units }
-  const { id, mesh } = await client.prepareScan(file.name, buffer, crease, transform, units)
+  const extras = await companionBytes(companionsOf(file))
+  const source = { name: file.name, bytes: new Uint8Array(buffer.slice(0)), units, ...(extras.length > 0 ? { companions: extras } : {}) }
+  const { id, mesh } = await client.prepareScan(file.name, buffer, crease, transform, units, await readCompanions(extras))
   try {
-    const view = scene ? scene.prepareMesh(mesh.positions, mesh.indices, mesh.normals, mesh.wireSlots, mesh.copyOf) : NO_VIEW
+    const view = scene ? scene.prepareMesh(mesh.positions, mesh.indices, mesh.normals, mesh.wireSlots, mesh.copyOf, mesh.colors ?? null) : NO_VIEW
     return { id, mesh, source, view }
   } catch (e) {
     await client.discardImport([id])

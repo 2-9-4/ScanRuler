@@ -16,7 +16,18 @@ export interface ParsedMesh {
   /** The file says its triangles face the way they are meant to (see
    *  parsers/ply), so the winding is kept as written instead of guessed. */
   keepWinding?: boolean
+  /** The part's own colour at each vertex, three sRGB bytes per vertex —
+   *  read off a textured OBJ's image (see parsers/objTexture). */
+  colors?: Uint8Array
+  /** What became of a texture the file names, when it names one. */
+  texture?: TextureNote
 }
+
+/** What became of the texture a file names: put on the part from the
+ *  images given, or not, for want of the files named. */
+export type TextureNote =
+  | { kind: 'applied'; images: string[] }
+  | { kind: 'missing'; files: string[] }
 
 /** Indexed mesh plus everything the fitting pipeline needs: per-vertex
  *  normals and a CSR vertex-adjacency graph for region growing. */

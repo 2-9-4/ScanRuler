@@ -231,6 +231,10 @@ export function useSceneSync({
   useEffect(() => {
     sceneRef.current?.setScanMesh(wireframe)
   }, [wireframe])
+  const showScanColors = useStore((s) => s.showScanColors)
+  useEffect(() => {
+    sceneRef.current?.setScanColors(showScanColors)
+  }, [showScanColors])
   // And the reference, from its own key's.
   const nominalSeeThrough = useDeviation((s) => s.nominalSeeThrough)
   const nominalMesh = useDeviation((s) => s.nominalMesh)

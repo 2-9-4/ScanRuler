@@ -8,7 +8,8 @@ import type { RefObject } from 'react'
 import { boundsOf } from '../core/geometry/bounds'
 import { creaseSetting, type CreaseReport, type CreaseSetting } from '../core/geometry/crease'
 import { unitsLabel, type MeshUnits } from '../core/meshUnits'
-import type { MeshWorkerClient } from '../core/workerClient'
+import type { LoadedScan, MeshWorkerClient } from '../core/workerClient'
+import { isStepFile } from '../core/formats'
 import { useDeviation } from '../state/deviationStore'
 import { clearHistory } from '../state/historyStore'
 import { useMark } from '../state/markStore'
@@ -39,6 +40,27 @@ export function creaseNote(report: CreaseReport, crease: CreaseSetting): string 
     return crease.mode === 'on' ? `No edges of ${crease.angleDeg}° or more to split on this mesh.` : 'Sharp edges drawn sharp.'
   }
   return `Edges from ${crease.angleDeg}° on drawn sharp — ${report.added.toLocaleString('en-US')} vertices split.`
+}
+
+/** What the scan's file said besides its geometry, for the status line:
+ *  the texture it wears or still wants, how a STEP part was cut. Empty for
+ *  a plain mesh. */
+export function scanFileNote(mesh: LoadedScan): string {
+  const parts: string[] = []
+  const t = mesh.texture
+  if (t?.kind === 'applied') parts.push(`Coloured from ${t.images.join(', ')}.`)
+  else if (t?.kind === 'missing') {
+    parts.push(`This OBJ has a texture (${t.files.join(', ')}) that did not come with it — open the OBJ, its .mtl and the image together (select all three, or drop their folder) to see the scan in colour.`)
+  }
+  if (mesh.step) {
+    const { surfaceDeviation, unsound, faces, gaps } = mesh.step
+    parts.push(`Cut from STEP to ${surfaceDeviation} mm.`)
+    if (unsound) {
+      const missing = faces?.length ? `${faces.length} surface${faces.length === 1 ? '' : 's'} did not convert` : 'The conversion is incomplete'
+      parts.push(`${missing}${gaps?.length ? ` — the part is open at ${gaps.length === 1 ? 'one place' : `${gaps.length} places`}` : ''}.`)
+    }
+  }
+  return parts.length > 0 ? `${parts.join(' ')} ` : ''
 }
 
 export interface ScanImportDeps {
@@ -90,6 +112,7 @@ export function scanImport({ clientRef, sceneRef, sources, imports, maps, clearP
     useMark.getState().reset()
     sources.current.scan = prepared?.source ?? null
     store.beginLoad(prepared?.source.name ?? '')
+    useStore.setState({ scanColors: Boolean(prepared?.mesh.colors) })
     if (prepared) {
       prepared.view.commit()
       const { mesh } = prepared
@@ -118,7 +141,7 @@ export function scanImport({ clientRef, sceneRef, sources, imports, maps, clearP
   const openScan = async (file: File, units?: MeshUnits): Promise<void> => {
     const read = units ?? (await meshUnitsFor(file.name))
     if (!read) return
-    await runImport(imports, 'Reading file…', async () => {
+    await runImport(imports, isStepFile(file.name) ? 'Reading STEP file — tessellating the CAD surfaces…' : 'Reading file…', async () => {
       const client = clientRef.current!
       const crease = creaseSetting(useStore.getState())
       const prepared = await prepareScan(client, sceneRef.current, file, crease, undefined, read)
@@ -130,7 +153,7 @@ export function scanImport({ clientRef, sceneRef, sources, imports, maps, clearP
         const creaseWord = mesh.crease.skipped === 'budget' ? ` ${creaseNote(mesh.crease, crease)}` : ''
         const unitsWord = read !== 'mm' ? `Read in ${unitsLabel(read).toLowerCase()} and converted to millimetres. ` : ''
         useStore.getState().setStatus(
-          unitsWord +
+          unitsWord + scanFileNote(mesh) +
           (mesh.triangleCount > LARGE_TRIANGLE_WARNING
             ? `Large mesh (${mesh.triangleCount.toLocaleString('en-US')} triangles) — fits may take a moment. Pick an element type to start.`
             : 'Pick an element type in the panel to start measuring.') + creaseWord)

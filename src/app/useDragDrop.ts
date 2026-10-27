@@ -4,6 +4,7 @@
 // goes is openAny's call.
 import { useEffect, useState } from 'react'
 import { openAnyFile, type OpenHandlers } from './openAny'
+import { bundleFiles, droppedFiles } from './scanFiles'
 
 export function useDragDrop(handlers: OpenHandlers): boolean {
   const [dragging, setDragging] = useState(false)
@@ -31,9 +32,12 @@ export function useDragDrop(handlers: OpenHandlers): boolean {
       e.preventDefault()
       depth = 0
       setDragging(false)
-      const file = e.dataTransfer?.files?.[0]
-      if (!file) return
-      void openAnyFile(file, handlers)
+      // Several files, or a folder, are a textured scan's: the model opens,
+      // the rest with it (see scanFiles).
+      void droppedFiles(e.dataTransfer).then((files) => {
+        const file = bundleFiles(files)
+        if (file) return openAnyFile(file, handlers)
+      })
     }
     window.addEventListener('dragenter', onDragEnter)
     window.addEventListener('dragover', onDragOver)

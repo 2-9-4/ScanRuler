@@ -38,6 +38,14 @@ const { browser, page, consoleErrors } = await launchApp({
   protocolTimeout: 600_000,
 })
 
+// The fit in hand, from the store: the panel does not show the fit's own RMS,
+// which read as the scan's deviation.
+const fitResult = () =>
+  page.evaluate(async () => {
+    const { useDeviation } = await import('/src/state/deviationStore.ts')
+    return useDeviation.getState().align
+  })
+
 /** Where the saturated pixels of the stage are — the part is scanner blue on a
  *  neutral ground, and the datum stage's planes are pale tints below the
  *  threshold. Returns the share of the stage they cover and their centroid and
@@ -154,7 +162,7 @@ await page.waitForFunction(() => !document.querySelector('[data-test=fitting-chi
   timeout: 300_000,
 })
 await sleep(600)
-const rms = await page.$eval('[data-test=align-rms] b', (el) => Number(el.textContent))
+const rms = (await fitResult())?.rms
 console.log(`best fit: ${rms} mm rms`)
 check(rms > 0 && rms < 0.5, 'the automatic best fit converged')
 

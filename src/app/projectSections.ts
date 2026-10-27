@@ -99,7 +99,7 @@ export function keepUnownedParts(manifest: ProjectManifest, members: ReadonlyMap
     if (!CORE_KEYS.has(key) && !owned.has(key) && value !== undefined) parts[key] = value
   }
   const named = new Set<string>()
-  for (const file of [manifest.scan, manifest.deviation.reference, manifest.flat.image]) if (file) named.add(file.member)
+  for (const file of [manifest.scan, ...(manifest.scan?.companions ?? []), manifest.deviation.reference, manifest.flat.image]) if (file) named.add(file.member)
   for (const s of sections) {
     const value = manifest[s.key]
     if (value !== undefined) for (const m of s.members?.(value) ?? []) named.add(m)

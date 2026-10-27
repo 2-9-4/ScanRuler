@@ -23,10 +23,12 @@ import { creaseSetting } from '../core/geometry/crease'
 import { useThickness } from '../state/thicknessStore'
 import type { SceneManager } from '../viewer/SceneManager'
 import type { SourceFiles } from './project'
-import { scanRemapped, scanRemeasure, scanSwapped } from './scanEvents'
+import { scanRemapped, scanRemeasure, scanSwapped, scanSwapping } from './scanEvents'
 import { forgetAllSurfaces } from './surfaces'
+import { readCompanions } from './scanFiles'
 
-/** A scan as the session holds it: its file's bytes, and their units. */
+/** A scan as the session holds it: its file's bytes, their units, and the
+ *  files that came with it. */
 export type ScanSource = NonNullable<SourceFiles['scan']>
 
 export function scanSwap({
@@ -61,6 +63,9 @@ export function scanSwap({
       creaseSetting(useStore.getState()),
       transform ?? undefined,
       source.units ?? 'mm',
+      // An edit is a mesh of its own, colourless; the scan before it, on
+      // undo, comes back with whatever came with it.
+      await readCompanions(source.companions ?? []),
     )
     try {
       await client.commitImport({ scan: id })
@@ -68,6 +73,9 @@ export function scanSwap({
       await client.discardImport([id])
       throw e
     }
+    // The old version is still in the scene: the last moment anything can
+    // be read off it.
+    scanSwapping()
     sources.current.scan = source
     clearPreview()
     maps.deviation.current = null
@@ -84,9 +92,10 @@ export function scanSwap({
     // Without a viewport the part's size is read off the mesh, as an open
     // reads it.
     const scene = sceneRef.current
-    scene?.replaceScan(mesh.positions, mesh.indices, mesh.normals, mesh.wireSlots, mesh.copyOf)
+    scene?.replaceScan(mesh.positions, mesh.indices, mesh.normals, mesh.wireSlots, mesh.copyOf, mesh.colors ?? null)
     const bounds = scene ? null : boundsOf(mesh.positions, mesh.vertexCount)
     useStore.setState((s) => ({
+      scanColors: Boolean(mesh.colors),
       vertexCount: mesh.vertexCount,
       triangleCount: mesh.triangleCount,
       modelSize: scene?.modelSize() ?? bounds!.radius,

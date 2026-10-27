@@ -123,6 +123,10 @@ export interface ScanPart {
   fileName: string
   /** Archive member holding the original file bytes. */
   member: string
+  /** The files that came with it — a textured OBJ's material library and
+   *  image — each with the name it came under, which is how the OBJ finds
+   *  it. Absent for a scan that came alone. */
+  companions?: { fileName: string; member: string }[]
   /** What the member's coordinates are in, when not millimetres: the scan
    *  was read in millimetres from it, and is again on load. Absent in
    *  projects saved before the STL import asked, and for a file in mm. */

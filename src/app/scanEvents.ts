@@ -16,6 +16,11 @@ export interface ScanListener {
   /** A scan was loaded — or taken away, with null: a different part, so
    *  everything read off the last one goes. */
   loaded?(scan: LoadedScan | null): void
+  /** Another version of the same scan is about to be put in place: the old
+   *  one is still in the scene, for whoever carries something read off it
+   *  across — positions on its surface, say — before it goes. Told only
+   *  once the new version has loaded; `swapped` follows. */
+  swapping?(): void
   /** Another version of the same scan was put in place under the session —
    *  an edit of it, or the one before an edit. What was read off the old
    *  vertices goes; everything measured on the part stays. */
@@ -42,6 +47,10 @@ export function onScan(listener: ScanListener): () => void {
 
 export const scanLoaded = (scan: LoadedScan | null): void => {
   for (const l of [...listeners]) l.loaded?.(scan)
+}
+
+export const scanSwapping = (): void => {
+  for (const l of [...listeners]) l.swapping?.()
 }
 
 export const scanSwapped = (): void => {

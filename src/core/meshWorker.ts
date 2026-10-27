@@ -8,11 +8,12 @@
 // nothing may run on a scan swapped out in the gap. An import can be staged:
 // prepared beside the models in use, put in their place when committed.
 
-import type { MeshGraph, ParsedMesh, Vec3 } from './types'
+import type { MeshGraph, ParsedMesh, TextureNote, Vec3 } from './types'
 import type { WorkerRequest, WorkerResponse } from './workerProtocol'
 import { parseSTL } from './parsers/stl'
 import { parsePLY } from './parsers/ply'
 import { parseOBJ } from './parsers/obj'
+import type { ObjCompanions } from './parsers/objTexture'
 import { parseSTEP, type StepInfo } from './parsers/step'
 import { extensionOf } from './formats'
 import { buildMeshGraph } from './geometry/buildGraph'
@@ -104,9 +105,13 @@ function postScan(
   g: MeshGraph,
   crease: CreaseSetting,
   progress: (t: string) => void,
+  file?: ScanFileFacts,
 ): void {
   if (crease.mode !== 'off') progress('Finding sharp edges…')
   const { positions, indices, normals, wireSlots: slots, copyOf, crease: report } = scanRender(g, crease)
+  // The file's own colours are the render thread's alone: nothing measured
+  // here reads them, and a worker restart reads the geometry back without.
+  const colors = file?.colors && file.colors.length === g.vertexCount * 3 ? file.colors : undefined
   post(
     {
       type: 'loaded',
@@ -119,9 +124,19 @@ function postScan(
       crease: report,
       vertexCount: g.vertexCount,
       triangleCount: indices.length / 3,
+      ...(colors ? { colors } : {}),
+      ...(file?.texture ? { texture: file.texture } : {}),
+      ...(file?.step ? { step: file.step } : {}),
     },
-    [positions.buffer, indices.buffer, normals.buffer, slots.buffer, copyOf.buffer],
+    [positions.buffer, indices.buffer, normals.buffer, slots.buffer, copyOf.buffer, ...(colors ? [colors.buffer] : [])],
   )
+}
+
+/** What the scan's file said besides its geometry, for the render thread. */
+interface ScanFileFacts {
+  colors?: Uint8Array
+  texture?: TextureNote
+  step?: StepInfo
 }
 
 /** A file in other units brought to millimetres, before anything is built on
@@ -133,17 +148,28 @@ function scaleToMm(parsed: ParsedMesh, scale: number | undefined): void {
   for (let i = 0; i < p.length; i++) p[i] *= scale
 }
 
-function parseByName(name: string, buffer: ArrayBuffer, onProgress: (t: string) => void): ParsedMesh {
+function parseByName(name: string, buffer: ArrayBuffer, onProgress: (t: string) => void, companions?: ObjCompanions): ParsedMesh {
   const ext = extensionOf(name)
   if (ext === 'stl') return parseSTL(buffer, onProgress)
   if (ext === 'ply') return parsePLY(buffer, onProgress)
-  if (ext === 'obj') return parseOBJ(buffer, onProgress)
-  throw new Error(`Unsupported file type ".${ext}" — use STL, PLY, or OBJ.`)
+  if (ext === 'obj') return parseOBJ(buffer, onProgress, companions)
+  throw new Error(`Unsupported file type ".${ext}" — use STL, PLY, OBJ, or STEP.`)
+}
+
+/** The scan: a mesh, or a CAD part opened in a scan's place — cut finer
+ *  than a reference is (see parsers/step), since it is worked on rather
+ *  than measured against. */
+function parseScan(name: string, buffer: ArrayBuffer, onProgress: (t: string) => void, companions?: ObjCompanions): { parsed: ParsedMesh; step?: StepInfo } {
+  const ext = extensionOf(name)
+  if (ext === 'step' || ext === 'stp') {
+    const imported = parseSTEP(buffer, onProgress, true)
+    return { parsed: imported.mesh, step: imported.info }
+  }
+  return { parsed: parseByName(name, buffer, onProgress, companions) }
 }
 
 /** The reference takes CAD as well as meshes: it is the nominal part, and the
- *  nominal part is what came out of the CAD system in the first place. A scan
- *  never arrives as a B-rep, so this stays on the reference side. */
+ *  nominal part is what came out of the CAD system in the first place. */
 function parseNominal(
   name: string,
   buffer: ArrayBuffer,
@@ -271,14 +297,14 @@ function handle(msg: Exclude<WorkerRequest, { type: 'align-abort' }>): void {
 
   if (msg.type === 'load') {
     try {
-      const parsed = parseByName(msg.name, msg.buffer, progress)
+      const { parsed, step } = parseScan(msg.name, msg.buffer, progress, msg.companions)
       scaleToMm(parsed, msg.scale)
       const candidate = buildMeshGraph(parsed, progress)
       if (msg.transform) {
         rigidApplyToPoints(msg.transform, candidate.positions)
         rigidRotateVectors(msg.transform, candidate.normals)
       }
-      postScan(msg.requestId, candidate, msg.crease, progress)
+      postScan(msg.requestId, candidate, msg.crease, progress, { colors: parsed.colors, texture: parsed.texture, step })
       if (msg.staged) stagedScans.set(msg.requestId, candidate)
       else { graph = candidate; scanSolid = null; scanReplaced() }
     } catch (e) {

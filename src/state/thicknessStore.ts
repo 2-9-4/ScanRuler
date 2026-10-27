@@ -108,7 +108,9 @@ export const useThickness = create<ThicknessState>()((set) => ({
   scaleAuto: true,
   bands: null,
   limit: 1,
-  showHistogram: false,
+  // A wall map is read for how much of the part is thin, not only where — so
+  // the distribution stands beside the scale from the start.
+  showHistogram: true,
 
   begin: () => set({ status: 'running', message: null }),
 

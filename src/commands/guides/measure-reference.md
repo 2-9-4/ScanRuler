@@ -28,7 +28,7 @@ Example: `{ calls: [{ tool: "element_fit", arguments: { kind: "cylinder", at: { 
 **`session_state`** `{}` — the whole session: app and plugins, workspace, `busy`, the scan (file, units, counts, bounding box, centre, size, alignment), elements with fits, dimensions with values and verdicts, sections, deviation, thickness and 2D state, the guided hint, the undo history. Read-only; answers while a change runs.
 Example: `{}`
 
-**`scan_open`** `{ path, name?, units?: "mm" | "cm" | "m" | "in", discard?, wait? }` — an STL, PLY or OBJ as the scan; answers name, units, counts, bounding box, centre, size. Refused over measurements unless `discard: true`. Not undoable.
+**`scan_open`** `{ path, name?, units?: "mm" | "cm" | "m" | "in", discard?, wait? }` — an STL, PLY, OBJ or STEP as the scan; answers name, units, counts, bounding box, centre, size. Refused over measurements unless `discard: true`. Not undoable.
 Example: `{ path: "C:/scans/bracket.stl", units: "mm" }`
 
 **`session_reset`** `{ discard?, wait? }` — closes scan, reference and image. Not undoable.

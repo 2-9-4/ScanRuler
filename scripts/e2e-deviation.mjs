@@ -31,6 +31,14 @@ const { browser, page, consoleErrors } = await launchApp({
   protocolTimeout: 600_000,
 })
 
+// The fit in hand, from the store: the panel does not show the fit's own RMS,
+// which read as the scan's deviation.
+const fitResult = () =>
+  page.evaluate(async () => {
+    const { useDeviation } = await import('/src/state/deviationStore.ts')
+    return useDeviation.getState().align
+  })
+
 // ---- workspace first, then both models from the stage ----------------------
 await page.click('[data-test=workspace-deviation]')
 await page.waitForSelector('[data-test=start-pane]')
@@ -81,7 +89,7 @@ if (!ghostOff) fail('the reference is still shown after the map was measured')
 const scanOn = await page.$eval('[data-test=toggle-scan]', (el) => el.getAttribute('aria-pressed') === 'true')
 if (!scanOn) fail('the scan is not shown after the map was measured')
 
-const rms = await page.$eval('[data-test=align-rms] b', (el) => Number(el.textContent))
+const rms = (await fitResult())?.rms
 const stats = await page.$eval('[data-test=deviation-stats]', (el) =>
   el.textContent.replace(/([a-z%])([A-Z−+±])/g, '$1 | $2'),
 )
@@ -295,7 +303,7 @@ await page.waitForFunction(() => !document.querySelector('[data-test=fitting-chi
   timeout: 300_000,
 })
 await sleep(600)
-console.log('point-pair alignment finished:', await page.$eval('[data-test=align-rms] b', (el) => el.textContent), 'mm rms')
+console.log('point-pair alignment finished:', (await fitResult())?.rms.toFixed(4), 'mm rms')
 await page.screenshot({ path: shotPath('deviation-after-points.png') })
 
 // ---- back to the other workspace ------------------------------------------

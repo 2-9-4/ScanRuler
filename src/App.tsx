@@ -1716,11 +1716,11 @@ export default function App() {
                   ? active.startPane.blurb
                   : onDeviation
                   ? source === 'element'
-                    ? 'Load a scan, fit a plane, cylinder or sphere on it in the 3D Measure workspace, then map how far the surface strays from that ideal. No reference model, no alignment. STL, PLY or OBJ, in millimetres — everything stays in this browser.'
-                    : 'Load both, then best-fit the scan onto the reference and read the difference off the part. Scan as STL, PLY or OBJ in millimetres, reference as any of those or a STEP file straight from CAD — everything stays in this browser.'
+                    ? 'Load a scan, fit a plane, cylinder or sphere on it in the 3D Measure workspace, then map how far the surface strays from that ideal. No reference model, no alignment. STL, PLY, OBJ or STEP, in millimetres — everything stays in this browser.'
+                    : 'Load both, then best-fit the scan onto the reference and read the difference off the part. Scan and reference as STL, PLY, OBJ in millimetres or a STEP file straight from CAD — everything stays in this browser.'
                   : onThickness
-                    ? 'Load a scan and measure how thick its walls are, everywhere at once. No reference model, no alignment. STL, PLY or OBJ, in millimetres — everything stays in this browser.'
-                      : 'Load a scan, then pick features on it to fit spheres, cylinders and planes and measure between them. STL, PLY or OBJ, in millimetres — everything stays in this browser.'
+                    ? 'Load a scan and measure how thick its walls are, everywhere at once. No reference model, no alignment. STL, PLY, OBJ or STEP, in millimetres — everything stays in this browser.'
+                      : 'Load a scan, then pick features on it to fit spheres, cylinders and planes and measure between them. STL, PLY, OBJ or STEP, in millimetres — everything stays in this browser.'
               }
               slots={startSlots}
             />

@@ -19,7 +19,8 @@ import type { VolumeDeviation } from './deviation/volume'
 import { mmPerUnit, type MeshUnits } from './meshUnits'
 import type { StepInfo } from './parsers/step'
 import type { SectionCut } from './section/slice'
-import type { AxialWindow, ElementKind, FitOutput, FitSettings, Vec3 } from './types'
+import type { AxialWindow, ElementKind, FitOutput, FitSettings, TextureNote, Vec3 } from './types'
+import type { ObjCompanions } from './parsers/objTexture'
 import type { FitGuide } from './fit/guide'
 import type { PlaneRegionReport, Segmentation, SegmentOptions } from './fit/segment'
 import type { RayGrid } from './geometry/scanQa'
@@ -42,6 +43,12 @@ export interface LoadedScan extends LoadedMesh {
   /** The vertex each appended copy stands in for — see geometry/crease.ts. */
   copyOf: Uint32Array
   crease: CreaseReport
+  /** The part's own colour per vertex, sRGB bytes — a textured OBJ's. */
+  colors?: Uint8Array
+  /** What became of the texture the file names, when it names one. */
+  texture?: TextureNote
+  /** How a STEP file opened as the scan was converted. */
+  step?: StepInfo
 }
 
 export interface LoadedNominal extends LoadedMesh {
@@ -180,9 +187,12 @@ export class MeshWorkerClient {
     return this.request<LoadedScan>({ type: 'load', requestId, name, buffer, crease }, [buffer])
   }
 
-  async prepareScan(name: string, buffer: ArrayBuffer, crease: CreaseSetting, transform?: Rigid, units: MeshUnits = 'mm'): Promise<{ id: number; mesh: LoadedScan }> {
+  /** `companions` are the files that came with a textured OBJ, its images
+   *  decoded (see app/scanFiles); they are handed over, not copied. */
+  async prepareScan(name: string, buffer: ArrayBuffer, crease: CreaseSetting, transform?: Rigid, units: MeshUnits = 'mm', companions?: ObjCompanions): Promise<{ id: number; mesh: LoadedScan }> {
     const id = this.nextId++
-    const mesh = await this.request<LoadedScan>({ type: 'load', requestId: id, name, buffer, crease, staged: true, transform, scale: mmPerUnit(units) }, [buffer])
+    const transfer: Transferable[] = [buffer, ...(companions?.images.map((img) => img.rgba.buffer as ArrayBuffer) ?? [])]
+    const mesh = await this.request<LoadedScan>({ type: 'load', requestId: id, name, buffer, crease, staged: true, transform, scale: mmPerUnit(units), ...(companions ? { companions } : {}) }, transfer)
     return { id, mesh }
   }
 

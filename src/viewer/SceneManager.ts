@@ -42,6 +42,7 @@ import {
 } from './backfaceTint'
 import {
   surfaceUniform,
+  type SurfaceOwnUniform,
   type SurfaceUniform,
 } from './regionTint'
 import {
@@ -371,6 +372,11 @@ export class SceneManager {
   /** The bare surface colour the shader paints under a region's border, kept
    *  in step with the scheme — see regionTint.ts. */
   private uSurfaceColor: SurfaceUniform = surfaceUniform(DEFAULT_THEME)
+  /** 1 while bare surface wears the scan's own colours (the geometry's
+   *  surface attribute) — set as the mesh is drawn, from whether the
+   *  geometry on screen has them and whether they are to be shown. */
+  private uSurfaceOwn: SurfaceOwnUniform = { value: 0 }
+  private showScanColors = true
 
   /** The mesh mode's switches, the scan's and the reference's: the
    *  triangle edges, drawn in the surface shader — see surfaceModes.ts. */
@@ -881,17 +887,21 @@ export class SceneManager {
     normals: Float32Array,
     wireSlots?: Uint8Array,
     copyOf: Uint32Array = new Uint32Array(0),
+    surface: Uint8Array | null = null,
   ): void {
-    this.prepareMesh(positions, indices, normals, wireSlots, copyOf).commit()
+    this.prepareMesh(positions, indices, normals, wireSlots, copyOf, surface).commit()
   }
 
-  /** Allocate and index a replacement before releasing the current mesh. */
+  /** Allocate and index a replacement before releasing the current mesh.
+   *  `surface` is the part's own colour at each of the scan's vertices,
+   *  sRGB bytes — a textured scan's — worn by bare surface. */
   prepareMesh(
     positions: Float32Array,
     indices: Uint32Array,
     normals: Float32Array,
     wireSlots?: Uint8Array,
     copyOf: Uint32Array = new Uint32Array(0),
+    surface: Uint8Array | null = null,
   ): { commit(): void; dispose(): void } {
     const geometry = new THREE.BufferGeometry()
     const { colors, paint, tint } = this.layOutScan(
@@ -903,6 +913,7 @@ export class SceneManager {
       copyOf,
       null,
       false,
+      surface,
     )
     try { geometry.computeBoundsTree() } catch (e) { geometry.dispose(); throw e }
     const axis = principalAxis(positions)
@@ -914,9 +925,14 @@ export class SceneManager {
       side: THREE.DoubleSide,
     })
     applyFinish(material, this.theme)
-    patchScanShader(material, { backface: this.backface, paintColor: this.uPaintColor, surfaceColor: this.uSurfaceColor, deflect: this.uDeflect, wire: this.wire })
+    patchScanShader(material, { backface: this.backface, paintColor: this.uPaintColor, surfaceColor: this.uSurfaceColor, surfaceOwn: this.uSurfaceOwn, deflect: this.uDeflect, wire: this.wire })
     setSurfaceOpacity(material, this.scanOpacity())
     const mesh = new THREE.Mesh(geometry, material)
+    // The geometry under the mesh changes hands (an edited copy, a resplit),
+    // so whether it has colours of its own is asked as it is drawn.
+    mesh.onBeforeRender = () => {
+      this.uSurfaceOwn.value = this.showScanColors && mesh.geometry.getAttribute('surface') ? 1 : 0
+    }
     return preparedHandle(geometry, material, 'scan', () => {
       this.disposeMesh()
       this.setPreview(null)
@@ -955,11 +971,25 @@ export class SceneManager {
     copyOf: Uint32Array,
     keep: { colors: Uint8Array; paint: Uint8Array; tint: Uint8Array } | null,
     adopt = true,
+    surface: Uint8Array | null = null,
   ): { colors: Uint8Array; paint: Uint8Array; tint: Uint8Array } {
     const vertexCount = positions.length / 3
     const own = vertexCount - copyOf.length
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
     geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3))
+    // The part's own colours, the copies wearing their vertex's.
+    if (surface && surface.length === own * 3) {
+      const rgb = new Uint8Array(vertexCount * 3)
+      rgb.set(surface)
+      for (let i = 0; i < copyOf.length; i++) {
+        const from = copyOf[i] * 3
+        const to = (own + i) * 3
+        rgb[to] = surface[from]
+        rgb[to + 1] = surface[from + 1]
+        rgb[to + 2] = surface[from + 2]
+      }
+      geometry.setAttribute('surface', new THREE.BufferAttribute(rgb, 3, true))
+    } else geometry.deleteAttribute('surface')
     const colors = new Uint8Array(vertexCount * 3)
     if (keep) colors.set(keep.colors.subarray(0, own * 3))
     else {
@@ -1060,6 +1090,8 @@ export class SceneManager {
       tint: this.tintAttr.array as Uint8Array,
       paint: this.paintAttr.array as Uint8Array,
     }
+    const own = geometry.getAttribute('surface')?.array as Uint8Array | undefined
+    const surface = own ? own.slice(0, this.scanVertices * 3) : null
     geometry.disposeBoundsTree?.()
     geometry.dispose()
     const { colors, paint, tint } = this.layOutScan(
@@ -1070,6 +1102,8 @@ export class SceneManager {
       wireSlots,
       copyOf,
       keep,
+      true,
+      surface,
     )
     this.regions.rebind(colors, paint, tint, this.scanVertices)
     // The offsets are the scan's own, laid out again over the new copies.
@@ -1160,6 +1194,13 @@ export class SceneManager {
       setSurfaceOpacity(this.nominalMesh.material as THREE.MeshStandardMaterial, this.nominalOpacity())
     }
     this.updateCaps()
+    this.invalidate()
+  }
+
+  /** Show the scan's own colours on bare surface, or the stage's scan
+   *  colour — for a scan that has colours. A uniform write. */
+  setScanColors(on: boolean): void {
+    this.showScanColors = on
     this.invalidate()
   }
 
@@ -2647,6 +2688,7 @@ export class SceneManager {
     normals: Float32Array,
     wireSlots: Uint8Array | undefined,
     copyOf: Uint32Array,
+    surface: Uint8Array | null = null,
   ): void {
     if (!this.mesh) return
     // A copy of the scan that went is not a copy of this one.
@@ -2659,7 +2701,7 @@ export class SceneManager {
     for (const layer of this.layers) layer.scanReplaced?.()
     geometry.disposeBoundsTree?.()
     geometry.dispose()
-    const { colors, paint, tint } = this.layOutScan(geometry, positions, indices, normals, wireSlots, copyOf, null)
+    const { colors, paint, tint } = this.layOutScan(geometry, positions, indices, normals, wireSlots, copyOf, null, true, surface)
     this.regions.attach(colors, paint, tint, this.scanVertices)
     geometry.computeBoundsTree()
     this.modelRadius = Math.max(geometry.boundingBox!.min.distanceTo(geometry.boundingBox!.max) / 2, 1e-4)

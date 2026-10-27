@@ -54,6 +54,14 @@ const { browser, page, consoleErrors } = await launchApp({
   protocolTimeout: 600_000,
 })
 
+// The fit in hand, from the store: the panel does not show the fit's own RMS,
+// which read as the scan's deviation.
+const fitResult = () =>
+  page.evaluate(async () => {
+    const { useDeviation } = await import('/src/state/deviationStore.ts')
+    return useDeviation.getState().align
+  })
+
 /** What share of a viewport the part covers, and where its silhouette sits —
  *  everything the framing checks are read off. The stage is one flat colour, so
  *  a part pixel is any pixel far enough from it. */
@@ -173,7 +181,7 @@ if (stopShown) {
     'and says so, rather than reporting a failure',
   )
   check(
-    (await page.$('[data-test=align-rms]')) === null,
+    (await fitResult()) === null,
     'a stopped fit leaves no alignment behind',
   )
   check(
@@ -185,7 +193,10 @@ if (stopShown) {
 // The worker has to be usable again straight after — a stopped fit must not
 // leave it wedged.
 await page.click('[data-test=align-auto]')
-await page.waitForSelector('[data-test=align-rms]', { timeout: 300_000 })
+await page.waitForFunction(
+  async () => (await import('/src/state/deviationStore.ts')).useDeviation.getState().align !== null,
+  { timeout: 300_000 },
+)
 await page.waitForFunction(() => !document.querySelector('[data-test=fitting-chip]'), {
   timeout: 300_000,
 })
@@ -297,14 +308,14 @@ const done = await page
   .then(() => true)
   .catch(() => false)
 check(done, 'the picker closes when its fit lands')
-await page.waitForSelector('[data-test=align-rms]', { timeout: 300_000 })
-await sleep(600)
-const note = await page.$eval('.dro-note', (el) => el.textContent.replace(/\s+/g, ' ').trim())
-check(/points selected/.test(note), `the fit reports the surface it was measured on (${note})`)
-check(
-  (await page.$eval('.panel', (el) => el.innerText)).includes('from points'),
-  'and reports that it came from the picked points',
+await page.waitForFunction(
+  async () => (await import('/src/state/deviationStore.ts')).useDeviation.getState().align !== null,
+  { timeout: 300_000 },
 )
+await sleep(600)
+const picked = await fitResult()
+check(picked?.selected > 0, `the fit records the surface it was measured on (${picked?.selected} points)`)
+check(picked?.source === 'points', 'and that it came from the picked points')
 await page.screenshot({ path: shotPath('pick-fit-3-fitted.png') })
 
 // The selection belongs to the session that made it: the picker took it away

@@ -46,9 +46,16 @@ export interface SourceFiles {
   /** `units` is what the bytes' coordinates are in — the mesh was read in
    *  millimetres from them, and is read the same way again from a project or
    *  after a worker restart. Absent means millimetres. */
-  scan: { name: string; bytes: Uint8Array; units?: MeshUnits } | null
+  scan: { name: string; bytes: Uint8Array; units?: MeshUnits; companions?: ScanCompanion[] } | null
   reference: { name: string; bytes: Uint8Array; units?: MeshUnits } | null
   image: { name: string; bytes: Uint8Array } | null
+}
+
+/** A file that came with the scan's — a textured OBJ's material library or
+ *  image (see scanFiles), kept as it came. */
+export interface ScanCompanion {
+  name: string
+  bytes: Uint8Array
 }
 
 export const emptySources = (): SourceFiles => ({ scan: null, reference: null, image: null })
@@ -200,9 +207,17 @@ function coreProject(
   if (sources.scan && s.fileName) {
     const member = `${SCAN_STEM}.${extensionOf(sources.scan.name)}`
     members.push({ name: member, bytes: sources.scan.bytes })
+    // What came with it, each under a member of its own and the name it came
+    // under — the name is how the OBJ and its library find it again.
+    const companions = (sources.scan.companions ?? []).map((c, i) => {
+      const extra = `${SCAN_STEM}-${i + 1}.${extensionOf(c.name)}`
+      members.push({ name: extra, bytes: c.bytes })
+      return { fileName: c.name, member: extra }
+    })
     scan = {
       fileName: s.fileName,
       member,
+      ...(companions.length > 0 ? { companions } : {}),
       ...(sources.scan.units && sources.scan.units !== 'mm' ? { units: sources.scan.units } : {}),
       appliedAlignment: s.appliedAlignment ? rigidToJson(s.appliedAlignment) : null,
       elements: s.elements.map(elementToJson),

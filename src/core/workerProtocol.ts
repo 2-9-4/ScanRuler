@@ -11,7 +11,8 @@ import type { Rigid } from './deviation/rigid'
 import type { VolumeDeviation } from './deviation/volume'
 import type { StepInfo } from './parsers/step'
 import type { ThicknessMethod } from './thickness/thickness'
-import type { AxialWindow, ElementKind, FitOutput, FitSettings, Vec3 } from './types'
+import type { AxialWindow, ElementKind, FitOutput, FitSettings, TextureNote, Vec3 } from './types'
+import type { ObjCompanions } from './parsers/objTexture'
 import type { FitGuide } from './fit/guide'
 import type { RayGrid, RimCircle, ScanRim } from './geometry/scanQa'
 import type { MeshCentroid } from './geometry/centroid'
@@ -26,8 +27,9 @@ export type WorkerRequest =
    *  see geometry/crease.ts. */
   /** `scale` is millimetres per unit of the file — an STL in inches is
    *  25.4 — applied to the coordinates before anything is built on them.
-   *  Absent or 1, the file is taken in millimetres. */
-  | { type: 'load'; requestId: number; name: string; buffer: ArrayBuffer; crease: CreaseSetting; staged?: boolean; transform?: Rigid; scale?: number }
+   *  Absent or 1, the file is taken in millimetres. `companions` are the
+   *  files that came with a textured OBJ, the images decoded. */
+  | { type: 'load'; requestId: number; name: string; buffer: ArrayBuffer; crease: CreaseSetting; staged?: boolean; transform?: Rigid; scale?: number; companions?: ObjCompanions }
   /** Staged imports leave the current scan/reference available until all
    *  members and their render resources have been prepared. Omitted keeps a
    *  slot; null clears it; a number selects a staged load's request id. */
@@ -218,6 +220,13 @@ export type WorkerResponse =
       /** The scan's own vertices — what every region and marking indexes. */
       vertexCount: number
       triangleCount: number
+      /** The part's own colour per vertex (of `vertexCount`), sRGB bytes —
+       *  a textured OBJ's, read off its image. */
+      colors?: Uint8Array
+      /** What became of the texture the file names, when it names one. */
+      texture?: TextureNote
+      /** How a STEP file opened as the scan was converted. */
+      step?: StepInfo
     }
   | { type: 'fit-ok'; requestId: number; result: FitOutput }
   | {

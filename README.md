@@ -68,13 +68,14 @@ current session, but history itself is not stored in project or recovery files.
 
 ### How to use it
 
-1. **Open** your scan (STL, PLY, or OBJ — meshes only), or drag & drop it
-   anywhere in the window. An STL carries no units, so opening one asks
-   what it is in — millimetres, centimetres, metres or inches — and reads it
-   in millimetres; **Don't ask again** makes the answer stand for every STL,
+1. **Open** your scan (STL, PLY, OBJ or STEP), or drag & drop it anywhere
+   in the window. An STL carries no units, so opening one asks what it is
+   in — millimetres, centimetres, metres or inches — and reads it in
+   millimetres; **Don't ask again** makes the answer stand for every STL,
    and **Settings → Files** brings the question back. A PLY or OBJ is taken
-   in millimetres. (CAD goes in the Deviation workspace's reference slot,
-   which also takes STEP, and a STEP file says its own units.)
+   in millimetres, and a STEP file says its own units. A textured scan — an
+   OBJ with its `.mtl` and image — opens in colour when the three are
+   picked or dropped together, or their folder is dropped.
 2. Press **Sphere**, **Cylinder** or **Plane**, then **click a point on that
    feature** in the 3D view. The tool automatically selects the surface around
    your click — the spherical patch without leaking onto the connecting rod,

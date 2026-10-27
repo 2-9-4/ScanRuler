@@ -1,6 +1,6 @@
 {
-  "app": "0.8.0",
-  "saved": "2026-10-26T07:21:55.736Z",
+  "app": "0.8.1",
+  "saved": "2026-10-27T08:19:37.612Z",
   "commands": [
     {
       "name": "align.auto",
@@ -3346,7 +3346,7 @@
     {
       "name": "scan.open",
       "title": "Open a scan",
-      "description": "Open a mesh as the scan to measure — STL, PLY or OBJ — in place of the one there is; everything measured on the old one goes with it, so it refuses while the session holds measurements unless discard is true — the refusal names what the session holds. A reference part opened from a file stays, its alignment and maps gone (referenceKept names it); one the app made from the session’s own work goes with that work (referenceDropped). Returns the scan: name, units, vertex and triangle counts, its bounding box (min and max corners), the box’s centre and its diagonal (size), in millimetres. Not undoable: a new scan starts a new history.",
+      "description": "Open a mesh as the scan to measure — STL, PLY or OBJ, or a STEP part, cut into triangles a few hundred to the part’s diagonal — in place of the one there is; everything measured on the old one goes with it, so it refuses while the session holds measurements unless discard is true — the refusal names what the session holds. A reference part opened from a file stays, its alignment and maps gone (referenceKept names it); one the app made from the session’s own work goes with that work (referenceDropped). Returns the scan: name, units, vertex and triangle counts, its bounding box (min and max corners), the box’s centre and its diagonal (size), in millimetres. Not undoable: a new scan starts a new history.",
       "input": {
         "type": "object",
         "properties": {

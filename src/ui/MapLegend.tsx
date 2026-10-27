@@ -22,6 +22,19 @@ export interface LegendStat {
   wide?: boolean
 }
 
+/** A value called out on the ramp — the edge of a band read differently
+ *  inside the scale: a line across the ramp there, and its figure beside
+ *  it. With `to`, the stretch of the scale from `value` to `to` is marked
+ *  along the ramp's edge as well. */
+export interface LegendMark {
+  value: number
+  to?: number
+  /** The figure beside the line. */
+  label: string
+  /** What the mark and its stretch mean, on hover. */
+  title?: string
+}
+
 /** What the two ends of a signed scale mean, in words. The numbers alone say
  *  "+0.4" and "−0.4" and leave everyone to guess which way that is — so the
  *  scale spells it out, at the end it belongs to. */
@@ -40,6 +53,7 @@ export function MapLegend({
   showHistogram,
   zeroAt,
   ends,
+  marks,
   onLimit,
 }: {
   /** Names this legend's test hooks — one map's legend per workspace. */
@@ -56,6 +70,8 @@ export function MapLegend({
   /** What each end of the ramp means. Omit on an unsigned map, where a large
    *  reading and a small one need no explaining. */
   ends?: LegendEnds
+  /** Values to call out on the ramp. */
+  marks?: LegendMark[]
   /** Makes the two end figures of the scale editable: a click on either
    *  opens it for typing, and the number entered is handed back with the
    *  end it was typed at. Whether the other end follows is the caller's —
@@ -71,6 +87,10 @@ export function MapLegend({
     const fraction = i / (TICKS - 1)
     return { value: scale.low + (scale.high - scale.low) * fraction, fraction }
   })
+  // Placed as the ticks are, by their share of the scale; one at an end
+  // of it, or outside it, is the cap's business.
+  const share = (v: number): number => (v - scale.low) / (scale.high - scale.low || 1)
+  const shown = (marks ?? []).filter((m) => share(m.value) > 0 && share(m.value) < 1)
 
   return (
     <div className="devlegend" data-test={`${id}-legend`}>
@@ -81,24 +101,7 @@ export function MapLegend({
         </div>
       )}
       <div className="devlegend-body">
-        {showHistogram && histogram && (
-          // Shares the ramp's vertical axis, so a bar sits at exactly the
-          // height of the colour it is counting.
-          <div className="devhist" data-test={`${id}-histogram`}>
-            {Array.from(histogram.bins)
-              .map((count, i) => ({ count, i }))
-              .reverse()
-              .map(({ count, i }) => (
-                <div className="devhist-row" key={i}>
-                  <span
-                    style={{
-                      width: histogram.peak ? `${(count / histogram.peak) * 100}%` : 0,
-                    }}
-                  />
-                </div>
-              ))}
-          </div>
-        )}
+        {showHistogram && histogram && <Histogram id={id} histogram={histogram} format={format} />}
         <div className="devramp">
           <div
             className="devramp-cap"
@@ -114,6 +117,18 @@ export function MapLegend({
             style={{ background: cssRgb(caps.low) }}
             title="Beyond the bottom of the scale"
           />
+          {shown.map((m) => {
+            const a = share(m.value)
+            const b = m.to !== undefined ? Math.min(1, Math.max(0, share(m.to))) : a
+            return (
+              <div key={`${m.value}:${m.label}`} title={m.title}>
+                {b !== a && (
+                  <div className="devramp-band" style={{ bottom: `${Math.min(a, b) * 100}%`, height: `${Math.abs(b - a) * 100}%` }} />
+                )}
+                <div className="devramp-mark" data-test={`${id}-mark`} style={{ bottom: `${a * 100}%` }} />
+              </div>
+            )
+          })}
         </div>
         <div className="devticks">
           {ticks.map((t, i) => {
@@ -132,6 +147,11 @@ export function MapLegend({
               </span>
             )
           })}
+          {shown.map((m) => (
+            <span key={`${m.value}:${m.label}`} className="mark" title={m.title} style={{ bottom: `${share(m.value) * 100}%` }}>
+              {m.label}
+            </span>
+          ))}
         </div>
       </div>
       {ends && (
@@ -148,6 +168,64 @@ export function MapLegend({
               <b>{s.value}</b>
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** The distribution beside the ramp. It shares the ramp's vertical axis, so a
+ *  bar sits at exactly the height of the colour it is counting; hovering a
+ *  bar reads out the stretch of the scale it covers and how many points fall
+ *  in it. The end bins also hold everything past the scale, as the caps do,
+ *  so they read open-ended. */
+function Histogram({
+  id,
+  histogram,
+  format,
+}: {
+  id: string
+  histogram: FieldHistogram
+  format: (v: number) => string
+}) {
+  const [hover, setHover] = useState<number | null>(null)
+  const { bins, low, high, peak } = histogram
+  const n = bins.length
+  const step = (high - low) / n
+  let total = 0
+  for (let i = 0; i < n; i++) total += bins[i]
+  const range = (i: number): string =>
+    i === 0
+      ? `under ${format(low + step)}`
+      : i === n - 1
+        ? `${format(high - step)} and over`
+        : `${format(low + i * step)} – ${format(low + (i + 1) * step)}`
+
+  return (
+    <div className="devhist" data-test={`${id}-histogram`} onMouseLeave={() => setHover(null)}>
+      {Array.from(bins)
+        .map((count, i) => ({ count, i }))
+        .reverse()
+        .map(({ count, i }) => (
+          <div
+            className={i === hover ? 'devhist-row hover' : 'devhist-row'}
+            key={i}
+            data-test={`${id}-histogram-bin`}
+            onMouseEnter={() => setHover(i)}
+          >
+            <span style={{ width: peak ? `${(count / peak) * 100}%` : 0 }} />
+          </div>
+        ))}
+      {hover !== null && hover < n && (
+        <div
+          className="devhist-readout"
+          data-test={`${id}-histogram-readout`}
+          style={{ bottom: `calc(3px + (100% - 6px) * ${(hover + 0.5) / n})` }}
+        >
+          <b>{range(hover)}</b>
+          <span>
+            {bins[hover].toLocaleString('en-US')} pts · {total ? ((bins[hover] / total) * 100).toFixed(1) : '0.0'} %
+          </span>
         </div>
       )}
     </div>

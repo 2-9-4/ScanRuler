@@ -3,21 +3,25 @@
 // workspaces, so a scan is opened the same way in either.
 
 import { useRef, type RefObject } from 'react'
-import { MESH_ACCEPT, MESH_FORMATS } from '../core/formats'
+import { SCAN_ACCEPT, SCAN_FORMATS } from '../core/formats'
 import { usePulse } from '../app/useHints'
+import { bundleFiles } from '../app/scanFiles'
 
 /** A file input out of sight, opened through `inputRef` by the key that
  *  stands for it, and emptied after every pick so the same file can come
- *  again. */
-export function HiddenFileInput({ inputRef, accept, onOpen }: { inputRef: RefObject<HTMLInputElement | null>; accept: string; onOpen: (file: File) => void }) {
+ *  again. Several files may be picked where the scan is opened — a
+ *  textured OBJ with its material library and image — and the model among
+ *  them is what opens, the rest riding on it (see app/scanFiles). */
+export function HiddenFileInput({ inputRef, accept, onOpen, multiple = false }: { inputRef: RefObject<HTMLInputElement | null>; accept: string; onOpen: (file: File) => void; multiple?: boolean }) {
   return (
     <input
       ref={inputRef}
       type="file"
       accept={accept}
+      multiple={multiple}
       hidden
       onChange={(e) => {
-        const f = e.target.files?.[0]
+        const f = bundleFiles(Array.from(e.target.files ?? []))
         if (f) onOpen(f)
         e.target.value = ''
       }}
@@ -31,8 +35,8 @@ export function ModelSlot({
   detail,
   dotColor,
   busy,
-  accept = MESH_ACCEPT,
-  formats = MESH_FORMATS,
+  accept = SCAN_ACCEPT,
+  formats = SCAN_FORMATS,
   onOpen,
 }: {
   role: string
@@ -40,7 +44,8 @@ export function ModelSlot({
   detail: string
   dotColor: string
   busy: boolean
-  /** What the file picker offers. The reference slot takes CAD as well. */
+  /** What the file picker offers — the scan's, with a texture's files,
+   *  unless the slot says otherwise. */
   accept?: string
   /** The same list in prose, for the empty slot. */
   formats?: string
@@ -51,7 +56,7 @@ export function ModelSlot({
   const pulse = usePulse(`open-${slot}`)
   return (
     <div className="slot" data-test={`slot-${slot}`}>
-      <HiddenFileInput inputRef={inputRef} accept={accept} onOpen={onOpen} />
+      <HiddenFileInput inputRef={inputRef} accept={accept} onOpen={onOpen} multiple={accept === SCAN_ACCEPT} />
       <span
         className="dot"
         style={{ background: name ? dotColor : 'transparent', borderColor: dotColor }}

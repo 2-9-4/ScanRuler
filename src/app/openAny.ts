@@ -26,8 +26,8 @@ export function openAnyFile(file: File, { openFile, openNominal, openImage, open
   // While the deviation workspace is measuring against a reference part a
   // file fills whichever slot is still empty, so the two files can simply be
   // dropped one after the other; only once both are there does a drop mean
-  // "replace the scan". A STEP file is the exception: it can only ever be
-  // the reference, so it goes there however full the slots are.
+  // "replace the scan". A STEP file is the exception: compared against, it
+  // is the nominal part, so it goes there however full the slots are.
   //
   // Measuring against an element wants no second model at all, so there a
   // drop is always the scan.

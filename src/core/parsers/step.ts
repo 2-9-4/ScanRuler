@@ -48,6 +48,15 @@ export interface StepImport {
  *  bit-identical geometry. */
 const MAX_EDGE_FRACTION = 0.1
 
+/** Max edge length when the file is opened as the scan, as a fraction of
+ *  the diagonal. Opened in a scan's place, the part is worked on as a scan
+ *  is: a fit grows over the vertices it is clicked on, a section or an
+ *  unwrapped panel is read off the triangles — and a flat face of two
+ *  triangles has four corners to give them. A grid of a few hundred edges
+ *  across the part gives them a scan's worth (about 250 000 triangles on a
+ *  cube, fewer on a panel) at a cost the mesh graph takes in its stride. */
+const SCAN_EDGE_FRACTION = 1 / 250
+
 function decode(buffer: ArrayBuffer): string {
   // STEP part 21 is 7-bit ASCII with \X2\ escapes for anything else, but
   // exporters do write UTF-8 straight into product names; decoding as UTF-8
@@ -114,8 +123,10 @@ export function describeConversion(d: ImportDiagnostics, mesh?: { positions: Flo
 }
 
 /** Parse and tessellate a STEP file into the same indexed mesh a scan parser
- *  produces. Coordinates come out in millimetres whatever the file declared. */
-export function parseSTEP(buffer: ArrayBuffer, onProgress?: (text: string) => void): StepImport {
+ *  produces. Coordinates come out in millimetres whatever the file declared.
+ *  `asScan` cuts it as the model to work on rather than the reference to
+ *  measure against — see SCAN_EDGE_FRACTION. */
+export function parseSTEP(buffer: ArrayBuffer, onProgress?: (text: string) => void, asScan = false): StepImport {
   onProgress?.('Reading STEP file…')
   const src = decode(buffer)
   if (!src.slice(0, 4096).includes('ISO-10303-21')) {
@@ -128,7 +139,7 @@ export function parseSTEP(buffer: ArrayBuffer, onProgress?: (text: string) => vo
   const size = estimateStepSize(src)
   const auto = autoTessellation(size?.diag ?? 100)
   const surfaceDeviation = auto.surfaceDeviation
-  const maxEdge = size ? Math.max(size.diag * MAX_EDGE_FRACTION, auto.maxEdge) : auto.maxEdge
+  const maxEdge = size ? Math.max(size.diag * (asScan ? SCAN_EDGE_FRACTION : MAX_EDGE_FRACTION), auto.maxEdge) : auto.maxEdge
 
   // The hook fires once per face and edge; the status strip does not need to
   // hear about every one of them.

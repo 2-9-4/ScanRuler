@@ -174,6 +174,11 @@ interface AppState {
   translucent: boolean
   /** Draw the triangle edges on the scan. */
   wireframe: boolean
+  /** The scan came with colours of its own — a textured OBJ — which bare
+   *  surface wears in place of the stage's scan colour. */
+  scanColors: boolean
+  /** Show those colours, or the plain surface. Kept across scans. */
+  showScanColors: boolean
   /** Id of the mouse navigation scheme (see viewer/navSchemes). Remembered per
    *  browser, because which buttons orbit is a habit from whichever CAD the
    *  user came from, not a property of the part on screen. */
@@ -384,6 +389,7 @@ interface AppState {
   setShowBackfaces: (v: boolean) => void
   setTranslucent: (v: boolean) => void
   setWireframe: (v: boolean) => void
+  setShowScanColors: (v: boolean) => void
   setNavScheme: (id: string) => void
   setViewTheme: (id: string) => void
   setStepStyle: (style: StepStyle) => void
@@ -498,6 +504,8 @@ export const useStore = create<AppState>()((set, get) => ({
   showBackfaces: true,
   translucent: false,
   wireframe: false,
+  scanColors: false,
+  showScanColors: true,
   navScheme: storedNavScheme(),
   viewTheme: storedViewTheme(),
   stepStyle: storedStepStyle(),
@@ -1684,6 +1692,7 @@ export const useStore = create<AppState>()((set, get) => ({
   setShowBackfaces: (showBackfaces) => set({ showBackfaces }),
   setTranslucent: (translucent) => set({ translucent }),
   setWireframe: (wireframe) => set({ wireframe }),
+  setShowScanColors: (showScanColors) => set({ showScanColors }),
   setNavScheme: (navScheme) => {
     try {
       localStorage.setItem(NAV_SCHEME_KEY, navScheme)

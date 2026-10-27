@@ -109,6 +109,7 @@ export function validateProjectParts(raw: unknown): void {
   if (m.scan !== null) {
     const s = object(m.scan, 'scan')
     file(s, 'scan')
+    if (s.companions !== undefined) for (const c of array(s.companions, 'scan.companions')) file(c, 'scan.companions')
     fields(s, 'nextId nextNumber nextDimensionId', 'number', 'scan')
     fields(s, 'selectMode', 'string', 'scan')
     fields(s, 'showOverlays', 'boolean', 'scan')

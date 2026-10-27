@@ -6,7 +6,7 @@ import type * as THREE from 'three'
 import { BACKFACE_GLSL_FRAGMENT, BACKFACE_GLSL_PREAMBLE, type BackfaceUniforms } from './backfaceTint'
 import { DEFLECT_GLSL_VERTEX, DEFLECT_GLSL_VERTEX_BODY, type DeflectionUniform } from './deflection'
 import { PAINT_GLSL_FRAGMENT, PAINT_GLSL_PREAMBLE, PAINT_GLSL_VERTEX, PAINT_GLSL_VERTEX_BODY, type PaintUniform } from './paintTint'
-import { TINT_GLSL_FRAGMENT, TINT_GLSL_PREAMBLE, TINT_GLSL_VERTEX, TINT_GLSL_VERTEX_BODY, type SurfaceUniform } from './regionTint'
+import { TINT_GLSL_FRAGMENT, TINT_GLSL_PREAMBLE, TINT_GLSL_VERTEX, TINT_GLSL_VERTEX_BODY, type SurfaceOwnUniform, type SurfaceUniform } from './regionTint'
 import { spliceWireframe, type WireUniforms } from './surfaceModes'
 
 /** The uniform objects the amendments read — the scene's own, held for its
@@ -15,6 +15,7 @@ export interface ScanShaderUniforms {
   backface: BackfaceUniforms
   paintColor: PaintUniform
   surfaceColor: SurfaceUniform
+  surfaceOwn: SurfaceOwnUniform
   deflect: DeflectionUniform
   wire: WireUniforms
 }
@@ -44,6 +45,7 @@ export function patchScanShader(material: THREE.Material, u: ScanShaderUniforms)
     shader.uniforms.uBackfaceColor = u.backface.uBackfaceColor
     shader.uniforms.uPaintColor = u.paintColor
     shader.uniforms.uSurfaceColor = u.surfaceColor
+    shader.uniforms.uSurfaceOwn = u.surfaceOwn
     shader.uniforms.uDeflect = u.deflect
     shader.vertexShader =
       TINT_GLSL_VERTEX +

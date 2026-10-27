@@ -794,6 +794,14 @@ const ICONS = {
       <path className="i-a" d="M12 10v11M9.5 18.5 12 21l2.5-2.5" />
     </>
   ),
+  scanColours: (
+    <>
+      <path className="i-g" d="M12 3.5c-5 0-8.5 3.6-8.5 8.2 0 4.7 3.6 8.8 8.3 8.8 1.4 0 2.2-.8 2.2-1.9 0-1.4-1.2-1.8-1.2-3 0-1 .8-1.6 1.9-1.6h2.3c2.4 0 4-1.6 4-4 0-3.7-3.8-6.5-9-6.5Z" />
+      <circle className="i-adt" cx="8" cy="11.5" r="1.4" />
+      <circle className="i-dt" cx="10.5" cy="7.5" r="1.4" />
+      <circle className="i-dt" cx="15.5" cy="8" r="1.4" />
+    </>
+  ),
   sectionView: (
     <>
       <path className="i-th i-ft i-ds" d="M9.5 9H15v11H9.5M15 9l5-5v11l-5 5M14.5 4H20" />

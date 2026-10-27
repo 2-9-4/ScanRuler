@@ -53,6 +53,9 @@ export function ViewBar({
   const setTranslucent = useStore((s) => s.setTranslucent)
   const wireframe = useStore((s) => s.wireframe)
   const setWireframe = useStore((s) => s.setWireframe)
+  const scanColors = useStore((s) => s.scanColors)
+  const showScanColors = useStore((s) => s.showScanColors)
+  const setShowScanColors = useStore((s) => s.setShowScanColors)
   const sectionOn = useSectionView((s) => s.on)
   // The elements as a whole, and their labels, are the measure workspace's
   // keys: elsewhere the overlays are the workspace's to show or put away,
@@ -103,6 +106,8 @@ export function ViewBar({
   const scanSeeThrough: ViewSwitch = scanKey?.seeThrough ?? { on: translucent, set: setTranslucent, normal: false }
   const scanMesh: ViewSwitch = { on: wireframe, set: setWireframe, normal: false }
   const scanBackfaces: ViewSwitch = { on: showBackfaces, set: setShowBackfaces, normal: true }
+  // Only a scan that came with colours has the switch.
+  const scanColours: ViewSwitch = { on: showScanColors, set: setShowScanColors, normal: true }
 
   // Inside the scan the reference is a ghost, see-through its own way and
   // never tinted: how it is drawn is the menu's only while it is solid —
@@ -144,7 +149,7 @@ export function ViewBar({
               testId="toggle-scan"
               shown={scanShown}
               title="Show the scan, or put it away. How it is drawn is in the menu over the key"
-              changed={anyChanged([scanSeeThrough, scanMesh, scanBackfaces]) || Boolean(scanKey?.menuChanged)}
+              changed={anyChanged([scanSeeThrough, scanMesh, scanBackfaces, ...(scanColors ? [scanColours] : [])]) || Boolean(scanKey?.menuChanged)}
             >
               <PartOption
                 icon={<Icon name="transparent" size={16} />}
@@ -167,6 +172,15 @@ export function ViewBar({
                 value={scanBackfaces}
                 title="Colour the far side of every triangle — holes in the scan and inverted normals stop looking like solid part"
               />
+              {scanColors && (
+                <PartOption
+                  icon={<Icon name="scanColours" size={16} />}
+                  label="Colours"
+                  testId="toggle-scan-colours"
+                  value={scanColours}
+                  title="Show the scan in the colours it was captured in — its texture — or plain, in the stage's scan colour. Maps and tints are drawn over either"
+                />
+              )}
               {scanKey?.menu}
             </PartKey>
             {onDeviation && onReference && (

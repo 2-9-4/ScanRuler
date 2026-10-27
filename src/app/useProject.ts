@@ -32,6 +32,7 @@ import { useRecovery } from './useRecovery'
 import type { PackedProject } from '../commands/host'
 import type { ImportQueue } from './importQueue'
 import { prepareScan, prepareNominal, prepareImage, runImport, type PreparedScan, type PreparedNominal, type PreparedImage } from './imports'
+import { bundleFiles } from './scanFiles'
 
 export const isProjectFile = (name: string) =>
   name.toLowerCase().endsWith(`.${PROJECT_EXTENSION}`)
@@ -117,6 +118,8 @@ export function useProject({
       }
       // Check every referenced member before allocating candidate geometry.
       const scanFile = manifest.scan && memberFile(manifest.scan.member, readAs(manifest.scan.fileName, manifest.scan.member))
+      // The files that came with it, under the names they came under.
+      const companions = (manifest.scan?.companions ?? []).map((c) => memberFile(c.member, c.fileName))
       const ref = manifest.deviation.reference
       const nominalFile = ref && memberFile(ref.member, ref.fileName)
       const img = manifest.flat.image
@@ -130,7 +133,7 @@ export function useProject({
       // the worker's current scan/reference. Any member may still fail here.
       // A member saved in other units is read in millimetres from them again,
       // the way it was when it came in; the manifest checked the value.
-      if (scanFile) scan = await prepareScan(meshClient, sceneRef.current!, scanFile, creaseSetting(useStore.getState()), alignment ?? undefined, meshUnitsOf(manifest.scan?.units) ?? 'mm')
+      if (scanFile) scan = await prepareScan(meshClient, sceneRef.current!, bundleFiles([scanFile, ...companions])!, creaseSetting(useStore.getState()), alignment ?? undefined, meshUnitsOf(manifest.scan?.units) ?? 'mm')
       if (nominalFile) nominal = await prepareNominal(meshClient, sceneRef.current!, nominalFile, meshUnitsOf(ref?.units) ?? 'mm')
       if (imageFile) image = await prepareImage(imageFile)
 

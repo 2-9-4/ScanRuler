@@ -5,6 +5,57 @@ bar and the imprint is the entry it belongs to; the `.scanruler` projects it
 saves carry the same number as `appVersion`. How a release is cut is in the
 README under "Releases".
 
+## 0.8.1 — 2026-10-27
+
+- **Wall thickness histogram on from the start, and readable** (2026-10-26).
+  The distribution beside the wall thickness scale is shown without being
+  asked for (the panel's checkbox still hides it). Hovering a bar reads out
+  the stretch of the scale it counts, how many points fall in it and their
+  share of the measured ones; the end bars, which also hold everything past
+  the scale, read open-ended. The deviation map's histogram reads out the
+  same way.
+
+- **Told before the scan is replaced** (2026-10-26). When another version
+  of the scan is put in place under the session — an edited one, or the one
+  before it on a step back — the workspaces now hear of it just before the
+  old version leaves the scene (`swapping` beside `swapped` in the scan
+  events), so whatever they placed on its surface can be read off it and
+  carried onto the new one instead of dropped. The map legend can call out
+  a value on its ramp, with the stretch from it to another hatched along
+  the ramp's edge, for a band read differently inside a scale (`marks`).
+  Nothing changes on screen in the app's own workspaces.
+
+- **No fit deviation under Best fit** (2026-10-26). The panel showed the
+  best fit's RMS over the points it sampled, which read as the scan's
+  deviation from the reference — it is not. The map and its statistics are
+  the deviation; the fit's own number is gone from the panel. The warnings
+  for a fit that landed wrong or slides along one surface stay.
+- **Textured scans in colour** (2026-10-26). A scanner that captures colour
+  writes three files: the OBJ, its material library (`.mtl`) and the image.
+  Picked together in any Open dialog, or dropped together or as their
+  folder, they open as one scan that wears its colours. Each vertex takes
+  the image's colour where its texture coordinate points; the scan's grid
+  is about as fine as a scanner's texture, so little is lost. The scan's
+  menu on the view bar gains **Colours**, to show the plain surface
+  instead. Element tints, maps and the marking are drawn over the colours
+  as over the plain surface. An OBJ opened alone opens plain and names the
+  files it still wants. Projects keep the three files and reopen in
+  colour. An edit of the scan is colourless; undoing it brings the colours
+  back.
+- **STEP opens as the scan** (2026-10-26). A STEP file now opens wherever
+  a scan does, not only as the Deviation workspace's reference. It is cut
+  finer than a reference: the reference's flat faces stay a few large
+  triangles, where a scan's place wants vertices to fit on and triangles
+  to cut. Its edges are at most a 250th of the part's diagonal, or the
+  converter's own default where that is finer (about 240 000 triangles on
+  a 20 mm cube). The status line says the chord tolerance it was cut to,
+  and whether surfaces failed to convert. Dropped in the Deviation
+  workspace while a reference is wanted, a STEP file is still taken as the
+  reference.
+- **scanruler-mcp 0.5.0** (2026-10-26): the version for a new group of
+  commands a plugin of the hosted app brings; the server itself is unchanged,
+  and lists them from the page as it does every command.
+
 ## 0.8.0 — 2026-10-26
 
 From an agent's run on a scooter lamp housing (2026-10-25):

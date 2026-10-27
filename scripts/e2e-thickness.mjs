@@ -76,13 +76,31 @@ console.log(`coloured stage: ${(coloured * 100).toFixed(1)} %`)
 if (coloured < 0.05) fail('the thickness map does not appear to be painted on the scan')
 
 // ---- scale controls --------------------------------------------------------
-await page.click('[data-test=toggle-thickness-histogram]')
+// The histogram stands beside the scale without being asked for.
 await page.waitForSelector('[data-test=thickness-histogram]')
-const bars = await page.$$eval('[data-test=thickness-histogram] span', (els) =>
+const bars = await page.$$eval('[data-test=thickness-histogram] .devhist-row span', (els) =>
   els.filter((e) => parseFloat(e.style.width) > 0).length,
 )
 console.log(`histogram bins with counts: ${bars}`)
 if (bars < 3) fail('histogram is empty')
+// Hovering a bar reads out what it counts.
+const fullest = await page.$$eval('[data-test=thickness-histogram-bin] span', (els) =>
+  els.reduce((best, e, i, all) => (parseFloat(e.style.width) > parseFloat(all[best].style.width) ? i : best), 0),
+)
+await (await page.$$('[data-test=thickness-histogram-bin]'))[fullest].hover()
+const readout = await page
+  .waitForSelector('[data-test=thickness-histogram-readout]', { timeout: 2000 })
+  .then((el) => el.evaluate((e) => e.textContent))
+  .catch(() => null)
+await page.screenshot({ path: shotPath('thickness-histogram-hover.png') })
+console.log(`histogram readout: ${readout}`)
+if (!readout || !/pts/.test(readout)) fail('hovering a histogram bar shows no readout')
+await page.mouse.move(5, 5)
+// Off and on again from the panel, as before.
+await page.click('[data-test=toggle-thickness-histogram]')
+if (await page.$('[data-test=thickness-histogram]')) fail('the histogram toggle did not hide it')
+await page.click('[data-test=toggle-thickness-histogram]')
+await page.waitForSelector('[data-test=thickness-histogram]')
 
 // The field commits on blur, and blur only fires on an element that had the
 // focus — so this types the way a person does rather than poking the value in.

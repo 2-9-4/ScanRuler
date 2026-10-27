@@ -27,14 +27,6 @@ import { TargetSection } from './TargetSection'
 import { VolumeSection } from './VolumeSection'
 import type { Vec3 } from '../core/types'
 
-/** How the fit in hand was arrived at, for the readout. */
-const SOURCE_LABEL = {
-  auto: 'automatic',
-  points: 'from points',
-  local: 'local fine fit',
-  built: 'none — built on this scan',
-} as const
-
 const SOURCES: { id: DeviationSource; label: string; what: string }[] = [
   { id: 'reference', label: 'Reference model', what: 'the nominal CAD part, best-fitted onto the scan' },
   { id: 'element', label: 'Fitted element', what: 'a plane, cylinder or sphere measured on this scan' },
@@ -314,10 +306,6 @@ export function DeviationPanel({
               almost always. <b>Align by picking points</b> is the fallback for a part it gets wrong
               — usually one symmetric enough to match the wrong way round.
             </p>
-            <p>
-              The <i>fit deviation</i> it reports is how well the two surfaces agree overall. A
-              large one either means a genuinely off part, or a fit that has landed wrong.
-            </p>
           </InfoDot>
         </div>
         <button
@@ -365,8 +353,8 @@ export function DeviationPanel({
         {d.alignMessage && <p className="alarmtext">{d.alignMessage}</p>}
 
         {/* A reference modelled on the scan stands in the scan's own frame:
-            there is no fit to report, and a row of zeros under "fit
-            deviation" would read as a perfect one. */}
+            no fit was run, which is worth saying since the map then shows
+            the model's own offsets. */}
         {aligned && d.align!.source === 'built' && (
           <p className="hint" data-test="align-built">
             No best fit was run: the reference was modelled on this scan, in its frame, so the map
@@ -375,34 +363,6 @@ export function DeviationPanel({
         )}
         {aligned && (
           <>
-            {d.align!.source !== 'built' && (
-            <div className="dro">
-              <div className="dro-label">
-                <span>Fit deviation</span>
-                <span>{SOURCE_LABEL[d.align!.source]}</span>
-              </div>
-              <div className="dro-window" data-test="align-rms">
-                <b>{d.align!.rms.toFixed(4)}</b>
-                <span>MM RMS</span>
-              </div>
-              <div className="dro-note">
-                {d.align!.matched.toLocaleString('en-US')} of{' '}
-                {d.align!.sampled.toLocaleString('en-US')} sampled points used ·{' '}
-                {d.align!.iterations} passes
-                {d.align!.pairRms !== undefined
-                  ? ` · picked points ${d.align!.pairRms.toFixed(2)} mm`
-                  : ''}
-                {/* The same number, under the name the step that produced it
-                    gave it: surface "marked" for a fine fit, "selected" in the
-                    picker. */}
-                {d.align!.selected !== undefined
-                  ? ` · ${d.align!.selected.toLocaleString('en-US')} points ${
-                      d.align!.source === 'points' ? 'selected' : 'marked'
-                    }`
-                  : ''}
-              </div>
-            </div>
-            )}
             {d.align!.underconstrained && (
               <p className="warnnote">
                 ⚠ The marked surface faces one way only, so the fit could correct the distance

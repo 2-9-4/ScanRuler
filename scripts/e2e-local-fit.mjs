@@ -30,6 +30,14 @@ const { browser, page, consoleErrors } = await launchApp({
   protocolTimeout: 600_000,
 })
 
+// The fit in hand, from the store: the panel does not show the fit's own RMS,
+// which read as the scan's deviation.
+const fitResult = () =>
+  page.evaluate(async () => {
+    const { useDeviation } = await import('/src/state/deviationStore.ts')
+    return useDeviation.getState().align
+  })
+
 // ---- both models, global fit, map -----------------------------------------
 await page.click('[data-test=workspace-deviation]')
 await page.waitForSelector('[data-test=start-pane]')
@@ -51,7 +59,7 @@ await page.waitForFunction(() => !document.querySelector('[data-test=fitting-chi
   timeout: 300_000,
 })
 await sleep(700)
-const globalRms = await page.$eval('[data-test=align-rms] b', (el) => Number(el.textContent))
+const globalRms = (await fitResult())?.rms
 console.log(`global fit: ${globalRms} mm RMS`)
 await page.screenshot({ path: shotPath('local-00-global.png') })
 
@@ -246,15 +254,12 @@ await page.waitForFunction(() => !document.querySelector('[data-test=fitting-chi
   timeout: 300_000,
 })
 await sleep(800)
-const source = await page.$eval('.dro-label span:last-child', (el) => el.textContent)
-const localRms = await page.$eval('[data-test=align-rms] b', (el) => Number(el.textContent))
-console.log(`local fit on ${count} points: ${localRms} mm RMS, reported as "${source}"`)
-check(source === 'local fine fit', 'the readout says the fit came from the marked surface')
+const localFit = await fitResult()
+const localRms = localFit?.rms
+console.log(`local fit on ${count} points: ${localRms} mm RMS, source "${localFit?.source}"`)
+check(localFit?.source === 'local', 'the fit is recorded as coming from the marked surface')
 check(localRms > 0 && localRms < 1, 'the local fit converged')
-check(
-  await page.$eval('[data-test=align-rms] + .dro-note', (el) => /points marked/.test(el.textContent)),
-  'the readout says how much surface the fit used',
-)
+check(localFit?.selected > 0, 'the fit records how much surface it used')
 check(Boolean(await page.$('[data-test=deviation-legend]')), 'the map was measured again')
 await page.screenshot({ path: shotPath('local-06-fitted.png') })
 
@@ -273,7 +278,7 @@ await page.waitForFunction(() => !document.querySelector('[data-test=fitting-chi
   timeout: 300_000,
 })
 await sleep(700)
-const backTo = await page.$eval('[data-test=align-rms] b', (el) => Number(el.textContent))
+const backTo = (await fitResult())?.rms
 console.log(`back to the global fit: ${backTo} mm RMS`)
 check(backTo === globalRms, 'the global fit comes back exactly as it was')
 check(
