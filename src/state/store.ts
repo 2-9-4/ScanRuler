@@ -53,7 +53,6 @@ import {
   axisOfFrame,
   canCutAlong,
   cutAxisOf,
-  frameKey,
   isRadialRef,
   isWorldAxis,
   sectionRefAxis,
@@ -81,7 +80,7 @@ import type {
 } from '../core/types'
 import { blockedRefs, defaultMethod, dependentsOf, type DimensionDraft, type Draft, draftFromElement, type Element, elementColor, evalConstructDraft, freshCounters, freshDraft, keptOf, nextPointPick, reevaluateConstructions, type SelectMode, transformSource, withoutRegion } from './elementModel'
 import { type AlignDraft, type AlignmentProposal, alignSlotPicks, withSlotPicks, withSlotRef } from './alignModel'
-import { dimensionRefsOf, type Section, type SectionDraft, sectionDraftReady, settleSectionDraft } from './sectionModel'
+import { dimensionRefsOf, type Section, type SectionDraft, sectionDraftReady, sectionKeyOf, type SectionKind, specFields, settleSectionDraft } from './sectionModel'
 export { type Section, type SectionDraft, sectionDraftColorOf, sectionDraftReady } from './sectionModel'
 export { alignCenterOf, type AlignDraft, alignmentPreview, type AlignmentProposal, type AlignPreview, alignSlotPicks } from './alignModel'
 export { blockedRefs, type DimensionDraft, type Draft, draftColorOf, draftHolds, type Element, orientedDraft, picksItsPoints, type SelectMode } from './elementModel'
@@ -311,6 +310,12 @@ interface AppState {
    *  taken from and the direction its tilt is read against. */
   setSectionDraftAxis: (axis: CutAxis) => void
   setSectionDraftName: (name: string) => void
+  /** Cut or shadow: the same plane, the scan through it or projected onto
+   *  it. */
+  setSectionDraftKind: (kind: SectionKind) => void
+  /** A shadow's play and tolerance (mm) and whether it is extruded; a value
+   *  that is not a number is ignored. */
+  setSectionDraftShadow: (patch: { play?: number; tolerance?: number; smoothDeg?: number; extrude?: boolean }) => void
   /** The worker's cut for the frame keyed `cutKey`. A cut for a frame the
    *  draft has since moved on from is kept as the preview until the next one
    *  lands, but does not make the draft ready. */
@@ -1142,6 +1147,7 @@ export const useStore = create<AppState>()((set, get) => ({
           cutKey: sec.cutKey,
           editId: sec.id,
           name: sec.name,
+          ...specFields(sec),
         }),
         draft: null,
         discarded: keptOf(s.draft),
@@ -1205,6 +1211,26 @@ export const useStore = create<AppState>()((set, get) => ({
   setSectionDraftName: (name) =>
     set((s) => (s.sectionDraft ? { sectionDraft: { ...s.sectionDraft, name } } : {})),
 
+  setSectionDraftKind: (kind) =>
+    set((s) => {
+      const d = s.sectionDraft
+      if (!d || (d.kind ?? 'cut') === kind) return {}
+      // The other kind's cut is no preview of this one.
+      return { sectionDraft: settleSectionDraft({ ...d, kind, cut: undefined, cutKey: undefined }) }
+    }),
+
+  setSectionDraftShadow: (patch) =>
+    set((s) => {
+      const d = s.sectionDraft
+      if (!d) return {}
+      const next = { ...d }
+      if (patch.play !== undefined && Number.isFinite(patch.play)) next.play = patch.play
+      if (patch.tolerance !== undefined && Number.isFinite(patch.tolerance) && patch.tolerance > 0) next.tolerance = patch.tolerance
+      if (patch.smoothDeg !== undefined && Number.isFinite(patch.smoothDeg) && patch.smoothDeg >= 0) next.smoothDeg = Math.min(patch.smoothDeg, 180)
+      if (patch.extrude !== undefined) next.extrude = patch.extrude
+      return { sectionDraft: settleSectionDraft(next) }
+    }),
+
   resolveSectionDraft: (cutKey, cut) =>
     set((s) => {
       const d = s.sectionDraft
@@ -1222,26 +1248,28 @@ export const useStore = create<AppState>()((set, get) => ({
     if (!d || !sectionDraftReady(d) || !d.frame || !d.cut) return null
     const frame = d.frame
     const cut = d.cut
-    const cutKey = frameKey(frame)
+    const cutKey = sectionKeyOf(frame, d)
     if (d.editId !== undefined) {
       const editId = d.editId
       set((s) => ({
         sectionDraft: null,
-        sections: s.sections.map((sec) =>
-          sec.id === editId
-            ? {
-                ...sec,
-                name: d.name?.trim() || sec.name,
-                frame,
-                ref: d.ref,
-                refDir: d.refDir,
-                offset: d.offset,
-                cut,
-                cutKey,
-                message: undefined,
-              }
-            : sec,
-        ),
+        sections: s.sections.map((sec) => {
+          if (sec.id !== editId) return sec
+          // The kind and its settings are the draft's, a cut's absent.
+          const { kind: _kind, play: _play, tolerance: _tolerance, smoothDeg: _smooth, extrude: _extrude, ...rest } = sec
+          return {
+            ...rest,
+            ...specFields(d),
+            name: d.name?.trim() || sec.name,
+            frame,
+            ref: d.ref,
+            refDir: d.refDir,
+            offset: d.offset,
+            cut,
+            cutKey,
+            message: undefined,
+          }
+        }),
       }))
       return editId
     }
@@ -1264,6 +1292,7 @@ export const useStore = create<AppState>()((set, get) => ({
           ref: d.ref,
           refDir: d.refDir,
           offset: d.offset,
+          ...specFields(d),
           cut,
           cutKey,
         },
@@ -1306,7 +1335,7 @@ export const useStore = create<AppState>()((set, get) => ({
   resolveSection: (id, cutKey, cut) =>
     set((s) => ({
       sections: s.sections.map((sec) =>
-        sec.id === id && frameKey(sec.frame) === cutKey
+        sec.id === id && sectionKeyOf(sec.frame, sec) === cutKey
           ? { ...sec, cut, cutKey, message: undefined }
           : sec,
       ),
@@ -1418,7 +1447,7 @@ export const useStore = create<AppState>()((set, get) => ({
           frame,
           refDir: turn(sec.refDir),
           cut: sec.cut ? transformCut(sec.cut, m) : undefined,
-          cutKey: sec.cut ? frameKey(frame) : undefined,
+          cutKey: sec.cut ? sectionKeyOf(frame, sec) : undefined,
         }
       }
       const moveDraft = (d: SectionDraft): SectionDraft => {
@@ -1430,7 +1459,7 @@ export const useStore = create<AppState>()((set, get) => ({
           seedU: turn(d.seedU),
           frame,
           cut: d.cut ? transformCut(d.cut, m) : undefined,
-          cutKey: d.cut && frame ? frameKey(frame) : undefined,
+          cutKey: d.cut && frame ? sectionKeyOf(frame, d) : undefined,
         })
       }
       return {

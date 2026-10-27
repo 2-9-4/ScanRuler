@@ -31,6 +31,10 @@ export interface FlatDrawingInput {
   /** Document units per chain unit: mm per pixel on an image, 1 on a
    *  section. */
   chainUnit: { x: number; y: number }
+  /** The edges as lines, arcs and circles in document units, written in
+   *  place of the chains where given — an outline already read the way a
+   *  sketch is drawn, which a polyline would only approximate. */
+  edgePieces?: readonly FlatFit[] | null
   elements: readonly FlatDrawingElement[]
   /** The text notes on the sheet, each a line written from its spot
    *  (document units) up and to the right, as the stage anchors it. */

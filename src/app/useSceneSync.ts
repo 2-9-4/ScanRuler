@@ -23,7 +23,7 @@ import {
   useStore,
   orientedDraft,
 } from '../state/store'
-import { dimensionRefsOf } from '../state/sectionModel'
+import { dimensionRefsOf, isExtruded } from '../state/sectionModel'
 import type {
   SceneManager,
   OverlayAngle,
@@ -451,6 +451,7 @@ export function useSceneSync({
           elements: sectionElementsOf(flat, sec.id)
             .filter((el) => el.visible && el.fit)
             .map((el) => liftFlatFit(sec.frame, el.fit!)),
+          ...(isExtruded(sec) ? { extrude: true } : {}),
         })),
       showElements && !elementsKeyHides,
     )
@@ -472,9 +473,10 @@ export function useSceneSync({
   const sectionFrame = sectionDraft?.frame ?? null
   const sectionCut = sectionDraft?.cut ?? null
   const sectionColor = useStore(sectionDraftColorOf)
+  const sectionBlock = sectionDraft !== null && isExtruded(sectionDraft)
   useEffect(() => {
-    sceneRef.current?.setSectionPreview(sectionFrame, sectionCut, sectionColor)
-  }, [sectionFrame, sectionCut, sectionColor])
+    sceneRef.current?.setSectionPreview(sectionFrame, sectionCut, sectionColor, sectionBlock)
+  }, [sectionFrame, sectionCut, sectionColor, sectionBlock])
 
   // The section view: every part on the stage cut open at its plane, with
   // the gizmo that slides and tilts it — which a section being made takes

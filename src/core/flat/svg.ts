@@ -131,14 +131,16 @@ export function buildFlatSvg(r: FlatDrawingInput): string {
     `  <desc>${esc(
       `${r.scaleNote}. One unit is one ${r.unit === 'mm' ? 'millimetre' : 'image pixel'}; ` +
         `y runs down and the origin is the top-left corner of the sheet as shown${describeRoll(r.alignDir, r.turns, r.mirror)}. ` +
-        'Layers: edges (the detected edge chains), elements (the fitted geometry), labels (names, readings and notes).',
+        `Layers: edges (${r.edgePieces ? 'the outline as lines, arcs and circles' : 'the detected edge chains'}), elements (the fitted geometry), labels (names, readings and notes).`,
     )}</desc>`,
   )
 
   out.push(
     `  <g id="edges" fill="none" stroke="${DRAWING_EDGE_COLOR}" stroke-width="${n(edgeWidth)}" stroke-linecap="round" stroke-linejoin="round">`,
   )
-  if (r.chains) {
+  if (r.edgePieces) {
+    for (const fit of r.edgePieces) for (const s of shapes(fit)) out.push(`    ${s}`)
+  } else if (r.chains) {
     const { points, offsets } = r.chains
     for (let c = 0; c + 1 < offsets.length; c++) {
       const a = offsets[c]

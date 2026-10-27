@@ -9,7 +9,7 @@ import { useFlat } from '../../state/flatStore'
 import { sectionDraftReady, useStore, type Section } from '../../state/store'
 import { commandHost } from '../host'
 import { elementRefSchema, findElement, parsePlaneName, refOf, requireScan, type ElementRef } from '../refs'
-import { arr, enumOf, int, num, obj, oneOf, str, vec3 } from '../schema'
+import { arr, bool, enumOf, int, num, obj, oneOf, str, vec3 } from '../schema'
 import { describeSection } from '../state'
 import { CommandError, type Command } from '../types'
 import { findSheetPlane, sectionLayers, type SectionOutline, type SectionPiece, type SectionSheet } from '../sectionLayers'
@@ -38,11 +38,11 @@ function radialRefOf(across: RadialIn): SectionPlaneRef {
   return { axis: el.id, angleDeg }
 }
 
-const cut: Command<{ across: ElementRef | RadialIn; offset?: number; name?: string }> = {
+const cut: Command<{ across: ElementRef | RadialIn; offset?: number; name?: string; kind?: 'cut' | 'shadow'; play?: number; tolerance?: number; smoothDeg?: number; extrude?: boolean }> = {
   name: 'cut',
   title: 'Cut a section',
   description:
-    'Cut the scan with a plane and keep the cut as a section, measured in the 2D workspace (flat) — where it is put on the sheet. across is what the plane is taken across: an element with a direction (a plane, cylinder, cone, line or circle) by id or name, or a coordinate plane "XY", "YZ" or "XZ" (also "ZX"), which is laid through the part’s centre. Or { axis, angleDeg }: a plane through an axis — a cylinder’s, cone’s, line’s or circle’s, by id or name, or the coordinate axis "X", "Y" or "Z" through the origin — turned angleDeg about it: a half section of a turned part, u the distance out from the axis and v up it (towards the + end of the coordinate axis it lies nearest, whichever way the element points), normal u × v, at every angle. 0° is the coordinate axis next round (X about Z, Y about X, Z about Y) and the angle turns by the right hand about the axis — about Z, from +X towards +Y. offset slides the plane along its normal, mm — from the element, or for a coordinate plane the coordinate itself; through an axis, 0 by default. Returns the section: its plane and how many chains the cut has. One undo step.',
+    'Cut the scan with a plane and keep the cut as a section, measured in the 2D workspace (flat) — where it is put on the sheet. across is what the plane is taken across: an element with a direction (a plane, cylinder, cone, line or circle) by id or name, or a coordinate plane "XY", "YZ" or "XZ" (also "ZX"), which is laid through the part’s centre. Or { axis, angleDeg }: a plane through an axis — a cylinder’s, cone’s, line’s or circle’s, by id or name, or the coordinate axis "X", "Y" or "Z" through the origin — turned angleDeg about it: a half section of a turned part, u the distance out from the axis and v up it (towards the + end of the coordinate axis it lies nearest, whichever way the element points), normal u × v, at every angle. 0° is the coordinate axis next round (X about Z, Y about X, Z about Y) and the angle turns by the right hand about the axis — about Z, from +X towards +Y. offset slides the plane along its normal, mm — from the element, or for a coordinate plane the coordinate itself; through an axis, 0 by default. kind "shadow" keeps the scan’s shadow instead of its cut: the whole part projected along the plane’s normal onto the plane, its outer boundary as closed loops (holes marked) — the widest outline, every indentation filled, for a bin, a foam cutout or a pocket — read as lines and arcs to tolerance (mm, 0.1 by default) and lying between play and play + 2·tolerance outside the part’s exact silhouette (play in mm, 1 by default; 0 for none, negative is a press fit); where two lines meet turning by less than smoothDeg (30° by default, 0 for none) the corner is rounded by an arc tangent to both, sharper ones kept; the plane only places the loops; extrude (true by default; false keeps it flat) stands it up as a block through the part’s thickness along the normal (the part’s lowest point to its highest), drawn in 3D and written by export.step as a solid in the solids form, a planar face per end and a face per line or arc. Returns the section: its plane and how many chains the cut has — for a shadow also its loops, area and the band it lies in. One undo step.',
   input: obj(
     {
       across: oneOf(
@@ -62,13 +62,21 @@ const cut: Command<{ across: ElementRef | RadialIn; offset?: number; name?: stri
       ),
       offset: num('Where along the normal the plane lies, mm.'),
       name: str('A name for it; otherwise it is numbered — "Section 2".', { minLength: 1 }),
+      kind: enumOf(['cut', 'shadow'], 'cut (the default): the scan where the plane passes through it; shadow: the whole scan projected onto the plane.'),
+      play: num('A shadow’s clearance outside the part, mm; negative is a press fit. 1 by default.'),
+      tolerance: num('What a shadow’s outline is read to as lines and arcs, mm. 0.1 by default.', { exclusiveMinimum: 0 }),
+      smoothDeg: num('A shadow’s corners turning by less than this are rounded, degrees; 30 by default, 0 keeps every corner sharp.', { minimum: 0, maximum: 180 }),
+      extrude: bool('A shadow stood up through the part’s thickness as a block, for the STEP export. true by default.'),
     },
     ['across'],
   ),
   label: () => 'cut section',
-  run: async ({ across, offset, name }) => {
+  run: async ({ across, offset, name, kind, play, tolerance, smoothDeg, extrude }) => {
     requireScan()
     requireMeasureFree()
+    if (kind !== 'shadow' && (play !== undefined || tolerance !== undefined || smoothDeg !== undefined || extrude !== undefined)) {
+      throw new CommandError('invalid_input', 'play, tolerance, smoothDeg and extrude are a shadow’s — give kind "shadow" with them.')
+    }
     let ref: SectionPlaneRef
     const world = typeof across === 'string' ? parsePlaneName(across) : null
     if (world) ref = world
@@ -87,10 +95,17 @@ const cut: Command<{ across: ElementRef | RadialIn; offset?: number; name?: stri
       useStore.getState().setSectionDraftRef(ref)
       if (!useStore.getState().sectionDraft?.axis) throw new CommandError('invalid_input', 'That cannot be cut across.')
       if (offset !== undefined) useStore.getState().setSectionDraftOffset(offset)
+      if (kind === 'shadow') {
+        useStore.getState().setSectionDraftKind('shadow')
+        useStore.getState().setSectionDraftShadow({ play, tolerance, smoothDeg, extrude })
+      }
       await sections.pumpDraft()
       const d = useStore.getState().sectionDraft
       if (!sectionDraftReady(d)) {
-        throw new CommandError('failed', d?.message ?? 'The plane misses the scan — there is nothing to cut there.')
+        throw new CommandError(
+          'failed',
+          d?.message ?? (kind === 'shadow' ? 'The scan casts no shadow on that plane — seen along its normal it has no area (a sheet edge-on).' : 'The plane misses the scan — there is nothing to cut there.'),
+        )
       }
       const id = useStore.getState().commitSection()
       if (id === null) throw new CommandError('failed', 'The section could not be made.')

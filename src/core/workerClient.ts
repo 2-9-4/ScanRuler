@@ -18,6 +18,7 @@ import type { Rigid } from './deviation/rigid'
 import type { VolumeDeviation } from './deviation/volume'
 import { mmPerUnit, type MeshUnits } from './meshUnits'
 import type { StepInfo } from './parsers/step'
+import type { SectionFrame } from './section/frame'
 import type { SectionCut } from './section/slice'
 import type { AxialWindow, ElementKind, FitOutput, FitSettings, TextureNote, Vec3 } from './types'
 import type { ObjCompanions } from './parsers/objTexture'
@@ -419,6 +420,24 @@ export class MeshWorkerClient {
       minLength,
     })
     return { points: res.points, offsets: res.offsets, ...(res.normals ? { normals: res.normals } : {}) }
+  }
+
+  /** The scan's shadow on the frame's plane — its outline seen along the
+   *  normal, read as lines and arcs `play` mm outside the part to
+   *  `tolerance`, corners turning by less than `smoothDeg` rounded — as
+   *  closed polylines in scan coordinates, with the pieces and figures as
+   *  `shadow`. */
+  async shadow(frame: SectionFrame, tolerance: number, play: number, smoothDeg: number): Promise<SectionCut> {
+    const requestId = this.nextId++
+    const res = await this.request<Extract<WorkerResponse, { type: 'section-ok' }>>({
+      type: 'shadow',
+      requestId,
+      frame,
+      tolerance,
+      play,
+      smoothDeg,
+    })
+    return { points: res.points, offsets: res.offsets, ...(res.normals ? { normals: res.normals } : {}), ...(res.shadow ? { shadow: res.shadow } : {}) }
   }
 
   /** The centroid of the volume the scan encloses, on the scan as it now

@@ -7,6 +7,8 @@ import { sectionElementsOf, useFlat } from '../state/flatStore'
 import { usePulse } from '../app/useHints'
 import { ELEMENT_KINDS, elementKindInfo } from '../core/elements/kinds'
 import { describeCut, sectionRefName, tiltOf } from '../core/section/frame'
+import { describeShadow } from '../core/section/shadow'
+import { isExtruded } from '../state/sectionModel'
 import { cutSummary } from '../core/section/slice'
 import { formatPrimary } from '../core/summary'
 import type { CloudFormat } from '../core/exportPointCloud'
@@ -136,6 +138,8 @@ export function Panel({
     ).length
   const anyMeasuredOnSections = sections.some((sec) => measuredOn(sec.id) > 0)
   const stepStyle = useStore((s) => s.stepStyle)
+  // An extruded shadow is a solid of its own, in the solids form.
+  const anyBlock = stepStyle === 'solids' && sections.some((sec) => isExtruded(sec) && sec.cut?.shadow)
   const setStepStyle = useStore((s) => s.setStepStyle)
   const cloudFormat = useStore((s) => s.cloudFormat)
   const setCloudFormat = useStore((s) => s.setCloudFormat)
@@ -363,8 +367,10 @@ export function Panel({
               sectionRefName(sec.ref, elements),
               sec.offset,
               tiltOf(sec.refDir, sec.frame.normal),
+              sec.kind,
             )
             const chains = sec.cut ? cutSummary(sec.cut).chains : 0
+            const shadow = sec.cut?.shadow ? describeShadow(sec.cut.shadow) : null
             const measured = measuredOn(sec.id)
             return (
               <ElementRow
@@ -376,7 +382,7 @@ export function Panel({
                 reading={
                   sec.cut ? (
                     <b title={where}>
-                      {chains} edge{chains === 1 ? '' : 's'}
+                      {shadow ? `${shadow.loops} · ${shadow.area}` : `${chains} edge${chains === 1 ? '' : 's'}`}
                       {measured > 0 && ` · ${measured} element${measured === 1 ? '' : 's'}`}
                     </b>
                   ) : sec.message ? (
@@ -386,7 +392,7 @@ export function Panel({
                   ) : (
                     <b className="working">
                       <span className="spinner" />
-                      cutting
+                      {sec.kind === 'shadow' ? 'projecting' : 'cutting'}
                     </b>
                   )
                 }
@@ -486,9 +492,9 @@ export function Panel({
             />
             <button
               data-test="export-step"
-              disabled={elements.every((e) => !e.fit) && !anyMeasuredOnSections}
+              disabled={elements.every((e) => !e.fit) && !anyMeasuredOnSections && !anyBlock}
               onClick={onExportStep}
-              title="Export the created elements — and what was measured on the sections — as analytic geometry in a STEP file"
+              title="Export the created elements — and what was measured on the sections, and the extruded shadows — as analytic geometry in a STEP file"
             >
               Export STEP
             </button>

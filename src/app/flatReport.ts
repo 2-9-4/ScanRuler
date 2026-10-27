@@ -26,8 +26,9 @@ function activeSectionInfo(): FlatReportInput['section'] {
     sectionRefName(sec.ref, store.elements),
     sec.offset,
     tiltOf(sec.refDir, sec.frame.normal),
+    sec.kind,
   )
-  return { name: sec.name, scanName: store.fileName ?? 'scan', cut: where }
+  return { name: sec.name, scanName: store.fileName ?? 'scan', cut: where, ...(sec.kind === 'shadow' ? { kind: 'shadow' as const } : {}) }
 }
 
 /** Everything the 2D report and CSV need, gathered once. */
@@ -69,11 +70,14 @@ export function buildFlatCsvFile(): BuiltFile {
  *  format did something to them, and a reason when there are none. */
 export function drawnSummary(input: FlatDrawingInput, edgeNote = '', showEdges = useFlat.getState().showEdges): string {
   const chains = input.chains ? chainCount(input.chains) : 0
-  const edges = chains
-    ? `${chains.toLocaleString('en-US')} edge chain${chains === 1 ? '' : 's'}${edgeNote ? ` ${edgeNote}` : ''}`
-    : showEdges
-      ? 'no edges'
-      : 'the edges hidden'
+  const pieces = input.edgePieces?.length ?? 0
+  const edges = input.edgePieces
+    ? `${pieces.toLocaleString('en-US')} outline piece${pieces === 1 ? '' : 's'} (lines and arcs)`
+    : chains
+      ? `${chains.toLocaleString('en-US')} edge chain${chains === 1 ? '' : 's'}${edgeNote ? ` ${edgeNote}` : ''}`
+      : showEdges
+        ? 'no edges'
+        : 'the edges hidden'
   const n = input.elements.length
   return `${edges} and ${n} element${n === 1 ? '' : 's'}`
 }

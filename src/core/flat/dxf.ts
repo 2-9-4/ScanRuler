@@ -213,8 +213,9 @@ export function buildFlatDxf(r: FlatDxfInput): string {
   }
 
   // The edges: one LWPOLYLINE per chain, thinned. A chain that ends on its
-  // own first point is a closed polyline.
-  if (r.chains) {
+  // own first point is a closed polyline. Edges handed over as lines and
+  // arcs are written as those instead, after the shapes below are defined.
+  if (r.chains && !r.edgePieces) {
     const { points, offsets } = r.chains
     const { x: ux, y: uy } = r.chainUnit
     // The tolerance is in document units; the chain is judged in its own.
@@ -317,6 +318,8 @@ export function buildFlatDxf(r: FlatDxfInput): string {
     ])
   }
 
+  for (const fit of r.edgePieces ?? []) for (const s of shapes(fit)) entity(s.type, DXF_LAYERS.edges, null, s.body)
+
   for (const el of r.elements) {
     const rgb = trueColor(el.color)
     for (const s of shapes(el.fit)) entity(s.type, DXF_LAYERS.elements, rgb, s.body)
@@ -358,8 +361,10 @@ export function buildFlatDxf(r: FlatDxfInput): string {
       }${describeRoll(r.alignDir, r.turns, r.mirror).replace(/^, /, '; ')}`,
     ),
     comment(
-      `Layers: edges (the detected edge chains${
-        r.edgeTolerance > 0 ? `, thinned to ${num(r.edgeTolerance, 4)} ${r.unit}` : ''
+      `Layers: edges (${
+        r.edgePieces
+          ? 'the outline as lines, arcs and circles'
+          : `the detected edge chains${r.edgeTolerance > 0 ? `, thinned to ${num(r.edgeTolerance, 4)} ${r.unit}` : ''}`
       }), elements (the fitted geometry), labels (names, readings and notes)`,
     ),
     group(0, 'SECTION'),

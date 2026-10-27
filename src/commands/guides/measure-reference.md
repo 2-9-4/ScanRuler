@@ -104,7 +104,7 @@ Example: `{ dimension: 4 }`
 
 ### Sections and the 2D sheet
 
-**`section_cut`** `{ across: element | "XY" | "YZ" | "XZ", offset?, name?, wait? }` — keeps a section; a coordinate plane goes through the part's centre unless `offset` gives the coordinate. Answers its plane and chain count.
+**`section_cut`** `{ across: element | "XY" | "YZ" | "XZ", offset?, name?, kind?: "cut" | "shadow", play?, tolerance?, smoothDeg?, extrude?, wait? }` — keeps a section; a coordinate plane goes through the part's centre unless `offset` gives the coordinate. Answers its plane and chain count; a shadow also its `play`, `tolerance`, `smoothDeg`, `loops` (hole, pieces), `areaMm2`, `outside` { min, max } and `extent` along the normal.
 Example: `{ across: "XY", offset: 6.5, name: "Mid height" }`
 
 **`section_get`** `{ section, chains?, space?: "sheet" | "world" | "both", limit? }` — each chain's points in order ([u, v] mm on the section plane; [x, y, z] with world), closed or not, length, box, and the plane (origin, normal, basisU, basisV: a sheet point is origin + u·basisU + v·basisV). 4000 points by default, 50000 at most.
@@ -251,6 +251,7 @@ A refusal is `code: message`.
 | **invalid_state** "The history no longer holds the step the checkpoint was made on" | `history_restore` after the mark was undone or the history restarted | Nothing was undone; read the state |
 | **failed** | Ran and did not succeed: a fit that found no surface, a file that would not read | Read the message; move the seed or change the input |
 | **failed** "The plane misses the scan" | `section_cut` offset outside the part | A coordinate within the bounding box |
+| **failed** "The scan casts no shadow on that plane" | `kind: "shadow"` on a plane the scan is seen edge-on from (a sheet) | Another plane, or a cut |
 | **failed** "Gave up waiting for … after N s" | The app did not settle in time | `scanruler_wait { for: "idle" }`, read the state before retrying |
 | **unavailable** "… needs the ScanRuler page" | A headless server: no scan, viewport or browser | Start scanruler-mcp in page mode, paired with a tab |
 | **unavailable** "No ScanRuler page is connected" | No tab paired | `scanruler_open` |

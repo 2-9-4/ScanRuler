@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Measured elements as topology rather than as loose surfaces: a plane becomes
-// a bounded planar face, a cylinder and a sphere become closed solids.
+// a bounded planar face, a cylinder and a sphere become closed solids, and an
+// outline on a section's sheet stood up through a height a block.
 //
 // Why it matters. A RECTANGULAR_TRIMMED_SURFACE in a geometric set is legal
 // STEP and every kernel can read it, but it arrives in CAD as construction
@@ -16,6 +17,7 @@
 // material, which fixes each loop's direction in turn — and every edge ends up
 // used exactly twice, once each way, which is what makes the shell manifold.
 
+import type { ShadowPiece } from './section/shadow'
 import type { ConeFit, CylinderFit, PlaneFit, SphereFit, TorusFit, Vec3 } from './types'
 import { addScaled, cross, normalize, sub } from './vec'
 import { orthoBasis } from './fit/linalg'
@@ -259,5 +261,133 @@ export function writeSphereSolid(w: StepWriter, name: string, fit: SphereFit): n
   ])
 
   const shell = w.add(`CLOSED_SHELL('',(#${upper},#${lower}))`)
+  return w.add(`MANIFOLD_SOLID_BREP('${esc(name)}',#${shell})`)
+}
+
+/** A profile on a sheet stood up through a height: the sheet's frame, the
+ *  outer loop and its holes in the sheet's [u, v] mm — each run with the
+ *  material on its left, so the outer loop counter-clockwise seen from the
+ *  normal and the holes clockwise — and where the block starts and ends
+ *  along the normal, from the frame's origin. */
+export interface PrismInput {
+  frame: { origin: Vec3; normal: Vec3; basisU: Vec3; basisV: Vec3 }
+  outer: readonly ShadowPiece[]
+  holes: readonly (readonly ShadowPiece[])[]
+  from: number
+  to: number
+}
+
+function sensedFace(w: StepWriter, name: string, surface: number, bounds: number[], sense: boolean): number {
+  return w.add(
+    `ADVANCED_FACE('${esc(name)}',(${bounds.map((b) => `#${b}`).join(',')}),#${surface},${sense ? '.T.' : '.F.'})`,
+  )
+}
+
+/**
+ * A profile extruded into a solid: a planar face at each end, bounded by the
+ * outer loop and a FACE_BOUND per hole, and one side face per piece of each
+ * loop — a plane for a line, a cylinder for an arc or a whole circle — so a
+ * rounded rectangle is eight side faces, not a facet per sampled point.
+ *
+ * Every piece's start is a vertex at the bottom and one at the top, joined
+ * by a vertical edge; the bottom and top edges are the piece's own curve at
+ * each height. A side face runs along its bottom edge, up the next piece's
+ * vertical, back along its top edge and down its own vertical: seen from
+ * outside with the normal up, counter-clockwise, its normal out of the
+ * material. An arc that turns clockwise about the normal is hollow from
+ * outside — its cylinder's normal points into the block — so its face is
+ * written against the surface. A whole circle is one side face between its
+ * two rims, as a measured cylinder's wall is.
+ */
+export function writePrismSolid(w: StepWriter, name: string, p: PrismInput): number {
+  const N = normalize(p.frame.normal) ?? [0, 0, 1]
+  const U = normalize(p.frame.basisU) ?? orthoBasis(N)[0]
+  const V = normalize(cross(N, U)) ?? orthoBasis(N)[1]
+  const down: Vec3 = [-N[0], -N[1], -N[2]]
+  const lo = Math.min(p.from, p.to)
+  const hi = Math.max(Math.max(p.from, p.to), lo + MIN)
+  const at = (q: readonly number[], h: number): Vec3 =>
+    addScaled(addScaled(addScaled(p.frame.origin, U, q[0]), V, q[1]), N, h)
+  const dir2 = (d: readonly number[]): Vec3 => normalize(addScaled(addScaled([0, 0, 0], U, d[0]), V, d[1])) ?? U
+
+  const sides: number[] = []
+  const topBounds: number[] = []
+  const bottomBounds: number[] = []
+  const loops = [{ pieces: p.outer, outer: true }, ...p.holes.map((pieces) => ({ pieces, outer: false }))]
+  for (const { pieces, outer } of loops) {
+    const bound = (loop: number) => w.add(`${outer ? 'FACE_OUTER_BOUND' : 'FACE_BOUND'}('',#${loop},.T.)`)
+    const only = pieces[0]
+    if (pieces.length === 1 && only.kind === 'circle') {
+      // The outer loop runs counter-clockwise, a hole clockwise: the rims
+      // are written about the normal or against it to run that way.
+      const axis = outer ? N : down
+      const r = Math.max(only.radius, MIN)
+      const bottomRim = circleEdge(w, at(only.center, lo), axis, U, r)
+      const topRim = circleEdge(w, at(only.center, hi), axis, U, r)
+      const wall = w.add(`CYLINDRICAL_SURFACE('',#${placement(w, at(only.center, lo), N, U)},${num(r)})`)
+      sides.push(
+        sensedFace(w, name, wall, [
+          w.add(`FACE_OUTER_BOUND('',#${edgeLoop(w, [{ edge: bottomRim, forward: true }])},.T.)`),
+          w.add(`FACE_BOUND('',#${edgeLoop(w, [{ edge: topRim, forward: false }])},.T.)`),
+        ], outer),
+      )
+      topBounds.push(bound(edgeLoop(w, [{ edge: topRim, forward: true }])))
+      bottomBounds.push(bound(edgeLoop(w, [{ edge: bottomRim, forward: false }])))
+      continue
+    }
+    const runs = pieces.filter((pc): pc is Exclude<ShadowPiece, { kind: 'circle' }> => pc.kind !== 'circle')
+    const n = runs.length
+    if (n < 2) continue
+    const lowAt = runs.map((pc) => at(pc.from, lo))
+    const highAt = runs.map((pc) => at(pc.from, hi))
+    const vb = lowAt.map((q) => vertex(w, q))
+    const vt = highAt.map((q) => vertex(w, q))
+    const up = runs.map((_, k) => lineEdge(w, lowAt[k], vb[k], highAt[k], vt[k]))
+    const bottom: number[] = []
+    const top: number[] = []
+    for (let k = 0; k < n; k++) {
+      const pc = runs[k]
+      const next = (k + 1) % n
+      if (pc.kind === 'line') {
+        bottom.push(lineEdge(w, lowAt[k], vb[k], lowAt[next], vb[next]))
+        top.push(lineEdge(w, highAt[k], vt[k], highAt[next], vt[next]))
+        const t = dir2([pc.to[0] - pc.from[0], pc.to[1] - pc.from[1]])
+        const out = normalize(cross(t, N)) ?? U
+        const surf = w.add(`PLANE('',#${placement(w, lowAt[k], out, t)})`)
+        const loop = edgeLoop(w, [
+          { edge: bottom[k], forward: true },
+          { edge: up[next], forward: true },
+          { edge: top[k], forward: false },
+          { edge: up[k], forward: false },
+        ])
+        sides.push(sensedFace(w, name, surf, [w.add(`FACE_OUTER_BOUND('',#${loop},.T.)`)], true))
+        continue
+      }
+      // An arc: the circle about the normal when it turns that way,
+      // against it otherwise, so the edge runs with its curve.
+      const ref = dir2([pc.from[0] - pc.center[0], pc.from[1] - pc.center[1]])
+      const axis = pc.sweep >= 0 ? N : down
+      const r = Math.max(pc.radius, MIN)
+      const circle = (h: number) => w.add(`CIRCLE('',#${placement(w, at(pc.center, h), axis, ref)},${num(r)})`)
+      bottom.push(w.add(`EDGE_CURVE('',#${vb[k]},#${vb[next]},#${circle(lo)},.T.)`))
+      top.push(w.add(`EDGE_CURVE('',#${vt[k]},#${vt[next]},#${circle(hi)},.T.)`))
+      const wall = w.add(`CYLINDRICAL_SURFACE('',#${placement(w, at(pc.center, lo), N, ref)},${num(r)})`)
+      const loop = edgeLoop(w, [
+        { edge: bottom[k], forward: true },
+        { edge: up[next], forward: true },
+        { edge: top[k], forward: false },
+        { edge: up[k], forward: false },
+      ])
+      sides.push(sensedFace(w, name, wall, [w.add(`FACE_OUTER_BOUND('',#${loop},.T.)`)], pc.sweep >= 0))
+    }
+    topBounds.push(bound(edgeLoop(w, top.map((edge) => ({ edge, forward: true })))))
+    bottomBounds.push(bound(edgeLoop(w, bottom.map((edge) => ({ edge, forward: false })).reverse())))
+  }
+
+  const topPlane = w.add(`PLANE('',#${placement(w, at([0, 0], hi), N, U)})`)
+  const bottomPlane = w.add(`PLANE('',#${placement(w, at([0, 0], lo), down, U)})`)
+  const topFace = face(w, name, topPlane, topBounds)
+  const bottomFace = face(w, name, bottomPlane, bottomBounds)
+  const shell = w.add(`CLOSED_SHELL('',(${[...sides, topFace, bottomFace].map((f) => `#${f}`).join(',')}))`)
   return w.add(`MANIFOLD_SOLID_BREP('${esc(name)}',#${shell})`)
 }

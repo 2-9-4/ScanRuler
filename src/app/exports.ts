@@ -9,8 +9,11 @@ import { buildBinaryStl } from '../core/exportStl'
 import type { CloudFormat } from '../core/exportPointCloud'
 import { computeVertexNormals } from '../core/geometry/normals'
 import { liftFlatFit } from '../core/section/lift'
+import { shadowRegions } from '../core/section/shadow'
+import type { PrismInput } from '../core/stepBrep'
 import { fileSafe } from '../core/project/manifest'
-import { useStore } from '../state/store'
+import { isExtruded } from '../state/sectionModel'
+import { useStore, type Section } from '../state/store'
 import { useDeviation } from '../state/deviationStore'
 import { sectionElementsOf, useFlat } from '../state/flatStore'
 import type { SceneManager } from '../viewer/SceneManager'
@@ -50,8 +53,9 @@ export async function runExport(job: () => Promise<void>): Promise<void> {
 
 /** Every section with something measured on its sheet, the elements stood
  *  up in the part under the section's name — what the STEP export writes
- *  beside the 3D elements. Hidden ones come too, as hidden 3D elements do:
- *  hiding is a way of looking, not a way of unmeasuring. */
+ *  beside the 3D elements — and every extruded shadow's blocks. Hidden ones
+ *  come too, as hidden 3D elements do: hiding is a way of looking, not a
+ *  way of unmeasuring. */
 const sectionStepGroups = (): StepSection[] => {
   const flat = useFlat.getState()
   return useStore
@@ -61,8 +65,24 @@ const sectionStepGroups = (): StepSection[] => {
       elements: sectionElementsOf(flat, sec.id)
         .filter((el) => el.fit)
         .map((el) => ({ name: el.name, fit: liftFlatFit(sec.frame, el.fit!) })),
+      prisms: sectionPrisms(sec),
     }))
-    .filter((group) => group.elements.length > 0)
+    .filter((group) => group.elements.length > 0 || group.prisms.length > 0)
+}
+
+/** An extruded shadow as blocks, one per outer loop with its holes, standing
+ *  through the part's thickness along the plane's normal. None for anything
+ *  else. */
+export function sectionPrisms(sec: Section): PrismInput[] {
+  const sh = sec.cut?.shadow
+  if (!isExtruded(sec) || !sh) return []
+  return shadowRegions(sh).map(({ outer, holes }) => ({
+    frame: sh.frame,
+    outer: outer.pieces,
+    holes: holes.map((h) => h.pieces),
+    from: sh.extent.min,
+    to: sh.extent.max,
+  }))
 }
 
 /** A file an export built, before anyone saves it: what the panel's button
@@ -92,7 +112,8 @@ export async function buildElementsStep(): Promise<BuiltFile | null> {
   const els = store.elements.filter((e) => e.fit)
   const groups = sectionStepGroups()
   const onSections = groups.reduce((n, g) => n + g.elements.length, 0)
-  if (els.length === 0 && onSections === 0) return null
+  const blocks = groups.reduce((n, g) => n + (g.prisms?.length ?? 0), 0)
+  if (els.length === 0 && onSections === 0 && (blocks === 0 || store.stepStyle !== 'solids')) return null
   const assumed = els.filter((e) => e.assumed !== undefined).length
   const name = `${exportStem()}-elements.step`
   const { buildStepFile } = await import('../core/exportStep')
@@ -111,9 +132,11 @@ export async function buildElementsStep(): Promise<BuiltFile | null> {
   const what: string[] = []
   if (els.length) what.push(`${els.length} element${els.length === 1 ? '' : 's'}`)
   if (onSections) {
-    const where = groups.length === 1 ? groups[0].name : `${groups.length} sections`
+    const measured = groups.filter((g) => g.elements.length > 0)
+    const where = measured.length === 1 ? measured[0].name : `${measured.length} sections`
     what.push(`${onSections} on ${where}`)
   }
+  if (blocks && store.stepStyle === 'solids') what.push(`${blocks} extruded shadow${blocks === 1 ? '' : 's'}`)
   return {
     name,
     mimeType: 'model/step',

@@ -25,7 +25,7 @@ import { sheetFrame, sheetScale } from '../app/flatSheet'
 import { useHistory, historyBlocked } from '../state/historyStore'
 import { useShell, type Workspace } from '../state/shellStore'
 import { draftHolds, useStore, type Element, type Section } from '../state/store'
-import { dimensionRefsOf } from '../state/sectionModel'
+import { dimensionRefsOf, shadowParams } from '../state/sectionModel'
 import { useThickness } from '../state/thicknessStore'
 import { plugins } from '../plugins/registry'
 import { surfaceSource } from '../app/surfaces'
@@ -159,7 +159,31 @@ export function describeSection(sec: Section) {
     // sheet point [u, v] is origin + u·basisU + v·basisV.
     plane: { origin: sec.frame.origin, normal: sec.frame.normal, basisU: sec.frame.basisU, basisV: sec.frame.basisV },
     chains: sec.cut ? sec.cut.offsets.length - 1 : null,
+    ...(sec.kind === 'shadow' ? { kind: 'shadow', ...shadowFigures(sec) } : {}),
     ...(sec.message ? { message: sec.message } : {}),
+  }
+}
+
+/** A shadow's settings and, once taken, its loops, area (mm², holes taken
+ *  off) and the band its outline lies in outside the part (mm). */
+function shadowFigures(sec: Section) {
+  const { play, tolerance, smoothDeg, extrude } = shadowParams(sec)
+  const sh = sec.cut?.shadow
+  const r3 = (v: number) => Math.round(v * 1000) / 1000
+  return {
+    play,
+    tolerance,
+    smoothDeg,
+    extrude,
+    ...(sh
+      ? {
+          loops: sh.loops.map((l) => ({ hole: l.hole, pieces: l.pieces.length })),
+          areaMm2: Math.round(sh.area * 100) / 100,
+          outside: { min: r3(sh.margin.min), max: r3(sh.margin.max) },
+          extent: { min: r3(sh.extent.min), max: r3(sh.extent.max) },
+          ...(sh.widened ? { cell: r3(sh.cell) } : {}),
+        }
+      : {}),
   }
 }
 

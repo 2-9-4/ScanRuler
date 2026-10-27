@@ -33,6 +33,7 @@ import { rigidApplyToPoints, rigidInvert, rigidRotateVectors, type Rigid } from 
 import { meshArea, meshLongEdges, readReference, sampleSpacing, subdivideForMap } from './deviation/onReference'
 import { buildSolidIndex, computeThickness, suggestThicknessScale } from './thickness/thickness'
 import { sliceMesh } from './section/slice'
+import { shadowMesh } from './section/shadow'
 import { meshCentroid } from './geometry/centroid'
 import { trianglesWithin } from './geometry/region'
 import { floodByNormal } from './fit/regionGrow'
@@ -713,6 +714,24 @@ function handle(msg: Exclude<WorkerRequest, { type: 'align-abort' }>): void {
       })
       post(
         { type: 'section-ok', requestId: msg.requestId, points: cut.points, offsets: cut.offsets, normals: cut.normals },
+        cut.normals ? [cut.points.buffer, cut.offsets.buffer, cut.normals.buffer] : [cut.points.buffer, cut.offsets.buffer],
+      )
+    } catch (e) {
+      post({ type: 'error', requestId: msg.requestId, message: errorText(e) })
+    }
+    return
+  }
+
+  if (msg.type === 'shadow') {
+    if (!graph) {
+      post({ type: 'error', requestId: msg.requestId, message: 'No model loaded.' })
+      return
+    }
+    try {
+      // On the aligned vertices, as a cut is.
+      const cut = shadowMesh(graph.positions, graph.indices, msg.frame, { tolerance: msg.tolerance, play: msg.play, smoothDeg: msg.smoothDeg })
+      post(
+        { type: 'section-ok', requestId: msg.requestId, points: cut.points, offsets: cut.offsets, normals: cut.normals, shadow: cut.shadow },
         cut.normals ? [cut.points.buffer, cut.offsets.buffer, cut.normals.buffer] : [cut.points.buffer, cut.offsets.buffer],
       )
     } catch (e) {

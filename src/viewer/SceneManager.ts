@@ -2056,8 +2056,8 @@ export class SceneManager {
   /** The section being made: its plane through the part and the cut it
    *  produces, with the gizmo that slides and tilts the plane. Null frame
    *  takes all three away. */
-  setSectionPreview(frame: SectionFrame | null, cut: SectionCut | null, color: string): void {
-    this.sections.setPreview(frame, cut, color)
+  setSectionPreview(frame: SectionFrame | null, cut: SectionCut | null, color: string, extrude = false): void {
+    this.sections.setPreview(frame, cut, color, extrude)
     this.draftHandles = frame ? { frame, color } : null
     this.applyPlaneHandles()
   }

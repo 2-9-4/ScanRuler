@@ -12,6 +12,11 @@
  * it. They carry no pins of their own — the numbers are on the sheet, and
  * one label per section is enough.
  *
+ * A shadow's loops lie on its plane, not on the scan — inside the part as
+ * often as not — so they are drawn ahead of the depth buffer like the
+ * preview's; an extruded one stands as a translucent block in its colour
+ * through the part's thickness.
+ *
  * While a section has nothing to cut across yet, the scan's coordinate
  * planes are on offer through the part's centre, each a faint sheet in its
  * axis's colour that lights under the cursor — see setWorldPlanes.
@@ -29,6 +34,7 @@ import { LineGeometry } from 'three/addons/lines/LineGeometry.js'
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js'
 import { WORLD_AXES, worldCutAxis, type SectionFrame, type WorldAxis } from '../core/section/frame'
 import { sectionStroke, type SectionGeometry } from '../core/section/lift'
+import { outlinePoints, shadowRegions, type ShadowShape } from '../core/section/shadow'
 import type { SectionCut } from '../core/section/slice'
 import type { Vec3 } from '../core/types'
 import { AXIS_COLORS } from './axisGizmo'
@@ -55,6 +61,8 @@ export interface SectionOverlayItem {
   cut: SectionCut | null
   /** The sheet's elements in the part, the visible ones with a fit. */
   elements: readonly SectionGeometry[]
+  /** A shadow stood up through the part — drawn as a block. */
+  extrude?: boolean
 }
 
 export interface SectionOverlayContext {
@@ -143,7 +151,8 @@ export class SectionOverlay {
       // On the surface it was cut from, and hidden with it: a section on the
       // far side of the part is read by turning the part, like its tint.
       if (item.cut)
-        this.addPolylines(this.group, this.cleanup, item.cut, item.color, 0.95, SECTION_LINE_DEFAULT, true)
+        this.addPolylines(this.group, this.cleanup, item.cut, item.color, 0.95, SECTION_LINE_DEFAULT, !item.cut.shadow)
+      if (item.extrude && item.cut?.shadow) this.addBlock(this.group, this.cleanup, item.cut.shadow, item.color)
       if (item.elements.length > 0) this.addElements(this.group, this.cleanup, item.elements, item.color)
       const label = pinLabel('element-label', item.name, '', item.color)
       const lift = this.ctx.modelRadius() * 0.02
@@ -196,7 +205,7 @@ export class SectionOverlay {
 
   /** The section being made: its plane through the part, and its cut drawn
    *  ahead of the depth buffer so every chain of it shows. Null clears. */
-  setPreview(frame: SectionFrame | null, cut: SectionCut | null, color: string): void {
+  setPreview(frame: SectionFrame | null, cut: SectionCut | null, color: string, extrude = false): void {
     for (const fn of this.previewCleanup) fn()
     this.previewCleanup = []
     this.previewGroup.clear()
@@ -247,6 +256,52 @@ export class SectionOverlay {
 
     if (cut)
       this.addPolylines(this.previewGroup, this.previewCleanup, cut, color, 1, SECTION_LINE_DEFAULT + 0.5, false)
+    if (extrude && cut?.shadow) this.addBlock(this.previewGroup, this.previewCleanup, cut.shadow, color)
+  }
+
+  /** A shadow extruded: each outer loop with its holes as a shape on the
+   *  sheet, stood up from the part's lowest point along the normal to its
+   *  highest — translucent, so the part shows through it. */
+  private addBlock(group: THREE.Group, cleanup: (() => void)[], sh: ShadowShape, color: string): void {
+    const depth = sh.extent.max - sh.extent.min
+    if (!(depth > 0)) return
+    const step = Math.PI / 36
+    const shapeOf = (pts: readonly [number, number][]) => new THREE.Path(pts.map(([u, v]) => new THREE.Vector2(u, v)))
+    const shapes = shadowRegions(sh).map(({ outer, holes }) => {
+      const shape = new THREE.Shape(outlinePoints(outer.pieces, step).map(([u, v]) => new THREE.Vector2(u, v)))
+      shape.holes = holes.map((h) => shapeOf(outlinePoints(h.pieces, step)))
+      return shape
+    })
+    if (shapes.length === 0) return
+    const geo = new THREE.ExtrudeGeometry(shapes, { depth, bevelEnabled: false, curveSegments: 1 })
+    const { origin, basisU, basisV, normal } = sh.frame
+    // The sheet's [u, v] and the extrusion's z laid onto the frame, from
+    // the part's lowest point along the normal.
+    const base = new THREE.Vector3(...origin).addScaledVector(new THREE.Vector3(...normal), sh.extent.min)
+    geo.applyMatrix4(
+      new THREE.Matrix4().makeBasis(new THREE.Vector3(...basisU), new THREE.Vector3(...basisV), new THREE.Vector3(...normal)).setPosition(base),
+    )
+    const mat = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.18,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    })
+    const block = new THREE.Mesh(geo, mat)
+    block.renderOrder = 2
+    group.add(block)
+    const edges = new THREE.EdgesGeometry(geo, 30)
+    const edgeMat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.6, depthWrite: false })
+    const outline = new THREE.LineSegments(edges, edgeMat)
+    outline.renderOrder = 3
+    group.add(outline)
+    cleanup.push(() => {
+      geo.dispose()
+      mat.dispose()
+      edges.dispose()
+      edgeMat.dispose()
+    })
   }
 
   /** The coordinate planes on offer while a section has nothing to cut

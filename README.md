@@ -15,7 +15,9 @@ The workspaces share the loaded scan:
   calibrated artefacts. The measured elements can serve as
   datums for a guided **3-2-1 alignment** into the global coordinate system, and be
   **exported as a STEP file** of analytic geometry. A **section** cuts the
-  scan with a plane taken across any of them, to be measured on the 2D sheet.
+  scan with a plane taken across any of them, to be measured on the 2D sheet
+  — or takes its **shadow** on the plane, the part's widest outline read as
+  lines and arcs, to draw a bin, a foam cutout or a pocket from.
 - **Deviation** — paint how far the scan strays from what it should have been as
   a colour map over the part, measured either against a **nominal CAD part**
   (loaded as a mesh or as a **STEP file** tessellated in the browser, and
@@ -638,6 +640,44 @@ cuts through the element's own centre — for a face that is the face itself,
 so offset into the part to cut its walls. Chains shorter than a millimetre
 are dropped as specks.
 
+**Shadow.** The box's **Kind** switch makes the section a *shadow* instead
+of a cut: the whole scan projected along the plane's normal onto the plane,
+kept as its outer boundary — closed loops, holes marked. It is the outline
+the part casts, its widest extent with every indentation filled, where any
+one cut through a notch is smaller: what a straight-walled storage bin, a
+foam cutout or a pocket for the part is drawn from. The plane is picked,
+slid and tilted as for a cut; its direction decides what is seen, its
+offset only where the loops are drawn. The outline is the mesh's own
+silhouette, refined to floating-point accuracy, and is kept read the way a
+sketch is drawn — straight sides as lines meeting at their corners, rounds
+as arcs, a round loop as a circle — to the **Tolerance** (0.1 mm by
+default), and always **outside the part**: each piece is checked against
+the exact silhouette and lies at least the **Play** and at most the play
+plus twice the tolerance outside it. Play is 1 mm by default — clearance
+all round, what a bin or a cutout starts from; 0 takes the part's own
+outline, a negative play is a press fit. **Round below (°)**, 30° by
+default, smooths the outline: where two lines meet turning by less than it,
+the corner is rounded by an arc tangent to both — as large as the lines
+leave room for and the band allows — so a gently curving side read as a run
+of short lines comes out as one smooth curve; a corner turning more stays
+sharp, and 0 keeps every corner as read. The box reads "2 loops ·
+11 243 mm²" — the area inside the outline, holes taken off — and the band,
+"0.05 to 0.25 mm outside the part"; the row says "shadow onto Plane 1,
++3.000 mm". On the 2D sheet a shadow is snapped to, fitted and dimensioned
+like a cut, and the DXF and SVG exports write its outline
+as the LINE, ARC and CIRCLE entities it was read as, not a polyline — DXF
+into CAD, extrude, done. A part too large for the raster at half the
+tolerance is traced on wider cells, and the box says so: a slot narrower
+than a cell can close.
+
+**Extrude to the part's thickness**, a checkbox in the shadow's box and on
+by default, stands the outline up as a block along the plane's normal, from the part's lowest
+point to its highest whatever offset the plane sits at — the box says how
+high. It is drawn through the part translucent in the section's colour, and
+[Export STEP](#step-export) writes it as a solid in the *Solids & faces*
+form: a body CAD can shell, cut and sketch a finger relief on, with no stop
+at the 2D sheet on the way.
+
 Sections are listed under the elements with the same edit / hide / delete
 keys, drawn on the part in their colour, and re-open in the box they were
 made in. The plane is **frozen** when the section is created: re-fitting or
@@ -936,6 +976,7 @@ AP214) as **analytic geometry, not tessellation**, in either of two forms —
 | **Sphere** | a **closed solid ball**, two hemispheres meeting at an equator |
 | **Line, Point** | a trimmed line and a point, as they always were |
 | **Section** | what was measured on its sheet — points, lines, circles, arcs and splines — as curves lying in the cutting plane, in a wireframe group named after the section; a spline goes out as a cubic `B_SPLINE_CURVE_WITH_KNOTS` in Bézier form, exactly the curve on the sheet |
+| **Extruded shadow** | a **closed solid block** named after the section, one per outer loop: a planar face at each end bounded by the outline and its holes, and one side face per piece of it — a plane per line, a cylinder per arc or round hole — so a rounded rectangle is eight side faces, not a facet per point |
 
 Each body is its own named shape representation, tied to the part the way the
 bodies of a multi-body file are, so the element names arrive in the CAD tree —

@@ -99,7 +99,7 @@ export function FlatPanel({
   const onSection = subject.kind === 'section'
   const activeSection = onSection ? sections.find((x) => x.id === subject.id) : undefined
   const cutOf = (sec: (typeof sections)[number]) =>
-    describeCut(sectionRefName(sec.ref, scanElements), sec.offset, tiltOf(sec.refDir, sec.frame.normal))
+    describeCut(sectionRefName(sec.ref, scanElements), sec.offset, tiltOf(sec.refDir, sec.frame.normal), sec.kind)
   const hasSheet = onSection || imageName !== null
   // Anything the report and the CSV would have to say.
   const hasMeasurements =

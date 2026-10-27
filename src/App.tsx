@@ -29,6 +29,7 @@ import {
   type WorldAxis,
 } from './core/section/frame'
 import { chainBounds, projectCut } from './core/section/slice'
+import { shadowFlatFits } from './core/section/shadow'
 import { elementKindInfo } from './core/elements/kinds'
 import { creationMethod, takesSurface } from './core/elements/construct'
 import { extensionOf, fitWindow, isExtendable, sideValue } from './core/elements/extend'
@@ -457,10 +458,14 @@ export default function App() {
     const sheet = flatSheetView()
     if (!sheet) return null
     const report = flatReportInput()
+    // A shadow's outline goes out as the lines and arcs it was read as.
+    const subject = s.subject
+    const shadow = subject.kind === 'section' ? useStore.getState().sections.find((x) => x.id === subject.id)?.cut?.shadow : undefined
     return {
       bounds: sheet.bounds,
       chains: s.showEdges ? sheet.chains : null,
       chainUnit: sheetScale(s),
+      ...(shadow ? { edgePieces: s.showEdges ? shadowFlatFits(shadow) : null } : {}),
       elements: sheetElements(s),
       notes: sheetNotes(s).filter((n) => n.text.trim() !== ''),
       alignDir: sheetAlignment(s),
@@ -504,7 +509,7 @@ export default function App() {
       name,
       mimeType: 'application/dxf',
       bytes: textBytes(dxf),
-      status: `Drawing exported to ${name} — ${drawnSummary(input, `thinned to ${tolerance} ${input.unit}`, s.showEdges)}.`,
+      status: `Drawing exported to ${name} — ${drawnSummary(input, input.edgePieces ? '' : `thinned to ${tolerance} ${input.unit}`, s.showEdges)}.`,
     }
   }
   const handleFlatExportDxf = () => runExport(async () => saveBuilt(await buildFlatDxfFile()))

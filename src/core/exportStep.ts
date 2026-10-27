@@ -22,7 +22,7 @@ import { orthoBasis } from './fit/linalg'
 import { isFullTurn, type ArcGeometry, type SplineGeometry } from './section/lift'
 import { addScaled } from './vec'
 import { esc, num, placement, StepWriter, vec } from './stepWriter'
-import { writeConeSolid, writeCylinderSolid, writePlaneShell, writeSphereSolid, writeTorusSolid } from './stepBrep'
+import { type PrismInput, writeConeSolid, writeCylinderSolid, writePlaneShell, writePrismSolid, writeSphereSolid, writeTorusSolid } from './stepBrep'
 
 /** What an element can be written as: the 3D workspace's fits, and the arc
  *  and the spline a section's sheet measures — see core/section/lift. */
@@ -39,6 +39,10 @@ export interface StepElement {
 export interface StepSection {
   name: string
   elements: StepElement[]
+  /** The section's outline extruded into blocks — one per outer loop —
+   *  written as solids, each named after the section, in the solids-and-
+   *  faces form; the construction-surfaces form leaves them out. */
+  prisms?: PrismInput[]
 }
 
 /** Which of the two forms above the file is written in. */
@@ -290,9 +294,19 @@ function writeSolidBody(w: StepWriter, elements: StepElement[], shape: number, g
  * measured on its sheet inside it, all lying in the plane it was cut in. The
  * same in both forms: curves are curves, and a group of them has no
  * topology to reject. A section nothing was measured on writes nothing.
+ * An extruded outline goes before its group, a solid per block, in the
+ * solids-and-faces form only.
  */
-function writeSections(w: StepWriter, sections: StepSection[], root: number, geomCtx: number): void {
+function writeSections(w: StepWriter, sections: StepSection[], root: number, geomCtx: number, style: StepStyle): void {
   for (const sec of sections) {
+    const prisms = style === 'solids' ? (sec.prisms ?? []) : []
+    prisms.forEach((prism, k) => {
+      const name = prisms.length === 1 ? sec.name : `${sec.name} (${k + 1})`
+      const rep = w.add(
+        `ADVANCED_BREP_SHAPE_REPRESENTATION('${esc(name)}',(#${writePrismSolid(w, name, prism)}),#${geomCtx})`,
+      )
+      w.add(`SHAPE_REPRESENTATION_RELATIONSHIP('','',#${root},#${rep})`)
+    })
     if (sec.elements.length === 0) continue
     const label = esc(sec.name)
     const items = sec.elements.map((el) => writeElement(w, el.name, el.fit))
@@ -325,7 +339,7 @@ export function buildStepFile(
     style === 'solids'
       ? writeSolidBody(w, elements, shape, geomCtx)
       : writeSurfaceBody(w, elements, shape, geomCtx)
-  writeSections(w, sections, root, geomCtx)
+  writeSections(w, sections, root, geomCtx, style)
 
   return [
     'ISO-10303-21;',

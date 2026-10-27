@@ -25,7 +25,8 @@ import type { EdgeChains } from '../flat/edges'
 import type { Vec2 } from '../flat/types'
 import { rigidApplyToPoints, rigidRotateVectors, type Rigid } from '../deviation/rigid'
 import type { Vec3 } from '../types'
-import type { SectionFrame } from './frame'
+import { transformFrame, type SectionFrame } from './frame'
+import type { ShadowShape } from './shadow'
 
 export interface SectionCut {
   /** x,y,z per point, chain by chain, in the scan's own coordinates. */
@@ -37,6 +38,9 @@ export interface SectionCut {
    *  the point's segments were cut from. Zero where they disagree (a
    *  flipped triangle). A cut made before the cut carried them has none. */
   normals?: Float32Array
+  /** A shadow's contour as lines and arcs, and its figures — see shadow.ts.
+   *  Absent on a cut. */
+  shadow?: ShadowShape
 }
 
 export interface SliceOptions {
@@ -274,10 +278,12 @@ export function cutSummary(cut: SectionCut): { chains: number; points: number } 
 export function transformCut(cut: SectionCut, m: Rigid): SectionCut {
   const points = cut.points.slice()
   rigidApplyToPoints(m, points)
-  if (!cut.normals) return { points, offsets: cut.offsets }
+  // A shadow's pieces lie in its frame's own [u, v], which moves with it.
+  const shadow = cut.shadow ? { shadow: { ...cut.shadow, frame: transformFrame(cut.shadow.frame, m) } } : {}
+  if (!cut.normals) return { points, offsets: cut.offsets, ...shadow }
   const normals = cut.normals.slice()
   rigidRotateVectors(m, normals)
-  return { points, offsets: cut.offsets, normals }
+  return { points, offsets: cut.offsets, normals, ...shadow }
 }
 
 /**

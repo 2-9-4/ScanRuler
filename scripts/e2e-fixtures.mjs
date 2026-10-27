@@ -243,3 +243,45 @@ export function noisyBoxScan({ seed = 7, noise: spread = 0.02, holes = false, he
   }
   return { bytes: buf, triangles: tris.length }
 }
+
+/** A block 40 × 30 × 20 mm on the XY plane, notched as the label printer of
+ *  issue 13 is: a groove along X across the top, a pocket in the front face
+ *  (y = 0) between z 5 and 15, a groove along Y underneath. Built of
+ *  millimetre voxels, every face wound out. Its shadow on the XY plane is
+ *  the whole 40 × 30, where a cut at any height is less. The STL's path. */
+export function notchedBlockScan() {
+  const [nx, ny, nz] = [40, 30, 20]
+  const filled = (i, j, k) => {
+    if (i < 0 || j < 0 || k < 0 || i >= nx || j >= ny || k >= nz) return false
+    if (k >= 16 && j >= 10 && j < 20) return false
+    if (j < 4 && k >= 5 && k < 15 && i >= 10 && i < 30) return false
+    if (k < 4 && i >= 15 && i < 25) return false
+    return true
+  }
+  const corners = []
+  for (let i = 0; i < nx; i++)
+    for (let j = 0; j < ny; j++)
+      for (let k = 0; k < nz; k++) {
+        if (!filled(i, j, k)) continue
+        for (let a = 0; a < 3; a++)
+          for (const s of [1, -1]) {
+            const nb = [i, j, k]
+            nb[a] += s
+            if (filled(...nb)) continue
+            const b = (a + 1) % 3
+            const c = (a + 2) % 3
+            const corner = (db, dc) => {
+              const p = [i, j, k]
+              p[a] += s > 0 ? 1 : 0
+              p[b] += db
+              p[c] += dc
+              return p
+            }
+            const q = s > 0 ? [corner(0, 0), corner(1, 0), corner(1, 1), corner(0, 1)] : [corner(0, 0), corner(0, 1), corner(1, 1), corner(1, 0)]
+            corners.push(q[0], q[1], q[2], q[0], q[2], q[3])
+          }
+      }
+  const path = join(mkdtempSync(join(tmpdir(), 'scanruler-shadow-')), 'notched-block.stl')
+  writeFileSync(path, stl('ScanRuler e2e notched block', corners))
+  return path
+}

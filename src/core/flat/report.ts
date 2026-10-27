@@ -26,7 +26,7 @@ export interface FlatReportInput {
   /** Present when the sheet is a section through the 3D scan rather than an
    *  image: what it is called, which scan it cuts, and where — the image
    *  fields above are then not what the sheet is. */
-  section?: { name: string; scanName: string; cut: string }
+  section?: { name: string; scanName: string; cut: string; kind?: 'cut' | 'shadow' }
   pxPerMm: PixelsPerMm | null
   datum: FlatDatum | null
   frame: FlatFrame | null
@@ -54,7 +54,7 @@ export function scaleLine(r: FlatReportInput): string {
 /** The first line: what the sheet is. */
 export function titleLine(r: FlatReportInput): string {
   return r.section
-    ? `ScanRuler 2D measurement — ${r.section.name}: ${r.section.scanName} cut ${r.section.cut}`
+    ? `ScanRuler 2D measurement — ${r.section.name}: ${r.section.scanName} ${r.section.kind === 'shadow' ? '' : 'cut '}${r.section.cut}`
     : `ScanRuler 2D measurement — ${r.imageName} (${r.imageWidth} × ${r.imageHeight} px)`
 }
 
@@ -68,7 +68,7 @@ function frameLine(r: FlatReportInput): string {
       : 'Coordinates: aligned part frame (origin and +X as picked)'
   }
   return r.section
-    ? 'Coordinates: section frame, origin at the cutting plane’s centre, y up'
+    ? `Coordinates: section frame, origin at the ${r.section.kind === 'shadow' ? 'projection' : 'cutting'} plane’s centre, y up`
     : 'Coordinates: image frame, origin bottom-left, y up'
 }
 

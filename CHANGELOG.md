@@ -5,6 +5,44 @@ bar and the imprint is the entry it belongs to; the `.scanruler` projects it
 saves carry the same number as `appVersion`. How a release is cut is in the
 README under "Releases".
 
+## 0.8.2 — 2026-10-27
+
+- **Project shadow** (2026-10-27). A section can now be a *shadow* instead
+  of a cut — **Kind: Cut | Shadow** at the top of the section box: the whole
+  scan projected along the plane's normal onto the plane, kept as its outer
+  boundary, closed loops with holes marked. It is the part's widest outline
+  with every indentation filled — where every single cut through a notch is
+  smaller — which is what a straight-walled bin, a foam cutout or a pocket
+  for the part is drawn from (issue 13). The outline is the mesh's own
+  silhouette refined to floating-point accuracy, and is kept read as lines
+  and arcs (a round loop as a circle) to a **Tolerance** (0.1 mm by default),
+  always outside the part: each piece is checked against the exact silhouette
+  and lies between the **Play** and the play plus twice the tolerance outside
+  it — 1 mm of clearance by default, 0 for the part's own outline, a
+  negative play a press fit. **Round
+  below (°)**, 30° by default, rounds every corner where two lines meet
+  turning by less than that with an arc tangent to both, so a curved side
+  read as a run of short lines comes out smooth; sharper corners stay sharp,
+  and 0 keeps them all. The box and the row read the loops, the area inside
+  the outline and that band ("2 loops · 11 243 mm² · 0.05 to 0.25 mm outside
+  the part"); the row says "shadow onto Plane 1, +3.000 mm". On the 2D sheet
+  a shadow is measured like a cut, and the DXF and SVG write its outline as
+  LINE, ARC and CIRCLE rather than a polyline. Sliding the plane only moves
+  the outline, so it follows the arrow without being taken again. For
+  agents: `section.cut` takes `kind`, `play`, `tolerance` and `smoothDeg`,
+  and a shadow's answer gives its loops, area, band and the part's extent
+  along the normal. Projects without shadows load and save as before.
+
+- **Extruded shadow as a STEP solid** (2026-10-27). **Extrude to the part's
+  thickness** in a shadow's box, on by default, stands the outline up as a block along the
+  plane's normal, from the part's lowest point to its highest, drawn
+  translucent through the part — and Export STEP (Solids & faces) writes it
+  as a solid named after the section, one per outer loop: a planar face at
+  each end bounded by the outline and its holes, and a side face per line or
+  arc, so a rounded rectangle is eight side faces and two caps. A body CAD
+  can shell, cut and sketch on, without a stop at the 2D sheet. For agents:
+  `extrude` on `section.cut`.
+
 ## 0.8.1 — 2026-10-27
 
 - **Wall thickness histogram on from the start, and readable** (2026-10-26).

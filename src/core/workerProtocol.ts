@@ -21,6 +21,8 @@ import type { SeedPlane, SymmetryPlane } from './symmetry'
 import type { AutoAlignResult } from './autoAlign'
 import type { ScanSpot } from './geometry/nearest'
 import type { PlaneRegionReport, Segmentation, SegmentOptions } from './fit/segment'
+import type { SectionFrame } from './section/frame'
+import type { ShadowShape } from './section/shadow'
 
 export type WorkerRequest =
   /** `crease` says whether the scan's sharp edges are to be drawn sharp —
@@ -148,6 +150,9 @@ export type WorkerRequest =
   /** Cut the scan with a plane — see core/section/slice. Chains shorter than
    *  `minLength` millimetres are dropped as specks. */
   | { type: 'section'; requestId: number; origin: Vec3; normal: Vec3; minLength: number }
+  /** The scan's shadow on a plane — see core/section/shadow. Answered as a
+   *  section is, with the contour's pieces beside the polylines. */
+  | { type: 'shadow'; requestId: number; frame: SectionFrame; tolerance: number; play: number; smoothDeg: number }
   /** The centroid of the volume the scan encloses, on the scan as it now
    *  stands — see geometry/centroid. With `vertices`, a surface marked by
    *  hand, the centroid of that surface instead. */
@@ -299,7 +304,7 @@ export type WorkerResponse =
     }
   | { type: 'transform-ok'; requestId: number }
   /** The polylines a plane cuts off the scan, in scan coordinates. */
-  | { type: 'section-ok'; requestId: number; points: Float32Array; offsets: Uint32Array; normals?: Float32Array }
+  | { type: 'section-ok'; requestId: number; points: Float32Array; offsets: Uint32Array; normals?: Float32Array; shadow?: ShadowShape }
   | { type: 'centroid-ok'; requestId: number; result: MeshCentroid }
   | { type: 'symmetry-ok'; requestId: number; result: SymmetryPlane }
   | { type: 'flood-ok'; requestId: number; vertices: Uint32Array }
