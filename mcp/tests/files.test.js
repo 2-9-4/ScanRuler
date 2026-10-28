@@ -113,7 +113,7 @@ test('a folder in place of a file: the one mesh in it opens; none, or several, i
   const none = join(dir, 'none')
   await mkdir(none, { recursive: true })
   await writeFile(join(none, 'readme.txt'), 'x')
-  await assert.rejects(inputFor(scanOpen, { path: none }, { cwd: dir }), (e) => /no mesh file in it \(\.stl, \.ply, \.obj\) — it holds readme\.txt\. Give the file’s path\.$/.test(e.message))
+  await assert.rejects(inputFor(scanOpen, { path: none }, { cwd: dir }), (e) => /no mesh file in it \(\.stl, \.ply, \.obj, \.3mf\) — it holds readme\.txt\. Give the file’s path\.$/.test(e.message))
   // A command that takes no folder says so, with what is there.
   const reference = SNAPSHOT.find((c) => c.name === 'deviation.open_reference')
   await assert.rejects(inputFor(reference, { path: one }, { cwd: dir }), (e) => /is a folder — give a file in it: /.test(e.message))
