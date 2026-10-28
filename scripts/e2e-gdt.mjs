@@ -147,6 +147,9 @@ async function fitAt(kind, rect, [fx, fy]) {
   if (await saveEnabled(4_000)) {
     await click(page, '[data-test="create-element"]')
     await sleep(250)
+    // The kind stays in hand after Create; put it down, as a dimension or a
+    // tolerance is not opened over it.
+    await click(page, '[data-test="cancel-draft"]').catch(() => {})
     return true
   }
   await click(page, '[data-test="cancel-draft"]').catch(() => {})

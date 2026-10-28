@@ -111,14 +111,18 @@ export function useSceneSync({
   const draftExtend = useStore((s) => s.draft?.extend)
   const draftAssumed = useStore((s) => s.draft?.assumed)
   const elementsForOrient = useStore((s) => (s.draft?.orient ? s.elements : null))
+  const sectionsForOrient = useStore((s) => (s.draft?.orient ? s.sections : null))
   // An aligned draft is shown turned onto its reference plane — what it will
   // be created as.
   const draftFit = useMemo(
     () =>
       measuredDraftFit && draftOrient && elementsForOrient
-        ? orientedDraft({ fit: measuredDraftFit, orient: draftOrient }, elementsForOrient).fit
+        ? orientedDraft(
+            { fit: measuredDraftFit, orient: draftOrient },
+            dimensionRefsOf(elementsForOrient, sectionsForOrient ?? []),
+          ).fit
         : measuredDraftFit,
-    [measuredDraftFit, draftOrient, elementsForOrient],
+    [measuredDraftFit, draftOrient, elementsForOrient, sectionsForOrient],
   )
   // What the ghost is: the fit, at the diameter it is assumed to have been
   // designed at and carrying however far past its measured surface it has
@@ -649,14 +653,21 @@ export function useSceneSync({
   useEffect(() => {
     sceneRef.current?.setElementPickEnabled(wantsElementPicks)
   }, [wantsElementPicks])
-  // A dimension takes a section as the plane it was cut on, so the cuts on
-  // the part are on offer too — a tolerance reads a surface, and keeps to
-  // the elements.
+  // A section being made lights the element under the cursor, as it lights
+  // the coordinate planes on offer: either is what a click would cut along.
+  const sectionLights = elementsWorkspace && sectionDraft !== null && draft === null
+  useEffect(() => {
+    sceneRef.current?.setElementHoverLights(sectionLights)
+  }, [sectionLights])
+  // A dimension takes a section as the plane it was cut on, and so does a
+  // construction's plane slot, so the cuts on the part are on offer too — a
+  // tolerance reads a surface, and keeps to the elements.
   const wantsSectionPicks =
     elementsWorkspace &&
-    draft === null &&
-    dimDraft !== null &&
-    dimensionTypeInfo(dimDraft.type).family === 'dimension'
+    (draft === null
+      ? dimDraft !== null && dimensionTypeInfo(dimDraft.type).family === 'dimension'
+      : draft.pickSlot == null &&
+        creationMethod(draft.kind, draft.method).slots.some((sl) => sl.role === 'plane'))
   useEffect(() => {
     sceneRef.current?.setSectionPickEnabled(wantsSectionPicks)
   }, [wantsSectionPicks])

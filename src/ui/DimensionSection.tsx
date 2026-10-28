@@ -13,7 +13,7 @@ import {
   type SphereAnchor,
 } from '../core/dimensions'
 import type { FitData } from '../core/types'
-import { draftHolds, useStore } from '../state/store'
+import { useStore } from '../state/store'
 import { dimensionRefsOf } from '../state/sectionModel'
 import { usePulse } from '../app/useHints'
 import { surfaceSource, useSurfaces } from '../app/surfaces'
@@ -66,9 +66,10 @@ export function DimensionSection({
   const refs = useMemo(() => dimensionRefsOf(elements, sections), [elements, sections])
   const dimensions = useStore((s) => s.dimensions)
   const dimDraft = useStore((s) => s.dimDraft)
-  // An element box with work in it stands the key down, as it does the row
-  // keys: a dimension started closes that box. A kind merely in hand does not.
-  const draftBusy = useStore((s) => draftHolds(s.draft))
+  // An element box open — even an empty one, the kind merely in hand —
+  // stands the key and the rows' edits down: one box at a time, put down
+  // with Cancel or Esc before a dimension is opened.
+  const draftOpen = useStore((s) => s.draft !== null)
   const startDimension = useStore((s) => s.startDimension)
   const editDimension = useStore((s) => s.editDimension)
   const setDimensionName = useStore((s) => s.setDimensionName)
@@ -145,6 +146,10 @@ export function DimensionSection({
             <b>Add dimension</b> leaves the box open for the next one of the same type, its
             slots empty; <b>Cancel</b> or <b>Esc</b> closes it.
           </p>
+          <p>
+            One box is open at a time: while an element kind is in hand, put it down first with
+            <b> Cancel</b> or <b>Esc</b>.
+          </p>
         </InfoDot>
         {own.length > 0 && <b>{own.length}</b>}
       </div>
@@ -154,7 +159,7 @@ export function DimensionSection({
           <button
             className={pulseNew ? 'block pulse' : 'block'}
             data-test="new-dimension"
-            disabled={refs.every((e) => !e.fit) || dimDraft !== null || draftBusy}
+            disabled={refs.every((e) => !e.fit) || dimDraft !== null || draftOpen}
             onClick={() => startDimension('dist-point-point')}
           >
             New dimension
@@ -290,7 +295,7 @@ export function DimensionSection({
           title={title}
           value={value}
           verdict={verdict}
-          editorOpen={editorOpen}
+          editorOpen={editorOpen || draftOpen}
           onEdit={() => editDimension(dim.id)}
           onToggleVisible={() => toggleDimensionVisible(dim.id)}
           onDelete={() => removeDimension(dim.id)}

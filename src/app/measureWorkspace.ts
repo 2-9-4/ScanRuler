@@ -18,6 +18,7 @@ import type { ElementKind, FitTold, Vec3 } from '../core/types'
 import type { MeshWorkerClient } from '../core/workerClient'
 import { draftColorOf, useStore } from '../state/store'
 import { useMark } from '../state/markStore'
+import { dimensionRefsOf } from '../state/sectionModel'
 import type { SceneManager } from '../viewer/SceneManager'
 import { forgetSurface, rememberSurface } from './surfaces'
 
@@ -267,7 +268,7 @@ export function measureWorkspace({ clientRef, sceneRef }: MeasureDeps) {
     const s = useStore.getState()
     const d = s.draft
     if (!d || d.method !== 'plane-symmetry' || d.status === 'fitting') return
-    const seedEl = d.seed != null && d.seed >= 0 ? s.elements.find((e) => e.id === d.seed) : undefined
+    const seedEl = d.seed != null && d.seed >= 0 ? dimensionRefsOf(s.elements, s.sections).find((e) => e.id === d.seed) : undefined
     const seedFit = seedEl?.fit?.kind === 'plane' ? seedEl.fit : null
     const seedBase = d.seed != null && d.seed < 0 ? baseSeedPlane(d.seed, s.modelCenter, s.modelSize) : null
     const seedName = seedFit ? seedEl!.name : seedBase ? `the ${seedBase.name}` : null

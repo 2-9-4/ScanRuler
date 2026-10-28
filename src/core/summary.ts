@@ -151,8 +151,11 @@ export function buildSummary(
   fileName: string,
   elements: readonly SummaryElement[],
   dimensions: readonly EvaluatedDimension[],
+  /** The sections, by name — a construction may stand on one. */
+  sections: readonly { id: number; name: string }[] = [],
 ): string {
-  const nameOf = (id: number): string => elements.find((e) => e.id === id)?.name ?? '?'
+  const nameOf = (id: number): string =>
+    (elements.find((e) => e.id === id) ?? sections.find((sec) => sec.id === id))?.name ?? '?'
   // The outlier cut-off is each fitted element's own, so it is said beside
   // the element's point count rather than once at the top.
   const lines = [`ScanRuler — ${fileName}`, 'Method: Gaussian best-fit', '']

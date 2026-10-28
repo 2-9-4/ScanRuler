@@ -316,7 +316,12 @@ export async function fitBall(page, rect, farEnd, want, { ready } = {}) {
     if (await isReady()) {
       await click(page, '[data-test="create-element"]')
       await sleep(200)
-      if ((await rowTexts(page)).filter((t) => t.includes('Ø')).length >= want) return [x, y]
+      if ((await rowTexts(page)).filter((t) => t.includes('Ø')).length >= want) {
+        // The kind stays in hand after Create; put it down, as a dimension is
+        // not opened over it.
+        await click(page, '[data-test="cancel-draft"]').catch(() => {})
+        return [x, y]
+      }
     }
     await click(page, '[data-test="cancel-draft"]').catch(() => {})
   }

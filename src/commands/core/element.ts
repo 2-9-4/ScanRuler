@@ -36,6 +36,7 @@ import { requireMarked, setMarked } from '../marked'
 import { roundTo } from '../../core/round'
 import { CommandError, type Command } from '../types'
 import { requireMeasureFree, showWorkspace, waitFor } from './common'
+import { measureRef } from './dimension'
 
 /** The kinds a fit on the scan makes: the five fitted ones, a point picked
  *  on it, and a circle through picked points. */
@@ -51,7 +52,7 @@ const sigmaSchema = enumOf(
 
 const orientSchema = obj(
   {
-    to: elementRefSchema('The reference plane: a plane element, or a coordinate plane "XY", "YZ" or "XZ".'),
+    to: elementRefSchema('The reference plane: a plane element, a section (the plane it was cut on), or a coordinate plane "XY", "YZ" or "XZ".'),
     relation: enumOf(['normal', 'inPlane'] as OrientRelation[], 'normal (the default): the element’s direction is the plane’s normal — a parallel face, a perpendicular bore. inPlane: it lies in the plane.'),
   },
   ['to'],
@@ -117,7 +118,7 @@ function finishAndCreate(f: Finishing): number {
   }
   if (f.orient) {
     if (!isOrientable(d.fit)) throw new CommandError('invalid_input', `A ${d.fit.kind} has no direction to align.`)
-    store.setDraftOrientRef(planeRef(f.orient.to))
+    store.setDraftOrientRef(planeOrSectionRef(f.orient.to))
     if (!useStore.getState().draft?.orient) throw new CommandError('invalid_input', 'That plane cannot be aligned to.')
     if (f.orient.relation) store.setDraftOrientRelation(f.orient.relation)
   }
@@ -469,12 +470,22 @@ async function boxVertices(box: { min: Vec3; max: Vec3 }, normal?: { dir: Vec3; 
 // ---- element.construct ----------------------------------------------------------
 
 /** A construction's source given as a coordinate plane by name — "XY",
- *  "XZ" — when no element goes by that name. */
+ *  "XZ" — when no element or section goes by that name. */
 function coordinatePlaneRef(ref: ElementRef): WorldAxis | null {
   if (typeof ref !== 'string') return null
   const want = ref.trim().toLowerCase()
-  if (useStore.getState().elements.some((e) => e.name.trim().toLowerCase() === want)) return null
+  const { elements, sections } = useStore.getState()
+  if ([...elements, ...sections].some((e) => e.name.trim().toLowerCase() === want)) return null
   return parsePlaneName(ref)
+}
+
+/** A plane a construction is seeded or aligned by: a coordinate plane by
+ *  name, a plane element, or a section as the plane it was cut on. */
+function planeOrSectionRef(ref: ElementRef): number {
+  if (typeof ref === 'string' && parsePlaneName(ref) !== null) return planeRef(ref)
+  const r = measureRef(ref)
+  if (r.kind !== 'plane') throw new CommandError('invalid_input', `${r.name} is a ${r.kind}; this takes a plane.`)
+  return r.id
 }
 
 /** The coordinate plane as an element a construction can be built on — a
@@ -513,12 +524,12 @@ const construct: Command<{
   name: 'construct',
   title: 'Construct an element',
   description:
-    'Construct an element from others and typed-in numbers, as the panel’s creation methods do — by kind: point (point-coords, point-centroid, point-midpoint, point-line-plane), line (line-two-points, line-axis, line-plane-plane), plane (plane-three-points, plane-offset, plane-midplane, plane-coords, plane-symmetry), circle (circle-plane-cylinder, circle-plane-sphere, circle-coords). refs fill the method’s slots in order, by element id or name — a coordinate plane "XY", "YZ" or "XZ" in a plane’s slot is made a plane element through the origin first (one made so before is taken again) and listed under made; params are its numbers in order (or by key: x, y, z; offset; nx, ny, nz, px, py, pz; d, cx, cy, cz). point-centroid and plane-symmetry measure the scan themselves: vertices confines them to a marked surface, seed starts the symmetry search from a plane. plane-symmetry finds the scan’s own mirror plane as an element, the alignment left as it is (align.symmetry re-poses the part on it instead), and answers with the search’s residual: symmetry { rms, matched, sampled } and a note. Returns the element. One undo step.',
+    'Construct an element from others and typed-in numbers, as the panel’s creation methods do — by kind: point (point-coords, point-centroid, point-midpoint, point-line-plane), line (line-two-points, line-axis, line-plane-plane), plane (plane-three-points, plane-offset, plane-midplane, plane-coords, plane-symmetry), circle (circle-plane-cylinder, circle-plane-sphere, circle-coords). refs fill the method’s slots in order, by element id or name — a section, by its id or name, stands in a plane’s slot as the plane it was cut on (a midplane between two cuts, a line where a cut meets a face); a coordinate plane "XY", "YZ" or "XZ" in a plane’s slot is made a plane element through the origin first (one made so before is taken again) and listed under made; params are its numbers in order (or by key: x, y, z; offset; nx, ny, nz, px, py, pz; d, cx, cy, cz). point-centroid and plane-symmetry measure the scan themselves: vertices confines them to a marked surface, seed starts the symmetry search from a plane. plane-symmetry finds the scan’s own mirror plane as an element, the alignment left as it is (align.symmetry re-poses the part on it instead), and answers with the search’s residual: symmetry { rms, matched, sampled } and a note. Returns the element. One undo step.',
   input: obj(
     {
       kind: enumOf(ALL_KINDS, 'What to construct.'),
       method: str('The creation method — see the description.', { minLength: 1 }),
-      refs: arr(elementRefSchema('A source element — or, in a plane’s slot, a coordinate plane "XY", "YZ", "XZ".'), 'The method’s source elements, slot by slot.'),
+      refs: arr(elementRefSchema('A source element — or, in a plane’s slot, a section or a coordinate plane "XY", "YZ", "XZ".'), 'The method’s source elements, slot by slot.'),
       params: oneOf(
         [
           arr(num(), 'The numbers in the method’s order.'),
@@ -526,7 +537,7 @@ const construct: Command<{
         ],
         'The method’s typed-in numbers, in millimetres.',
       ),
-      seed: elementRefSchema('plane-symmetry: the plane the search starts from — a plane element or "XY", "YZ", "XZ".'),
+      seed: elementRefSchema('plane-symmetry: the plane the search starts from — a plane element, a section or "XY", "YZ", "XZ".'),
       vertices: arr(int(undefined, { minimum: 0 }), 'point-centroid, plane-symmetry: confine the search to these scan vertices.', { minItems: 3 }),
       assumed: finishing.assumed,
       orient: orientSchema,
@@ -554,7 +565,7 @@ const construct: Command<{
       const slot = method.slots[i]
       const axis = coordinatePlaneRef(ref)
       const name = axis ? worldPlaneName(axis) : null
-      const el = axis ? null : measuredElement(ref)
+      const el = axis ? null : measureRef(ref)
       const kind: ElementKind = el?.kind ?? 'plane'
       const plays = slot.role === roleOf(kind) || (slot.role === 'axis' && kind === 'circle')
       if (!plays || (slot.kinds && !slot.kinds.includes(kind))) {
@@ -598,7 +609,7 @@ const construct: Command<{
           await waitFor(settled, 'the centroid of the marked surface')
         }
       } else if (input.method === 'plane-symmetry') {
-        if (input.seed !== undefined) useStore.getState().setDraftSeed(planeRef(input.seed))
+        if (input.seed !== undefined) useStore.getState().setDraftSeed(planeOrSectionRef(input.seed))
         if (input.vertices) useStore.getState().setDraftSelection(Uint32Array.from(input.vertices))
         await m.findSymmetry()
         // The search's verdict lives on the draft, which confirming closes:

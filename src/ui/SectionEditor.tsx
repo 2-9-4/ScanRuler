@@ -89,7 +89,7 @@ export function SectionEditor({
       ? 'The element this was cut along has gone; the plane stays where it was. Slide or tilt it with the gizmo, or choose another element to move it.'
       : shadow
         ? 'The scan’s outline seen along the plane’s normal — its widest extent, every indentation filled — drawn in the middle of the part. Tilt the plane with the rings to look from another way.'
-        : 'Slide the plane along its direction — drag the arrow, or type the offset — and tilt it by dragging one of the rings, then create.'
+        : 'Slide the plane along its direction — drag the arrow, type the offset, or click the scan where it should cut — and tilt it by dragging one of the rings, then create.'
 
   return (
     <div className="draftbox" style={{ borderLeftColor: color }} data-test="section-editor">
@@ -116,7 +116,8 @@ export function SectionEditor({
             The gizmo on the plane <b>slides</b> it by the arrow and <b>tilts</b> it by the two
             rings, each about one of the sheet’s own axes through the point the gizmo sits on. A
             tilted plane is recorded with its tilt off what it was taken across; <b>Square</b>{' '}
-            turns it back.
+            turns it back. A <b>click on the scan</b> slides the plane, direction and tilt kept,
+            to pass through the point clicked.
           </p>
           <p>
             The plane is fixed when the section is created. Re-fitting or deleting the element

@@ -24,6 +24,7 @@ import type { FlatDrawingInput } from './core/flat/drawing'
 import type { Vec2 } from './core/flat/types'
 import {
   canCutAlong,
+  offsetThrough,
   turnAxis,
   type CutAxis,
   type WorldAxis,
@@ -36,7 +37,7 @@ import { extensionOf, fitWindow, isExtendable, sideValue } from './core/elements
 import { roleOf } from './core/elements/refs'
 import { evaluateDimensions } from './core/dimensions'
 import { attachSurfaceScene, forgetSurface, surfaceSource } from './app/surfaces'
-import type { PointFit, SigmaPreset, Vec3 } from './core/types'
+import type { ElementKind, PointFit, SigmaPreset, Vec3 } from './core/types'
 import {
   blockedRefs,
   draftColorOf,
@@ -44,7 +45,7 @@ import {
   useStore,
   type SelectMode,
 } from './state/store'
-import { dimensionRefsOf } from './state/sectionModel'
+import { dimensionRefsOf, isShadow } from './state/sectionModel'
 import type { GripSide, SceneManager, PickHit } from './viewer/SceneManager'
 import { isCoreSide } from './viewer/extendGrips'
 import { schemeById } from './viewer/navSchemes'
@@ -728,6 +729,10 @@ export default function App() {
       store.addAlignmentPick(hit.point, hit.normal)
       return
     }
+    if (store.sectionDraft && !store.draft) {
+      moveSectionTo(hit.point)
+      return
+    }
     if (!store.draft) {
       store.setStatus(
         store.dimDraft
@@ -776,6 +781,22 @@ export default function App() {
     void runDraftFit(store.draft.kind, picks)
   }
 
+  /** A spot clicked on the part while a section is being made: the plane
+   *  slides there, its direction and tilt kept, to pass through the point. */
+  const moveSectionTo = (point: Vec3) => {
+    const store = useStore.getState()
+    const section = store.sectionDraft
+    if (!section) return
+    if (!section.axis) {
+      store.setStatus('Choose what to cut across first — an element or a coordinate plane — then click the scan to move the plane there.')
+    } else if (isShadow(section)) {
+      store.setStatus('A shadow is the same outline wherever its plane lies — it is drawn in the middle of the part.')
+    } else {
+      const offset = offsetThrough(section.axis, point)
+      if (offset !== null) store.setSectionDraftOffset(offset)
+    }
+  }
+
   /** A viewport click that landed on an existing element: hand it to whichever
    *  editor is collecting references — the dimension draft, or a construction
    *  draft's slots. Clicking an element that is already used takes it out. */
@@ -787,8 +808,13 @@ export default function App() {
       store.selectDimensionElement(id)
       return
     }
-    const el = store.elements.find((e) => e.id === id)
-    if (!el?.fit) return
+    // A section's cut, clicked while a construction has a plane slot open,
+    // stands in as the plane it was cut on.
+    const sec = store.draft ? store.sections.find((x) => x.id === id) : undefined
+    const el: { kind: ElementKind; name: string } | undefined = sec
+      ? { kind: 'plane', name: sec.name }
+      : store.elements.find((e) => e.id === id && e.fit)
+    if (!el) return
     // A plugin's workspace takes the click as it will.
     const plugin = activeRef.current
     if (plugin?.elementPick) {
@@ -802,9 +828,15 @@ export default function App() {
       return
     }
     // A section being made takes the element to cut along; clicking the one
-    // already chosen lets it go again.
+    // already chosen lets it go again. One with no direction is a spot on
+    // the part like any other once the plane has one: the plane moves there.
     if (store.sectionDraft && !store.draft) {
       if (!canCutAlong(el.kind)) {
+        const hit = store.sectionDraft.axis ? sceneRef.current?.scanHitAt(clientX, clientY) : null
+        if (hit) {
+          moveSectionTo(hit.point)
+          return
+        }
         store.setStatus(
           `${el.name} has no direction to cut across — choose a plane, cylinder, cone, line or circle.`,
         )
@@ -996,7 +1028,7 @@ export default function App() {
     if (sec)
       useStore
         .getState()
-        .setStatus(`Editing ${sec.name} — slide or tilt the plane, or choose another element, then save.`)
+        .setStatus(`Editing ${sec.name} — slide or tilt the plane, click the scan to move it there, or choose another element, then save.`)
   }
 
   const handleDeleteSection = (id: number) => useStore.getState().removeSection(id)
@@ -1347,6 +1379,7 @@ export default function App() {
       store.fileName ?? '',
       store.elements,
       evaluateDimensions(store.dimensions, dimensionRefsOf(store.elements, store.sections), surfaceSource),
+      store.sections,
     )
     void navigator.clipboard?.writeText(text)
   }

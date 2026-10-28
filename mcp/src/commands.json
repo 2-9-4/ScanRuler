@@ -1,6 +1,6 @@
 {
-  "app": "0.8.3",
-  "saved": "2026-10-28T13:16:34.062Z",
+  "app": "0.8.4",
+  "saved": "2026-10-28T15:30:32.341Z",
   "commands": [
     {
       "name": "align.auto",
@@ -990,7 +990,7 @@
     {
       "name": "element.construct",
       "title": "Construct an element",
-      "description": "Construct an element from others and typed-in numbers, as the panel’s creation methods do — by kind: point (point-coords, point-centroid, point-midpoint, point-line-plane), line (line-two-points, line-axis, line-plane-plane), plane (plane-three-points, plane-offset, plane-midplane, plane-coords, plane-symmetry), circle (circle-plane-cylinder, circle-plane-sphere, circle-coords). refs fill the method’s slots in order, by element id or name — a coordinate plane \"XY\", \"YZ\" or \"XZ\" in a plane’s slot is made a plane element through the origin first (one made so before is taken again) and listed under made; params are its numbers in order (or by key: x, y, z; offset; nx, ny, nz, px, py, pz; d, cx, cy, cz). point-centroid and plane-symmetry measure the scan themselves: vertices confines them to a marked surface, seed starts the symmetry search from a plane. plane-symmetry finds the scan’s own mirror plane as an element, the alignment left as it is (align.symmetry re-poses the part on it instead), and answers with the search’s residual: symmetry { rms, matched, sampled } and a note. Returns the element. One undo step.",
+      "description": "Construct an element from others and typed-in numbers, as the panel’s creation methods do — by kind: point (point-coords, point-centroid, point-midpoint, point-line-plane), line (line-two-points, line-axis, line-plane-plane), plane (plane-three-points, plane-offset, plane-midplane, plane-coords, plane-symmetry), circle (circle-plane-cylinder, circle-plane-sphere, circle-coords). refs fill the method’s slots in order, by element id or name — a section, by its id or name, stands in a plane’s slot as the plane it was cut on (a midplane between two cuts, a line where a cut meets a face); a coordinate plane \"XY\", \"YZ\" or \"XZ\" in a plane’s slot is made a plane element through the origin first (one made so before is taken again) and listed under made; params are its numbers in order (or by key: x, y, z; offset; nx, ny, nz, px, py, pz; d, cx, cy, cz). point-centroid and plane-symmetry measure the scan themselves: vertices confines them to a marked surface, seed starts the symmetry search from a plane. plane-symmetry finds the scan’s own mirror plane as an element, the alignment left as it is (align.symmetry re-poses the part on it instead), and answers with the search’s residual: symmetry { rms, matched, sampled } and a note. Returns the element. One undo step.",
       "input": {
         "type": "object",
         "properties": {
@@ -1028,7 +1028,7 @@
                   "minLength": 1
                 }
               ],
-              "description": "A source element — or, in a plane’s slot, a coordinate plane \"XY\", \"YZ\", \"XZ\"."
+              "description": "A source element — or, in a plane’s slot, a section or a coordinate plane \"XY\", \"YZ\", \"XZ\"."
             },
             "description": "The method’s source elements, slot by slot."
           },
@@ -1062,7 +1062,7 @@
                 "minLength": 1
               }
             ],
-            "description": "plane-symmetry: the plane the search starts from — a plane element or \"XY\", \"YZ\", \"XZ\"."
+            "description": "plane-symmetry: the plane the search starts from — a plane element, a section or \"XY\", \"YZ\", \"XZ\"."
           },
           "vertices": {
             "type": "array",
@@ -1094,7 +1094,7 @@
                     "minLength": 1
                   }
                 ],
-                "description": "The reference plane: a plane element, or a coordinate plane \"XY\", \"YZ\" or \"XZ\"."
+                "description": "The reference plane: a plane element, a section (the plane it was cut on), or a coordinate plane \"XY\", \"YZ\" or \"XZ\"."
               },
               "relation": {
                 "type": "string",
@@ -1403,7 +1403,7 @@
                     "minLength": 1
                   }
                 ],
-                "description": "The reference plane: a plane element, or a coordinate plane \"XY\", \"YZ\" or \"XZ\"."
+                "description": "The reference plane: a plane element, a section (the plane it was cut on), or a coordinate plane \"XY\", \"YZ\" or \"XZ\"."
               },
               "relation": {
                 "type": "string",
@@ -1587,7 +1587,7 @@
                     "minLength": 1
                   }
                 ],
-                "description": "The reference plane: a plane element, or a coordinate plane \"XY\", \"YZ\" or \"XZ\"."
+                "description": "The reference plane: a plane element, a section (the plane it was cut on), or a coordinate plane \"XY\", \"YZ\" or \"XZ\"."
               },
               "relation": {
                 "type": "string",

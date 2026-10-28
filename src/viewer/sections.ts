@@ -369,6 +369,11 @@ export class SectionOverlay {
     this.applyWorldHover()
   }
 
+  /** Whether a coordinate plane is lit under the cursor. */
+  worldPlaneLit(): boolean {
+    return this.hoveredWorld !== null
+  }
+
   hasWorldPlanes(): boolean {
     return this.worldMeshes.length > 0
   }

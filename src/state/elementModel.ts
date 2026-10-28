@@ -222,7 +222,7 @@ function methodOf(el: Element): string {
  *  fit. */
 export function draftFromElement(
   el: Element,
-  elements: Element[],
+  elements: readonly Pick<Element, 'id' | 'fit'>[],
   modelSize: number,
   settings: FitSettings,
 ): Draft {
@@ -296,7 +296,7 @@ export function defaultMethod(kind: ElementKind): string {
  *  viewport ghost, the panel and the commit cannot disagree. */
 export function orientedDraft(
   d: Pick<Draft, 'fit' | 'orient'> | null,
-  elements: Element[],
+  elements: readonly Pick<Element, 'id' | 'fit'>[],
 ): { fit: FitData | undefined; deviationDeg: number; warning: string | null } {
   if (!d?.fit) return { fit: undefined, deviationDeg: 0, warning: null }
   if (!d.orient || !isOrientable(d.fit)) return { fit: d.fit, deviationDeg: 0, warning: null }
@@ -336,9 +336,11 @@ function orientElement(el: Element, byId: ReadonlyMap<number, FitData>): Element
     : { ...el, fit, measured }
 }
 
-/** Recompute a construct-mode draft's preview from the current elements.
- *  Pure math, so the preview is always in step with its inputs. */
-export function evalConstructDraft(d: Draft, elements: Element[], modelSize: number): Draft {
+/** Recompute a construct-mode draft's preview from the current elements —
+ *  and sections, which stand in a plane's slot as the plane they were cut on
+ *  and share the elements' ids (see sectionMeasureRefs). Pure math, so the
+ *  preview is always in step with its inputs. */
+export function evalConstructDraft(d: Draft, elements: readonly Pick<Element, 'id' | 'fit'>[], modelSize: number): Draft {
   const m = creationMethod(d.kind, d.method)
   if (m.mode !== 'construct') return d
   if (d.refs.some((r) => r === null) || d.params.some((p) => !Number.isFinite(p))) {
@@ -365,12 +367,20 @@ export function evalConstructDraft(d: Draft, elements: Element[], modelSize: num
 
 /** Re-evaluate every constructed element from its sources, in creation order
  *  (constructions can only reference older elements, so one pass settles the
- *  whole chain). Called after anything that changes a geometry. */
-export function reevaluateConstructions(elements: Element[], modelSize: number): Element[] {
+ *  whole chain). Called after anything that changes a geometry. `planes` are
+ *  the sections as the planes they were cut on: a construction or an
+ *  alignment may stand on one. A section keeps its plane whatever happens to
+ *  the elements, so it never moves in this pass. */
+export function reevaluateConstructions(
+  elements: Element[],
+  modelSize: number,
+  planes: readonly Pick<Element, 'id' | 'fit'>[] = [],
+): Element[] {
   // Alignments may point at planes anywhere in the list, so the current
   // geometry of everything is on hand before the pass; constructions and
   // alignments that are recomputed overwrite their entry as they go.
   const byId = new Map<number, FitData>()
+  for (const p of planes) if (p.fit) byId.set(p.id, p.fit)
   for (const el of elements) if (el.fit) byId.set(el.id, el.fit)
   const settle = (el: Element): Element => {
     const out = orientElement(el, byId)

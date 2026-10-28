@@ -108,6 +108,33 @@ check(
 )
 await page.screenshot({ path: shotPath('e2e-section-gizmo.png') })
 
+// ---- moved by a click on the part ------------------------------------------
+// A click on the far ball — a sphere, no direction of its own, so a spot on
+// the part like the bare scan — slides the plane there: seen face-on, the
+// ball’s front is up to a radius off its centre’s Z. Where the ball was
+// fitted from, clear of the line through its middle.
+const readOffset = () => page.$eval('[data-test="section-offset"]', (el) => Number(el.value))
+const centreZ = await readOffset()
+await page.mouse.click(posB[0], posB[1])
+await page.waitForFunction(
+  (z) => Number(document.querySelector('[data-test="section-offset"]')?.value) !== z,
+  { timeout: 5_000 },
+  centreZ,
+).catch(() => {})
+await cutSettled()
+const clickedZ = await readOffset()
+console.log(`a click on the far ball moved the XY plane from Z ${centreZ} to Z ${clickedZ}`)
+check(
+  (await page.$eval('[data-test="section-ref"]', (el) => el.value)) === 'z',
+  'a click on the part keeps what the plane is cut along',
+)
+check(
+  Math.abs(clickedZ - centreZ) > 0.5 && Math.abs(clickedZ - centreZ) <= ballDia[1] / 2 + 0.5,
+  'a click on the part moves the plane to the spot clicked',
+)
+check(/edge chain/.test(await readStatus()), 'and the plane there cuts the ball')
+await page.screenshot({ path: shotPath('e2e-section-clicked.png') })
+
 // ---- along the line through the balls --------------------------------------
 await selectByLabel(page, '[data-test="section-ref"]', 'Line 1')
 await cutSettled()

@@ -414,6 +414,17 @@ describe('coordinate planes by name', () => {
     expect(useStore.getState().elements.some((e) => e.name === 'XY plane')).toBe(true)
   })
 
+  it('element.construct takes a section in a plane’s slot, by name or id, and in no other', async () => {
+    await openBox()
+    type S = { section: { id: number } }
+    const low = (await run<S>('section.cut', { across: 'XY', offset: 2, name: 'Low cut' })).section
+    await run<S>('section.cut', { across: 'XY', offset: 8, name: 'High cut' })
+    const mid = (await run<{ element: El }>('element.construct', { kind: 'plane', method: 'plane-midplane', refs: [low.id, 'high cut'] })).element
+    expect(mid.fit!.center[2]).toBeCloseTo(5, 6)
+    expect(mid.source.refs?.[0]).toBe(low.id)
+    expect((await refused('element.construct', { kind: 'line', method: 'line-axis', refs: ['Low cut'] })).code).toBe('invalid_input')
+  })
+
   it('section.cut answers a coordinate plane by a name it takes back, and section.render’s plane takes one', async () => {
     await openBox()
     type S = { section: { id: number; across: unknown; plane: { origin: Vec3; normal: Vec3 } } }

@@ -789,7 +789,9 @@ export class SceneManager {
       if (id !== this.hoveredElement) {
         this.hoveredElement = id
         this.applyElementHighlight()
-        this.viewport.renderer.domElement.style.cursor = id !== null ? 'pointer' : ''
+        // Off an element onto a coordinate plane: that one keeps the pointer.
+        this.viewport.renderer.domElement.style.cursor =
+          id !== null || this.sections.worldPlaneLit() ? 'pointer' : ''
       }
     } else if (this.hoveredElement !== null) {
       this.hoveredElement = null
@@ -1713,6 +1715,12 @@ export class SceneManager {
 
   private setPickRay(clientX: number, clientY: number): void {
     this.viewport.setPickRay(clientX, clientY)
+  }
+
+  /** The scan under a client point, whatever is drawn over it — for a click
+   *  an element took that wants the spot on the part as well. */
+  scanHitAt(clientX: number, clientY: number): PickHit | null {
+    return this.pick(clientX, clientY)
   }
 
   private pick(clientX: number, clientY: number): PickHit | null {

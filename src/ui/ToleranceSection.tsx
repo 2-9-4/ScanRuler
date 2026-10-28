@@ -40,6 +40,9 @@ export function ToleranceSection({
   const elements = useStore((s) => s.elements)
   const dimensions = useStore((s) => s.dimensions)
   const dimDraft = useStore((s) => s.dimDraft)
+  // An element box open, even an empty one, stands the key and the rows'
+  // edits down, as it does the dimensions'.
+  const draftOpen = useStore((s) => s.draft !== null)
   const startDimension = useStore((s) => s.startDimension)
   const editDimension = useStore((s) => s.editDimension)
   const setDimensionName = useStore((s) => s.setDimensionName)
@@ -114,7 +117,7 @@ export function ToleranceSection({
         <button
           className="block"
           data-test="new-tolerance"
-          disabled={!anyFitted || dimDraft !== null}
+          disabled={!anyFitted || dimDraft !== null || draftOpen}
           onClick={() => startDimension('form-flatness')}
         >
           New tolerance
@@ -246,7 +249,7 @@ export function ToleranceSection({
           value={value}
           verdict={v}
           testPrefix="tolerance"
-          editorOpen={editorOpen}
+          editorOpen={editorOpen || draftOpen}
           onEdit={() => editDimension(dim.id)}
           onToggleVisible={() => toggleDimensionVisible(dim.id)}
           onDelete={() => removeDimension(dim.id)}

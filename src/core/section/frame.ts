@@ -238,6 +238,14 @@ export function sectionFrameAlong(axis: CutAxis, offset: number, seedU?: Vec3): 
   return { origin, normal, basisU, basisV: cross(normal, basisU) }
 }
 
+/** The offset along an axis that puts the plane through `p` — a point
+ *  clicked on the scan. Null for an axis with no direction. */
+export function offsetThrough(axis: CutAxis, p: Vec3): number | null {
+  const normal = normalize(axis.dir)
+  if (!normal) return null
+  return dot([p[0] - axis.origin[0], p[1] - axis.origin[1], p[2] - axis.origin[2]], normal)
+}
+
 /**
  * The frame a sketch takes on a plane — the rule FreeCAD, Fusion, Onshape
  * and SolidWorks converged on: the sheet's zero is the part's origin

@@ -48,6 +48,11 @@ export interface PluginGrip {
 /** How far the number field stands off its arrow's tip, in pixels. */
 const FIELD_GAP_PX = 6
 
+/** The section plane's gizmo on the screen, at any zoom: its arrow's
+ *  length and its rings' radius, in pixels. */
+const SECTION_ARROW_PX = 36
+const SECTION_RING_PX = 90
+
 const ELEMENT_SIDES: readonly string[] = [...CYLINDER_SIDES, ...PLANE_SIDES]
 
 /** The gizmo's own sides, as against an element's. */
@@ -380,17 +385,21 @@ export class ExtendGrips {
     }
 
     if (this.plane) {
-      // Bigger than an element's grips: the gizmo stands alone on a bare
-      // sheet and is the one thing there is to take hold of.
-      const size = Math.max(this.ctx.modelRadius() * 0.05, 1e-5)
+      // Held on the screen at its size as the view zooms: sized on the part,
+      // a gizmo zoomed in on took half the viewport, and zoomed out was a
+      // speck.
       const origin = new THREE.Vector3(...this.plane.origin)
-      if (this.planeSlides) this.addGrip('offset', origin, new THREE.Vector3(...this.plane.normal).normalize(), size)
+      if (this.planeSlides) {
+        this.addGrip('offset', origin, new THREE.Vector3(...this.plane.normal).normalize(), SECTION_ARROW_PX, {
+          screen: { size: SECTION_ARROW_PX, standoff: 0 },
+        })
+      }
       // A ring about each in-plane axis, both through the arrow: dragging a
       // ring carries the arrow's tip round it, so a hand on one sees where
       // the normal is going. Wider than the arrow, so neither hides it.
-      const radius = Math.max(this.ctx.modelRadius() * 0.13, 1e-5)
-      this.addRing('tiltU', origin, new THREE.Vector3(...this.plane.basisU).normalize(), radius)
-      this.addRing('tiltV', origin, new THREE.Vector3(...this.plane.basisV).normalize(), radius)
+      const ring = { screen: { size: SECTION_RING_PX, standoff: 0 } }
+      this.addRing('tiltU', origin, new THREE.Vector3(...this.plane.basisU).normalize(), SECTION_RING_PX, ring)
+      this.addRing('tiltV', origin, new THREE.Vector3(...this.plane.basisV).normalize(), SECTION_RING_PX, ring)
     }
 
     const fit = this.fit

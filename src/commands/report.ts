@@ -39,7 +39,7 @@ export function reportText(workspace: ReportWorkspace): string {
   const session = commandHost().session
   if (workspace === 'measure') {
     if (!s.fileName) throw new CommandError('no_scan', 'No scan is open — there is nothing to report.')
-    return buildSummary(s.fileName, s.elements, evaluatedDimensions())
+    return buildSummary(s.fileName, s.elements, evaluatedDimensions(), s.sections)
   }
   if (workspace === 'deviation') {
     const text = session.deviation.reportText(useDeviation.getState().stats ?? deviationFigures())

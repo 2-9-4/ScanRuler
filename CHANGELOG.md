@@ -5,6 +5,29 @@ bar and the imprint is the entry it belongs to; the `.scanruler` projects it
 saves carry the same number as `appVersion`. How a release is cut is in
 `docs/development.md` under "Releases".
 
+## 0.8.4 — 2026-10-28
+
+- **Click the part to move a section there** (2026-10-28). While a section
+  is being made or edited, a click on the scan slides its plane to the spot
+  clicked. Its direction and any tilt are kept. A fitted element with no
+  direction of its own, such as a sphere, counts as part of the scan for
+  this. Before, the plane could only be moved with the arrow or by typing
+  the offset.
+- **Section gizmo keeps its size on the screen** (2026-10-28). The arrow
+  and rings on a new section plane were sized to the part. Zoomed in, they
+  filled half the viewport, and zoomed out they were too small to grab. They
+  now stay the same size on the screen at any zoom.
+- **Sections count as planes in constructions** (2026-10-28). Any
+  construction that asks for a plane now also takes a section, as the plane
+  it was cut on: a midplane between two cuts, an offset from a cut, the
+  line where a cut meets a face, the point where an axis pierces a cut, and
+  the circle where a cut crosses a cylinder or a sphere. Choose the section
+  from the slot's list or click its cut on the part. A section can also be
+  the seed of a symmetry search and the reference plane an element is
+  aligned to. What is built on a section follows it when the section is
+  edited, and goes with it when the section is deleted. `element.construct`
+  takes a section by name or id wherever it takes a plane.
+
 ## 0.8.3 — 2026-10-28
 
 - **A shorter README, with pictures** (2026-10-28). The README now covers

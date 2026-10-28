@@ -24,9 +24,10 @@ import { findSection } from './section'
 
 const typeIds = () => dimensionTypes().map((t) => t.id)
 
-/** A reference of a dimension: an element, or — where no element answers to
- *  it — a section, standing in as the plane it was cut on. */
-function dimensionRef(given: ElementRef): MeasureRef {
+/** A reference of a dimension or of a construction: an element, or — where
+ *  no element answers to it — a section, standing in as the plane it was cut
+ *  on. */
+export function measureRef(given: ElementRef): MeasureRef {
   const { elements, sections } = useStore.getState()
   const ref = refOf([...elements, ...sections], given)
   const want = typeof ref === 'string' ? ref.trim().toLowerCase() : null
@@ -126,7 +127,7 @@ const add: Command<{
     if (input.type !== undefined && !typeIds().includes(input.type)) {
       throw new CommandError('invalid_input', `There is no dimension type "${input.type}" — there are ${typeIds().join(', ')}.`)
     }
-    const els = input.refs.map((ref) => dimensionRef(ref))
+    const els = input.refs.map((ref) => measureRef(ref))
     const cut = els.find((e) => e.section)
     if (cut && input.type !== undefined && dimensionTypeInfo(input.type).family === 'tolerance') {
       throw new CommandError('invalid_input', `${cut.name} is a section — a tolerance reads a measured surface, and a cut has none. Take it on a fitted plane.`)

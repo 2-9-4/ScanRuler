@@ -16,6 +16,7 @@ import {
   describeCut,
   frameKey,
   frameTurnedUp,
+  offsetThrough,
   sectionFrameAlong,
   sectionFrameFrom,
   sectionRefName,
@@ -334,6 +335,31 @@ describe('turning a plane by hand', () => {
   it('leaves a degenerate or unfinished turn alone', () => {
     expect(turnAxis(axis, 5, [1, 0, 0], NaN)).toBe(axis)
     expect(turnAxis({ origin: [0, 0, 0], dir: [0, 0, 0] }, 5, [1, 0, 0], 10).dir).toEqual([0, 0, 0])
+  })
+})
+
+describe('moving a plane to a point clicked on the scan', () => {
+  // The plane through the point, plain or tilted, is what the offset gives.
+  const onPlane = (f: SectionFrame, p: Vec3) =>
+    (p[0] - f.origin[0]) * f.normal[0] + (p[1] - f.origin[1]) * f.normal[1] + (p[2] - f.origin[2]) * f.normal[2]
+
+  it('takes a coordinate plane to the point’s coordinate', () => {
+    expect(offsetThrough(worldCutAxis('z', [10, 20, 30]), [3, 4, 12.5])).toBeCloseTo(12.5, 12)
+    expect(offsetThrough(worldCutAxis('x'), [-7, 4, 1])).toBeCloseTo(-7, 12)
+  })
+
+  it('puts a tilted plane, along an unnormalised direction, through the point', () => {
+    const p: Vec3 = [4, -9, 17]
+    const along = { origin: [1, 2, 3] as Vec3, dir: [0, 0, 5] as Vec3 }
+    const tilted = turnAxis(along, 2, [1, 0, 0], 25)
+    for (const a of [along, tilted]) {
+      const off = offsetThrough(a, p)!
+      expect(onPlane(sectionFrameAlong(a, off)!, p)).toBeCloseTo(0, 10)
+    }
+  })
+
+  it('has no offset to give along no direction', () => {
+    expect(offsetThrough({ origin: [0, 0, 0], dir: [0, 0, 0] }, [1, 2, 3])).toBeNull()
   })
 })
 

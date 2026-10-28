@@ -46,7 +46,7 @@ This guide is the workflow and the judgement. **measure-reference** has every co
 - **Designed directions:** `orient: { to, relation }` holds a fitted element square to or in a reference plane, as designed; the measured fit is kept beside it. Use it only where the drawing says so, and report it.
 - **Designed sizes:** `assumed` draws and exports a sphere, cylinder or circle at its nominal diameter; it is still reported as measured.
 - **Known balls:** a precision sphere (a gauge ball, a ballbar's) whose diameter is known: fit it with `knownDiameter` — it holds the diameter and fits the centre alone, which keeps the centre right on a ball scanned only partly. Read `fit.held.freeDiameter` against it: a scan reading off by some µm moves a held centre by about as much towards the scanned side. On a ball scanned all round, the free fit is as good. Write down which was used.
-- **Constructions:** `element_construct` — midplanes, offsets, intersections (line-plane-plane, point-line-plane), circles where a plane cuts a cylinder, planes from typed-in numbers.
+- **Constructions:** `element_construct` — midplanes, offsets, intersections (line-plane-plane, point-line-plane), circles where a plane cuts a cylinder, planes from typed-in numbers. A section stands in any plane's slot as the plane it was cut on.
 - **Points on the surface:** `scan_nearest` checks a place lies on the scan before fitting there.
 - Batch runs of fits and point probes with `scanruler_batch`.
 

@@ -12,6 +12,7 @@ import { BASE_PLANE_SEEDS } from '../core/symmetry'
 import type { SigmaPreset } from '../core/types'
 import { useMark } from '../state/markStore'
 import { blockedRefs, draftColorOf, orientedDraft, useStore, type SelectMode } from '../state/store'
+import { dimensionRefsOf } from '../state/sectionModel'
 import { usePulse } from '../app/useHints'
 import { AssumedField } from './AssumedField'
 import { KnownDiameterField } from './KnownDiameterField'
@@ -50,6 +51,7 @@ export function DraftEditor({
 }) {
   const busy = useStore((s) => s.busy)
   const elements = useStore((s) => s.elements)
+  const sections = useStore((s) => s.sections)
   const draft = useStore((s) => s.draft)
   const draftColor = useStore(draftColorOf)
   const setDraftMethod = useStore((s) => s.setDraftMethod)
@@ -74,9 +76,12 @@ export function DraftEditor({
   // new element, and what such a draft must not be built on.
   const edited = draft?.editId !== undefined ? elements.find((e) => e.id === draft.editId) : undefined
   const blocked = blockedRefs(draft?.editId, elements)
+  // What a slot can be filled from: the elements, and the sections as the
+  // planes they were cut on, which only a plane's slot takes.
+  const refPool = dimensionRefsOf(elements, sections)
   // What the draft will be created as: the measured fit, turned onto its
   // reference plane if it is aligned to one. The preview shows this one.
-  const shownFit = orientedDraft(draft, elements).fit
+  const shownFit = orientedDraft(draft, refPool).fit
 
   // Marking the surface by hand replaces the click-and-grow flow, so it only
   // exists for the kinds that are fitted to the scan at all.
@@ -221,7 +226,7 @@ export function DraftEditor({
                 <>
                   <RefSelect
                     label="Seed plane (optional)"
-                    options={[...BASE_PLANE_SEEDS, ...providersFor(['plane'], elements, blocked)]}
+                    options={[...BASE_PLANE_SEEDS, ...providersFor(['plane'], refPool, blocked)]}
                     value={draft.seed ?? null}
                     testId="draft-seed"
                     picking={false}
@@ -231,7 +236,7 @@ export function DraftEditor({
                     data-test="find-symmetry"
                     disabled={busy || draft.status === 'fitting'}
                     onClick={onFindSymmetry}
-                    title="Reflect the scan through the seed — a coordinate plane or a plane element; with none, through each of its principal planes — fit the reflection back onto the scan, and read the mirror plane off the fit"
+                    title="Reflect the scan through the seed — a coordinate plane, a plane element or a section; with none, through each of its principal planes — fit the reflection back onto the scan, and read the mirror plane off the fit"
                   >
                     {draft.status === 'ready' ? 'Find again' : 'Find symmetry plane'}
                   </button>
@@ -246,7 +251,7 @@ export function DraftEditor({
                 <RefSelect
                   key={i}
                   label={slot.label}
-                  options={providersFor([slot.role], elements, blocked, slot.kinds)}
+                  options={providersFor([slot.role], refPool, blocked, slot.kinds)}
                   value={draft.refs[i]}
                   testId={`draft-ref-${i}`}
                   picking={draft.pickSlot === i}

@@ -105,6 +105,15 @@ describe('the kind in hand in the 3D Measure workspace', () => {
     expect(store().draft).toBeNull()
   })
 
+  it('closes a dimension box when a kind is taken up, so the two are never open together', () => {
+    pickPoint([0, 0, 0])
+    store().cancelDraft()
+    store().startDimension('dist-point-point')
+    store().startDraft('plane')
+    expect(store().draft?.kind).toBe('plane')
+    expect(store().dimDraft).toBeNull()
+  })
+
   it('restarts on the same kind and method, and never an edit', () => {
     store().startDraft('point')
     pick([1, 1, 1])

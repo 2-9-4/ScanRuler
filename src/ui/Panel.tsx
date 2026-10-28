@@ -238,14 +238,15 @@ export function Panel({
           <div className={pulseKind && !busy ? 'kindrow featurekeys three pulse' : 'kindrow featurekeys three'}>
             {ELEMENT_KINDS.map((k) => (
               // The kind in hand is shown pressed, as the sketch's tools are;
-              // while an element is being edited, its box is the one thing
-              // open and the row stands down.
+              // while an element is being edited, or a dimension or tolerance
+              // assembled, that box is the one thing open and the row stands
+              // down.
               <button
                 key={k.id}
                 data-test={`fit-${k.id}`}
                 className={draft?.kind === k.id && draft.editId === undefined ? 'on' : undefined}
                 aria-pressed={draft?.kind === k.id && draft.editId === undefined}
-                disabled={!fileName || busy || draft?.editId !== undefined}
+                disabled={!fileName || busy || draft?.editId !== undefined || dimDraft !== null}
                 onClick={() => onStartDraft(k.id)}
               >
                 <Icon name={KIND_ICON[k.id]} />
@@ -254,7 +255,7 @@ export function Panel({
             ))}
             <button
               data-test="fit-section"
-              disabled={!fileName || busy}
+              disabled={!fileName || busy || dimDraft !== null}
               title="Cut the scan with a plane, to measure the cut in the 2D Measure workspace"
               onClick={onStartSection}
             >

@@ -129,9 +129,10 @@ export interface SectionDraft extends SectionSpec {
   name?: string
 }
 
-/** Something a dimension can take as a reference: a measured element, or a
- *  section standing in as the plane it was cut on — see sectionPlane. The
- *  two share one id counter, so an id names one or the other. */
+/** Something a dimension or a construction can take as a reference: a
+ *  measured element, or a section standing in as the plane it was cut on —
+ *  see sectionPlane. The two share one id counter, so an id names one or the
+ *  other. */
 export interface MeasureRef {
   id: number
   name: string
@@ -155,8 +156,10 @@ export function sectionMeasureRefs(sections: readonly Section[]): MeasureRef[] {
   }))
 }
 
-/** Everything a dimension can reference, elements first. Tolerances keep to
- *  the elements: a section has no surface for a form to be read off. */
+/** Everything a dimension can reference, elements first — and what a
+ *  construction, a symmetry search or an alignment to a plane can stand on,
+ *  where a section fills a plane's slot. Tolerances keep to the elements: a
+ *  section has no surface for a form to be read off. */
 export function dimensionRefsOf(
   elements: readonly MeasureRef[],
   sections: readonly Section[],

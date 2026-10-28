@@ -80,7 +80,7 @@ import type {
 } from '../core/types'
 import { blockedRefs, defaultMethod, dependentsOf, type DimensionDraft, type Draft, draftFromElement, type Element, elementColor, evalConstructDraft, freshCounters, freshDraft, keptOf, nextPointPick, reevaluateConstructions, type SelectMode, transformSource, withoutRegion } from './elementModel'
 import { type AlignDraft, type AlignmentProposal, alignSlotPicks, withSlotPicks, withSlotRef } from './alignModel'
-import { centreShadowDraft, dimensionRefsOf, type Section, type SectionDraft, sectionDraftReady, sectionKeyOf, type SectionKind, specFields, settleSectionDraft } from './sectionModel'
+import { centreShadowDraft, dimensionRefsOf, type Section, sectionMeasureRefs, type SectionDraft, sectionDraftReady, sectionKeyOf, type SectionKind, specFields, settleSectionDraft } from './sectionModel'
 export { type Section, type SectionDraft, sectionDraftColorOf, sectionDraftReady } from './sectionModel'
 export { alignCenterOf, type AlignDraft, alignmentPreview, type AlignmentProposal, type AlignPreview, alignSlotPicks } from './alignModel'
 export { blockedRefs, type DimensionDraft, type Draft, draftColorOf, draftHolds, type Element, orientedDraft, picksItsPoints, type SelectMode } from './elementModel'
@@ -489,6 +489,77 @@ function freshScanState() {
   } satisfies Partial<AppState>
 }
 
+/** The constructions and alignments worked out again over `elements`, the
+ *  sections standing in as the planes they were cut on. */
+function rebuilt(elements: Element[], s: Pick<AppState, 'modelSize' | 'sections'>): Element[] {
+  return reevaluateConstructions(elements, s.modelSize, sectionMeasureRefs(s.sections))
+}
+
+/** What deleting `doomed` — elements, and a section if one is among them —
+ *  leaves of the rest: constructions built on any of it are in `doomed`
+ *  already (dependentsOf); dimensions on it go, slots and alignments on it
+ *  empty, and a section cut along a doomed element keeps its plane. */
+function withoutRefs(s: AppState, doomed: ReadonlySet<number>): Partial<AppState> {
+  const keepRef = (r: number | null) => (r !== null && doomed.has(r) ? null : r)
+  const dropOrient = (e: Element): Element =>
+    e.orient && doomed.has(e.orient.ref)
+      ? { ...e, orient: undefined, fit: e.measured ?? e.fit, measured: undefined }
+      : e
+  const dropDraftRefs = (d: Draft): Draft => {
+    const out = d.orient && doomed.has(d.orient.ref) ? { ...d, orient: undefined } : d
+    return out.seed != null && doomed.has(out.seed) ? { ...out, seed: null } : out
+  }
+  const sections = s.sections.filter((sec) => !doomed.has(sec.id))
+  const elements = rebuilt(s.elements.filter((e) => !doomed.has(e.id)).map(dropOrient), { ...s, sections })
+  const dimensions = s.dimensions.filter((d) => !d.refs.some((r) => doomed.has(r)))
+  const dd = s.dimDraft
+  return {
+    elements,
+    dimensions,
+    // A section keeps its frozen plane whatever happens to the element
+    // it was cut along; only the name in the record goes.
+    sections: sections.map((sec) =>
+      doomed.has(sectionRefElement(sec.ref) ?? -1) ? { ...sec, ref: null } : sec,
+    ),
+    sectionDraft:
+      s.sectionDraft?.editId !== undefined && doomed.has(s.sectionDraft.editId)
+        ? null
+        : s.sectionDraft && doomed.has(sectionRefElement(s.sectionDraft.ref) ?? -1)
+          ? { ...s.sectionDraft, ref: null }
+          : s.sectionDraft,
+    alignDraft: s.alignDraft
+      ? {
+          ...s.alignDraft,
+          primary: keepRef(s.alignDraft.primary),
+          secondary: keepRef(s.alignDraft.secondary),
+          origin: keepRef(s.alignDraft.origin),
+        }
+      : null,
+    // A dimension open for editing that went with the rest closes.
+    dimDraft:
+      !dd || (dd.editId !== undefined && !dimensions.some((d) => d.id === dd.editId))
+        ? null
+        : { ...dd, refs: dd.refs.map((r) => (r !== null && doomed.has(r) ? null : r)) },
+    // Deleting the element that is open for editing closes the editor —
+    // there is nothing left to write back to.
+    draft:
+      s.draft?.editId !== undefined && doomed.has(s.draft.editId)
+        ? null
+        : s.draft && s.draft.refs.some((r) => r !== null && doomed.has(r))
+          ? evalConstructDraft(
+              dropDraftRefs({
+                ...s.draft,
+                refs: s.draft.refs.map((r) => (r !== null && doomed.has(r) ? null : r)),
+              }),
+              dimensionRefsOf(elements, sections),
+              s.modelSize,
+            )
+          : s.draft
+            ? dropDraftRefs(s.draft)
+            : null,
+  }
+}
+
 export const useStore = create<AppState>()((set, get) => ({
   projectName: null,
   setProjectName: (name) => set({ projectName: name?.trim() || null }),
@@ -542,7 +613,7 @@ export const useStore = create<AppState>()((set, get) => ({
 
   resolveFit: (id, r) =>
     set((s) => ({
-      elements: reevaluateConstructions(
+      elements: rebuilt(
         s.elements.map((e) =>
           e.id === id
             ? {
@@ -555,7 +626,7 @@ export const useStore = create<AppState>()((set, get) => ({
               }
             : e,
         ),
-        s.modelSize,
+        s,
       ),
     })),
 
@@ -572,64 +643,7 @@ export const useStore = create<AppState>()((set, get) => ({
 
   // Deleting an element takes every construction built on it along, and every
   // dimension that references anything removed.
-  removeElement: (id) =>
-    set((s) => {
-      const doomed = dependentsOf(id, s.elements)
-      const keepRef = (r: number | null) => (r !== null && doomed.has(r) ? null : r)
-      const dropOrient = (e: Element): Element =>
-        e.orient && doomed.has(e.orient.ref)
-          ? { ...e, orient: undefined, fit: e.measured ?? e.fit, measured: undefined }
-          : e
-      const dropDraftOrient = (d: Draft): Draft =>
-        d.orient && doomed.has(d.orient.ref) ? { ...d, orient: undefined } : d
-      return {
-        elements: reevaluateConstructions(
-          s.elements.filter((e) => !doomed.has(e.id)).map(dropOrient),
-          s.modelSize,
-        ),
-        dimensions: s.dimensions.filter((d) => !d.refs.some((r) => doomed.has(r))),
-        // A section keeps its frozen plane whatever happens to the element
-        // it was cut along; only the name in the record goes.
-        sections: s.sections.map((sec) =>
-          doomed.has(sectionRefElement(sec.ref) ?? -1) ? { ...sec, ref: null } : sec,
-        ),
-        sectionDraft:
-          s.sectionDraft && doomed.has(sectionRefElement(s.sectionDraft.ref) ?? -1)
-            ? { ...s.sectionDraft, ref: null }
-            : s.sectionDraft,
-        alignDraft: s.alignDraft
-          ? {
-              ...s.alignDraft,
-              primary: keepRef(s.alignDraft.primary),
-              secondary: keepRef(s.alignDraft.secondary),
-              origin: keepRef(s.alignDraft.origin),
-            }
-          : null,
-        dimDraft: s.dimDraft
-          ? {
-              ...s.dimDraft,
-              refs: s.dimDraft.refs.map((r) => (r !== null && doomed.has(r) ? null : r)),
-            }
-          : null,
-        // Deleting the element that is open for editing closes the editor —
-        // there is nothing left to write back to.
-        draft:
-          s.draft?.editId !== undefined && doomed.has(s.draft.editId)
-            ? null
-            : s.draft && s.draft.refs.some((r) => r !== null && doomed.has(r))
-            ? evalConstructDraft(
-                dropDraftOrient({
-                  ...s.draft,
-                  refs: s.draft.refs.map((r) => (r !== null && doomed.has(r) ? null : r)),
-                }),
-                s.elements.filter((e) => !doomed.has(e.id)),
-                s.modelSize,
-              )
-            : s.draft
-              ? dropDraftOrient(s.draft)
-              : null,
-      }
-    }),
+  removeElement: (id) => set((s) => withoutRefs(s, dependentsOf(id, s.elements))),
 
   toggleElementVisible: (id) =>
     set((s) => ({
@@ -642,6 +656,7 @@ export const useStore = create<AppState>()((set, get) => ({
     set((s) => ({
       draft: freshDraft(kind, defaultMethod(kind), s.settings),
       discarded: null,
+      dimDraft: null,
       alignDraft: null,
       sectionDraft: null,
       errorText: null,
@@ -654,7 +669,7 @@ export const useStore = create<AppState>()((set, get) => ({
     set((s) => {
       const el = s.elements.find((e) => e.id === id)
       if (!el) return {}
-      const draft = draftFromElement(el, s.elements, s.modelSize, s.settings)
+      const draft = draftFromElement(el, dimensionRefsOf(s.elements, s.sections), s.modelSize, s.settings)
       return {
         draft,
         discarded: null,
@@ -749,7 +764,7 @@ export const useStore = create<AppState>()((set, get) => ({
       // built on it.
       if (id !== null && blockedRefs(s.draft.editId, s.elements).has(id)) return {}
       const refs = s.draft.refs.map((r, i) => (i === slot ? id : r))
-      const draft = evalConstructDraft({ ...s.draft, refs }, s.elements, s.modelSize)
+      const draft = evalConstructDraft({ ...s.draft, refs }, dimensionRefsOf(s.elements, s.sections), s.modelSize)
       // A slot filled from the list or by a click on an element hands the
       // pick on to the next empty one, as a click on the scan does.
       const waiting = s.draft.pickSlot
@@ -764,7 +779,7 @@ export const useStore = create<AppState>()((set, get) => ({
       if (m.mode !== 'construct' || m.slots[slot]?.role !== 'point') return {}
       const refs = s.draft.refs.map((r, i) => (i === slot ? null : r))
       return {
-        draft: { ...evalConstructDraft({ ...s.draft, refs }, s.elements, s.modelSize), pickSlot: slot },
+        draft: { ...evalConstructDraft({ ...s.draft, refs }, dimensionRefsOf(s.elements, s.sections), s.modelSize), pickSlot: slot },
         errorText: null,
       }
     }),
@@ -796,7 +811,7 @@ export const useStore = create<AppState>()((set, get) => ({
         },
       ]
       const refs = s.draft.refs.map((r, i) => (i === slot ? id : r))
-      const draft = evalConstructDraft({ ...s.draft, refs, pickSlot: null }, elements, s.modelSize)
+      const draft = evalConstructDraft({ ...s.draft, refs, pickSlot: null }, dimensionRefsOf(elements, s.sections), s.modelSize)
       return {
         nextId: id + 1,
         nextNumber: num + 1,
@@ -812,14 +827,14 @@ export const useStore = create<AppState>()((set, get) => ({
     set((s) => {
       if (!s.draft) return {}
       const params = s.draft.params.map((p, i) => (i === index ? value : p))
-      return { draft: evalConstructDraft({ ...s.draft, params }, s.elements, s.modelSize) }
+      return { draft: evalConstructDraft({ ...s.draft, params }, dimensionRefsOf(s.elements, s.sections), s.modelSize) }
     }),
 
   setDraftParams: (params, note) =>
     set((s) => {
       if (!s.draft) return {}
       return {
-        draft: { ...evalConstructDraft({ ...s.draft, params }, s.elements, s.modelSize), note },
+        draft: { ...evalConstructDraft({ ...s.draft, params }, dimensionRefsOf(s.elements, s.sections), s.modelSize), note },
       }
     }),
 
@@ -874,10 +889,10 @@ export const useStore = create<AppState>()((set, get) => ({
       const d = s.draft
       if (!d) return {}
       if (ref === null) return { draft: { ...d, orient: undefined } }
-      // Only a plane can be aligned to — a coordinate plane or a plane
-      // element, and not one that builds on the element being edited: that
-      // would close a loop.
-      if (!isOrientRef(ref, s.elements) || blockedRefs(d.editId, s.elements).has(ref)) return {}
+      // Only a plane can be aligned to — a coordinate plane, a plane element
+      // or a section, and not one that builds on the element being edited:
+      // that would close a loop.
+      if (!isOrientRef(ref, dimensionRefsOf(s.elements, s.sections)) || blockedRefs(d.editId, s.elements).has(ref)) return {}
       return { draft: { ...d, orient: { ref, relation: d.orient?.relation ?? 'normal' } } }
     }),
 
@@ -919,7 +934,8 @@ export const useStore = create<AppState>()((set, get) => ({
     set((s) => {
       const d = s.discarded
       if (!d || s.draft) return {}
-      const alive = (id: number | null | undefined) => id != null && s.elements.some((e) => e.id === id)
+      const alive = (id: number | null | undefined) =>
+        id != null && (s.elements.some((e) => e.id === id) || s.sections.some((sec) => sec.id === id))
       // What it was built on may have gone since it was put aside: an edit of
       // an element deleted meanwhile comes back as a new element, a seed
       // plane or reference deleted meanwhile is simply not there any more.
@@ -970,7 +986,7 @@ export const useStore = create<AppState>()((set, get) => ({
     // plus the recipe; the aligned geometry is computed from the two on the
     // way in, and again whenever the reference moves.
     const orient =
-      isOrientable(d.fit) && d.orient && isOrientRef(d.orient.ref, get().elements)
+      isOrientable(d.fit) && d.orient && isOrientRef(d.orient.ref, dimensionRefsOf(get().elements, get().sections))
         ? d.orient
         : undefined
     const measured = orient ? d.fit : undefined
@@ -999,7 +1015,7 @@ export const useStore = create<AppState>()((set, get) => ({
       const editId = d.editId
       set((s) => ({
         draft: null,
-        elements: reevaluateConstructions(
+        elements: rebuilt(
           s.elements.map((e) =>
             e.id === editId
               ? {
@@ -1016,7 +1032,7 @@ export const useStore = create<AppState>()((set, get) => ({
                 }
               : e,
           ),
-          s.modelSize,
+          s,
         ),
       }))
       return editId
@@ -1034,7 +1050,7 @@ export const useStore = create<AppState>()((set, get) => ({
       nextNumber: num + 1,
       nextOfKind: { ...s.nextOfKind, [d.kind]: ofKind + 1 },
       draft: forSlot ? null : freshDraft(d.kind, d.method, d.settings),
-      elements: reevaluateConstructions(
+      elements: rebuilt(
         [
           ...s.elements,
           {
@@ -1052,7 +1068,7 @@ export const useStore = create<AppState>()((set, get) => ({
             assumed,
           },
         ],
-        s.modelSize,
+        s,
       ),
       // A point picked for a dimension slot drops straight into it.
       dimDraft:
@@ -1252,9 +1268,9 @@ export const useStore = create<AppState>()((set, get) => ({
     const cutKey = sectionKeyOf(frame, d)
     if (d.editId !== undefined) {
       const editId = d.editId
-      set((s) => ({
-        sectionDraft: null,
-        sections: s.sections.map((sec) => {
+      // What is built on the section follows it to its new plane.
+      set((s) => {
+        const sections = s.sections.map((sec) => {
           if (sec.id !== editId) return sec
           // The kind and its settings are the draft's, a cut's absent.
           const { kind: _kind, play: _play, tolerance: _tolerance, smoothDeg: _smooth, extrude: _extrude, ...rest } = sec
@@ -1270,8 +1286,9 @@ export const useStore = create<AppState>()((set, get) => ({
             cutKey,
             message: undefined,
           }
-        }),
-      }))
+        })
+        return { sectionDraft: null, sections, elements: rebuilt(s.elements, { ...s, sections }) }
+      })
       return editId
     }
     const id = get().nextId
@@ -1302,27 +1319,9 @@ export const useStore = create<AppState>()((set, get) => ({
     return id
   },
 
-  // A dimension taken from the section goes with it, as one on a deleted
-  // element does.
-  removeSection: (id) =>
-    set((s) => {
-      const dimensions = s.dimensions.some((d) => d.refs.includes(id))
-        ? s.dimensions.filter((d) => !d.refs.includes(id))
-        : s.dimensions
-      const dd = s.dimDraft
-      const editGone = dd?.editId !== undefined && !dimensions.some((d) => d.id === dd.editId)
-      return {
-        sections: s.sections.filter((sec) => sec.id !== id),
-        sectionDraft: s.sectionDraft?.editId === id ? null : s.sectionDraft,
-        dimensions,
-        dimDraft:
-          !dd || editGone
-            ? null
-            : dd.refs.includes(id)
-              ? { ...dd, refs: dd.refs.map((r) => (r === id ? null : r)) }
-              : dd,
-      }
-    }),
+  // A dimension taken from the section goes with it, and a construction
+  // built on it, as they do with a deleted element.
+  removeSection: (id) => set((s) => withoutRefs(s, dependentsOf(id, s.elements))),
 
   toggleSectionVisible: (id) =>
     set((s) => ({
@@ -1333,14 +1332,17 @@ export const useStore = create<AppState>()((set, get) => ({
       sections: s.sections.map((sec) => (sec.visible === visible ? sec : { ...sec, visible })),
     })),
 
+  // The cut says where on its plane the section lies, which is where a
+  // construction on it is drawn and measured from — so they follow.
   resolveSection: (id, cutKey, cut) =>
-    set((s) => ({
-      sections: s.sections.map((sec) =>
+    set((s) => {
+      const sections = s.sections.map((sec) =>
         sec.id === id && sectionKeyOf(sec.frame, sec) === cutKey
           ? { ...sec, cut, cutKey, message: undefined }
           : sec,
-      ),
-    })),
+      )
+      return { sections, elements: rebuilt(s.elements, { ...s, sections }) }
+    }),
 
   failSection: (id, message) =>
     set((s) => ({
@@ -1463,11 +1465,12 @@ export const useStore = create<AppState>()((set, get) => ({
           cutKey: d.cut && frame ? sectionKeyOf(frame, d) : undefined,
         })
       }
+      const sections = s.sections.map(moveSection)
       return {
         alignDraft: null,
         appliedAlignment: s.appliedAlignment ? rigidCompose(m, s.appliedAlignment) : m,
         modelCenter: [moved[0], moved[1], moved[2]] as Vec3,
-        elements: reevaluateConstructions(
+        elements: rebuilt(
           s.elements.map((el) => {
             const out: Element = {
               ...el,
@@ -1483,9 +1486,9 @@ export const useStore = create<AppState>()((set, get) => ({
               ? { ...out, orient: undefined, fit: out.measured ?? out.fit, measured: undefined }
               : { ...out, orient: { ...out.orient, ref } }
           }),
-          s.modelSize,
+          { ...s, sections },
         ),
-        sections: s.sections.map(moveSection),
+        sections,
         sectionDraft: s.sectionDraft ? moveDraft(s.sectionDraft) : null,
       }
     }),

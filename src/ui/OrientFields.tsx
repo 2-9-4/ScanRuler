@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Aligning the element being made to a reference plane — a coordinate plane
-// or a plane element: which plane, how it relates to it, and how far the
-// measurement was from that relation — with a warning once it is further off
-// than an aligned feature ought to be.
+// Aligning the element being made to a reference plane — a coordinate plane,
+// a plane element or a section: which plane, how it relates to it, and how
+// far the measurement was from that relation — with a warning once it is
+// further off than an aligned feature ought to be.
 
 import { InfoDot } from './InfoDot'
 import { RefSelect } from './RefSelect'
 import { BASE_PLANES, basePlaneOf } from '../core/basePlanes'
 import { blockedRefs, orientedDraft, useStore } from '../state/store'
+import { dimensionRefsOf } from '../state/sectionModel'
 import {
   ORIENT_TOLERANCE_DEG,
   relationLabel,
@@ -18,18 +19,20 @@ import {
 export function OrientFields({ fit }: { fit: OrientableFit }) {
   const draft = useStore((s) => s.draft)
   const elements = useStore((s) => s.elements)
+  const sections = useStore((s) => s.sections)
   const aligned = useStore((s) => s.appliedAlignment !== null)
   const setDraftOrientRef = useStore((s) => s.setDraftOrientRef)
   const setDraftOrientRelation = useStore((s) => s.setDraftOrientRelation)
   if (!draft) return null
 
   // The coordinate planes, then any plane that does not build on the
-  // element being edited.
+  // element being edited, then the sections.
   const blocked = blockedRefs(draft.editId, elements)
-  const planes = elements.filter((e) => e.kind === 'plane' && e.fit && !blocked.has(e.id))
+  const pool = dimensionRefsOf(elements, sections)
+  const planes = pool.filter((e) => e.kind === 'plane' && e.fit && !blocked.has(e.id))
 
   const orient = draft.orient
-  const { deviationDeg, warning } = orientedDraft({ fit, orient }, elements)
+  const { deviationDeg, warning } = orientedDraft({ fit, orient }, pool)
   const planar = fit.kind === 'plane' || fit.kind === 'circle'
   const onBasePlane = orient !== undefined && basePlaneOf(orient.ref) !== undefined
 
@@ -46,7 +49,8 @@ export function OrientFields({ fit }: { fit: OrientableFit }) {
               pivots about its own centre by the smallest rotation that gets it there.
             </p>
             <p>
-              The reference is one of the <b>coordinate planes</b> or a measured plane. On a part
+              The reference is one of the <b>coordinate planes</b>, a measured plane or a section,
+              as the plane it was cut on. On a part
               that has been aligned — Auto-align or Align part, in the Alignment group — the
               coordinate planes are the part&rsquo;s own, so a bore perpendicular to the XY plane
               stands square to the part&rsquo;s base. Align the part again and the alignment goes
