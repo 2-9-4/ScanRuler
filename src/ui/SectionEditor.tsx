@@ -88,7 +88,7 @@ export function SectionEditor({
     : orphan
       ? 'The element this was cut along has gone; the plane stays where it was. Slide or tilt it with the gizmo, or choose another element to move it.'
       : shadow
-        ? 'The scan’s outline seen along the plane’s normal — its widest extent, every indentation filled — drawn on the plane. Slide the plane to where the outline should lie; tilt it to look from another way.'
+        ? 'The scan’s outline seen along the plane’s normal — its widest extent, every indentation filled — drawn in the middle of the part. Tilt the plane with the rings to look from another way.'
         : 'Slide the plane along its direction — drag the arrow, or type the offset — and tilt it by dragging one of the rings, then create.'
 
   return (
@@ -202,29 +202,34 @@ export function SectionEditor({
         </label>
       )}
 
-      <label className="field">
-        {/* A plane still square to a coordinate axis has a coordinate, not an
-            offset: its Z is what the field holds. */}
-        <span>{isWorldAxis(draft.ref) && tilt === 0 ? `${draft.ref.toUpperCase()} (mm)` : 'Offset (mm)'}</span>
-        <input
-          type="number"
-          step="any"
-          data-test="section-offset"
-          disabled={!draft.axis}
-          // Re-keyed on the value, so a grip dragged in the viewport types
-          // itself into the field.
-          key={round(draft.offset)}
-          defaultValue={round(draft.offset)}
-          onBlur={(e) => {
-            const v = Number(e.target.value)
-            if (Number.isFinite(v)) setOffset(v)
-            e.target.value = String(round(draft.offset))
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') e.currentTarget.blur()
-          }}
-        />
-      </label>
+      {/* A shadow has no offset to give: it is the same outline anywhere
+          along the normal, and is drawn in the middle of the part. */}
+      {!shadow && (
+        <label className="field">
+          {/* A plane still square to a coordinate axis has a coordinate, not an
+              offset: its Z is what the field holds. */}
+          <span>{isWorldAxis(draft.ref) && tilt === 0 ? `${draft.ref.toUpperCase()} (mm)` : 'Offset (mm)'}</span>
+          <input
+            type="number"
+            step="any"
+            data-test="section-offset"
+            disabled={!draft.axis}
+            title="Where the plane lies along its normal, which is where it cuts the part"
+            // Re-keyed on the value, so a grip dragged in the viewport types
+            // itself into the field.
+            key={round(draft.offset)}
+            defaultValue={round(draft.offset)}
+            onBlur={(e) => {
+              const v = Number(e.target.value)
+              if (Number.isFinite(v)) setOffset(v)
+              e.target.value = String(round(draft.offset))
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') e.currentTarget.blur()
+            }}
+          />
+        </label>
+      )}
 
       {shadow && (
         <>

@@ -3,7 +3,7 @@
 // as the store keeps them, and the draft one is set up in.
 
 import { type CutAxis, frameKey, type SectionFrame, sectionFrameAlong, sectionPlane, type SectionPlaneRef } from '../core/section/frame'
-import { SHADOW_SMOOTH_DEG, SHADOW_TOLERANCE } from '../core/section/shadow'
+import { SHADOW_SMOOTH_DEG, SHADOW_TOLERANCE, shiftShadow } from '../core/section/shadow'
 import type { SectionCut } from '../core/section/slice'
 import type { ElementKind, FitData, Vec3 } from '../core/types'
 import { elementColor } from './elementModel'
@@ -171,6 +171,22 @@ export function settleSectionDraft(d: SectionDraft): SectionDraft {
   if (!frame) return { ...d, frame: null, status: 'empty', message: undefined }
   const ready = d.cut !== undefined && d.cutKey === sectionKeyOf(frame, d)
   return { ...d, frame, status: ready ? 'ready' : 'slicing', message: undefined }
+}
+
+/** A shadow draft with its plane slid along the normal to the middle of the
+ *  part's thickness, the outline moved with it. A shadow is the same outline
+ *  wherever its plane lies along the normal, so where it is drawn is not
+ *  asked: in the middle, where the extruded block is centred on it too. A
+ *  draft whose cut is not for its plane, or no shadow, is returned as it is. */
+export function centreShadowDraft(d: SectionDraft): SectionDraft {
+  const sh = d.cut?.shadow
+  if (!isShadow(d) || !sh || !d.frame || d.cutKey !== sectionKeyOf(d.frame, d)) return d
+  const mid = (sh.extent.min + sh.extent.max) / 2
+  if (!(Math.abs(mid) > 1e-6)) return d
+  const moved = settleSectionDraft({ ...d, offset: d.offset + mid })
+  const cut = moved.frame ? shiftShadow(d.cut!, moved.frame) : null
+  if (!moved.frame || !cut) return d
+  return settleSectionDraft({ ...moved, cut, cutKey: sectionKeyOf(moved.frame, moved) })
 }
 
 /** Whether the section draft can be created as it stands: cut in the frame it

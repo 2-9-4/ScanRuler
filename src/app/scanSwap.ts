@@ -25,7 +25,7 @@ import type { SceneManager } from '../viewer/SceneManager'
 import type { SourceFiles } from './project'
 import { scanRemapped, scanRemeasure, scanSwapped, scanSwapping } from './scanEvents'
 import { forgetAllSurfaces } from './surfaces'
-import { readCompanions } from './scanFiles'
+import { scanCompanions } from './scanFiles'
 
 /** A scan as the session holds it: its file's bytes, their units, and the
  *  files that came with it. */
@@ -65,7 +65,7 @@ export function scanSwap({
       source.units ?? 'mm',
       // An edit is a mesh of its own, colourless; the scan before it, on
       // undo, comes back with whatever came with it.
-      await readCompanions(source.companions ?? []),
+      await scanCompanions(source.name, source.bytes, source.companions ?? []),
     )
     try {
       await client.commitImport({ scan: id })

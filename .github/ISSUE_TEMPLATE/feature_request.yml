@@ -1,0 +1,45 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+name: Feature request
+description: A measurement, workflow or export ScanRuler doesn't do yet.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please search the [existing issues](https://github.com/CNCKitchen/scanruler/issues?q=is%3Aissue) first. If your idea is already there, a 👍 on it counts. We look at those when deciding what comes next.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The job behind the request. What part, what are you checking, and where does ScanRuler stop you today?
+      placeholder: I print brackets in batches and check every hole position against the CAD. Right now I pick each hole by hand on every scan.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help
+      description: How you picture it working. A rough sketch or a screenshot from another tool is welcome.
+    validations:
+      required: true
+  - type: textarea
+    id: today
+    attributes:
+      label: How do you do it today?
+      description: Another program, a workaround, or not at all.
+    validations:
+      required: false
+  - type: textarea
+    id: files
+    attributes:
+      label: Example files
+      description: A scan or CAD file that shows the case helps a lot. Only share what you're allowed to share.
+    validations:
+      required: false
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contributing
+      options:
+        - label: I'd like to build this myself. Pull requests need the [CLA](https://github.com/CNCKitchen/scanruler/blob/main/CLA.md) signed once, see [CONTRIBUTING.md](https://github.com/CNCKitchen/scanruler/blob/main/CONTRIBUTING.md).
+          required: false

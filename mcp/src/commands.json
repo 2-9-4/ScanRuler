@@ -1,6 +1,6 @@
 {
-  "app": "0.8.2",
-  "saved": "2026-10-27T14:33:14.285Z",
+  "app": "0.8.3",
+  "saved": "2026-10-28T13:16:34.062Z",
   "commands": [
     {
       "name": "align.auto",
@@ -434,7 +434,7 @@
     {
       "name": "deviation.open_reference",
       "title": "Open the reference part",
-      "description": "Open the nominal part the scan is compared with — STEP straight from CAD, or STL, PLY or OBJ — in place of the one there is; any alignment and map against the old one go. The elements measured on the scan stay. Returns the deviation state. Not undoable: a new reference starts a new history.",
+      "description": "Open the nominal part the scan is compared with — STEP straight from CAD, or STL, PLY, OBJ or 3MF — in place of the one there is; any alignment and map against the old one go. The elements measured on the scan stay. Returns the deviation state. Not undoable: a new reference starts a new history.",
       "input": {
         "type": "object",
         "properties": {
@@ -1832,11 +1832,20 @@
     },
     {
       "name": "export.stl",
-      "title": "Export the scan as STL",
-      "description": "The scan as a binary STL in the pose it is shown in — a datum alignment and a best fit onto the reference included. Needs the viewport. Returns the file’s bytes and the name the panel would save it under.",
+      "title": "Export the scan as a mesh",
+      "description": "The scan as a binary STL — or, format 3mf, a 3MF in millimetres with the scan’s own colours — in the pose it is shown in, a datum alignment and a best fit onto the reference included. Needs the viewport. Returns the file’s bytes and the name the panel would save it under.",
       "input": {
         "type": "object",
-        "properties": {},
+        "properties": {
+          "format": {
+            "type": "string",
+            "enum": [
+              "stl",
+              "3mf"
+            ],
+            "description": "stl (the default) or 3mf."
+          }
+        },
         "additionalProperties": false
       },
       "readOnly": true,
@@ -3346,7 +3355,7 @@
     {
       "name": "scan.open",
       "title": "Open a scan",
-      "description": "Open a mesh as the scan to measure — STL, PLY or OBJ, or a STEP part, cut into triangles a few hundred to the part’s diagonal — in place of the one there is; everything measured on the old one goes with it, so it refuses while the session holds measurements unless discard is true — the refusal names what the session holds. A reference part opened from a file stays, its alignment and maps gone (referenceKept names it); one the app made from the session’s own work goes with that work (referenceDropped). Returns the scan: name, units, vertex and triangle counts, its bounding box (min and max corners), the box’s centre and its diagonal (size), in millimetres. Not undoable: a new scan starts a new history.",
+      "description": "Open a mesh as the scan to measure — STL, PLY, OBJ or 3MF, or a STEP part, cut into triangles a few hundred to the part’s diagonal — in place of the one there is; everything measured on the old one goes with it, so it refuses while the session holds measurements unless discard is true — the refusal names what the session holds. A reference part opened from a file stays, its alignment and maps gone (referenceKept names it); one the app made from the session’s own work goes with that work (referenceDropped). Returns the scan: name, units, vertex and triangle counts, its bounding box (min and max corners), the box’s centre and its diagonal (size), in millimetres. Not undoable: a new scan starts a new history.",
       "input": {
         "type": "object",
         "properties": {
@@ -3914,7 +3923,7 @@
     {
       "name": "section.cut",
       "title": "Cut a section",
-      "description": "Cut the scan with a plane and keep the cut as a section, measured in the 2D workspace (flat) — where it is put on the sheet. across is what the plane is taken across: an element with a direction (a plane, cylinder, cone, line or circle) by id or name, or a coordinate plane \"XY\", \"YZ\" or \"XZ\" (also \"ZX\"), which is laid through the part’s centre. Or { axis, angleDeg }: a plane through an axis — a cylinder’s, cone’s, line’s or circle’s, by id or name, or the coordinate axis \"X\", \"Y\" or \"Z\" through the origin — turned angleDeg about it: a half section of a turned part, u the distance out from the axis and v up it (towards the + end of the coordinate axis it lies nearest, whichever way the element points), normal u × v, at every angle. 0° is the coordinate axis next round (X about Z, Y about X, Z about Y) and the angle turns by the right hand about the axis — about Z, from +X towards +Y. offset slides the plane along its normal, mm — from the element, or for a coordinate plane the coordinate itself; through an axis, 0 by default. kind \"shadow\" keeps the scan’s shadow instead of its cut: the whole part projected along the plane’s normal onto the plane, its outer boundary as closed loops (holes marked) — the widest outline, every indentation filled, for a bin, a foam cutout or a pocket — read as lines and arcs to tolerance (mm, 0.1 by default) and lying between play and play + 2·tolerance outside the part’s exact silhouette (play in mm, 1 by default; 0 for none, negative is a press fit); where two lines meet turning by less than smoothDeg (30° by default, 0 for none) the corner is rounded by an arc tangent to both, sharper ones kept; the plane only places the loops; extrude (true by default; false keeps it flat) stands it up as a block through the part’s thickness along the normal (the part’s lowest point to its highest), drawn in 3D and written by export.step as a solid in the solids form, a planar face per end and a face per line or arc. Returns the section: its plane and how many chains the cut has — for a shadow also its loops, area and the band it lies in. One undo step.",
+      "description": "Cut the scan with a plane and keep the cut as a section, measured in the 2D workspace (flat) — where it is put on the sheet. across is what the plane is taken across: an element with a direction (a plane, cylinder, cone, line or circle) by id or name, or a coordinate plane \"XY\", \"YZ\" or \"XZ\" (also \"ZX\"), which is laid through the part’s centre. Or { axis, angleDeg }: a plane through an axis — a cylinder’s, cone’s, line’s or circle’s, by id or name, or the coordinate axis \"X\", \"Y\" or \"Z\" through the origin — turned angleDeg about it: a half section of a turned part, u the distance out from the axis and v up it (towards the + end of the coordinate axis it lies nearest, whichever way the element points), normal u × v, at every angle. 0° is the coordinate axis next round (X about Z, Y about X, Z about Y) and the angle turns by the right hand about the axis — about Z, from +X towards +Y. offset slides the plane along its normal, mm — from the element, or for a coordinate plane the coordinate itself; through an axis, 0 by default. kind \"shadow\" keeps the scan’s shadow instead of its cut: the whole part projected along the plane’s normal onto the plane, its outer boundary as closed loops (holes marked) — the widest outline, every indentation filled, for a bin, a foam cutout or a pocket — read as lines and arcs to tolerance (mm, 0.1 by default) and lying between play and play + 2·tolerance outside the part’s exact silhouette (play in mm, 1 by default; 0 for none, negative is a press fit); where two lines meet turning by less than smoothDeg (30° by default, 0 for none) the corner is rounded by an arc tangent to both, sharper ones kept; the loops are drawn in the middle of the part’s thickness along the normal, and a shadow takes no offset; extrude (true by default; false keeps it flat) stands it up as a block through the part’s thickness along the normal (the part’s lowest point to its highest), drawn in 3D and written by export.step as a solid in the solids form, a planar face per end and a face per line or arc. Returns the section: its plane and how many chains the cut has — for a shadow also its loops, area and the band it lies in. One undo step.",
       "input": {
         "type": "object",
         "properties": {
@@ -3965,7 +3974,7 @@
           },
           "offset": {
             "type": "number",
-            "description": "Where along the normal the plane lies, mm."
+            "description": "Where along the normal the plane lies, mm. A cut’s only: a shadow is drawn in the middle of the part."
           },
           "name": {
             "type": "string",

@@ -348,7 +348,7 @@ describe('a shadow as a section', () => {
       turns: 0,
       mirror: false,
       unit: 'mm' as const,
-      title: 'ScanRuler 2D measurement — Section 1: part.stl shadow onto XY plane, +0.000 mm',
+      title: 'ScanRuler 2D measurement — Section 1: part.stl shadow onto XY plane',
       scaleNote: 'Scale: millimetres of the 3D scan (a section, not an image)',
     }
     const dxf = buildFlatDxf({ ...input, origin: null, edgeTolerance: 0.01 })
@@ -371,7 +371,9 @@ describe('a shadow as a section', () => {
   it('says it is a shadow in its row and keys its cut by what it was read with', async () => {
     const { describeCut, frameKey } = await import('../src/core/section/frame')
     const { sectionKeyOf } = await import('../src/state/sectionModel')
-    expect(describeCut('Plane 1', 3, 0, 'shadow')).toBe('shadow onto Plane 1, +3.000 mm')
+    // A shadow has no offset to tell: it is drawn in the middle of the part.
+    expect(describeCut('Plane 1', 3, 0, 'shadow')).toBe('shadow onto Plane 1')
+    expect(describeCut('Plane 1', 3, 4.25, 'shadow')).toBe('shadow onto Plane 1, tilted 4.3°')
     expect(describeCut('Plane 1', -2, 0)).toBe('along Plane 1, −2.000 mm')
     // A cut's key is the frame's, as it always was.
     expect(sectionKeyOf(XY, {})).toBe(frameKey(XY))
@@ -428,6 +430,33 @@ describe('a shadow as a section', () => {
     const now = useStore.getState().sections.find((x) => x.id === shadowId)!
     expect(now.kind).toBeUndefined()
     expect(now.play).toBeUndefined()
+  })
+
+  it('is drawn in the middle of the part, wherever its plane was when it was taken', async () => {
+    const { useStore } = await import('../src/state/store')
+    const { sectionKeyOf } = await import('../src/state/sectionModel')
+    useStore.setState(useStore.getInitialState(), true)
+    useStore.getState().beginLoad('part.stl')
+    useStore.getState().finishLoad(100, 50, 20, [10, 15, 2])
+    useStore.getState().startSection()
+    useStore.getState().setSectionDraftRef('z')
+    useStore.getState().setSectionDraftKind('shadow')
+    // Taken 25 mm up, well above the plate's 0 to 4 mm.
+    useStore.getState().setSectionDraftOffset(25)
+    const d = useStore.getState().sectionDraft!
+    const taken = shadowMesh(plate.positions, plate.indices, d.frame!, { play: 1 })
+    useStore.getState().resolveSectionDraft(sectionKeyOf(d.frame!, d), taken)
+    const now = useStore.getState().sectionDraft!
+    expect(now.offset).toBeCloseTo(2, 9)
+    expect(now.frame!.origin[2]).toBeCloseTo(2, 9)
+    expect(now.status).toBe('ready')
+    expect(now.cut!.shadow!.extent.min).toBeCloseTo(-2, 9)
+    expect(now.cut!.shadow!.extent.max).toBeCloseTo(2, 9)
+    // The same outline, lying on the plane where it is now.
+    expect(now.cut!.shadow!.area).toBe(taken.shadow.area)
+    for (let i = 2; i < now.cut!.points.length; i += 3) expect(now.cut!.points[i]).toBeCloseTo(2, 4)
+    const id = useStore.getState().commitSection()!
+    expect(useStore.getState().sections.find((x) => x.id === id)!.offset).toBeCloseTo(2, 9)
   })
 })
 
@@ -614,6 +643,125 @@ describe('the band on a toothed outline', () => {
         const d = polyDist(p, outline) * (insidePoly(p, outline) ? -1 : 1)
         expect(d).toBeGreaterThanOrEqual(play - 1e-3)
         expect(d).toBeLessThanOrEqual(play + 2 * tolerance + 1e-3)
+      }
+    }
+  })
+})
+
+describe('teeth at the corners', () => {
+  const rng = (seed: number) => {
+    let s = seed >>> 0
+    return () => (s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32
+  }
+
+  /** A convex part like a scanned case: corners turning 20–75°, rounded by
+   *  1.5 mm, its sides waving 0.4 mm along a few millimetres, stacked as
+   *  four rings a little apart, each jittered. */
+  function scannedCase(seed: number): { positions: Float32Array; indices: Uint32Array } {
+    const rnd = rng(seed * 101)
+    const turns: number[] = []
+    let sum = 0
+    while (sum < 285) {
+      turns.push(20 + rnd() * 55)
+      sum += turns[turns.length - 1]
+    }
+    turns.push(360 - sum)
+    const poly: Pt[] = []
+    let x = 0, y = 0, a = rnd() * 6.28
+    for (const t of turns) {
+      const len = 20 + rnd() * 60
+      x += Math.cos(a) * len
+      y += Math.sin(a) * len
+      poly.push([x, y])
+      a += (t * Math.PI) / 180
+    }
+    const r = 1.5
+    const n = poly.length
+    const ph = rnd() * 6.28, wl = 3 + rnd() * 10
+    const base: Pt[] = []
+    let s = 0
+    const push = (p: Pt, nrm: Pt) => {
+      const e = 0.4 * Math.sin(ph + (2 * Math.PI * s) / wl) * (0.5 + 0.5 * Math.sin(s / 17))
+      base.push([p[0] + nrm[0] * e, p[1] + nrm[1] * e])
+    }
+    const corner = poly.map((p1, i) => {
+      const p0 = poly[(i + n - 1) % n], p2 = poly[(i + 1) % n]
+      const l1 = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]), l2 = Math.hypot(p2[0] - p1[0], p2[1] - p1[1])
+      const u1: Pt = [(p1[0] - p0[0]) / l1, (p1[1] - p0[1]) / l1], u2: Pt = [(p2[0] - p1[0]) / l2, (p2[1] - p1[1]) / l2]
+      const back = r / Math.tan(Math.acos(Math.max(-1, Math.min(1, -(u1[0] * u2[0] + u1[1] * u2[1])))) / 2)
+      return { a: [p1[0] - u1[0] * back, p1[1] - u1[1] * back] as Pt, b: [p1[0] + u2[0] * back, p1[1] + u2[1] * back] as Pt, u1, u2 }
+    })
+    for (let i = 0; i < n; i++) {
+      const { a: p, b: q, u1, u2 } = corner[i]
+      const c: Pt = [p[0] - u1[1] * r, p[1] + u1[0] * r]
+      const a0 = Math.atan2(p[1] - c[1], p[0] - c[0])
+      let a1 = Math.atan2(q[1] - c[1], q[0] - c[0])
+      while (a1 < a0) a1 += 2 * Math.PI
+      const k = Math.max(1, Math.ceil(((a1 - a0) * r) / 0.1))
+      for (let j = 0; j <= k; j++) {
+        const t = a0 + ((a1 - a0) * j) / k
+        s += ((a1 - a0) * r) / k
+        push([c[0] + r * Math.cos(t), c[1] + r * Math.sin(t)], [Math.cos(t), Math.sin(t)])
+      }
+      const e = corner[(i + 1) % n].a
+      const len = Math.hypot(e[0] - q[0], e[1] - q[1])
+      const m = Math.ceil(len / 0.25)
+      for (let j = 1; j < m; j++) {
+        s += len / m
+        push([q[0] + ((e[0] - q[0]) * j) / m, q[1] + ((e[1] - q[1]) * j) / m], [u2[1], -u2[0]])
+      }
+    }
+    const rnd2 = rng(seed)
+    const nb = base.length
+    const cx = base.reduce((t, p) => t + p[0], 0) / nb, cy = base.reduce((t, p) => t + p[1], 0) / nb
+    const pos: number[] = []
+    for (let k = 0; k < 4; k++) {
+      for (const [px, py] of base) {
+        const dx = px - cx, dy = py - cy, l = Math.hypot(dx, dy)
+        const e = (rnd2() * 2 - 1) * 0.05
+        pos.push(px + (dx / l) * e, py + (dy / l) * e, k * 2)
+      }
+    }
+    pos.push(cx, cy, 0, cx, cy, 6)
+    const c0 = 4 * nb
+    const idx: number[] = []
+    for (let k = 0; k < 3; k++) {
+      for (let i = 0; i < nb; i++) {
+        const p = k * nb + i, q = k * nb + ((i + 1) % nb)
+        idx.push(p, q, q + nb, p, q + nb, p + nb)
+      }
+    }
+    for (let i = 0; i < nb; i++) idx.push(c0, (i + 1) % nb, i, c0 + 1, 3 * nb + i, 3 * nb + ((i + 1) % nb))
+    return { positions: Float32Array.from(pos), indices: Uint32Array.from(idx) }
+  }
+
+  /** Short lines between two lines that turn one way into them and the
+   *  other way out: a stub sticking out of a corner. */
+  const teeth = (pieces: ShadowPiece[], short: number) =>
+    pieces.filter((b, i) => {
+      const a = pieces[(i + pieces.length - 1) % pieces.length]
+      const c = pieces[(i + 1) % pieces.length]
+      if (a.kind !== 'line' || b.kind !== 'line' || c.kind !== 'line') return false
+      if (Math.hypot(b.to[0] - b.from[0], b.to[1] - b.from[1]) > short) return false
+      const d = (p: { from: Pt; to: Pt }): Pt => [p.to[0] - p.from[0], p.to[1] - p.from[1]]
+      const cross = (p: Pt, q: Pt) => p[0] * q[1] - p[1] * q[0]
+      return cross(d(a), d(b)) * cross(d(b), d(c)) < 0
+    })
+
+  it('reads a rounded corner at a coarse tolerance and no play as one corner, not two with a stub between', () => {
+    // Parts whose corners each came out with a stub 0.3–0.6 mm long.
+    for (const seed of [2, 26, 38, 41]) {
+      const part = scannedCase(seed)
+      const o = shadowOutline(part.positions, part.indices, XY, { play: 0, tolerance: 0.5 })
+      expect(o.shape.loops.length).toBe(1)
+      expect(teeth(o.shape.loops[0].pieces, 1).length).toBe(0)
+      expect(o.shape.margin.min).toBeGreaterThanOrEqual(-1e-6)
+      expect(o.shape.margin.max).toBeLessThanOrEqual(1 + 1e-6)
+      const exact = o.exact[0].points
+      for (const p of along(o.shape, 0.05)) {
+        const d = polyDist(p, exact) * (insidePoly(p, exact) ? -1 : 1)
+        expect(d).toBeGreaterThanOrEqual(-1e-3)
+        expect(d).toBeLessThanOrEqual(1 + 1e-3)
       }
     }
   })

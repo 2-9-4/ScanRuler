@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // The ways measurements leave the tool as geometry: the created elements as
-// analytic STEP, and the scan itself as an STL or a point cloud in the pose
-// it is shown in.
+// analytic STEP, and the scan itself as a mesh (STL or 3MF) or a point cloud
+// in the pose it is shown in.
 import type { RefObject } from 'react'
 import { drawnFit } from '../core/elements/assumed'
 import type { StepSection } from '../core/exportStep'
-import { buildBinaryStl } from '../core/exportStl'
+import { buildMeshFile, type MeshFormat } from '../core/exportMesh'
 import type { CloudFormat } from '../core/exportPointCloud'
 import { computeVertexNormals } from '../core/geometry/normals'
 import { liftFlatFit } from '../core/section/lift'
@@ -150,52 +150,55 @@ export async function buildElementsStep(): Promise<BuiltFile | null> {
 /** Hand the created elements over as analytic STEP geometry. */
 export const exportElementsStep = () => runExport(async () => saveBuilt(await buildElementsStep()))
 
-/** The scan as an STL in the pose it is being shown in. Null with no scan
- *  on the viewport.
+/** The scan as a mesh file — an STL or a 3MF — in the pose it is being
+ *  shown in. Null with no scan on the viewport.
  *
  *  A 3-2-1 or typed-in alignment is already baked into the vertices, so it
  *  comes along for free. The deviation workspace's best fit is not: it rides
  *  on the scan's group matrix so the fit can be watched and undone, and it
  *  has to be applied on the way out. Either way what lands on disk is the
- *  part where the user can see it. */
-export function buildScanStl(scene: SceneManager | null): BuiltFile | null {
+ *  part where the user can see it. A 3MF keeps the scan's own colours, a
+ *  textured scan's. */
+export function buildScanMesh(scene: SceneManager | null, format: MeshFormat): BuiltFile | null {
   const store = useStore.getState()
   const geometry = scene?.scanGeometry()
   if (!geometry || !store.fileName) return null
   const positions = geometry.getAttribute('position')?.array as Float32Array | undefined
   if (!positions) return null
   const index = geometry.getIndex()?.array as Uint32Array | Uint16Array | undefined
+  const colors = geometry.getAttribute('surface')?.array as Uint8Array | undefined
   const align = useDeviation.getState().align
   const moved = align !== null || store.appliedAlignment !== null
   const stem = exportStem()
-  // Never the name it came in under, however little has happened to it: the
-  // export lands in the same folder the scan was picked from, and silently
-  // shadowing the original there is not a thing a measuring tool should do.
-  const name = `${stem}-${moved ? 'aligned' : 'export'}.stl`
-  const buffer = buildBinaryStl(
-    positions,
-    index ?? null,
+  const file = buildMeshFile(
+    format,
+    [{ name: stem, positions, indices: index ?? null, colors: colors ?? null }],
     align?.transform ?? null,
     `ScanRuler scan export - ${stem}`,
   )
-  const triangles = (index ? index.length : positions.length / 3) / 3
+  if (!file) return null
+  // Never the name it came in under, however little has happened to it: the
+  // export lands in the same folder the scan was picked from, and silently
+  // shadowing the original there is not a thing a measuring tool should do.
+  const name = `${stem}-${moved ? 'aligned' : 'export'}.${file.extension}`
   return {
     name,
-    mimeType: 'model/stl',
-    bytes: new Uint8Array(buffer),
-    status: `Scan exported to ${name} — ${triangles.toLocaleString('en-US')} triangles${
+    mimeType: file.mimeType,
+    bytes: file.bytes,
+    status: `Scan exported to ${name} — ${file.triangles.toLocaleString('en-US')} triangles${
       moved ? ', in its aligned position' : ''
     }.`,
   }
 }
 
-/** Hand the scan back as an STL in the pose it is being shown in. */
-export const exportScanStl = (sceneRef: RefObject<SceneManager | null>) => saveBuilt(buildScanStl(sceneRef.current))
+/** Hand the scan back as a mesh file in the pose it is being shown in. */
+export const exportScanMesh = (sceneRef: RefObject<SceneManager | null>, format: MeshFormat) =>
+  runExport(async () => saveBuilt(buildScanMesh(sceneRef.current, format)))
 
 /** The scan as a point cloud — every vertex with its normal, in the pose it
  *  is being shown in, as a binary PLY or an XYZ text file — for the
  *  reverse-engineering tools that model over points rather than triangles.
- *  The pose comes along the way it does for the STL: a datum alignment is in
+ *  The pose comes along the way it does for the mesh: a datum alignment is in
  *  the vertices already, the deviation best fit is applied on the way out.
  *  The normals are the scan's own, oriented out of the part when it was
  *  loaded. Null with no scan on the viewport. */

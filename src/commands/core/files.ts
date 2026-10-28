@@ -2,8 +2,9 @@
 // Files out and in: the exports, each the bytes its button would download
 // under the name it would give them, and the project file.
 
-import { buildElementsStep, buildScanPointCloud, buildScanStl, type BuiltFile } from '../../app/exports'
+import { buildElementsStep, buildScanMesh, buildScanPointCloud, type BuiltFile } from '../../app/exports'
 import { buildFlatCsvFile } from '../../app/flatReport'
+import { MESH_FORMATS, type MeshFormat } from '../../core/exportMesh'
 import type { CloudFormat } from '../../core/exportPointCloud'
 import type { StepStyle } from '../../core/exportStep'
 import { useFlat } from '../../state/flatStore'
@@ -50,16 +51,19 @@ const step: Command<{ style?: StepStyle }> = {
   },
 }
 
-const stl = fileCommand(
-  'stl',
-  'Export the scan as STL',
-  'The scan as a binary STL in the pose it is shown in — a datum alignment and a best fit onto the reference included. Needs the viewport.',
-  async () => {
+const stl: Command<{ format?: MeshFormat }> = {
+  name: 'stl',
+  title: 'Export the scan as a mesh',
+  description:
+    'The scan as a binary STL — or, format 3mf, a 3MF in millimetres with the scan’s own colours — in the pose it is shown in, a datum alignment and a best fit onto the reference included. Needs the viewport. Returns the file’s bytes and the name the panel would save it under.',
+  input: obj({ format: enumOf([...MESH_FORMATS], 'stl (the default) or 3mf.') }),
+  readOnly: true,
+  returnsFile: true,
+  run: async ({ format = 'stl' }) => {
     requireScan()
-    return buildScanStl(requireScene('The STL export'))
+    return fileResult(buildScanMesh(requireScene('The mesh export'), format) ?? nothing('no scan is open'))
   },
-  'no scan is open',
-)
+}
 
 const cloud: Command<{ format?: CloudFormat }> = {
   name: 'cloud',

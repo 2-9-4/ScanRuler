@@ -131,6 +131,7 @@ export class ExtendGrips {
    *  without the other being forgotten. */
   private fit: FitData | null = null
   private plane: SectionFrame | null = null
+  private planeSlides = true
   private feature: readonly PluginGrip[] = []
   /** The number field on a feature grip — its DOM label, the input in it,
    *  and which grip it stands on. Kept apart from the grips, which are
@@ -201,9 +202,11 @@ export class ExtendGrips {
 
   /** Put the gizmo on a section plane — an arrow along its normal whose drag
    *  is the offset, and a ring about each in-plane axis whose drag tilts the
-   *  plane about it — or take it away with null. */
-  setPlaneHandles(frame: SectionFrame | null, color: string): void {
+   *  plane about it — or take it away with null. A plane that does not
+   *  `slide` (a shadow's, drawn where the part is) has the rings alone. */
+  setPlaneHandles(frame: SectionFrame | null, color: string, slides = true): void {
     this.plane = frame
+    this.planeSlides = slides
     this.handleColor = color
     this.rebuild()
   }
@@ -381,7 +384,7 @@ export class ExtendGrips {
       // sheet and is the one thing there is to take hold of.
       const size = Math.max(this.ctx.modelRadius() * 0.05, 1e-5)
       const origin = new THREE.Vector3(...this.plane.origin)
-      this.addGrip('offset', origin, new THREE.Vector3(...this.plane.normal).normalize(), size)
+      if (this.planeSlides) this.addGrip('offset', origin, new THREE.Vector3(...this.plane.normal).normalize(), size)
       // A ring about each in-plane axis, both through the arrow: dragging a
       // ring carries the arrow's tip round it, so a hand on one sees where
       // the normal is going. Wider than the arrow, so neither hides it.

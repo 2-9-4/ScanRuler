@@ -13,6 +13,7 @@ import type { WorkerRequest, WorkerResponse } from './workerProtocol'
 import { parseSTL } from './parsers/stl'
 import { parsePLY } from './parsers/ply'
 import { parseOBJ } from './parsers/obj'
+import { parse3MF } from './parsers/threemf'
 import type { ObjCompanions } from './parsers/objTexture'
 import { parseSTEP, type StepInfo } from './parsers/step'
 import { extensionOf } from './formats'
@@ -154,7 +155,8 @@ function parseByName(name: string, buffer: ArrayBuffer, onProgress: (t: string) 
   if (ext === 'stl') return parseSTL(buffer, onProgress)
   if (ext === 'ply') return parsePLY(buffer, onProgress)
   if (ext === 'obj') return parseOBJ(buffer, onProgress, companions)
-  throw new Error(`Unsupported file type ".${ext}" — use STL, PLY, OBJ, or STEP.`)
+  if (ext === '3mf') return parse3MF(buffer, onProgress, companions)
+  throw new Error(`Unsupported file type ".${ext}" — use STL, PLY, OBJ, 3MF or STEP.`)
 }
 
 /** The scan: a mesh, or a CAD part opened in a scan's place — cut finer
@@ -181,10 +183,10 @@ function parseNominal(
     const imported = parseSTEP(buffer, onProgress)
     return { parsed: imported.mesh, step: imported.info }
   }
-  if (ext === 'stl' || ext === 'ply' || ext === 'obj') {
+  if (ext === 'stl' || ext === 'ply' || ext === 'obj' || ext === '3mf') {
     return { parsed: parseByName(name, buffer, onProgress) }
   }
-  throw new Error(`Unsupported file type ".${ext}" — use STL, PLY, OBJ, or STEP.`)
+  throw new Error(`Unsupported file type ".${ext}" — use STL, PLY, OBJ, 3MF or STEP.`)
 }
 
 /**

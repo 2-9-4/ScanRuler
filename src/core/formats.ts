@@ -4,14 +4,15 @@
 // into triangles finely enough to be worked on as one; the reference is the
 // nominal part, which legitimately comes straight out of the CAD system.
 // A textured scan comes as several files picked or dropped together: the
-// OBJ, its material library and the image (see app/scanFiles).
+// OBJ, its material library and the image (see app/scanFiles) — or as one
+// 3MF, which packs its images and says its units.
 //
 // The worker keeps its own dispatch on these extensions: it is the thing that
 // can actually parse them, and a file that slipped past the picker (dropped,
 // or renamed) has to be refused there too.
 
 /** Mesh formats: what a scanner or a mesh tool writes. */
-const MESH_EXTENSIONS = ['stl', 'ply', 'obj'] as const
+const MESH_EXTENSIONS = ['stl', 'ply', 'obj', '3mf'] as const
 
 /** Model formats: the mesh ones plus CAD — what the scan and the reference
  *  open. */
@@ -31,8 +32,8 @@ export const SCAN_ACCEPT = accept([...MODEL_EXTENSIONS, ...TEXTURE_EXTENSIONS])
 export const REFERENCE_ACCEPT = accept(MODEL_EXTENSIONS)
 export const IMAGE_ACCEPT = accept(IMAGE_EXTENSIONS)
 
-export const SCAN_FORMATS = 'STL, PLY, OBJ or STEP · mm'
-export const REFERENCE_FORMATS = 'STL, PLY, OBJ or STEP'
+export const SCAN_FORMATS = 'STL, PLY, OBJ, 3MF or STEP · mm'
+export const REFERENCE_FORMATS = 'STL, PLY, OBJ, 3MF or STEP'
 export const IMAGE_FORMATS = 'PNG or JPEG'
 
 export function extensionOf(fileName: string): string {
@@ -47,6 +48,10 @@ export function isModelFile(fileName: string): boolean {
 /** A file that comes with a textured OBJ: its material library or an image. */
 export function isTextureFile(fileName: string): boolean {
   return (TEXTURE_EXTENSIONS as readonly string[]).includes(extensionOf(fileName))
+}
+
+export function is3mfFile(fileName: string): boolean {
+  return extensionOf(fileName) === '3mf'
 }
 
 export function isStepFile(fileName: string): boolean {

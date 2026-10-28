@@ -13,7 +13,7 @@ import { elementKindInfo } from '../core/elements/kinds'
 import type { FitData } from '../core/types'
 import type { MarkGesture } from '../state/markStore'
 import { alignSlotPicks, picksItsPoints, sectionDraftReady, type AlignDraft, type DimensionDraft, type Draft, type Element, type Section, type SectionDraft } from '../state/store'
-import { dimensionRefsOf } from '../state/sectionModel'
+import { dimensionRefsOf, isShadow } from '../state/sectionModel'
 import { markChipText } from '../ui/MarkTools'
 
 type DraftMode = CreationMethod['mode'] | null
@@ -36,6 +36,11 @@ export function openSlotHintOf(s: {
     if (!sectionDraft.axis)
       return 'Click the element to cut along — a plane, cylinder, cone, line or circle — or one of the XY, YZ, XZ planes, or choose in the panel'
     const verb = sectionDraft.editId !== undefined ? 'save' : 'create'
+    // A shadow's plane has no arrow: it is drawn in the middle of the part.
+    if (isShadow(sectionDraft))
+      return sectionDraftReady(sectionDraft)
+        ? `Drag a ring to tilt the plane · Enter or middle-click to ${verb} · Esc to discard`
+        : 'Drag a ring to tilt the plane and look along another direction'
     return sectionDraftReady(sectionDraft)
       ? `Drag the arrow to slide the plane, a ring to tilt it · Enter or middle-click to ${verb} · Esc to discard`
       : 'Drag the arrow to slide the plane along its direction, a ring to tilt it, or type the offset in the panel'

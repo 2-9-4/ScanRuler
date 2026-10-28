@@ -80,7 +80,7 @@ import type {
 } from '../core/types'
 import { blockedRefs, defaultMethod, dependentsOf, type DimensionDraft, type Draft, draftFromElement, type Element, elementColor, evalConstructDraft, freshCounters, freshDraft, keptOf, nextPointPick, reevaluateConstructions, type SelectMode, transformSource, withoutRegion } from './elementModel'
 import { type AlignDraft, type AlignmentProposal, alignSlotPicks, withSlotPicks, withSlotRef } from './alignModel'
-import { dimensionRefsOf, type Section, type SectionDraft, sectionDraftReady, sectionKeyOf, type SectionKind, specFields, settleSectionDraft } from './sectionModel'
+import { centreShadowDraft, dimensionRefsOf, type Section, type SectionDraft, sectionDraftReady, sectionKeyOf, type SectionKind, specFields, settleSectionDraft } from './sectionModel'
 export { type Section, type SectionDraft, sectionDraftColorOf, sectionDraftReady } from './sectionModel'
 export { alignCenterOf, type AlignDraft, alignmentPreview, type AlignmentProposal, type AlignPreview, alignSlotPicks } from './alignModel'
 export { blockedRefs, type DimensionDraft, type Draft, draftColorOf, draftHolds, type Element, orientedDraft, picksItsPoints, type SelectMode } from './elementModel'
@@ -1235,7 +1235,8 @@ export const useStore = create<AppState>()((set, get) => ({
     set((s) => {
       const d = s.sectionDraft
       if (!d) return {}
-      return { sectionDraft: settleSectionDraft({ ...d, cut, cutKey }) }
+      // A shadow goes to the middle of the part as it lands.
+      return { sectionDraft: centreShadowDraft(settleSectionDraft({ ...d, cut, cutKey })) }
     }),
 
   failSectionDraft: (message) =>

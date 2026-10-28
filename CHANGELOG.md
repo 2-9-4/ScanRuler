@@ -2,8 +2,51 @@
 
 What changed in ScanRuler, newest first. The number a build reports in the top
 bar and the imprint is the entry it belongs to; the `.scanruler` projects it
-saves carry the same number as `appVersion`. How a release is cut is in the
-README under "Releases".
+saves carry the same number as `appVersion`. How a release is cut is in
+`docs/development.md` under "Releases".
+
+## 0.8.3 — 2026-10-28
+
+- **A shorter README, with pictures** (2026-10-28). The README now covers
+  what each workspace does, how to start, the file formats and the agent
+  setup, with a screenshot of every workspace. The full reference moved to
+  `docs/manual.md`, and testing, releases and deployment to
+  `docs/development.md`. While moving it, two stale statements were
+  corrected: a STEP file opens as the scan too, and the agent helper needs
+  Node.js 22. `scripts/readme-shots.mjs` retakes the pictures.
+- **3MF in and out** (2026-10-28). A scan or a reference can be opened from
+  a 3MF (issue 14). The file says its own units, so it opens at the right
+  size without the question an STL asks. Its build is read as the slicers
+  lay it out: objects, components in other model files, transforms and
+  mirrored copies, all as one part. Colours from colour groups and base
+  materials, and textures packed in the file, are put on the vertices as a
+  textured OBJ's are; a single display colour is not. In a slicer's project,
+  the modifiers, support blockers and enforcers and negative volumes that
+  PrusaSlicer, Bambu Studio and Orca keep beside the part are left out.
+  Every mesh export is now **Export mesh**, which asks for **STL** or
+  **3MF**. A 3MF says millimetres, keeps the scan's own colours and welds
+  the mesh closed where its vertices meet. `export_stl` takes
+  `format: "3mf"`.
+- **Drop overlay no longer sticks** (2026-10-28). Dropping a file into the
+  window could leave the "Drop your STL / PLY / OBJ here" overlay standing
+  over the part after it had opened — Chrome on Windows can announce the
+  drag entering again after the drop (issue 15). The overlay now stays only
+  while the browser keeps reporting the file held over the page, and the
+  first mouse move takes it down.
+- **No more spikes on a shadow's corners** (2026-10-28). At a coarse
+  tolerance and little play, a rounded corner could be read as two corners
+  with a short stub between them, a spike sticking out of the outline. It
+  stayed within the tolerance, but no one would draw it that way (issue 13). A short line
+  that turns out and straight back is now taken out where its neighbours
+  meeting, or one line in its place, still keeps the outline between the
+  play and the play plus twice the tolerance; a real step in the part stays.
+- **A shadow is drawn in the middle of the part** (2026-10-28). A shadow
+  has no Offset any more, since it is the same outline wherever its plane
+  lies along the normal and the field was easily confused with Play. Its
+  outline now lands in the middle of the part's thickness, centred in the
+  extruded block, and the plane keeps only the rings that tilt it. The row
+  reads "shadow onto Plane 1", and `section_cut` refuses an `offset` given
+  with a shadow. A cut's Offset has a tooltip now too.
 
 ## 0.8.2 — 2026-10-27
 

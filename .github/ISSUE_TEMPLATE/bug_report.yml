@@ -1,0 +1,93 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+name: Bug report
+description: Something measures wrong, looks wrong, hangs or crashes.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. Please search the [existing issues](https://github.com/CNCKitchen/scanruler/issues?q=is%3Aissue) first, since someone may have reported it already.
+
+        A bug we can reproduce gets fixed far sooner than one we can't. The steps and a file that shows it matter most.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What did you see, and what did you expect to see instead?
+      placeholder: The cylinder fit reports Ø 12.4 mm. The bore measures Ø 12.0 mm with a pin gauge.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: From opening the app to the problem, one step per line.
+      placeholder: |
+        1. Open bracket.stl
+        2. Load bracket.step as reference and align
+        3. Pick the bore and fit a cylinder
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: ScanRuler version
+      description: It's shown in the top bar next to the name, or in the imprint (for example v0.8.2).
+      placeholder: v0.8.2
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where do you run it?
+      options:
+        - scanruler.com
+        - Built from this repository (npm run dev / build)
+        - Docker or another self-hosted setup
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and operating system
+      placeholder: Chrome 141 on Windows 11 / Safari 19 on macOS 26 (Apple Silicon)
+    validations:
+      required: true
+  - type: dropdown
+    id: input
+    attributes:
+      label: Input device, if it's about navigation or picking
+      options:
+        - Not relevant
+        - Mouse
+        - Trackpad
+        - Touch / pen
+        - SpaceMouse / 3Dconnexion
+        - Other
+    validations:
+      required: false
+  - type: textarea
+    id: files
+    attributes:
+      label: Files
+      description: |
+        Format and size of the scan or CAD file (STL, PLY, OBJ, STEP; triangle count if known). If you can share it, drag it in here. A zipped file under 25 MB attaches directly. For anything larger, post a link. A saved project (`.scanruler`) brings us to exactly where you were.
+
+        Only share files you're allowed to share. If you can't, a small file that shows the same problem works just as well.
+    validations:
+      required: false
+  - type: textarea
+    id: console
+    attributes:
+      label: Console output
+      description: For hangs and crashes, open the browser console (F12, or Cmd+Option+J on a Mac) and paste any red errors here.
+      render: text
+    validations:
+      required: false
+  - type: textarea
+    id: more
+    attributes:
+      label: Screenshots or anything else
+      description: Screenshots or a screen recording help a lot for display and navigation problems.
+    validations:
+      required: false

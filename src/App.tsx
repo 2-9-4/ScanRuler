@@ -83,7 +83,8 @@ import type { FieldScale } from './core/field/colormap'
 import { deviationScale } from './core/deviation/deviation'
 import { thicknessScale } from './core/thickness/thickness'
 import { rigidToColumnMajor } from './core/deviation/rigid'
-import { exportElementsStep, exportScanPointCloud, exportScanStl, runExport, saveBuilt, textBytes, type BuiltFile } from './app/exports'
+import { exportElementsStep, exportScanMesh, exportScanPointCloud, runExport, saveBuilt, textBytes, type BuiltFile } from './app/exports'
+import type { MeshFormat } from './core/exportMesh'
 import { PICK_MARK_TOOL_STATUS } from './app/deviationWorkspace'
 import { useElementField } from './app/useElementField'
 import { useSceneSync } from './app/useSceneSync'
@@ -573,7 +574,7 @@ export default function App() {
   // The exports live in src/app/exports.ts — they read the stores directly,
   // and the STL one needs the scene for the geometry as shown.
   const handleExportStep = exportElementsStep
-  const handleExportStl = () => exportScanStl(sceneRef)
+  const handleExportMesh = (format: MeshFormat) => exportScanMesh(sceneRef, format)
   const handleExportCloud = () => exportScanPointCloud(sceneRef, useStore.getState().cloudFormat)
 
 
@@ -1522,7 +1523,7 @@ export default function App() {
             onScopeClear={handleScopeClear}
             onGoToMeasure={() => useShell.getState().setWorkspace('elements')}
             onCopy={handleCopyReport}
-            onExportStl={handleExportStl}
+            onExportMesh={handleExportMesh}
             onMeasureVolume={() => void runVolume()}
             onFrame={(min, max) => sceneRef.current?.fitBox(min, max)}
           />
@@ -1570,7 +1571,7 @@ export default function App() {
             onApplyManual={(m) => void handleApplyManual(m)}
             onResetAlignment={() => void handleResetAlignment()}
             onExportStep={handleExportStep}
-            onExportStl={handleExportStl}
+            onExportMesh={handleExportMesh}
             onExportCloud={handleExportCloud}
             onFindSymmetry={() => void handleFindSymmetry()}
           />
@@ -1721,11 +1722,11 @@ export default function App() {
                   ? active.startPane.blurb
                   : onDeviation
                   ? source === 'element'
-                    ? 'Load a scan, fit a plane, cylinder or sphere on it in the 3D Measure workspace, then map how far the surface strays from that ideal. No reference model, no alignment. STL, PLY, OBJ or STEP, in millimetres — everything stays in this browser.'
-                    : 'Load both, then best-fit the scan onto the reference and read the difference off the part. Scan and reference as STL, PLY, OBJ in millimetres or a STEP file straight from CAD — everything stays in this browser.'
+                    ? 'Load a scan, fit a plane, cylinder or sphere on it in the 3D Measure workspace, then map how far the surface strays from that ideal. No reference model, no alignment. STL, PLY, OBJ, 3MF or STEP, in millimetres — everything stays in this browser.'
+                    : 'Load both, then best-fit the scan onto the reference and read the difference off the part. Scan and reference as STL, PLY, OBJ, 3MF in millimetres or a STEP file straight from CAD — everything stays in this browser.'
                   : onThickness
-                    ? 'Load a scan and measure how thick its walls are, everywhere at once. No reference model, no alignment. STL, PLY, OBJ or STEP, in millimetres — everything stays in this browser.'
-                      : 'Load a scan, then pick features on it to fit spheres, cylinders and planes and measure between them. STL, PLY, OBJ or STEP, in millimetres — everything stays in this browser.'
+                    ? 'Load a scan and measure how thick its walls are, everywhere at once. No reference model, no alignment. STL, PLY, OBJ, 3MF or STEP, in millimetres — everything stays in this browser.'
+                      : 'Load a scan, then pick features on it to fit spheres, cylinders and planes and measure between them. STL, PLY, OBJ, 3MF or STEP, in millimetres — everything stays in this browser.'
               }
               slots={startSlots}
             />
@@ -1794,7 +1795,7 @@ export default function App() {
             <div className="drop-overlay">
               {onFlat
                 ? 'Drop your PNG / JPEG scan here'
-                : `Drop your STL / PLY / OBJ${onDeviation ? ' / STEP' : ''} here`}
+                : `Drop your STL / PLY / OBJ / 3MF${onDeviation ? ' / STEP' : ''} here`}
             </div>
           )}
         </div>

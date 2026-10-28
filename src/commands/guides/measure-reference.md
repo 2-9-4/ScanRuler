@@ -28,7 +28,7 @@ Example: `{ calls: [{ tool: "element_fit", arguments: { kind: "cylinder", at: { 
 **`session_state`** `{}` — the whole session: app and plugins, workspace, `busy`, the scan (file, units, counts, bounding box, centre, size, alignment), elements with fits, dimensions with values and verdicts, sections, deviation, thickness and 2D state, the guided hint, the undo history. Read-only; answers while a change runs.
 Example: `{}`
 
-**`scan_open`** `{ path, name?, units?: "mm" | "cm" | "m" | "in", discard?, wait? }` — an STL, PLY, OBJ or STEP as the scan; answers name, units, counts, bounding box, centre, size. Refused over measurements unless `discard: true`. Not undoable.
+**`scan_open`** `{ path, name?, units?: "mm" | "cm" | "m" | "in", discard?, wait? }` — an STL, PLY, OBJ, 3MF or STEP as the scan; answers name, units, counts, bounding box, centre, size. Refused over measurements unless `discard: true`. Not undoable.
 Example: `{ path: "C:/scans/bracket.stl", units: "mm" }`
 
 **`session_reset`** `{ discard?, wait? }` — closes scan, reference and image. Not undoable.
@@ -104,7 +104,7 @@ Example: `{ dimension: 4 }`
 
 ### Sections and the 2D sheet
 
-**`section_cut`** `{ across: element | "XY" | "YZ" | "XZ", offset?, name?, kind?: "cut" | "shadow", play?, tolerance?, smoothDeg?, extrude?, wait? }` — keeps a section; a coordinate plane goes through the part's centre unless `offset` gives the coordinate. Answers its plane and chain count; a shadow also its `play`, `tolerance`, `smoothDeg`, `loops` (hole, pieces), `areaMm2`, `outside` { min, max } and `extent` along the normal.
+**`section_cut`** `{ across: element | "XY" | "YZ" | "XZ", offset?, name?, kind?: "cut" | "shadow", play?, tolerance?, smoothDeg?, extrude?, wait? }` — keeps a section; a coordinate plane goes through the part's centre unless `offset` gives the coordinate; a shadow takes no `offset`, it is drawn in the middle of the part. Answers its plane and chain count; a shadow also its `play`, `tolerance`, `smoothDeg`, `loops` (hole, pieces), `areaMm2`, `outside` { min, max } and `extent` along the normal.
 Example: `{ across: "XY", offset: 6.5, name: "Mid height" }`
 
 **`section_get`** `{ section, chains?, space?: "sheet" | "world" | "both", limit? }` — each chain's points in order ([u, v] mm on the section plane; [x, y, z] with world), closed or not, length, box, and the plane (origin, normal, basisU, basisV: a sheet point is origin + u·basisU + v·basisV). 4000 points by default, 50000 at most.
@@ -148,7 +148,7 @@ Example: `{}`
 
 ### Deviation
 
-**`deviation_open_reference`** `{ path, name?, units?, wait? }` — STEP, STL, PLY or OBJ as the reference; any alignment against the old one goes. Not undoable.
+**`deviation_open_reference`** `{ path, name?, units?, wait? }` — STEP, STL, PLY, OBJ or 3MF as the reference; any alignment against the old one goes. Not undoable.
 Example: `{ path: "C:/parts/bracket.step" }`
 
 **`deviation_align`** `{ mode?: "auto" | "points" | "local", pairs?: [{ scan, reference }, …], vertices?, searchDistance?, wait? }` — rigid best fit, no scale; answers RMS, points matched, transform and the map's statistics.
@@ -196,7 +196,7 @@ Example: `{ path: "C:/scans/out/bracket.scanruler" }`
 **`export_step`** `{ style?: "solids" | "surfaces", path? }` — the fitted elements as analytic STEP.
 Example: `{ path: "C:/scans/out/bracket_elements.step" }`
 
-**`export_stl`** `{ path? }` — the scan in its aligned pose. **`export_cloud`** `{ format?: "ply" | "xyz", path? }` — points with normals. **`export_csv`** `{ path? }` — the 2D measurements. **`export_dxf`** `{ path? }` and **`export_svg`** `{ path? }` — the 2D sheet at true scale.
+**`export_stl`** `{ format?: "stl" | "3mf", path? }` — the scan in its aligned pose; a 3MF says millimetres and keeps the scan's colours. **`export_cloud`** `{ format?: "ply" | "xyz", path? }` — points with normals. **`export_csv`** `{ path? }` — the 2D measurements. **`export_dxf`** `{ path? }` and **`export_svg`** `{ path? }` — the 2D sheet at true scale.
 Example: `{ path: "C:/scans/out/bracket_aligned.stl" }`
 
 ## Reply cost

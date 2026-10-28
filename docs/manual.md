@@ -1,0 +1,1785 @@
+# ScanRuler manual
+
+Everything the [README](../README.md) leaves out: each workspace's options,
+what every number means, and how it is computed. The panels' ⓘ buttons
+explain the same things where you use them.
+
+- [Undo and redo](#undo-and-redo)
+- [3D Measure: fitting and measuring features](#3d-measure-fitting-and-measuring-features)
+  - [How to use it](#how-to-use-it)
+  - [How the fits work](#how-the-fits-work)
+  - [Marking the surface by hand](#marking-the-surface-by-hand)
+  - [The view bar](#the-view-bar)
+  - [Which way the surface faces](#which-way-the-surface-faces)
+  - [Looking inside: the section view](#looking-inside-the-section-view)
+  - [How the part is shown](#how-the-part-is-shown)
+  - [Settings](#settings)
+  - [Elements: fitted, picked and constructed](#elements-fitted-picked-and-constructed)
+  - [Dimensions](#dimensions)
+  - [Comparing with a 2D slice](#comparing-with-a-2d-slice)
+  - [GD&T: form, orientation and location](#gdt-form-orientation-and-location)
+  - [Extending a plane or a cylinder past what was measured](#extending-a-plane-or-a-cylinder-past-what-was-measured)
+  - [Sections: cutting the scan to measure the cut](#sections-cutting-the-scan-to-measure-the-cut)
+  - [The assumed dimension — what the feature was designed at](#the-assumed-dimension--what-the-feature-was-designed-at)
+  - [Aligning an element — the designed relation](#aligning-an-element--the-designed-relation)
+  - [Changing what you have made](#changing-what-you-have-made)
+  - [Aligning the part](#aligning-the-part)
+  - [Projects](#projects)
+  - [Opening a file from a link](#opening-a-file-from-a-link)
+  - [STEP export](#step-export)
+  - [Scan export: mesh and point cloud](#scan-export-mesh-and-point-cloud)
+- [Deviation](#deviation)
+- [Deviation from a nominal part](#deviation-from-a-nominal-part)
+  - [Both parts, side by side](#both-parts-side-by-side)
+  - [The colour plot, off](#the-colour-plot-off)
+  - [The reference straight from CAD](#the-reference-straight-from-cad)
+  - [The best fit](#the-best-fit)
+  - [Local fine fit](#local-fine-fit)
+  - [The map](#the-map)
+  - [Watching the part deform](#watching-the-part-deform)
+- [Deviation from a fitted element](#deviation-from-a-fitted-element)
+- [Wall thickness](#wall-thickness)
+  - [The two methods](#the-two-methods)
+  - [What counts as the far side](#what-counts-as-the-far-side)
+  - [Reading the map](#reading-the-map)
+- [2D Measure: flatbed scans](#2d-measure-flatbed-scans)
+  - [Scale, and the uncalibrated alarm](#scale-and-the-uncalibrated-alarm)
+  - [Edges, and the three ways to fit](#edges-and-the-three-ways-to-fit)
+  - [Alignment, dimensions, and what leaves the tool](#alignment-dimensions-and-what-leaves-the-tool)
+  - [Measuring a section](#measuring-a-section)
+
+## Undo and redo
+
+The top bar's **Undo** and **Redo** buttons work across 3D Measure, 2D Measure,
+Deviation and Thickness. **Ctrl+Z** (Mac: **Cmd+Z**) undoes;
+**Ctrl+Shift+Z** or **Ctrl+Y** redoes (Cmd on Mac). Text fields keep their native
+text-editing undo.
+
+The last 64 document edits share one chronological history. Undo returns to
+the workspace, and the 2D sheet where applicable, that made the edit.
+Elements, dimensions, sections and their 2D measurements, calibration, notes,
+counts, datum placement, analysis settings and probes, and scan alignment can
+be restored. Dependent removals undo together; an alignment also restores the
+scan in the geometry worker and viewport. Camera
+navigation, workspace switching and calculated worker results do not add steps.
+Drags and consecutive changes while a field has focus are grouped.
+
+Finish or cancel an open editor before undoing document changes. History
+waits while imports or computations
+are running. Successful scan, reference, image or project replacement starts
+fresh history; failed imports preserve it. Saving preserves history in the
+current session, but history itself is not stored in project or recovery files.
+
+## 3D Measure: fitting and measuring features
+
+### How to use it
+
+1. **Open** your scan (STL, PLY, OBJ, 3MF or STEP), or drag & drop it anywhere
+   in the window. An STL carries no units, so opening one asks what it is
+   in — millimetres, centimetres, metres or inches — and reads it in
+   millimetres; **Don't ask again** makes the answer stand for every STL,
+   and **Settings → Files** brings the question back. A PLY or OBJ is taken
+   in millimetres; a 3MF and a STEP file say their own units. A textured
+   scan — an OBJ with its `.mtl` and image — opens in colour when the three
+   are picked or dropped together, or their folder is dropped; a 3MF packs
+   its images and colours and opens in colour by itself. A slicer's 3MF
+   opens as its parts, without the modifiers and support volumes the slicer
+   kept beside them.
+2. Press **Sphere**, **Cylinder** or **Plane**, then **click a point on that
+   feature** in the 3D view. The tool automatically selects the surface around
+   your click — the spherical patch without leaking onto the connecting rod,
+   the cylinder wall without climbing onto its end faces, the flat face without
+   crossing an edge — and marks it in the colour the element will get, with the
+   fit itself shown as a neutral grey ghost. If the scan of that feature is
+   broken into unconnected patches, click a point on each one — every pick
+   feeds the same fit. Press **Create …** when the preview looks right (*Undo
+   point* drops the last pick, *Cancel* or `Esc` discards). The finished
+   element stays on screen in its own colour, and the kind stays in hand for
+   the next one — as a sketch tool does — until *Cancel* or `Esc` puts it
+   down; `Esc` on a box with picks in it empties the box first.
+
+   **Every point you click is pinned where it landed**, numbered in the order
+   you clicked it, for as long as the element is being made — so which picks
+   have gone in, and which one *Undo point* would take back, is read off the
+   part rather than counted in your head. The pins are the same size on screen
+   at every zoom, so a pin stays a mark on a part you have zoomed right into
+   instead of becoming a blot over the feature you are aiming at. They go when
+   the element is created: from then on its own tint and pin say where it is.
+
+   `Enter` or a **middle click** does what the confirm button of the moment does — create or save an
+   element, add a dimension, apply a calibration, align the part, run the fit
+   or the first measurement — in every workspace, so the hand never has to
+   leave the mouse.
+3. Press **New dimension**, pick the measurement type, and select the two
+   elements to measure between. The value previews live; **Add dimension**
+   keeps it and leaves the box open for the next one of that type, until
+   *Cancel* or `Esc` closes it. *Copy summary* puts everything on your
+   clipboard.
+4. Nothing is final: the **✎** key on any element or dimension row re-opens it
+   in the box it was made in — see [Changing what you have
+   made](#changing-what-you-have-made).
+
+Each fitted element reports its size and its **sigma** — the RMS deviation of
+the scan from the ideal geometry, i.e. how round, how cylindrical or how flat
+the scanned surface actually is — plus the **form error**, the peak-to-peak
+deviation over the used points, which is the number GD&T calls flatness,
+cylindricity, sphericity or circularity. Cylinders also report the length and
+the arc of wall the fit rests on, planes the size of the measured patch.
+
+The fitted diameter is a **Gaussian mean**: the circle the scan points
+scatter evenly about. A bore that is 0.2 mm out of round reaches 0.1 mm
+inside that circle at its tightest and 0.1 mm outside at its widest, and a
+slice through it measured by hand in CAD will read either of those before it
+reads the mean. So a sphere, a cylinder and a circle also report **Ø min and
+Ø max** — the Gaussian radius moved in to the lowest and out to the highest
+radial residual of the used points, doubled: the smallest and the largest
+diameter the surface actually reaches, which brackets what a caliper or a
+gauge pin finds. The copied summary prints the residual extremes themselves
+for every fitted element. The headline stays the mean; the max-inscribed and
+min-circumscribed fits proper are on the roadmap.
+
+### How the fits work
+
+Fitting uses a **Gaussian best-fit** (orthogonal least squares) with GOM-style
+*used points* presets (all / 3σ / 2σ / 1σ, default 3σ). The preset is each
+element's own, chosen in the *Fitting* group under the element box while it is
+being made or edited: a clean bore can keep 3σ while a noisy cast face next to
+it is fitted on all points, and changing one element never re-fits another. The
+last choice is what the next new element starts with, and the copied summary
+says which cut-off every element rests on. The initial estimate is
+made robust with LMedS/RANSAC, and the point selection is a model-guided region
+grow over the mesh surface with normal-direction checks — so a click anywhere
+on a feature finds exactly that surface, even when it's fused to the rest of
+the part. The rounding a scan leaves at an edge stays out of it: the region is
+peeled back ring by ring while the rim's normals turn away from the element
+clearly more than the surface's own noise does, so a face is not pulled into
+the part by its edges and a bore's flared mouth is not in its cylindricity.
+Spheres and planes are solved in closed form (algebraic fit refined
+orthogonally, and the total-least-squares plane through the point cloud);
+the cylinder's five degrees of freedom are solved by damped Gauss-Newton, from
+a starting axis taken from the scatter of the surface normals.
+
+Validated against GOM Inspect on a real structured-light scan: center distance
+agrees within GOM's last digit (148.639 mm vs 148.64 mm), with matching point
+selections and fit sigma. The cylinder and plane fits are covered by unit tests
+against synthetic geometry with known dimensions, since the included scan has
+no such feature.
+
+### Marking the surface by hand
+
+Automatic surface selection is right almost all of the time, and wrong exactly
+where a scan is worst: a rounded edge that lets the region creep onto the next
+face, a bore broken up by noise, a feature you deliberately want to measure on
+one clean band rather than on everything the tool can reach.
+
+Set **Surface** to *Marked by hand* in the element being created and the fit
+takes what you mark, and nothing else. The tools are the same ones the
+[local fine fit](#local-fine-fit) is marked with — **Navigate**, **Window**,
+**Brush**, **Lasso**, the **Erase** switch, *Mark faces pointing away too*,
+**Invert** and *Clear marking* — and they behave identically here: nothing is
+armed until you pick a gesture, **left-drag marks and right-drag rubs out**
+while one is, Shift-drag still orbits, and **Navigate** or `Esc` hands the
+plain drags back to the camera without touching what is already marked. A
+second `Esc` discards the element — but not the marking: a draft discarded
+with a marked surface on it waits in the panel, under a **Restore** button,
+until the next element is started, so a slip of the key costs one click rather
+than the marking. (A held key does not repeat through both steps.)
+
+The **brush Ø** in millimetres sets how wide a brush stroke is — it starts sized
+to the part. A ring on the surface under the cursor shows the footprint before
+you commit to it, in the element's colour while marking and dark while rubbing
+out. The marked surface wears the colour the element will get, the fit re-runs
+each time you lift the button, and *Clear marking* starts over. **Invert**
+marks everything that was bare and clears everything that was marked. To take
+everything but a small piece, mark the piece and invert. The one row of
+triangles on the border between the two stays bare either way, so the new
+marking never reaches into the old one, and inverting twice gives back what you
+had.
+
+A gesture takes whole triangles — the ones it actually covers — so what lights
+up is exactly what the fit is given. It never reaches through a thin wall or
+around an edge either, unless you ask it to with *Mark faces pointing away too*.
+
+Everything else is unchanged — the same Gaussian best fit, the same outlier
+cut-off, the same reported sigma — so a hand-marked element and an automatic
+one are the same measurement, differently aimed. Changing *Used points* on a
+hand-marked element re-fits it on exactly the surface it was marked with.
+
+Whichever tool you pick stays picked from one element to the next; switching
+workspaces puts it back to **Navigate**, so a gesture is never holding the mouse
+because of something you did somewhere else.
+
+### The view bar
+
+The ways of looking at the parts are one row of keys in the bottom-left
+corner of the stage, read from the left. First what is on the stage, a key
+for each part: **Scan**, in Surface Deviation **Reference**, in 3D Measure
+**Elements**, and a workspace's own beside them. A click on a part's key
+shows the part or puts it away. Rest the pointer on the key — or click its
+caret, on a touchscreen — and a menu opens over it with how that part is
+drawn:
+
+- **Transparent** — the part see-through, so what lies inside it, the fitted
+  elements and the pinned readings show instead of hiding behind the
+  surface in front of them.
+- **Mesh** — the triangle edges drawn on the part, to see how fine it is and
+  where it is patchy. They come up as you zoom in; from a distance the
+  triangles are smaller than a pixel and the edges fade out.
+- **Backfaces** — see [below](#which-way-the-surface-faces).
+- **Labels**, under Elements — the name tags and readouts on the part. The
+  click on **Elements** puts the elements, the dimensions and the sections
+  away as a whole; each one's own eye in the list stays as it is.
+
+A workspace may add its own rows to a part's menu — a way of colouring the
+scan, say.
+
+Each part has its own: the scan transparent with the reference inside it
+solid, or the other way round. Inside the scan the reference is a ghost,
+which is see-through in its own way, so its **Transparent** and
+**Backfaces** wait until it is solid — with the scan put away, or in the
+[split view](#both-parts-side-by-side), whose reference half takes the
+reference's settings. A dot on a key says something in its menu stands
+otherwise than usual, so a setting left on never goes out of sight
+altogether.
+
+At the side come the workspace's own keys — **Split view** and **Colour
+plot** in Surface Deviation — and last **Section**, whose own row stands
+above the bar while it is open.
+
+### Which way the surface faces
+
+**Backfaces**, in the menu over the view bar's **Scan** key, colours the far side of every triangle. A
+scan is a surface, not a solid: where it has a hole, you are looking at the
+inside of the wall behind it, and in plain grey that reads as part. Switched
+on, it reads as a hole — which is also how an inverted normal gives itself
+away. Marked surface keeps the marking colour on the far side too, so what a
+gesture took through the part shows on the wall behind.
+
+The reference has a **Backfaces** of its own, in the menu over its key, and it
+holds wherever the reference is shown solid — in the
+[split view](#both-parts-side-by-side) too, where the half beside the scan is
+flagged by the same switch. A reference has holes too — an STL that was never closed, a STEP tessellation that came apart
+— and one of those is worth seeing before it is used as the datum for a map.
+
+### Looking inside: the section view
+
+**Section** on the view bar cuts everything on the stage open at a plane, to
+look inside: the scan, the reference, the elements and dimensions measured on
+them, the sections and the pinned readings — a label goes with what it labels.
+It opens across the coordinate plane most square to the view, through the
+middle of the part, and takes away the half toward you, so the cut faces you.
+The row above the key says what the plane is laid across — the XY, YZ or XZ
+plane, or an element with a direction (a plane's normal, the axis of a
+cylinder, cone or line, a circle's normal) — and where along it, as a
+coordinate or an offset; **Flip** takes away the other half instead. On the
+part, the arrow slides the plane and the two rings tilt it, as on a section
+being made; **Square** turns a tilted plane back.
+
+A part is closed where it is cut only where it is closed itself. A shell with
+no hole in it — a watertight scan, a STEP reference — gets a flat cut face in
+a colour of its own, the way CAD draws cut material: clay for the scan, blue
+for the reference. An open scan stays a shell with its inside on view, in the
+far-side colour while **Backfaces** is on. A see-through part is cut but not
+closed. Clicks hold to what is drawn: nothing on the half cut away can be
+picked, hovered or measured, and a click on a cut face meets nothing behind
+it.
+
+Like the other keys it is a way of looking: it changes no number, and it is
+not saved. In the [split view](#both-parts-side-by-side) both halves are cut
+at the same plane. An agent sets it with `section` on `view.set` and
+`view.render`.
+
+### How the part is shown
+
+**Colour mode** in ⚙ Settings picks what the part is made of and how it is lit,
+and it is remembered per browser. The stage stays the chassis grey either way —
+the light one, or the dark one when the interface is set to dark.
+
+**Studio grey** is the default: a matt grey part, evenly lit — the quietest
+thing to lay a coloured map or an element tint over.
+
+**Scanner blue** is the one every handheld scanner's own software puts on
+screen: a glossy blue part under a hard light. It is worth switching to whenever
+you are looking at the *surface* rather than at a measurement. A tight specular
+highlight travelling over the part is the best way there is to see the shape of
+it, and tool marks, print layers, the faceting of a coarse mesh and the ripple
+of a bad scan all show up in that highlight long before they show up in matt
+shading. Every viewport follows — the reference half of the split view and both
+halves of the point picker with it.
+
+The scan is drawn with its edges sharp: at every edge sharper than 30° the
+two faces get their own normals. On a mesh exported from CAD rather than
+scanned — a low-poly STL out of OpenSCAD or a slicer, a part to be measured
+before it is even made — a box then has six flat faces instead of shading like
+a pillow, and a bored hole reads as a hole instead of a dent; on a scan the
+rim of a bore and the edge of a step are drawn as edges, not smeared down the
+wall below them. Noise tips a scan's triangles a few degrees, seldom tens, so
+it stays smooth: a real scan of a few hundred thousand vertices has a few
+hundred split, at its edges and its odd spike. **Sharp edges** in ⚙ Settings
+decides the treatment: **Always sharp**, the default; **Auto**, which draws
+the edges sharp only on a mesh that reads as a tessellation of exact surfaces
+— full of dead-flat edges between coplanar triangles, where a scan has
+practically none — and a scan smooth all over; and **Always smooth**. Each
+takes effect on the loaded scan at once, and says in the status line what it
+did. **Sharp from** beside it says from what angle between two faces an edge
+counts as sharp, 30° unless it is moved — 50° or 60° on a scan whose noise
+still shows. However it is set, a split that would add more vertices than the
+scan has is not made, so a noisy mesh drawn sharp cannot run the viewport out
+of memory. The reference part is CAD
+and is always drawn sharp. None of this touches what is measured: the split is
+in the picture only, and every fit, region and marking is on the scan's own
+vertices.
+
+Nothing measured changes colour with the scheme. The element tints, the
+deviation and thickness ramps and the grey a map paints where nothing was
+measured are all exactly the same in both: a reading that shifted with the
+lighting would be worth nothing. What does change is the reference *where it is
+overlaid on the scan* — amber against a blue scan instead of blue against a grey
+one, since its whole job there is to not look like the part underneath it.
+
+Given a frame of its own it needs no such contrast, and is better without it: in
+the split view and in both halves of the point picker the reference is the same
+material as the scan, in the scheme's own bare-surface colour, so the only thing
+that differs between the two pictures is the shape.
+
+Orbiting happens about the point under the cursor and zooming happens towards
+it, which is what makes both feel direct — and is also how a part ends up off
+the frame entirely, with nothing left on screen to aim the next gesture at.
+**Fit to view**, the small button above the axis gizmo in the bottom-right
+corner, puts it back. It does not turn the part: the viewpoint is yours, only
+the centre and the zoom are taken back, so you land looking at what you were
+looking at. Every viewport has one, both halves of the point picker included,
+and it fits whatever is actually being shown — with the scan switched off it
+frames the reference rather than the pair of them.
+
+The viewport uses a **parallel (orthographic) projection** so nothing is
+foreshortened, and rotates freely around the model's bounding-box center with
+no fixed up-axis — you can turn the part all the way over without hitting a
+pole. Left-drag to rotate, right-drag to pan, scroll to zoom; the **XYZ gizmo**
+in the bottom-right corner shows the current orientation. The **number keys**
+turn the part to the standard views the way PrusaSlicer's do — **0** iso,
+**1** top, **2** bottom, **3** front, **4** rear, **5** left, **6** right, Z
+up — about the point you are looking at and at the zoom you are at, so a
+feature you have zoomed into stays on screen and just shows another face;
+the fit button brings the whole part back. The gizmo's arrows do the same
+with the mouse: click one to look down that axis, and click it again to turn
+the part over and look from the other end. On a touch screen the
+tablet gestures do the same three things — **one finger turns, two fingers pan
+and pinch to zoom, a tap picks** — and with the marking brush armed the single
+finger paints while two fingers still move the part.
+
+A **3Dconnexion SpaceMouse** works too, in Chrome and Edge, with nothing to set
+up beyond the device's own driver: push or pull the puck to zoom, slide it to
+pan, tilt and twist it to turn the part. The turn pivots on whatever is at the
+centre of the screen, marked with the same red dot as a mouse orbit, and it is
+the same free turn the mouse makes, so either can pick up where the other left
+off. The browser only shows the puck to the page once it has been touched, so
+the first touch connects it. With several viewports on screen, the split view
+or the two halves of the point picker, the puck drives the one the mouse was
+last over. On a flat 2D sheet it pans and zooms and does not turn.
+
+### Settings
+
+**⚙ Settings** in the top bar holds what is set once and left, all of it
+remembered per browser and none of it saved with a project:
+
+- **Interface** — **System** follows the operating system's setting as it
+  changes, which is the default; or a light or dark chassis regardless. The
+  stage behind the part goes dark with it,
+  in every viewport, and nothing that carries a reading changes: the element
+  tints, the deviation and thickness ramps and the axis colours are the same
+  on both.
+- **Colour mode** — Studio grey or Scanner blue, as [above](#how-the-part-is-shown).
+- **Colour map** — the ramp every map on the part is painted in, and every
+  scale beside one drawn in, each shown as a preview to pick from. **Jet**,
+  the default, is the inspection classic, a saturated green pinned in the
+  middle. The other eight are those of the R package
+  [viridis](https://cran.r-project.org/web/packages/viridis/vignettes/intro-to-viridis.html),
+  colour for colour: **Viridis**, **Magma**, **Plasma**, **Inferno**,
+  **Cividis**, **Mako** and **Rocket** are perceptually uniform — an even
+  step in the reading is an even step in colour, with no bands the part does
+  not have — and legible with colour blindness; **Turbo** is a smooth
+  rainbow, jet without its bands. Each has two caps of its own for a reading
+  past either end of the scale, in colours its ramp never uses: blue below
+  and red above where the ramp leaves them free, as on jet.
+- **Sharp edges** — whether the scan's creases are shaded sharp, as
+  [above](#how-the-part-is-shown): **Always sharp**, the default, and **Always
+  smooth** do as they say, **Auto** draws them sharp only on a mesh that reads
+  as CAD, and **Sharp from** sets the angle an edge is sharp from (5° to 120°,
+  30° to start). The
+  reference part is always drawn sharp, from 30°.
+- **Mouse controls** — the CAD tool whose buttons the viewport should answer
+  to, with a line under the dropdown saying which button does what.
+- **Ask what units an STL is in** — whether opening an STL puts the question
+  up; the question's own **Don't ask again** switches this off, and this
+  switches it back on. **STL units** beside it is what an STL is read in
+  while the question is off, and what the question offers first: the last
+  answer given. A project remembers the units its scan and reference were
+  read in and reads them the same way again.
+- **Section cuts**, **2D fitted curves** and **2D edges** — how heavy the
+  lines are drawn, in pixels. The first two carry everything drawn beside them
+  in proportion: the preview of a cut and the sheet's curves stood up on it in
+  3D, the callouts and pin marks over a flatbed scan in 2D. The edges are the
+  chains the curves are fitted to, found in the scan or cut by a section.
+- **Guided hints** — the amber ring around the control to press next.
+- **Agents** — **Local agent connection** lets an AI agent on this computer
+  drive the tab through the scanruler-mcp server, with the **Port** and
+  **Token** it connects on — see [Agents](../README.md#agents).
+- **Support card** — whether the thank-you card comes up in the corner of the
+  stage on each visit. Its × closes it until the page is reloaded; switched
+  off here it stays away.
+
+The ways of *looking* at a part are not settings and are not here: they are on
+the [view bar](#the-view-bar) in the bottom-left corner of the stage, where
+they change with the job in hand.
+
+### Elements: fitted, picked and constructed
+
+Elements don't have to come from the scan surface. Every element type offers a
+choice of creation methods:
+
+| Element | Created by |
+| --- | --- |
+| **Point** | pick on the scan surface · typed-in coordinates · **centroid of the scan** · midpoint of two points · intersection of a line/axis with a plane |
+| **Line** | through two points · a cylinder's axis · intersection of two planes |
+| **Plane** | fit to the scan · through three points · offset from a plane · midplane of two planes · typed-in normal + point · **symmetry plane of the scan** |
+| **Sphere, Cylinder, Cone** | fit to the scan |
+| **Torus** | fit to the scan — one click on a round: a fillet, a bend, an O-ring seat. Reads the tube radius (the fillet's R) and the ring's; its axis is an axis wherever one is asked for |
+| **Circle** | through **3 or more picked points** (three give the exact circle, more refine a best fit — a hole rim, a boss edge) · intersection of a plane with a cylinder or a sphere · typed-in diameter + normal + center |
+
+A construction made of points alone — through three points, through two,
+the midpoint of two — is clicked together on the part: its slots ask for
+their points one after the other from the moment the method is chosen, a
+click on the scan picking a new point and a click on a point, a sphere or a
+circle taking its centre.
+
+Anywhere a *point* is asked for, a sphere or a circle stands in with its
+center; anywhere an *axis* is asked for, a cylinder stands in with its axis —
+the standard metrology reduction — and a circle offers its normal in the
+dropdowns too, so a line through two circle centers or a 3-2-1 alignment off a
+bore's rim needs nothing special. Constructed elements re-evaluate
+automatically when a source element is re-fitted, and deleting an element
+removes everything built on it.
+
+The plane–cylinder intersection refuses a cylinder leaning more than 5°
+against the plane: the section is then honestly an ellipse, and this tool does
+not report an ellipse as a circle.
+
+Two constructions read their numbers off the scan rather than off other
+elements. **Centroid of the scan** is the centre of the volume the mesh
+encloses, measured the moment the method is chosen; a scan that does not
+close gets the centre of its surface instead, and the box says so.
+**Symmetry plane of the scan** is the mirror plane the part matches itself
+across — the plane reverse engineering mirrors one modelled half about, which
+has to be more exact than any hand-picked plane. It is found by reflecting a
+sample of the scan through a candidate plane, fitting the reflection back
+onto the scan with the same point-to-plane ICP the Deviation workspace uses,
+and reading the plane off the pairs (every sample and its registered mirror
+image are bisected by the true plane), for a few passes until it stops
+moving. **Find symmetry plane** starts from the best of the scan's three
+principal planes — for a symmetric part the mirror normal is always one of
+them — and of the part's own face directions (the ones
+[Auto-align](#aligning-the-part) reads, which a lug or a patch the scanner
+missed does not turn the way it turns the principal axes), or from a **seed
+plane** you name first — one of the **coordinate planes** (XY, YZ, ZX: on a
+part that was aligned first the mirror plane is usually one of them; where
+the plane misses the part, its parallel through the part's centre is the
+seed), a midplane of two faces or a fitted face — when the part's detail
+makes the choice ambiguous. The search runs in two stages,
+because a plane the part is not symmetric about never lets the registration
+settle and would burn every iteration: each candidate is first settled and
+judged on a sixth of the samples with a loose registration, and only the
+winner — with a runner-up too close to call — goes on to the full sample and
+the tight registration the reported plane needs. After the first pass the
+search for a mirror image reaches only a few times as far as the last pass
+showed them to lie.
+The plane's σ is how far the mirror image lies from the scan, so an
+asymmetric part reports a loose fit rather than a confident plane. Both are
+ordinary elements: they move with the part, save with the project, export to
+STEP like a typed-in element, cut sections, and serve as datums — aligning
+the symmetry plane onto a coordinate plane in [Align part](#aligning-the-part)
+is what decides where the mirror goes, and the centroid can be the zero
+point.
+
+Either search can be confined to a **marked surface**: switch *Search on* to
+*Marked surface* and the same window, brush and lasso a hand-marked fit uses
+appear. Only the marked points are searched and only the marked triangles
+are surface a mirror image may land on, so a fixture, a stamped number or a
+patch the scanner smeared is kept out of the search on both sides; the
+centroid of a marking is the centroid of that surface. The marking is saved
+with the element and is back on the part when it is re-opened. `Esc` behaves
+as it does for a hand-marked fit: the first press hands the camera back and
+leaves the marking alone, and a draft discarded by a second press can be
+brought back from the panel, marking and all.
+
+### Dimensions
+
+Measurements are created deliberately, not generated for every pair — with a
+handful of elements the all-pairs list explodes, and half of it (distances
+between planes that will never be parallel, say) means nothing. Following
+GOM Inspect / PC-DMIS conventions:
+
+| Dimension | Value |
+| --- | --- |
+| Point – Point | center distance, with signed ΔX/ΔY/ΔZ components; between two spheres also surface gap (− radii) or outer span (+ radii) |
+| Point – Axis | perpendicular distance to the axis |
+| Point – Plane | perpendicular distance, **signed** along the outward plane normal |
+| Axis – Axis | offset of near-parallel axes, or the distance at closest approach of skew axes |
+| Axis – Plane | distance from the middle of a near-parallel axis, signed |
+| Plane – Plane | distance between near-parallel planes, from the center of the first |
+| Angle: Axis – Axis | 0–90° |
+| Angle: Axis – Plane | angle to the surface, 0–90° |
+| Angle: Plane – Plane | via outward normals, 0–180° (opposing faces read 180°) |
+
+A distance to a fitted plane is a distance to the *fit*, and the face itself
+lies a little below and above that. The Point – Plane, Axis – Plane and
+Plane – Plane dimensions therefore also read the **surface-to-surface range**:
+the lowest and the highest the distance comes out once each face's own form
+deviation is counted in — between two opposite faces of a 50 mm part, the
+min and the max a caliper would find over them. It sits under the value and
+in the copied summary. An axis has no surface of its own to stray (it
+averages the whole wall, which is why out-of-roundness does not move it), so
+Axis – Axis stays a single number.
+
+Fitted geometry is treated as **finite**: a plane is only the patch that was
+measured, an axis only the section the fit rests on. A dimension that has to
+extrapolate past that — a projection landing off the measured patch, skew axes
+whose closest approach lies beyond the fitted sections — says so with a
+warning, or refuses the value outright when it would be meaningless (planes
+more than 3° from parallel have no distance; use an angle dimension instead).
+
+Any dimension can carry a **nominal** with a **+ / − tolerance**, typed into
+the editor and optional: leave the nominal empty and the value is read as it
+is. With one, the row and the pin on the part show the deviation from the
+nominal beside the allowance, the digits turn red when the value is outside
+the band, and the copied summary says PASS or FAIL. Leave − empty for a
+symmetric tolerance. A **Diameter** dimension on a sphere, a cylinder or a
+circle is there so a size can be held to a drawing the same way.
+
+### Comparing with a 2D slice
+
+Reverse-engineering work often measures a scan the CAD way: slice the point
+cloud thin, fit a line or a circle to the slice by hand, read the number.
+Three things then differ from what the dimensions here report, and none of
+them is an error on either side.
+
+- **An angle between planes** is the angle between their normals — the
+  dihedral angle, which is what ISO 1101 and every CMM report. A slice
+  reports the angle between the two traces the faces leave in the cutting
+  plane, and that equals the dihedral angle only when the cut is square to
+  the line the two faces meet along. Leaning off that line moves the
+  projected angle at second order: for a true 44.64°, a cut 6° off square
+  reads 44.48°, one 10° off reads 44.20°. A cast web with a few degrees of
+  draft puts that hinge line that far off the part's axis without anyone
+  noticing. To settle it in the app, construct the *Line: intersection of
+  two planes* from the two faces, cut a
+  [Section](#sections-cutting-the-scan-to-measure-the-cut) across that line,
+  and measure the two lines on the 2D sheet with an edge-region fit — that
+  cut is square to the hinge by construction. If it reads the dihedral value,
+  the hand-placed cut leaned; if it does not, the faces are not flat, the
+  slice location matters, and the flatness value says so.
+- **A diameter** here is the Gaussian mean; a slice minimum sits about half
+  the out-of-roundness below it, a slice maximum as far above. The Ø min /
+  max readout gives both ends.
+- **A width between two faces** measured as Point – Point between two
+  hand-picked points carries the in-plane offset of the picks and the noise
+  of two single vertices. Point – Plane measures the way a CMM does,
+  perpendicular to the fitted face, and Plane – Plane averages both faces;
+  the surface-to-surface range says how far the faces themselves spread it.
+
+### GD&T: form, orientation and location
+
+Below the dimensions, **GD&T** checks what a drawing's feature control frames
+ask for, and works the way a dimension does: **New tolerance**, the
+characteristic, the element it is about and — for orientation and location —
+the datum, then **Add tolerance**. Clicking elements in the viewport fills the
+slots here too, and the type follows what you pick: a second plane after a
+flatness makes a parallelism. The datum is any element you have measured,
+named as it is in the list; rename it and the pin renames with it.
+
+| Characteristic | Of | Value |
+| --- | --- | --- |
+| Flatness · Cylindricity · Sphericity · Circularity | a plane, a cylinder, a sphere, a circle | the peak-to-peak form error the fit already reports |
+| Parallelism · Perpendicularity · Angularity | a plane or an axis, to a plane or an axis; angularity at a typed **basic angle** | the width of the narrowest zone at that angle to the datum that still holds the feature |
+| Coaxiality · Concentricity | an axis, a sphere or a circle, to a datum axis | the diameter of the zone about the datum axis that holds the feature axis or centre — twice the furthest it strays |
+
+What the feature *is* follows ISO 1101. A plane is its **measured surface**:
+the zone is fitted around the scan points the plane's fit rests on — the same
+points its sigma and form error come from — so a face's parallelism includes
+its own flatness, the way a CMM reports it. A cylinder, a cone or a line is
+its **axis** over the fitted length, a sphere or a circle its **centre**. A
+constructed plane has no surface and is read off the corners of its drawn
+patch, with a warning saying so. The form values are peak to peak about the
+Gaussian best fit; ISO's minimum-zone value is never larger, so these are the
+conservative numbers.
+
+An optional **limit** — the tolerance value off the frame — is judged the way
+a dimension's nominal is: the row and the pin read how far inside or over it
+the value stands, red when over, and the summary says PASS or FAIL and counts
+them up at the end.
+
+### Extending a plane or a cylinder past what was measured
+
+A fit is only as big as the surface it found: a plane stops at the edge of the
+patch the scan covered, a cylinder at the ends of the band the fit rests on.
+That is the right answer for a measurement and the wrong one for a datum you
+are about to hand to CAD, where a face usually needs to reach past the part and
+a bore needs to run through it.
+
+While a cylinder or a plane is being created or edited, an **Extend** block
+appears under the preview: **two millimetre fields for a cylinder** (one per
+end) and **four for a plane** (one per edge, ±U and ±V — the patch's own two
+axes). The same sides carry **grips in the viewport** — arrows on the ends of a
+cylinder, bars along the edges of a plane — and dragging one types itself
+straight into its field. **Make square** grows the shorter axis of a plane out
+to the longer one, evenly on both sides so the patch keeps its middle; **Reset**
+puts everything back on the measured surface. Negative values pull an edge back
+in, as far as leaving the element a size at all.
+
+Grips are grabbed with a plain left-drag; the camera steps aside for them the
+way it does for the marking brush, and Shift-drag still orbits. While a marking
+tool is armed both plain drags belong to it, so choose **Navigate** to reach the
+grips.
+
+**Nothing measured changes.** The extension is carried beside the fit, not in
+it: the sigma, the reported patch size or fitted length, and the warning a
+dimension gives when it leaves the measured surface all go on describing the
+scan. What changes is the shape on screen and the shape in the STEP file — and
+the summary notes what an extended element is *drawn* at, beside what it was
+measured as.
+
+The one exception is deliberate. A cylinder's Extend block has a **Fit only
+inside the span** checkbox: with it on, the best fit uses only the scanned
+surface between the two ends *as drawn*. Pull an end in past a rim the scanner
+caught badly — the rounded-off mouth of a bore, a chamfer that got swept into
+the cylinder — and that surface stops pulling on the axis and the diameter.
+The fit re-runs whenever an end changes (the tinted region on the part shows
+what it now rests on), and its diameter, sigma and point count are then the
+surface inside the span alone. The length it reports is still how far the scan reached,
+so the two numbers in the fields keep meaning millimetres off the same ends.
+The re-fit waits for a dragged grip to be let go. The ghost draws a thin rim on
+each end and, while a grip is under the cursor or being dragged, a near-solid
+cap on that end, through the wall of the part, so how far a bore has been
+pulled in can be seen from outside it.
+
+### Sections: cutting the scan to measure the cut
+
+A wall thickness, a bore's true profile, the shape of a groove — the numbers
+a drawing dimensions on a *section view* are not distances between elements;
+they are read off the outline a plane cuts through the part. **Section**, the
+last key in the element row, cuts the scan with such a plane.
+
+The plane is taken **across an element's direction** and slid along it by an
+offset: a plane's normal, the axis of a cylinder, cone or line, a circle's
+normal. Choose the element in the box or click it in the viewport — or take
+one of the scan's **coordinate planes**: while nothing is chosen, the XY, YZ
+and XZ planes are drawn through the part's centre as small translucent
+sheets in the axis colours, a fifth of the part's size, and clicking one (or
+choosing it in the box) cuts along
+it, the offset then simply being the plane's coordinate on that axis. Then
+type the **offset** in millimetres or use the **gizmo** the plane wears in
+the viewport: drag its arrow to slide the plane along its direction, or one
+of its two rings to **tilt** it about one of the sheet's own axes, through
+the point the gizmo sits on. A tilted plane is recorded with its tilt off
+what it was taken across ("along Plane 1, −2.000 mm, tilted 4.3°"), the box
+shows the angle, and **Square** turns it back. The plane is drawn through the
+part as a translucent sheet with the cut on top of it, every chain of it,
+bores included, and the box says how many edge chains the cut produced. Zero
+cuts through the element's own centre — for a face that is the face itself,
+so offset into the part to cut its walls. Chains shorter than a millimetre
+are dropped as specks.
+
+**Shadow.** The box's **Kind** switch makes the section a *shadow* instead
+of a cut: the whole scan projected along the plane's normal onto the plane,
+kept as its outer boundary — closed loops, holes marked. It is the outline
+the part casts, its widest extent with every indentation filled, where any
+one cut through a notch is smaller: what a straight-walled storage bin, a
+foam cutout or a pocket for the part is drawn from. The plane is picked
+and tilted as for a cut, and its direction decides what is seen; it has no
+offset, since the outline is the same wherever it lies along the normal,
+and is drawn in the middle of the part's thickness. The outline is the mesh's own
+silhouette, refined to floating-point accuracy, and is kept read the way a
+sketch is drawn — straight sides as lines meeting at their corners, rounds
+as arcs, a round loop as a circle — to the **Tolerance** (0.1 mm by
+default), and always **outside the part**: each piece is checked against
+the exact silhouette and lies at least the **Play** and at most the play
+plus twice the tolerance outside it. Play is 1 mm by default — clearance
+all round, what a bin or a cutout starts from; 0 takes the part's own
+outline, a negative play is a press fit. **Round below (°)**, 30° by
+default, smooths the outline: where two lines meet turning by less than it,
+the corner is rounded by an arc tangent to both — as large as the lines
+leave room for and the band allows — so a gently curving side read as a run
+of short lines comes out as one smooth curve; a corner turning more stays
+sharp, and 0 keeps every corner as read. The box reads "2 loops ·
+11 243 mm²" — the area inside the outline, holes taken off — and the band,
+"0.05 to 0.25 mm outside the part"; the row says "shadow onto Plane 1".
+On the 2D sheet a shadow is snapped to, fitted and dimensioned
+like a cut, and the DXF and SVG exports write its outline
+as the LINE, ARC and CIRCLE entities it was read as, not a polyline — DXF
+into CAD, extrude, done. A part too large for the raster at half the
+tolerance is traced on wider cells, and the box says so: a slot narrower
+than a cell can close.
+
+**Extrude to the part's thickness**, a checkbox in the shadow's box and on
+by default, stands the outline up as a block along the plane's normal, from the part's lowest
+point to its highest, the outline at its middle — the box says how high. It is drawn through the part translucent in the section's colour, and
+[Export STEP](#step-export) writes it as a solid in the *Solids & faces*
+form: a body CAD can shell, cut and sketch a finger relief on, with no stop
+at the 2D sheet on the way.
+
+Sections are listed under the elements with the same edit / hide / delete
+keys, drawn on the part in their colour, and re-open in the box they were
+made in. The plane is **frozen** when the section is created: re-fitting or
+deleting the element it was cut along leaves the section where it is (an
+edit slides it along its own plane, or moves it to another element), and a
+datum alignment carries it with the part. A saved project keeps every
+section's plane and cuts it again on load.
+
+What a section is *for* is the 2D Measure workspace, where it becomes a
+source beside the flatbed image — see [Measuring a
+section](#measuring-a-section). What is measured there **belongs to the
+section**: the points, lines, circles, arcs and splines fitted on its sheet are drawn
+back on the part in the 3D view, in the section's colour, lying in its plane
+on the cut, hidden with it, and without readouts of their own — the numbers
+are on the sheet, and the section's row says how many elements it carries.
+[Export STEP](#step-export) writes them too, in a group named after the
+section. That is the reverse-engineering hand-off: cut a section through a
+bore, fit its circle on the sheet, and CAD receives a circle in space, in
+the right plane, to sketch on.
+
+### The assumed dimension — what the feature was designed at
+
+A hole that measures Ø 5.98 mm was almost certainly drawn at Ø 6 — and
+sometimes what CAD should receive is that design value, not the scan's
+verdict on this particular part. While a **sphere, cylinder or circle** is
+being created or edited, an **Assumed Ø** field sits under the preview. It
+starts **empty** — nothing is suggested, because a guessed design value would
+reach CAD as if it had been decided. Type the drawing's value if you know it,
+clear the field to take it back; a value far from the measurement (beyond
+half a millimetre, or 5 % on large features) is flagged as a likely typo
+rather than silently accepted, so a Ø 60 where a Ø 6 was meant cannot slip
+through.
+
+Like an extension, the assumed dimension is carried **beside** the fit, never
+in it: every readout, dimension and deviation map keeps the measured
+diameter. It is used where the element is a shape rather than a number — the
+viewport draws it at its assumed Ø, the preview as soon as the value is
+entered, and the STEP export writes it at that Ø and every other element as
+measured — and the copied summary reports it beside the measurement whenever
+the two differ.
+
+### Aligning an element — the designed relation
+
+A bore drilled square to the base fits at 89.7°, the top face at 0.2° to the
+bottom. That is the measurement and it stays reported, but CAD usually wants
+the relation that was designed. While a **plane, line, cylinder, cone, circle
+or torus** is being created or edited, the **Align** block turns it onto one:
+choose a **Reference** — the **XY, YZ or ZX plane**, or a measured plane — and
+whether the element is *parallel* or *perpendicular* to it. The element keeps
+its measured position and size and pivots about its own centre by the
+smallest rotation that gets it there; the panel says how far off the
+measurement was, and warns past 2°, which usually means the wrong reference or
+the wrong relation.
+
+The coordinate planes are the part's own once it has been aligned (Auto-align
+or Align part, below), so a bore can be stood square to the base without
+fitting the base first. Aligning the part again takes the alignment along to
+whichever coordinate plane its old one was turned onto, or drops it if the
+part was turned onto none. A measured plane as the reference is followed when
+it is re-fitted; deleting it drops the alignment. Either way the measurement
+is kept beside the aligned geometry, and sigma and form error are always the
+measurement's; the copied summary says what the element was aligned to and how
+far off it was.
+
+### Changing what you have made
+
+Every list — elements, dimensions, in both workspaces — has a **Hide all /
+Show all** key in its label row, for getting the viewport clear without
+clicking eyes one by one.
+
+Every element and every dimension carries a **✎** key next to its hide and
+delete keys. It re-opens the thing in the same box it was created in, with
+everything it was built from already in place:
+
+| Re-opening a… | brings back |
+| --- | --- |
+| fitted element | the points that were clicked on it, pinned back on the part where they landed — the fit re-runs and previews at once, so more picks or *Undo point* change the surface it rests on |
+| hand-marked element | the marked surface itself, back on the part under the marking tools, ready to be added to or rubbed out |
+| picked point | the point, so a click on the scan moves it |
+| constructed element | its source elements and typed-in numbers, in their fields |
+| dimension | its type, its two references and the sphere anchor |
+
+The creation method can be changed on the way through — a plane fitted to the
+scan can be re-made from three points — and the **Name** field renames it. What
+comes out is the *same* element: same id, same colour, same place in the list.
+Everything measured against it — dimensions, and constructions built on it —
+re-reads the new geometry instead of being rebuilt, so correcting a bad fit
+costs one edit rather than a rebuild of everything downstream. A construction
+cannot be pointed at itself or at anything already built on it, so no loop can
+be created. *Cancel* or `Esc` leaves the original untouched.
+
+A dimension that changes group in the process — a distance turned into an angle
+— takes the next name of the group it has become, unless you named it yourself.
+
+### Aligning the part
+
+A scan arrives in whatever coordinates the scanner happened to use. **Align
+part** sets where X, Y, Z and the zero point sit on the part instead — the
+classic 3-2-1 datum alignment, told as three steps in plain words. Opening
+the editor puts the **datum stage** on screen: the three coordinate planes,
+sized to the part and labelled with the axes, with the part centred between
+them so you can see exactly where it is going.
+
+1. **Set on a plane** — use a **measured plane or cylinder** (a plane lands
+   by its normal, a cylinder by its axis), or pick **3 points on one face**
+   of the part, then say which side of the part that face is: the *bottom*
+   lands on the floor plane, a *front* on the front plane, and so on. The
+   picked points remember which way the scanned surface faces, so the choice
+   reads the same no matter the order you clicked in.
+2. **Align with an axis** *(optional)* — a **measured plane or cylinder**
+   (its normal or its axis is the direction), or **2 points along an edge**,
+   and which way that direction should run (+X to the right, …), so the part
+   cannot spin on its plane. An element averages thousands of scan points
+   where a pick is one spot of noise, so for a direction that has to hold,
+   fit the face or the bore first. Picked, the edge runs from your 1st point
+   to your 2nd.
+3. **Move to zero point** *(optional)* — a point, a sphere center, or **1
+   picked point** that becomes X0 Y0 Z0. A zero point on its own works too,
+   when all you want is to move the origin.
+
+The slots mix and match freely — a fitted plane for step 1, two picked points
+for step 2, an existing point for zero all in one alignment. Whatever a step
+fixes it also zeroes: a face set on the floor ends up at height 0, a cylinder
+lands on the axis it runs along, and the zero point covers whatever is left —
+as does the **first** alignment itself, which centres the part on the origin
+along any coordinate still free. Fill the slots by clicking elements in the
+3D view or picking points on the scan (they stay marked as *Plane 1…3, Axis
+1…2, Zero* while you work). The part swings into the pose it would take as
+soon as a step has what it needs, and again whenever you change a choice, so
+the alignment is judged by looking at the part against the coordinate planes
+rather than by applying it to find out — with the panel reading how far it
+would rotate and move. Measured elements make the most accurate references —
+each one averages the thousands of scan points behind its fit, where a picked
+point is a single spot of scan noise.
+
+**Auto-align** fills the three steps in for you, from the scan alone, and
+opens the same editor on the result — the pose previewed on the part, nothing
+applied, every choice still yours to change. What it reads:
+
+- **The directions.** Every bit of the surface votes the way it faces into a
+  histogram over all directions, a normal and its opposite together, so the
+  two sides of a plate are one vote. The peaks are the directions the part's
+  faces are square to; a direction that every wall's normal is square to is
+  the axis of a turned or extruded part. Frames built from those candidates
+  are judged by how much of the surface they explain, and the winner is
+  settled on the normals themselves — the one rotation that best lays every
+  face on its axis, so the two walls of a drafted pocket, leaning a degree
+  each way, average onto the direction they were drawn about. None of this
+  needs a closed scan: half a part votes the same directions as the whole
+  one. Scan noise is taken out by averaging each normal over its
+  neighbourhood — never across an edge of the part — and a coarse mesh out of
+  CAD, whose vertex normals point along no face, votes by its triangles.
+- **What is missing.** Where the scan ends in a flat rim — the mouth of a
+  housing, the edge a part was cut off at on the table — the face that would
+  close it is a face of the part, and often its largest: the one it rested
+  on, which the scanner never saw. Such an opening votes as the face it
+  stands for, with the area it spans. Without it the chamfers of a housing
+  scanned from above can outvote the frame its missing base belongs to, and
+  the part comes out turned by 45°.
+- **Which way is up.** A part is laid on its largest flat face, the way a
+  slicer lays a part on the bed, a turned part on an end of its axis — and
+  the side the scan is open on weighs in beside the faces, by how much of
+  that side of the box the opening covers, because an open scan is open where
+  it sat: a side wholly open outweighs any face. How open a scan is, and
+  which way, is its *vector area* — every triangle's area along its normal,
+  summed — which is zero for a closed surface and otherwise exactly the area
+  of the openings seen along the way they face, however ragged their edges
+  and wherever in the box they lie. Between equals the side already nearest
+  to down wins, so a part that lies nearly right is not turned over. The long
+  side of what is left runs along X.
+- **Zero.** On the face the part stands on, under the middle of its box — or,
+  for a turned part, on the common axis of its round walls.
+
+The editor says what the proposal rests on — *85 % of the surface is faces
+square to these axes*, *the main axis from the round walls* — and a part with
+no flat faces and no round walls gets the principal axes of its points, said
+to be the guess it is. The slots hold the proposal as picked points (three on
+the standing plane, two along X, the zero point), so *It is the part's* and
+*It runs* turn it to any of its 24 poses, and a measured element dropped into
+a slot replaces that part of it. On a scan of two million triangles the whole
+reading takes a second or so, in the background.
+
+**Use symmetry**, in the Align part box, settles the pose being set up on the
+part's own mirror plane — the plane [Find symmetry plane](#elements-fitted-picked-and-constructed)
+searches for, or a symmetry plane already measured, which is taken first. The
+coordinate axis nearest the plane's normal is turned onto it, the other two are
+squared up again with the least change (what stands up stays up unless it was
+the axis turned), and the zero point is dropped onto the plane: the mirror
+plane is then a coordinate plane of the part, which is what a sketch on the
+middle and a Mirror want. The box says which plane it became, how far the axis
+was turned and the zero moved, and holds the result as picked points like
+Auto-align's — nothing applied, every choice still open. With no pose set up
+yet it starts from Auto-align's. A mirror image more than 0.5 mm off the scan
+is no symmetry, and the pose is left alone.
+
+**Move / rotate by numbers** does the same thing by hand: type how far to
+move (mm) and turn (°) along the global axes. The part turns about the zero
+point — about X, then Y, then Z — and moves after that. Useful for nudging a
+part into a nicer pose, or for applying a known offset exactly.
+
+Applying an alignment or a manual move transforms the scan **and everything
+measured on it** — every element, dimension and typed-in coordinate moves
+with the part, so a fitted sphere stays on its ball and every dimension keeps
+its value. Re-fits after the alignment measure in the new frame. **Reset
+alignment** undoes all of it at once and puts the part back exactly where the
+scanner delivered it. (A scan-to-reference best fit from the Deviation
+workspace was measured in the old frame and is cleared — realigning there
+takes one click.)
+
+### Projects
+
+**Save Project** in the top bar writes the whole session to one `.scanruler`
+file: the scan, the reference part and the flatbed image exactly as they were
+opened, and `project.json` with every element, dimension, alignment, count,
+calibration and display setting from all four workspaces. The file is a plain
+zip (deflated — a binary STL typically shrinks to half or less), so the scan
+can be pulled back out with any archive tool. Only what the user decided is
+stored: deviation and thickness maps, edge chains and fits are measured again
+on load from the same inputs, which keeps the file small and means a better
+algorithm in a later version improves old projects rather than stranding
+them. **Load Project** (or dropping a `.scanruler` anywhere) replaces the
+session, asking first when it holds unsaved measurements; the same button
+takes a plain scan or image to start fresh. Per-browser preferences — the
+interface theme, colour mode, navigation scheme, line widths, STEP style,
+scanner profiles — are not part
+of a project.
+
+A project has a **name**, typed in the top bar beside the workspace tabs and
+kept in the file: Save Project saves it under it, every export is named on it,
+and the browser tab carries it. Left unnamed, those go by the scan's name, or
+the image's, as they always did; a scan opened into a named project keeps the
+name. **New Project** starts over in the workspace on screen — the scan, the
+reference and the image closed, every measurement and every workspace's work
+let go, the settings back to the app's own and the name taken off — asking
+first when there are changes not saved.
+
+Completed work is also checkpointed locally in **this browser** about every
+two seconds after changes, once imports and measurements have settled. On a
+later visit, choose **Restore** from the recovery bar, or **Discard checkpoint**
+to remove a stored session. Each tab has its own checkpoint; tabs cannot
+overwrite each other's work. Source meshes and images are stored once per
+session and reused for subsequent measurement edits. A failed storage write
+preserves the previous complete checkpoint and displays a recovery warning.
+
+The top bar tracks changes since the last **Save Project** download or project
+load. Local checkpoints do not clear that indicator. Closing or reloading with
+unsaved changes requests a browser confirmation. Finish active drawings and
+other drafts before leaving: drafts are warned about but are not included in
+checkpoints or project files. Browser storage can be cleared or run out of
+space, so use **Save Project** for a portable copy. Old session checkpoints
+remain available until discarded; nothing is uploaded to a server.
+
+### Opening a file from a link
+
+A file named in the page's address opens when the app starts, exactly as if
+it had been dropped: a `.scanruler` project replaces the session and lands in
+the workspace it was saved from, a mesh becomes the scan, an image opens the
+2D workspace. Two forms:
+
+- `https://scanruler.com/?open=https://host.example/parts/hinge.scanruler`
+  fetches any file on the web. The server the file is on has to let the app
+  read it — it has to answer with a CORS header naming the app's origin (or
+  `*`); GitHub's raw file addresses do, most file-sharing sites do not. The
+  status strip says what went wrong when the file does not come: the status
+  the server answered with, or that it could not be fetched at all, which
+  is nearly always that header missing.
+- `https://scanruler.com/s/hinge` is the short form for a file in the
+  deployment's own file store: the name is looked up under the store's
+  address, as `hinge.scanruler` unless the name ends in a format the app
+  opens (`/s/scans/ballbar.stl`). Names may have folders in them. Which store
+  is a build setting (see [Deploying to Cloudflare](development.md#deploying-to-cloudflare)); a build without one
+  says so.
+
+`workspace=<name>` on either form says where to land once the file is open:
+`measure`, `deviation`, `thickness`, `flat`, or a plugin workspace by its id
+(`.../s/hinge?workspace=deviation`). It wins over the workspace a project
+was saved in, and works on its own, without a file. An unknown name is
+reported with the names this build has.
+
+A link opens a file into the browser only: nothing is sent anywhere, and the
+file is as untrusted as a dropped one. The recovery bar still offers the
+previous session underneath.
+
+### STEP export
+
+**Export STEP** writes the created elements to a STEP file (ISO 10303-21,
+AP214) as **analytic geometry, not tessellation**, in either of two forms —
+**STEP as** beside the button picks which, and the choice is remembered.
+
+**Solids & faces** (the default) hands CAD geometry it can build on:
+
+| Element | Written as |
+| --- | --- |
+| **Plane** | a bounded planar **face** — an `ADVANCED_FACE` with four real edges, in an open shell — so it can be sketched on, offset and referenced |
+| **Cylinder** | a **closed solid body**: the fitted wall, capped at both ends by flat lids |
+| **Sphere** | a **closed solid ball**, two hemispheres meeting at an equator |
+| **Line, Point** | a trimmed line and a point, as they always were |
+| **Section** | what was measured on its sheet — points, lines, circles, arcs and splines — as curves lying in the cutting plane, in a wireframe group named after the section; a spline goes out as a cubic `B_SPLINE_CURVE_WITH_KNOTS` in Bézier form, exactly the curve on the sheet |
+| **Extruded shadow** | a **closed solid block** named after the section, one per outer loop: a planar face at each end bounded by the outline and its holes, and one side face per piece of it — a plane per line, a cylinder per arc or round hole — so a rounded rectangle is eight side faces, not a facet per point |
+
+Each body is its own named shape representation, tied to the part the way the
+bodies of a multi-body file are, so the element names arrive in the CAD tree —
+and each section as a group of its own, its elements inside it. A file can be
+sections alone, with nothing measured in 3D.
+
+**Construction surfaces** is the older form, and still the honest one for
+handing over datums: every element as a trimmed analytic surface or curve in a
+single `GEOMETRIC_SET`, with no topology at all — planes as planar patches at
+their extents, cylinders and spheres as trimmed surfaces at their fitted radii.
+It is unmistakably reference geometry rather than a part, and the safer choice
+for an importer that chokes on bodies.
+
+Either way the size written is the size on screen, extensions included, and
+coordinates are millimetres in the current frame — so aligning the part first
+hands CAD the elements in the datum system. A sphere, cylinder or circle that
+was given an **Assumed Ø** when it was created goes out at that diameter;
+positions, axes and everything without one are written as measured.
+
+### Scan export: mesh and point cloud
+
+The scan itself leaves the tool two ways, both **in the pose it is shown
+in** — a 3-2-1 or typed-in alignment, or the Deviation workspace's best fit,
+comes along, so the next tool receives the part levelled and zeroed.
+**Export mesh** writes the mesh for anything that wants triangles, as a
+binary **STL** or a **3MF** — picked from the button. A 3MF says it is in
+millimetres, so a slicer or a mesh tool opens it at the right size without
+asking, and it keeps the scan's own colours (a textured scan's).
+**Export cloud** writes every vertex with its outward normal as a **point
+cloud**, for the reverse-engineering tools that model over points: as a
+binary **PLY** (points only, no faces — Geomagic, CloudCompare, MeshLab and
+ReCap all read it) or as **XYZ text**, one `x y z nx ny nz` line per point in
+millimetres, which is the same file ASC readers take. Autodesk ReCap turns
+either into an RCP for AutoCAD and Inventor; RCP itself is an undocumented
+container nothing outside Autodesk writes. The format choice is remembered
+per browser like the STEP style. Neither export is ever saved under the
+scan's own name: the file is `name-aligned` or `name-export`, so the
+original can never be silently overwritten.
+
+Both write the scan at its full density.
+
+## Deviation
+
+The **Deviation** workspace paints how far the scan strays from what it should
+have been over the part itself. **Measure against** at the top of the panel
+decides what "should have been" means:
+
+- **Reference model** — the whole nominal part, best-fitted onto the scan.
+  Answers *is this the shape it was drawn as*.
+- **Fitted element** — one plane, cylinder or sphere measured on this same scan
+  in the 3D Measure workspace. Answers *is this face flat, is this bore round,
+  does this surface sit where the datum says*.
+
+Both paint the same map, read through the same colour scale, with the same
+statistics, pinned readings and report underneath. They differ only in what it
+takes to get there — and both maps are kept, so switching between them loses
+neither.
+
+## Deviation from a nominal part
+
+With **Reference model** chosen, an empty stage asks for the two models it needs,
+each its own drop target — drag and drop works anywhere in the window, and
+whichever slot is still empty takes the file. Once a part is on the stage the
+prompt gets out of the way for good: whatever is still missing is asked for by
+its row in the panel and a line above the model.
+
+The scan is a mesh, as always. The reference takes a mesh too, or **a STEP file
+straight from CAD** — see below.
+
+Both parts are on the stage as soon as both are loaded, the reference drawn as
+a translucent ghost over the scan. Press **Align automatically** and the scan
+walks onto it pass by pass — the refinement streams its intermediate poses out
+of the worker, which costs one matrix write per pass against tens of
+milliseconds of closest-point queries.
+
+**The reference never moves.** A nominal part is the datum a measurement is
+taken *against*, so the alignment is applied to the scan and the world ends up
+in the reference's coordinates. Everything measured on the scan — the deviation
+map, pinned readings, and any elements fitted in the other workspace — rides
+along with it, so a fitted sphere stays on the ball it was fitted to.
+
+The map is measured as soon as the fit lands, and the reference stands down
+once there is a map on the scan. The **Scan** and **Reference** keys on the
+[view bar](#the-view-bar) bring either back; with the scan put away the
+reference turns solid, which is how you check it is the right part — an aligned reference
+otherwise lies inside a scan of nearly the same shape and loses the depth test
+almost everywhere.
+
+**Hover the part for the deviation under the cursor**, interpolated across the
+triangle rather than snapped to a vertex, and **click to pin a reading** where
+you want a number to stay.
+
+### Both parts, side by side
+
+**Split view** on the view bar puts the scan and the reference in two
+viewports next to each other with one camera between them: turn, pan or zoom
+either half and the other follows, whichever half the pointer is in. Because the
+fit carries the scan into the reference's coordinates, both halves are showing
+the same world — so a feature on the left sits exactly where its counterpart sits
+on the right, and the only thing that differs between the two pictures is the
+part.
+
+The overlaid ghost stands down while the split is open: the reference has a half
+of its own, and the ghost was only ever a way of getting two parts into one
+frame. Everything the scan carries stays on the left — the map, the reading under
+the cursor, the pinned readings, the marking tools. Nothing is picked or measured
+on the reference half; it is the shape being compared against.
+
+**Both halves are one material under one light** — the scheme's bare-surface
+colour and finish on either side, rather than the ghost's contrasting blue. Two
+pictures of the same part in the same grey leave the shape as the only difference
+between them, which is the comparison you opened the view to make. Switch the
+[colour plot](#the-colour-plot-off) off and it is exactly that; leave it on and
+the map is the one thing marking the scan out from its nominal. Under **Scanner
+blue** it is worth the look on its own: the highlight lies along the same edge in
+both halves, scalloped into mesh facets on the scan and dead straight on the CAD
+part beside it.
+
+It does not wait for an alignment either. Opened on an unfitted pair it shows
+each part where it actually is, which is how you check the reference is the part
+you meant before spending a fit on it.
+
+### The colour plot, off
+
+**Colour plot** on the view bar stops painting the map onto the scan and
+leaves the bare surface. The scale goes with it — histogram, figures and all: it
+is the key to colours that are no longer on the part, and being left with the
+part is the whole point of switching them off. It is there for the times you want
+the shape rather than the reading — the form of a face, a hole in the scan, the
+marks a finish left — which is most of what the reference beside it is for.
+
+Nothing measured is lost by not looking at it. The map is still measured
+underneath, the reading under the cursor still reports it, pinned readings stay
+pinned, and switching it back on brings the scale back reading exactly what it
+read before — nothing is re-measured.
+
+**Bare means bare.** Any elements drawn on the part — the ones on offer when a
+map is measured [against a fitted element](#deviation-from-a-fitted-element) —
+come down to their outlines for as long as the plot is off. A fitted element's
+body lies exactly on the surface it was measured on, so one left standing there
+would be a tint over the very surface the plot was switched off to see. The
+borders and the pins stay, so which element is which is still readable and one
+can still be chosen by clicking its pin; switching the plot back on makes them
+bodies again.
+
+### The reference straight from CAD
+
+The nominal part is whatever the CAD system says it is, and exporting it to STL
+first means choosing a tessellation in a dialog that has nothing to do with the
+measurement. So the reference slot also takes **STEP** (`.step` / `.stp`,
+ISO 10303-21, AP203 / AP214 / AP242): the file's exact surfaces are tessellated
+here, in the browser, by [meshStep](https://github.com/CNCKitchen/meshStep).
+Coordinates come out in millimetres whatever unit the file declares, so an
+inch-native export needs no conversion beforehand.
+
+How finely it is tessellated matters, because chord error is a systematic term
+in every reading taken against a curved face. The tolerance is scaled to the
+part — 0.01 mm on a 100 mm one, tighter on smaller — which puts it about a
+tenth of what a good structured-light scanner resolves, so the conversion
+disappears under the scan rather than being measured by it. The figure is
+reported in the status strip and stays on the reference slot, since it is the
+floor under everything the map says.
+
+What it deliberately does *not* do is subdivide by length. Triangle count is
+driven by curvature alone: a flat face is exact at two triangles however large
+it is, and the usual size-adaptive default spends 238 510 triangles on a 20 mm
+cube that 12 describe perfectly. A bracket arrives as a few thousand triangles
+of exactly the right shape instead of a million of the same shape.
+
+The conversion is audited, and the result is not taken on trust. A STEP file
+whose faces come through with cracks or holes leaves the solid without a
+reliable inside — and *inside* is where the sign of every deviation comes from
+— so that is reported as an error against the reference, with the advice to
+export a mesh from CAD instead. A file that only needed heuristic repair says
+so more quietly, in the status strip.
+
+A STEP file opens as the scan too, cut finer than a reference: the scan
+wants vertices to fit on and triangles to cut, where the reference's flat
+faces stay a few large triangles. A STEP file dropped in the Deviation
+workspace while a reference is still wanted goes to the reference.
+
+### The best fit
+
+The fit is **rigid — rotation and translation only, no scale**. That is
+deliberate for a scanner accuracy tool: a scale error is one of the things you
+are trying to see, and a 7-parameter fit would quietly absorb it.
+
+Alignment is a point-to-plane **ICP** with adaptive outlier rejection, and the
+increment is taken about the centroid of the correspondences so the solve stays
+conditioned on a part sitting far from the origin. The starting pose is picked
+by trying candidates and keeping whichever actually fits: the identity, which
+is right whenever both files already share a frame, plus the 24 rotations that
+map the scan's principal axes onto the nominal's. All 24 are needed, not just
+the four sign flips, because a nearly cubic part has nearly equal principal
+moments and a *partial* scan of it can rank its axes differently from the whole
+part — no amount of sign flipping recovers that, the axes have to be permuted.
+
+Candidates are scored on the mean distance from **every** sample to the
+surface, capped so outliers cannot dominate. Scoring only the pairs that
+survive outlier rejection — the obvious thing — is actively wrong: the cut-off
+is a multiple of the median, so a pose that slides until only a well-fitting
+patch still corresponds scores *better* on fewer pairs, and the fit walks off
+the part chasing it.
+
+A fit that is visibly heading somewhere wrong does not have to be waited out:
+**Stop aligning** — or `Esc` — ends it wherever it has got to. Nothing is
+half-applied. The pose it had reached is not a measurement, so the part goes
+back where it was, whatever alignment was already in hand is still in hand, and
+the map measured under that one is untouched. (Which is less obvious than it
+sounds from inside a web worker: a worker only reads its inbox between
+messages, and a solid minute of arithmetic never gets between two. The whole
+alignment pipeline is written as a generator that yields once per ICP pass, and
+the worker drives it in slices of a few milliseconds — so the stop lands within
+a pass instead of having nowhere to arrive.)
+
+If the automatic match fails or reports itself ambiguous, press **Align by
+picking points…** for a split screen with the scan on one side and the
+reference on the other, each freely rotatable. Clicks alternate — a feature on
+the scan, the same feature on the reference — and three pairs are enough. The
+picks only fix a coarse pose, solved in closed form by Horn's absolute
+orientation, and ICP does the rest, so they only have to be roughly right.
+Points that land nearly in a line are rejected as you place them: the rotation
+about that line would be unconstrained.
+
+The scan's half of that screen also carries the **Window / Brush / Lasso**
+tools, for saying which surface the fit is *measured on*. The points fix the
+pose it starts from; the selection decides what it is allowed to settle onto —
+the other half of getting a scan carrying a fixture, a riser or a run of spray
+into the right place, and the same idea as the local fine fit below, available
+before the first fit rather than only after one. Select nothing and the whole
+scan is fitted, which is what nearly every part wants. *Invert selection*
+swaps what is selected for what is not: select the fixture, invert, and the fit
+is measured on everything else. `Esc` stands the gesture down and hands the
+clicks back to picking points; a second one closes the picker. The selection
+belongs to the fit being set up there and goes with the picker when it closes.
+
+### Local fine fit
+
+The global fit weighs every point of the scan alike, which is right until the
+scan contains surface that is not the part — developer spray, print supports,
+the riser it was scanned on, fixturing, geometry the reference simply does not
+have. Those are fitted on purpose, they pull the whole alignment off, and no
+number of passes shakes them loose.
+
+**Local fine fit** is the second pass: mark the surface that really is the
+part, and fit on that alone. It starts from the alignment already in hand and
+only corrects it — it is not a way to find a pose from scratch, so run the
+global fit first.
+
+Four modes, one of which is always live:
+
+| | |
+|---|---|
+| **Navigate** | Marking off. Orbit, pan and zoom exactly as everywhere else. This is what the tools open in and return to after a fit — what is already marked stays marked. |
+| **Window** | Drag a rectangle. Everything inside it is marked — the fastest way to drop a riser or a whole scanned-in fixture. |
+| **Brush** | Drag over the surface with a round brush of a set diameter, as in the 3D Measure workspace. For working along an edge. |
+| **Lasso** | Draw a free outline; everything it encloses is marked. For a patch of spray that follows no straight line. |
+
+The three gestures are additive and all undone by the same gesture with the
+right button (or with **Erase** switched on, or with Alt). **Invert** swaps
+the marked surface for the bare surface, so a riser can be marked and then
+inverted to keep everything else. A live gesture takes
+both plain drags for as long as it is on, so **Navigate** — or `Esc`, or
+clicking the live tool again — hands them straight back. Shift-drag orbits
+while a gesture is live, and the middle button is untouched throughout.
+
+`Esc` backs out one step at a time: the first press stands the gesture down and
+returns the camera, the second closes the local fine fit and clears the
+marking. Never both at once — `Esc` is the key you reach for to get the mouse
+working again, and losing a marking to that would be a trap.
+
+While the tools are out, the rest of the faceplate fades back: loading models,
+the global fit and reading the map all belong to another step. It is a fade,
+not a lock — anything there still works, and comes back to full strength under
+the pointer.
+
+**Mark faces pointing away too** decides whether a gesture reaches through the
+part. Off — the default — only surface turned towards you is taken, so a window
+over a closed part cannot quietly mark the far wall along with the near one.
+On, the gesture goes straight through, which takes a whole rib or boss in one
+sweep and is also the escape hatch for a scan whose normals are inverted. There
+is no depth test behind this, only the facing test: that is how CAD selection
+works everywhere, and it is why the switch exists.
+
+A marked point is only ever paired with reference surface **facing the same way
+it does** — within 60°, which the fit can insist on because it starts from a
+pose that is already right to within a fraction of a millimetre. This is what
+keeps the outside of a thin wall from being fitted to the inside of it. The
+test is applied while the pairing is searched for, not after: across a thin
+wall, inside a bore, or in the gap between a boss and its pocket the *nearest*
+reference surface to a marked point is the one facing back at it, and a fit
+that only threw that pair out afterwards would leave the surface you marked
+contributing nothing at all — with the pose then decided by whichever part of
+the marking happened to land somewhere unambiguous. Searching with the facing
+test inside it pairs the point with the wall it actually came off.
+
+**Max search distance** (1 mm by default) is a hard gate on the fit: a marked
+point that finds no reference surface within it contributes nothing, and
+counts against the pose exactly as a miss does. It is what stops a marked patch
+from sliding onto a neighbouring feature that happens to fit it better. A
+global fit already has the part within a few tenths, so a millimetre is
+generous; raise it and the fine fit can find a different feature and settle
+there instead. If nothing at all is in reach, the fit refuses rather than
+answering.
+
+A selection that faces essentially one way is flagged: a single flat patch
+fixes the distance across itself and leaves the part free to slide along it and
+to spin about its normal. Mark a second surface facing another way.
+
+The marking excludes surface from the **fit**, never from the **reading** — the
+map that follows is still measured over the whole scan, so the supports and the
+spray are still coloured, just no longer voting on where the part sits.
+**Back to the global fit** puts the whole-scan alignment back, exactly as it
+was.
+
+### The map
+
+Deviation is the **signed distance from each scan vertex to the nearest point
+on the nominal surface**, positive where the scan sits outside the reference.
+The scan is queried against the nominal and never the other way round, because
+only the nominal is watertight and so only that direction has a well-defined
+inside.
+
+The sign comes from an **angle-weighted pseudonormal** of whichever feature the
+closest point actually landed on — face, edge or vertex — not from the nearest
+triangle's own normal. Against a CAD part full of sharp pockets and bores a
+scanned surface projects onto those seams constantly, and signing by the face
+normal speckles every edge of the map with false inside/outside flips.
+
+**The surface a point is measured against has to face the point's way.**
+Across a thin wall, a scan point sunk more than half the wall's thickness is
+nearer the far side of the wall than its own. Measured against that side it
+reads too small, and once it is through the wall it reads with the wrong sign.
+So a point whose nearest reference surface faces away from it, judged by the
+scan's own normal, is measured against the nearest surface that faces its way
+instead. It is left grey when there is none within a tenth of the part's
+bounding-box diagonal. By default only surface facing away is stepped over. A
+limit tighter than 90° also re-reads the steep sides of edges the scan has
+rounded over, against the neighbouring face, which moves the closest-point
+reading at every edge of the part. A scan whose normals came in inside-out as
+a whole is recognised and read the right way round.
+
+Reading the map:
+
+| Control | Unit | What it does |
+| --- | --- | --- |
+| **Range ±** | mm | Half-width of the colour scale. Defaults to the rounded 95th percentile of the absolute deviation, so a handful of outliers on a fixture edge cannot flatten the whole part to green — and never opens wider than **±1 mm** on its own, so a great many of them cannot either. A part that really is further out than that says so in the dark end caps; widen the scale by hand to read it. |
+| **Bands** | — | Continuous, or quantised into bands when you want iso-deviation contours. |
+| **Histogram** | — | The distribution, drawn beside the scale and sharing its axis, plus min / max / mean / RMS / sigma. |
+| **Max search distance** | mm | How far a scan point may look for reference surface. Beyond it there is nothing to deviate from, so the surface is left plain grey and kept out of the statistics. Display only — it never affects the alignment, and moving it re-colours instantly. |
+| **Reference must face the same way** | — | On by default. Steps over reference surface facing away from the scan, so that a thin wall is never read off its far side (see above). Changing it measures the map again. |
+| **Max. deviation of normals** | ° | How far the reference surface may be from facing the way the scan does and still be measured against. 90° by default, which steps over only surface facing away. |
+| **Tolerance ±** | mm | The band the *within ± x mm* figure under the scale counts. It does not change the colours. |
+| **▩ Colour plot** | — | Whether the map is painted onto the scan at all (view bar). Off leaves the bare surface and takes the scale with it; the map stays measured, and the reading under the cursor and the pinned readings go on reporting it. |
+
+The ramp is jet — blue through cyan, green, yellow to red — pinned so that
+**zero is a saturated green**, with dark caps beyond each end so a reading that
+is off-scale is never mistaken for one that is merely large. Any of the
+viridis maps can stand in for it, under ⚙ Settings → [Colour map](#settings);
+zero is then the middle of that ramp, and the caps are that map's own.
+
+Validated against the included test pair (`side bracket left.stl` as nominal,
+`block-marius.stl` as the scan, 1.43 M triangles): the fit converges to
+0.072 mm RMS, and a scan displaced by a random rotation and translation comes
+back to within **0.9 µm** of the fit found in place.
+
+### Watching the part deform
+
+A map says by how much each point is out; it is hard to see from the colours
+which way the part as a whole has gone. **Animate the deformation**, under
+*Deformation* in the panel, plays the map as motion, the way an FE package
+animates a deformed shape: the part moves from the shape it should have to the
+shape it was measured at, with the deviation multiplied by the **Scale**, and
+back, on a loop. It works the same on a map against a fitted element.
+
+| Control | Unit | What it does |
+| --- | --- | --- |
+| **Animate the deformation** | — | Starts and stops the loop: two seconds from the ideal shape to the full scale and back, eased into both ends. It starts from the scan as measured, and stopping puts the scan back exactly as measured. |
+| **Scale** | × | How many times the deviation is exaggerated at the far end of the loop; 1× moves the part exactly as far as it is out. Until you set it, it is chosen so that the end of the colour scale moves by a twentieth of the part's bounding-box diagonal, and follows the range. |
+
+Each point moves along the line its deviation was measured on: away from the
+closest point on the reference, or out of the element on the material's side.
+That direction is recorded with each reading, so the scan's own normals, which
+may face either way on an open scan, never decide it. What is exaggerated is how
+the part as a whole has deformed:
+
+- **The motion is smoothed** over about 1 % of the part's diagonal, on a
+  grid in space. A warp, a twist or a wall leaning in moves as it is, but the
+  scanner's noise and the edges of holes stay at their true size and ride
+  along; multiplied fifty times they would be fur on every edge and folds
+  around every hole. Both faces of a thin wall move together, the way a bent
+  wall does.
+- **A reading past the end of the colour scale moves only as far as the end.**
+  Material the reference does not have and stray points stay in proportion.
+  Widen the range to let more of the part move.
+- **Points with no reading stay put**: no counterpart, or past the max search
+  distance.
+
+Only the picture moves, on the graphics card. The colours, the figures, the
+hover reading, the pins and an exported scan are all the part as measured. The
+loop stops when the marking tools or the point picker come out, since both
+work on the scan where it is, and when a new scan or reference is loaded.
+
+## Deviation from a fitted element
+
+Choose **Fitted element** under *Measure against* and every plane, cylinder and
+sphere you measured in the 3D Measure workspace appears on the part, each in its own
+colour. **Click one on the model** — or pick it from the dropdown — and that is
+the whole setup: **no reference file and no alignment**, because the element was
+fitted on this scan and is already in its frame. There is no *Measure* button
+either: the distance to a plane, a cylinder or a sphere is a handful of flops per
+vertex, so the map is computed on the main thread and simply follows every change
+to it.
+
+The element **in use** is reduced to its outline, for two reasons. It lies exactly
+on the surface being read, so a translucent body there would wash the colour the
+reading is made of — and on a map the colour *is* the measurement. And an outline
+is not something clicks resolve through, so a click on the map it covers still
+pins a reading rather than re-selecting the element under it. The elements **on
+offer** stay bodies, faded, because a body is what you can aim a click at —
+until the [colour plot](#the-colour-plot-off) goes off, when they become
+outlines too: with the map gone the surface itself is what is being looked at,
+and a body lying on it is the one thing that would still be covering it.
+*Show elements on the part* takes them all off for a clean screenshot, and with
+them the clicking; an element hidden by its own eye in the 3D Measure workspace
+stays hidden here too.
+
+A point and a line are not offered. The distance to them is unsigned, so there is
+no zero for a scale that runs warm one way and cool the other.
+
+Three things turn a raw closest distance into a measurement here.
+
+**The region is the element as drawn.** A plane is infinite and a cylinder is an
+endless tube; taken literally, a plane would paint a slab clean through the part.
+So a vertex counts only where it falls within the element's own extent — which
+is the extent the **grips** set, so extending a plane in the 3D Measure workspace
+grows the measured region with it. That is how a plane fitted on one pad becomes
+a flatness map of the whole face it belongs to, and the outline drawn over the
+map is exactly the boundary of what was measured.
+
+**The sign follows the material, not the fit.** Positive deviation is always too
+much material, so the tool has to know which side of the element the part is on.
+It reads that off the **scan's own normals** around the element as you choose it,
+because a fitted plane's normal points whichever way the fit happened to choose,
+and inside a bore the material is on the *inner* side — where a raw radial
+distance runs backwards. **Flip** turns it round when the detection is wrong.
+
+**A surface facing the wrong way is not the surface being measured.** A plane
+fitted on the top of a 10 mm plate reaches the underside of it, which lies
+squarely inside the footprint and would be reported as ten millimetres of missing
+material. **Surface must face the element** leaves it out, the same way the wall
+thickness search steps over a surface that does not face back.
+
+And when the element's own bounds are still not selective enough, the
+**measured region** can be narrowed by hand. *Measured region → Marked surface
+only* brings out the same window / brush / lasso the fits are marked with; the
+map, its statistics and the report then cover exactly the points you mark —
+one pad, one land, one sector read against the element while the rest of the
+surface stays out of the reading. The map follows the brush stroke by stroke,
+the region survives the tools being put away *and* a change of element (so the
+same patch can be read against several datums in a row), and *Everything the
+element bounds* is one switch away. The report names the region and its point
+count, so a restricted reading can never pass for a whole-face one.
+
+| Control | Unit | What it does |
+| --- | --- | --- |
+| **Measure to** | — | The element the map is measured against. Choosing one measures it — as does clicking it on the part. |
+| **Show elements on the part** | — | The candidates on the model, which is also what makes them clickable. |
+| **Measured region** | — | Everything the element bounds, or only a surface marked by hand with the selection tools. |
+| **Material side** | — | Which side of the element the material is on, detected from the scan. **Flip** inverts the whole map. |
+| **Max search distance** | mm | How far off the element a point may be and still be measured. Display only, so it can be dialled either way with the map following immediately. How far the element reaches *sideways* is set by extending it. |
+| **Surface must face the element** | ° | Leave out scan surface whose own normal points away from the element's — the far side of a wall, the back of a rib. |
+
+Everything below that — the colour scale, the bands, the histogram, the tolerance
+tally, hover readings and pinned ones, **Copy report** — is the same instrument
+as for a reference part, because it is the same map.
+
+Validated end-to-end against a generated 20 mm CAD cube
+(`npm run e2e:element-deviation`): two planes fitted on two of its faces, chosen
+and swapped by clicking them on the model, and the map on each reading the face as
+flat to 0.000 mm, leaving the underside out while the facing filter is on, and
+reporting it as exactly −20.000 mm with the filter off — and the part left bare,
+outlines and pins and nothing else, when the colour plot is switched off. The
+circle element and the marked-region scope have their own script
+(`npm run e2e:circle`): a Ø 12 coordinate circle reading back exactly, three
+picks previewing a circle on the cube's top face, and a marked window measuring
+only its own points — zero of them while nothing is marked. It also photographs
+a picked point at two zoom levels: the marker has to come out the same number of
+pixels in both, where one sized to the part would come out nine times the area.
+
+## Wall thickness
+
+Switch to the **Thickness** workspace, load a part, and press **Measure wall
+thickness**. There is no reference model and no alignment — the measurement is
+of the part against itself.
+
+### The two methods
+
+**Ray** — from every vertex a ray is fired straight into the material along the
+inward surface normal, and how far it travels before it comes out the far side
+is the wall thickness there. Exact wherever the two faces of a wall are
+parallel; a little long where they are not, by 1/cos of the angle between them.
+It runs at roughly 150 000 vertices per second — under five seconds for a
+1.4 M-triangle scan.
+
+An **opening angle** spreads a cone of rays around the normal and takes the
+shortest, which finds the narrow way across a chamfer or a tapered rib.
+
+**Sphere** — a sphere is placed halfway along that ray and grown until it
+touches. It can never read longer than the ray and usually reads shorter,
+because it is not tied to the ray's direction: it finds a wedge square across,
+and at the corner of a block it reports the block rather than the long diagonal
+the blended normal points down. One extra closest-point query per vertex.
+
+It is deliberately *not* the largest sphere tangent to the surface at the point.
+On a mesh from CAD nearly every vertex sits on a sharp edge, and no sphere of
+any size touches an edge from inside without poking out of it, so that
+definition collapses to nothing over most of the part — measured, on the
+included bracket, at a mean of 3.3 mm against the ray's 16.3 mm. Centring the
+sphere on the crossing has no such degeneracy and gives 7.7 mm.
+
+### What counts as the far side
+
+Both faces of every triangle count as an exit. A scan is not reliably wound, and
+a far wall whose winding disagrees with the near one would otherwise be
+invisible to the ray looking for it.
+
+A surface nearly edge-on to the ray, though, is not the other side of a wall —
+it is a rib the ray is running alongside, or the rim of an open scan. **Max.
+deviation of normals** is how far from squarely facing the ray a surface may be
+and still count; anything flatter is stepped over and the search goes on behind
+it. At the default 60° it also stops a 30° cone escaping sideways through a
+convex edge, which is why those two defaults belong together.
+
+**A ray with nothing behind it inside the search limit is left unmeasured** —
+bare grey, and out of the statistics. On a closed part that is almost nothing;
+on a scan of one side only, it is most of the part, and the readings you do get
+are the distance across the body rather than across a wall. Wall thickness is
+only meaningful on a surface that has a back to it.
+
+### Reading the map
+
+| Control | Unit | What it does |
+| --- | --- | --- |
+| **Method** | — | Ray along the normal, or the sphere across what it crossed. |
+| **Max. thickness** | mm | The search stops here, and a point with nothing behind it inside the distance is left unmeasured. Defaults to a fifth of the part's bounding-box diagonal, rounded; tighten it to just past the wall you care about. |
+| **Rays** / **Max. opening angle** | — / ° | The cone: how many rays, and how far off the normal they may look. |
+| **Max. deviation of normals** | ° | How far the surface a ray lands on may be from facing it, before it is stepped over as not-a-wall. |
+| **Thin end** / **Thick end** | mm | The two ends of the colour scale. They default to the 2nd and 95th percentile of the part, rounded — a thickness distribution has a long tail to the right, and letting it set the scale flattens every wall onto one colour. |
+| **Bands** | — | Continuous, or quantised into iso-thickness bands. |
+| **Histogram** | — | The distribution beside the scale, sharing its axis, plus min / max / mean / sigma. |
+| **Thinner than** | mm | The wall the *under x mm* figure under the scale counts. It does not change the colours — set the thin end of the scale to it if you want the map itself to call it out. |
+
+Everything down to **Max. deviation of normals** shapes the search, so changing
+it means measuring again; everything below it is display, and takes effect as
+you turn it.
+
+The ramp is the deviation map's, in whichever [colour map](#settings) is
+chosen, but **reversed: its hot end is thin** — on jet, red is thin and blue is
+thick. Thickness has no signed zero to sit in the middle, and the end that
+needs to shout is the thin one.
+
+## 2D Measure: flatbed scans
+
+Switch to the **2D Measure** workspace and drop in a flatbed scan of the part —
+a PNG or JPEG, scanned face-down at the highest optical resolution you have.
+The workspace measures it the way a measuring microscope would: fit points,
+lines, circles, arcs and splines to the part's edges, then measure between them. A
+flatbed scanner is a surprisingly good comparator — the optics are telecentric
+enough over the glass, and at 600 dpi one pixel is 42 µm with edges located to
+a fraction of that.
+
+Everything stays in this browser, like the rest of the tool. The workspace has
+its own viewport: the scan lies on a millimetre sheet, y up, origin at the
+bottom-left; orbit gestures pan (a sheet has no third dimension), scroll zooms
+about the cursor.
+
+### Scale, and the uncalibrated alarm
+
+Every millimetre this workspace reports is pixels divided by a scale. Three
+states, and the stage says which one you are in:
+
+- **Nothing** — the file declares no resolution: sizes are in raw pixels.
+- **Nominal** — the file's own dpi (PNG `pHYs`, JPEG JFIF) is used, and a loud
+  **UNCALIBRATED** chip stays on the stage: scanner transports are off by real
+  fractions of a percent, so the file's claim is a working value, not a
+  measurement.
+- **Calibrated** — you measured the scale off something true that was on the
+  glass: two picks across a known distance, or three-plus picks around a circle
+  of known diameter (a gauge pin, a coin). **Calibrate X and Y separately**
+  handles the fact that the sensor axis and the transport axis err
+  differently — it needs a reference laid along each axis in turn.
+
+A measured calibration describes the scanner at one resolution, not the image:
+save it as a named **scanner profile** (the one thing this app persists between
+sessions on its own, in localStorage) and apply it to every scan from that scanner. Every element's
+source is recorded in image pixels, so recalibrating re-derives every fit and
+dimension — nothing measured ever bakes in a stale scale.
+
+### Edges, and the three ways to fit
+
+On load the image is swept once for edges in a worker — Canny with automatic
+thresholds, the surviving pixels linked into chains, every point refined to
+subpixel by a parabola across the gradient (scanner optics blur an edge over a
+few pixels, which is exactly what the parabola needs). The chains are then
+judged as chains, because a real scan is full of edges no fit can use —
+scanner banding, knurl texture, scratches, print: small breaks along one edge
+are bridged, anything shorter than **1 mm** at the current scale is dropped,
+and a chain has to keep one side brighter than the other all along its length.
+That leaves a quarter to a third of the chains with every long edge intact,
+point for point. They draw as a teal overlay with one sensitivity slider; on a
+synthetic edge the recovery is better than a tenth of a pixel.
+
+- **Through points** (the default): click the points yourself. Every click
+  snaps to the nearest detected edge at subpixel — hold **Alt** to place the
+  raw click — and a 4× loupe rides the cursor with a crosshair on the exact
+  pixel. Every pin can be **dragged** afterwards, snapping as it goes, and the
+  fit follows the drag.
+- **Fit to edge** (lines and circles; what Line and Circle open with on a
+  section): click anywhere on the edge, and the fit grows along it from
+  there — the 2D twin of the fit from a click on the scan. A detected chain is the whole outline of a part or the whole rim of a
+  hole, and a click on it means *this straight stretch* or *this round one*:
+  the line or circle is fitted to a dozen points around the click, then
+  extended point by point in both directions while the next point still
+  lies within a noise band of the fit and the edge still runs its way,
+  refitting as it goes, until the edge bends away — at a corner, or where a
+  fillet runs out into the side it joins. So a click on one side of a part
+  takes that side and stops at its fillets, a click on a fillet takes the
+  fillet, and a click on a hole's rim takes the hole all the way round. The
+  band and every sanity check are scaled by the chain's own scatter,
+  measured off it, so the same rule serves a 600 dpi scan in pixels and a
+  section in millimetres. A line clicked on a curve, or a circle clicked on
+  a straight edge, is refused with the reason rather than fitted to
+  whatever was there (a circle needs the edge to bow clearly beyond the
+  noise and cover at least 8°). A second click adds another stretch of the
+  same edge — the far side of a slot that breaks it, the other half of a
+  hole a keyway cuts — and *Clear points* starts over.
+- **From edge region**: drag a box over the edge, and every detected edge
+  point inside it feeds the fit. Strays from neighbouring edges are voted out
+  (LMedS consensus) before the least squares runs, so a sloppy drag over both
+  sides of a bar still lands on the edge you meant. One drag is a complete
+  measurement — when the detector has found the edge; where it has not, pick.
+  A plain click takes the whole detected chain under it.
+
+Points can also be constructed: the midpoint of two points, the center of a
+circle, or the **intersection of two lines** — the corner two edges meet at,
+which no scan images sharply and no click can hit.
+
+A **Spline** is the free curve a CAD sketch draws through fit points — a cam
+profile, a fillet that is no arc, the outline of a lever — with the controls
+Fusion's fit-point spline gives you. Click its points in order along the
+edge (each snaps like any pick, and every pin drags afterwards); click *on*
+the curve to insert a point between the two it runs between. The curve is a
+cubic through every point, parameterised by chord length and solved for C2
+continuity, so it is as smooth as the points allow. Every point wears a
+**tangent handle**: drag either end to fix the tangent there — direction and
+pull — and the rest of the curve re-solves around it; click a handle to let
+it go automatic again, or **Free tangents** for all of them at once. Click the
+first point again to close the curve on itself, the way a sketch's pen closes
+a path — or tick **Closed curve** (three points at least). It reads as its arc
+length, lists its points and how many tangents were set, and takes no part in
+dimensions — a free curve has no center and no direction to measure to — but
+it leaves the tool as a real spline: a path of cubic Béziers in the SVG, a
+SPLINE in the DXF, and on a section, a B-spline in the STEP file.
+
+Fits report σ and the peak-to-peak form error (straightness, circularity) like
+every other fit in the tool. The panel is the 3D Measure workspace's panel with
+the kinds swapped: the same kind buttons, the same draft box, and the same
+element list with its **edit / hide / delete** keys — editing re-opens an
+element with its pins (or its references) back on the sheet and writes the
+result back under the same name and colour, so everything constructed or
+dimensioned on it simply re-reads the new geometry. Dimensions get the same
+row keys, and the same editor.
+
+### Alignment, dimensions, and what leaves the tool
+
+**Set alignment** aligns the sheet to the part instead of to the scanner
+glass: the first pick is the origin, the second sets +X, both snapping to
+edges. While aiming, a millimetre grid pivots live around the origin (the
+crop-tool feedback). The moment the second pick lands the sheet rolls square
+— +X to the right of the screen, in place, keeping the zoom and what is under
+the eye — and the grid stays as a toggleable overlay, spacing following the
+zoom on a 1-2-5 ladder. Coordinates and line angles then read in the part's
+frame — distances and angles between elements never change under an
+alignment, which is the point of them. **Rotate 90°** turns the sheet a
+quarter turn at a time on top of that, and **Mirror** flips it left-to-right
+or top-to-bottom as it is shown — a flatbed scan is the part seen through the
+glass, and mirrored it is the part seen from above, the way a drawing shows
+it. Nothing measured moves under a turn or a mirror; on a mirrored sheet the
+alignment reads right-handed as shown, +Y up the screen, so coordinates and
+line angles compare with a drawing, and the SVG and DXF come out mirrored the
+same way.
+
+**Dimensions** measure between elements: point–point and point–line distances,
+the width between near-parallel lines (with the same fold-angle guards the 3D
+dimensions apply), and line–line angles. They re-evaluate whenever an element
+or the calibration moves.
+
+**Copy report** puts the session on the clipboard — the elements,
+dimensions, counts and text notes; **Export CSV** writes the elements and
+dimensions as raw numeric columns. Both open with the
+traceability line — what the scale is, where it came from, and which frame
+coordinates read in — because a figure without that line is how wrong numbers
+get trusted.
+
+**Export SVG** and **Export DXF** write the sheet as a drawing at true scale —
+one unit per millimetre, aligned and turned as the sheet is shown, so a part
+aligned along a reference edge comes in square. What is on the sheet is what
+is drawn: the detected edge chains while they are shown, every visible
+element as a native line, circle, arc or spline, and the text notes, each
+layer its own group.
+
+The **SVG** is for a vector editor, a laser, a browser or a print at 1:1 —
+edges as polylines point for point, elements as SVG shapes, the origin at the
+page's top-left corner with y down, nothing under a transform, and the
+traceability line in the file's description.
+
+The **DXF** is for CAD — the format sketches are traded in. Millimetres by
+declaration, y up, and the origin on the alignment when one is set, so the
+part lands in the sketch in its own frame. A line is a LINE, a circle a
+CIRCLE, an arc an ARC by centre and angles, a point a POINT and a spline a
+SPLINE the sketch reads back exactly, on an `elements` layer; the edge chains
+are LWPOLYLINEs on an `edges` layer, thinned to within 0.01 mm of the detected
+points first, because a sketch handed a million line segments is a sketch
+nobody can use; the labels and notes are TEXT on a `labels` layer. AutoCAD 2000 ASCII,
+which every importer reads, with the traceability line in comments at the
+top.
+
+### Measuring a section
+
+The workspace's internals deliberately measure abstract 2D geometry, not
+pixels: the scan image is one *source* of edge chains, and a **section** cut
+through the 3D scan (see [Sections](#sections-cutting-the-scan-to-measure-the-cut))
+is the other. Once a section exists, a **Measure** dropdown at the top of the
+panel lists the flatbed image and every section; choose one and it is on the
+sheet. A section's cut lands there as edge chains **already in
+millimetres** — no calibration, no alarm, the origin at the cutting plane's
+centre and the sheet seen from the side the plane's normal points to — and
+everything above applies unchanged: picks snap to the cut, a fit to edge
+takes one side or one bore of it from a click, an edge-region fit takes it
+point for point (the chains are as fine as the scan's triangles),
+constructions, the alignment, dimensions, the report, the CSV, the SVG and
+the DXF all read off it. A section's outline is one closed chain, which is
+what makes the click fit the natural tool there: the cut through a machined
+part is clean, and one click per side and per bore measures it — so on a
+section, **Line** and **Circle** open with *Fit to edge* rather than with
+hand picking. The report's traceability line says it is a
+section of which scan, cut along what, at what offset.
+
+One source is on the sheet at a time. **Each keeps its own sheet** — its
+elements, dimensions, alignment, tallies and notes — stashed when you switch away
+and back exactly as it was when you return, and saved with the project. A
+section made in the 3D workspace goes straight onto the sheet, so switching
+over finds it there; deleting a section there takes its sheet with it. And
+what is fitted on a section's sheet goes back the other way: it is drawn on
+the cut in the 3D view and exported with the section in the STEP file — see
+[Sections](#sections-cutting-the-scan-to-measure-the-cut).

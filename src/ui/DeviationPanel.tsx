@@ -25,6 +25,8 @@ import { ProbeList } from './ProbeList'
 import { ScaleControls } from './ScaleControls'
 import { TargetSection } from './TargetSection'
 import { VolumeSection } from './VolumeSection'
+import { ExportMeshButton } from './ExportMeshButton'
+import type { MeshFormat } from '../core/exportMesh'
 import type { Vec3 } from '../core/types'
 
 const SOURCES: { id: DeviationSource; label: string; what: string }[] = [
@@ -51,7 +53,7 @@ export function DeviationPanel({
   onScopeClear,
   onGoToMeasure,
   onCopy,
-  onExportStl,
+  onExportMesh,
   onMeasureVolume,
   onFrame,
 }: {
@@ -88,7 +90,7 @@ export function DeviationPanel({
   onCopy: () => void
   /** Save the scan as an STL in the pose it is currently shown in — here, that
    *  means with the best fit onto the reference baked in. */
-  onExportStl: () => void
+  onExportMesh: (format: MeshFormat) => void
   /** Measure the deviation as volumes under the alignment in hand. */
   onMeasureVolume: () => void
   /** Frame a box of the reference's frame in the viewport. */
@@ -817,19 +819,17 @@ export function DeviationPanel({
         <div className={'tailrow' + (d.marking ? ' muted' : '')}>
           <div className="divider" />
           {hasMap && <CopyButton className="block" label="Copy report" onCopy={onCopy} />}
-          <button
-            className="block"
-            data-test="export-stl"
+          <ExportMeshButton
+            block
+            testId="export-mesh"
             disabled={scanBusy}
-            onClick={onExportStl}
+            onExport={onExportMesh}
             title={
               onElement
-                ? 'Save the scan as an STL where it now stands'
-                : 'Save the scan as an STL where it now stands — the best fit onto the reference is baked in'
+                ? 'Save the scan as an STL or a 3MF where it now stands'
+                : 'Save the scan as an STL or a 3MF where it now stands — the best fit onto the reference is baked in'
             }
-          >
-            Export scan as STL
-          </button>
+          />
         </div>
       )}
     </aside>

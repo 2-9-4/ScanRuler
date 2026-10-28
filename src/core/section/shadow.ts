@@ -33,6 +33,12 @@
 // tolerance, which lies in the band by construction. A negative play is a
 // press fit and keeps the same guarantee against the shrunk silhouette.
 //
+// A reading that stays in the band can still carry teeth: a corner read as
+// two with a stub of a line between them, turning out and back — inside the
+// band, and plain wrong to the eye. A short line whose ends turn opposite
+// ways is taken out where its neighbours, run on to meet, or one line in
+// their place, stay in the band.
+//
 // Last, the corners: where two lines meet turning by less than the
 // smoothing angle (30° unless told otherwise), the corner is rounded by an
 // arc tangent to both, as large as the two lines leave room for and the band
@@ -77,6 +83,10 @@ const REFERENCE_THIN = 1e-3
 
 /** How many times the offset is raised when the reading comes too close. */
 const MAX_RAISES = 3
+
+/** A line this many tolerances long or shorter, turning back the way it
+ *  came at one end, is a tooth to pull. */
+const TOOTH_LENGTH = 6
 
 /** The chord error an arc is sampled to, mm. */
 const ARC_SAGITTA = 0.002
@@ -326,15 +336,14 @@ export function shadowOutline(
   }
   loops = loops.filter((l) => l.pieces.length > 0).map(orient)
 
-  // ---- 6. the corners -------------------------------------------------------
-  if (smoothDeg > 0) {
-    const band = (pieces: ShadowPiece[]) => {
-      const m = measureMargin([{ hole: false, pieces }], ref, cell)
-      return m.min >= low && m.max <= high
-    }
-    loops = loops.map((l) => ({ hole: l.hole, pieces: roundCorners(l.pieces, (smoothDeg * Math.PI) / 180, band) }))
-    margin = measureMargin(loops, ref, cell)
+  // ---- 6. the teeth, then the corners ---------------------------------------
+  const band = (pieces: ShadowPiece[]) => {
+    const m = measureMargin([{ hole: false, pieces }], ref, cell)
+    return m.min >= low && m.max <= high
   }
+  loops = loops.map((l) => ({ hole: l.hole, pieces: pullTeeth(l.pieces, TOOTH_LENGTH * tol, band) }))
+  if (smoothDeg > 0) loops = loops.map((l) => ({ hole: l.hole, pieces: roundCorners(l.pieces, (smoothDeg * Math.PI) / 180, band) }))
+  margin = measureMargin(loops, ref, cell)
 
   // ---- 7. the cut: the pieces sampled, with outward normals, lifted -------
   const shape: ShadowShape = {
@@ -1018,6 +1027,63 @@ function roundCorners(pieces: readonly ShadowPiece[], maxTurn: number, fits: (ar
       if (dist2(from, to) > 1e-9) out.push({ kind: 'line', from, to })
     } else out.push(p)
     if (after) out.push(after.arc)
+  }
+  return out
+}
+
+/**
+ * Teeth pulled: a short line between two lines whose ends turn opposite ways
+ * — a corner the reading took as two with a stub between, or a wave of the
+ * scan followed — replaced by the first of these that `fits` says stays in
+ * the band: its neighbours run on to where they cross; the stub folded into
+ * the line before it, or after it, so one of its two turns goes; one line
+ * from the first's start to the last's end. A tooth nothing replaces stays:
+ * it is the part's own jog.
+ */
+function pullTeeth(pieces: readonly ShadowPiece[], short: number, fits: (pieces: ShadowPiece[]) => boolean): ShadowPiece[] {
+  let out = pieces.slice()
+  const cross = (p: Pt, q: Pt) => p[0] * q[1] - p[1] * q[0]
+  for (let i = 0; out.length > 3 && i < out.length; ) {
+    const n = out.length
+    const a = out[(i + n - 1) % n]
+    const b = out[i]
+    const c = out[(i + 1) % n]
+    let fix: ShadowPiece[] | null = null
+    if (a.kind === 'line' && b.kind === 'line' && c.kind === 'line' && dist2(b.from, b.to) <= short) {
+      const da = sub2(a.to, a.from)
+      const db = sub2(b.to, b.from)
+      const dc = sub2(c.to, c.from)
+      if (cross(da, db) * cross(db, dc) < 0) {
+        const tries: ShadowPiece[][] = []
+        const den = cross(da, dc)
+        if (Math.abs(den) > 1e-12 * Math.hypot(...da) * Math.hypot(...dc)) {
+          const w = sub2(c.from, a.from)
+          const s = cross(w, dc) / den
+          const t = cross(w, da) / den
+          // The crossing past a's start and short of c's end, so neither
+          // line turns back on itself.
+          if (s > 0 && t < 1) {
+            const x: Pt = [a.from[0] + s * da[0], a.from[1] + s * da[1]]
+            tries.push([{ kind: 'line', from: a.from, to: x }, { kind: 'line', from: x, to: c.to }])
+          }
+        }
+        tries.push(
+          [{ kind: 'line', from: a.from, to: b.to }, c],
+          [a, { kind: 'line', from: b.from, to: c.to }],
+          [{ kind: 'line', from: a.from, to: c.to }],
+        )
+        fix = tries.find(fits) ?? null
+      }
+    }
+    if (!fix) {
+      i++
+      continue
+    }
+    // The three taken out, the loop turned to start where they were.
+    const start = (i + n - 1) % n
+    const turned = [...out.slice(start), ...out.slice(0, start)]
+    out = [...fix, ...turned.slice(3)]
+    i = 0
   }
   return out
 }

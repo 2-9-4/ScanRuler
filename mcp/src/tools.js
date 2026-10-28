@@ -154,7 +154,7 @@ export const absolute = (path, base) => (isAbsolute(path) ? path : resolve(base,
 /** What a folder given in place of a file opens, by command: the one file
  *  of its kind in it. Other commands take a file only. */
 const FOLDER_PICKS = {
-  'scan.open': { what: 'mesh', kinds: ['.stl', '.ply', '.obj'] },
+  'scan.open': { what: 'mesh', kinds: ['.stl', '.ply', '.obj', '.3mf'] },
   'project.load': { what: 'project', kinds: ['.scanruler'] },
 }
 

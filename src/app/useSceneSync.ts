@@ -23,7 +23,7 @@ import {
   useStore,
   orientedDraft,
 } from '../state/store'
-import { dimensionRefsOf, isExtruded } from '../state/sectionModel'
+import { dimensionRefsOf, isExtruded, isShadow } from '../state/sectionModel'
 import type {
   SceneManager,
   OverlayAngle,
@@ -474,9 +474,11 @@ export function useSceneSync({
   const sectionCut = sectionDraft?.cut ?? null
   const sectionColor = useStore(sectionDraftColorOf)
   const sectionBlock = sectionDraft !== null && isExtruded(sectionDraft)
+  // A shadow's plane is not slid: it is drawn in the middle of the part.
+  const sectionSlides = !isShadow(sectionDraft)
   useEffect(() => {
-    sceneRef.current?.setSectionPreview(sectionFrame, sectionCut, sectionColor, sectionBlock)
-  }, [sectionFrame, sectionCut, sectionColor, sectionBlock])
+    sceneRef.current?.setSectionPreview(sectionFrame, sectionCut, sectionColor, sectionBlock, sectionSlides)
+  }, [sectionFrame, sectionCut, sectionColor, sectionBlock, sectionSlides])
 
   // The section view: every part on the stage cut open at its plane, with
   // the gizmo that slides and tilts it — which a section being made takes

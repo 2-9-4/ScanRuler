@@ -9,7 +9,8 @@
 // with it ride on it here, out of the way of the paths that have no use for
 // them, and are read where the scan is prepared.
 
-import { isModelFile, isTextureFile } from '../core/formats'
+import { unzipSync } from 'fflate'
+import { is3mfFile, isModelFile, isTextureFile } from '../core/formats'
 import type { ObjCompanions, TextureImage } from '../core/parsers/objTexture'
 
 /** What came with a model file, by the file. */
@@ -87,6 +88,26 @@ export async function readCompanions(files: readonly { name: string; bytes: Uint
     }
   }
   return { materials, images }
+}
+
+/** What the worker reads a scan with besides its own bytes: the files that
+ *  came with a textured OBJ (readCompanions), or the images a 3MF packs —
+ *  decoded here, as the worker has no way to — named by their path in the
+ *  package. The package's thumbnails, under Metadata/, are not the part's. */
+export async function scanCompanions(name: string, bytes: Uint8Array, extras: readonly { name: string; bytes: Uint8Array }[]): Promise<ObjCompanions | undefined> {
+  if (!is3mfFile(name)) return readCompanions(extras)
+  let packed: Record<string, Uint8Array>
+  try {
+    packed = unzipSync(bytes, { filter: (f) => /\.(png|jpe?g)$/i.test(f.name) && !/^\/?metadata\//i.test(f.name) })
+  } catch {
+    return undefined // the worker says what is wrong with the file
+  }
+  const images: TextureImage[] = []
+  for (const [path, data] of Object.entries(packed)) {
+    const img = await decodeImage(path, data).catch(() => null)
+    if (img) images.push(img)
+  }
+  return images.length > 0 ? { materials: [], images } : undefined
 }
 
 async function decodeImage(name: string, bytes: Uint8Array): Promise<TextureImage> {

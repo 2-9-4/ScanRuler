@@ -26,6 +26,8 @@ import { Icon, type IconName } from './icons'
 import { InfoDot } from './InfoDot'
 import { ModelSlot } from './ModelSlot'
 import { SectionEditor } from './SectionEditor'
+import { ExportMeshButton } from './ExportMeshButton'
+import type { MeshFormat } from '../core/exportMesh'
 
 /** The picture on each element type's key. */
 const KIND_ICON: Record<(typeof ELEMENT_KINDS)[number]['id'], IconName> = {
@@ -66,7 +68,7 @@ export function Panel({
   onApplyManual,
   onResetAlignment,
   onExportStep,
-  onExportStl,
+  onExportMesh,
   onExportCloud,
   onFindSymmetry,
 }: {
@@ -109,7 +111,7 @@ export function Panel({
   onResetAlignment: () => void
   onExportStep: () => void
   /** Save the scan as an STL in the pose it is currently shown in. */
-  onExportStl: () => void
+  onExportMesh: (format: MeshFormat) => void
   /** Save the scan as a point cloud, in the chosen format, in the same pose. */
   onExportCloud: () => void
   /** Search the scan for its mirror plane, for the open symmetry-plane draft. */
@@ -498,14 +500,12 @@ export function Panel({
             >
               Export STEP
             </button>
-            <button
-              data-test="export-stl"
+            <ExportMeshButton
+              testId="export-mesh"
               disabled={busy}
-              onClick={onExportStl}
-              title="Save the scan as an STL where it now stands — any alignment or move you applied comes with it"
-            >
-              Export STL
-            </button>
+              onExport={onExportMesh}
+              title="Save the scan as an STL or a 3MF where it now stands — any alignment or move you applied comes with it"
+            />
             <button
               data-test="export-cloud"
               disabled={busy}

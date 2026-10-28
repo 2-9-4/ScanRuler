@@ -82,13 +82,11 @@ const played = await readout()
 console.log(`with play 0.5: ${played} — ${await band()}`)
 check(areaOf(played) > area0 + 60, `the play widens the outline (${areaOf(played)} mm²)`)
 
-// Sliding the plane moves the loop and keeps it.
-await page.focus('[data-test="section-offset"]')
-await page.$eval('[data-test="section-offset"]', (el) => (el.value = ''))
-await page.type('[data-test="section-offset"]', '25')
-await page.keyboard.press('Enter')
-await page.waitForFunction(() => !document.querySelector('[data-test="create-section"]')?.disabled, { timeout: 30_000 })
-check(areaOf(await readout()) === areaOf(played), 'slid above the part, the shadow is the same outline')
+// A shadow has no offset: it is drawn in the middle of the part, the
+// block's 0 to 20 mm.
+check((await page.$('[data-test="section-offset"]')) === null, 'a shadow has no offset to type')
+const planeZ = await page.evaluate(async () => (await import('/src/state/store.ts')).useStore.getState().sectionDraft?.frame?.origin[2])
+check(Math.abs(planeZ - 10) < 1e-6, `the outline lies in the middle of the part (z ${planeZ})`)
 
 // Extruded, as it starts: a block from the part's lowest point to its
 // highest.
@@ -104,7 +102,7 @@ const rows = await page.$$eval('[data-test="section-row"]', (els) =>
 )
 console.log('sections:', JSON.stringify(rows))
 check(rows.length === 1 && /1 loop · [\d,]+ mm²/.test(rows[0].text), 'the row reads the loops and the area')
-check(/^shadow onto XY plane, \+25\.000 mm$/.test(rows[0].title), `and says it is a shadow (${rows[0].title})`)
+check(/^shadow onto XY plane$/.test(rows[0].title), `and says it is a shadow (${rows[0].title})`)
 await page.screenshot({ path: shotPath('e2e-shadow-3d.png') })
 
 // ---- the 2D sheet and the DXF ------------------------------------------------

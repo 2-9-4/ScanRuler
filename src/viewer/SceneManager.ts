@@ -296,7 +296,7 @@ export class SceneManager {
   private dressedClipped = false
   /** The gizmo a section plane wears: the section being made's, and the
    *  section view's — see applyPlaneHandles. */
-  private draftHandles: { frame: SectionFrame; color: string } | null = null
+  private draftHandles: { frame: SectionFrame; color: string; slides: boolean } | null = null
   private viewHandles: { frame: SectionFrame; color: string } | null = null
   /** A 2D sheet laid over this view, which it follows: the sheet's frame,
    *  what lies under its screen centre and its scale — see followSheet. The
@@ -1500,7 +1500,7 @@ export class SceneManager {
    *  open, the section view's otherwise. */
   private applyPlaneHandles(): void {
     const h = this.draftHandles ?? this.viewHandles
-    this.grips.setPlaneHandles(h?.frame ?? null, h?.color ?? '#ffffff')
+    this.grips.setPlaneHandles(h?.frame ?? null, h?.color ?? '#ffffff', this.draftHandles?.slides ?? true)
   }
 
   /** Lay the cut where the tool's slice or the section view puts it, and
@@ -2055,10 +2055,11 @@ export class SceneManager {
 
   /** The section being made: its plane through the part and the cut it
    *  produces, with the gizmo that slides and tilts the plane. Null frame
-   *  takes all three away. */
-  setSectionPreview(frame: SectionFrame | null, cut: SectionCut | null, color: string, extrude = false): void {
+   *  takes all three away. A plane that does not `slide` — a shadow's — has
+   *  no arrow, only the rings. */
+  setSectionPreview(frame: SectionFrame | null, cut: SectionCut | null, color: string, extrude = false, slides = true): void {
     this.sections.setPreview(frame, cut, color, extrude)
-    this.draftHandles = frame ? { frame, color } : null
+    this.draftHandles = frame ? { frame, color, slides } : null
     this.applyPlaneHandles()
   }
 

@@ -4053,3 +4053,40 @@ button.x:disabled {
   color: var(--dim);
   cursor: default;
 }
+
+/* ---- Export mesh: the button and the formats it opens (ui/ExportMeshButton)
+   The list is the picker's, under the button and as wide as it. */
+.exportmesh {
+  position: relative;
+  display: flex;
+}
+
+.toolrow .exportmesh {
+  flex: 1;
+}
+
+.exportmesh > button {
+  flex: 1;
+}
+
+.exportmesh > button i {
+  font-style: normal;
+  color: var(--dim);
+}
+
+.exportmesh .pickoption {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font-family: var(--ui);
+  color: var(--ink);
+  background: none;
+  border: 0;
+  box-shadow: none;
+}
+
+.exportmesh .pickoption:hover,
+.exportmesh .pickoption:focus-visible {
+  background: var(--accent);
+  color: #fff;
+}
