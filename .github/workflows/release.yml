@@ -1,0 +1,57 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# A GitHub release for every version tag, its notes the version's section of
+# CHANGELOG.md as the tag has it (scripts/release-notes.mjs). A tag that
+# already has a release, or whose changelog has no section for it, is left
+# alone.
+#
+# Run by hand (Actions → Release → Run workflow), it does the same for one
+# tag, or with the tag left empty for every v* tag that has no release yet,
+# oldest first, so the newest version ends up as the latest release.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to release (empty for every v* tag without a release)
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: ${{ github.repository == 'CNCKitchen/scanruler' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Publish the releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            tags="$GITHUB_REF_NAME"
+          elif [ -n "$INPUT_TAG" ]; then
+            tags="$INPUT_TAG"
+          else
+            tags=$(git tag -l 'v*' | sort -V)
+          fi
+
+          for tag in $tags; do
+            if gh release view "$tag" > /dev/null 2>&1; then
+              echo "$tag already has a release."
+              continue
+            fi
+            if ! git show "$tag:CHANGELOG.md" > "$RUNNER_TEMP/changelog.md" 2> /dev/null ||
+               ! node scripts/release-notes.mjs "$tag" "$RUNNER_TEMP/changelog.md" > "$RUNNER_TEMP/notes.md"; then
+              echo "::warning::$tag has no section in its CHANGELOG.md; no release made."
+              continue
+            fi
+            gh release create "$tag" --verify-tag --title "ScanRuler ${tag#v}" --notes-file "$RUNNER_TEMP/notes.md"
+          done

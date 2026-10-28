@@ -2,10 +2,16 @@
 
 **Use it live at <https://scanruler.com/>** — nothing to install.
 
+> **Open source under the AGPL, with commercial licenses available.** Want to
+> build ScanRuler into closed-source software, or host a modified version
+> without publishing its source? Write to <stefan@cnckitchen.com>, see
+> [COMMERCIAL.md](COMMERCIAL.md).
+
 Check a 3D scan against what it should have been, entirely in your browser:
 fit spheres, cylinders and planes to the scan and measure between them, paint
 its deviation from the CAD part, map its wall thickness, or measure a flatbed
-scan the way a measuring microscope would.
+scan the way a measuring microscope would. On scanruler.com you can also
+model the scan into a solid STEP body and clean up or reduce the mesh.
 
 **Everything runs locally.** Your files are processed in your browser and
 never leave your computer.
@@ -25,7 +31,9 @@ is the [manual](docs/manual.md).
 
 ## What it does
 
-ScanRuler has four workspaces, all working on the same loaded scan.
+All workspaces work on the same loaded scan. The first four are in this
+repository. [Reverse engineer and Mesh Tools](#reverse-engineer-and-mesh-tools-on-scanrulercom)
+are only on scanruler.com.
 
 ### 3D Measure
 
@@ -86,6 +94,36 @@ the glass. Its scale can be saved as a scanner profile.
 
 ![The 2D Measure workspace: a section through the bracket scan with three edge-fitted lines, two fitted holes and the dimensions between them](docs/images/section.png)
 
+### Reverse engineer and Mesh Tools, on scanruler.com
+
+These two workspaces are free to use at <https://scanruler.com/>. They are
+closed source: not part of this repository and not covered by its license.
+They also run entirely in your browser.
+
+**Reverse engineer** turns the scan into a **solid body** in a STEP file that
+CAD opens as a part, not just datums. Sketch on a section through the scan:
+**Fit all chains** reads the slice as lines and arcs, and constraints and
+dimensions hold it. Then **extrude** or **revolve** it, and add **fillets,
+chamfers, shells, holes, threads, drafts, mirrors, patterns, lofts and
+sweeps**. Freeform parts are modelled from **surfaces fitted to the scan**,
+or a network of B-spline patches drawn over it. **Compare in Deviation**
+checks the bodies against the scan. No scan is needed to model: on a blank
+stage it works like a small parametric CAD tool.
+
+![The Reverse engineer workspace: a Joy-Con modelled as a solid body over its scan, with the feature tools in the panel](docs/images/reverse-engineer.png)
+
+**Mesh Tools** works on the mesh itself:
+- **Clean it up**: remove islands, delete marked surface, flip normals, cut
+  at a plane, fill holes, smooth, shrink or expand, booleans with measured
+  cylinders or modelled bodies, shell or hollow.
+- **Edited copy**: every edit lands on a copy of the scan, which you can
+  measure against the original before every workspace takes it into use.
+- **Reduce mesh** makes a light mesh for CAD, held within a tolerance of the
+  scan.
+- A modelled replacement piece can be cut to fit the break of a broken part.
+
+![The Mesh Tools workspace: the bracket scan with its holes filled, the edited copy coloured by its distance from the scan and the new patches shown grey](docs/images/mesh.png)
+
 ## Getting started
 
 1. **Open a scan**: drag it anywhere into the window, or press **Load**.
@@ -144,7 +182,8 @@ Claude Code, Codex, Claude Desktop, Cursor or anything else that speaks the
 [Model Context Protocol](https://modelcontextprotocol.io). For example: *"Open
 ballbar.stl, fit both spheres, measure the centre distance and give me the
 report."* It works the panels step by step in front of you, and every step
-can be undone.
+can be undone. On scanruler.com it can also model in Reverse engineer and
+clean up a scan in Mesh Tools.
 
 You need [Node.js](https://nodejs.org/) 22 or newer and Chrome, Edge or
 Firefox. Add the helper to your agent once:

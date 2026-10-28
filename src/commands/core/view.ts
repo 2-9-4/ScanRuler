@@ -27,7 +27,7 @@ import { CommandError, type Command } from '../types'
 import { applyShow, viewToggles, whyNotShown, type ShowApplied, type ViewToggle } from '../viewToggles'
 import { nextFrame, waitFor } from './common'
 
-const VIEWS: readonly StandardView[] = ['iso', 'top', 'bottom', 'front', 'rear', 'left', 'right']
+const VIEWS: readonly StandardView[] = ['iso', 'iso-front-left', 'iso-rear-left', 'iso-rear-right', 'top', 'bottom', 'front', 'rear', 'left', 'right']
 
 /** The longest side of a picture, pixels, when none is asked for: enough
  *  to check a step by. An agent pays for a picture by its pixels — one
@@ -38,7 +38,7 @@ const MAX_SIDE = 2048
 
 const viewSchema = enumOf(
   VIEWS,
-  'A standard view, the camera turned about the middle of the screen: iso (from the front, right and above), top (down the Z axis, Y up the screen), bottom, front (from −Y, Z up), rear (from +Y), left (from −X), right (from +X).',
+  'A standard view, the camera turned about the middle of the screen: iso (from the front, right and above), iso-front-left, iso-rear-left and iso-rear-right (the other corners, as high up), top (down the Z axis, Y up the screen), bottom, front (from −Y, Z up), rear (from +Y), left (from −X), right (from +X).',
 )
 const fitSchema = bool('Bring everything shown into the frame, keeping the direction looked from.')
 

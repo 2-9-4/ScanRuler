@@ -35,6 +35,13 @@ try {
     try { const rows = await db.list(); return rows.length && !(await db.read(rows[0].id)).manifest.scan.showBackfaces }
     finally { db.close() }
   })
+  const other = await browser.newPage()
+  await other.goto(page.url(), { waitUntil: 'networkidle0' })
+  await other.waitForSelector('[data-test="project-save-status"]')
+  await new Promise((resolve) => setTimeout(resolve, 500))
+  check(!(await other.$('[data-test="recovery-bar"]')), 'a second tab does not offer the checkpoint of a tab still open')
+  await other.close()
+  await page.bringToFront()
   await page.reload({ waitUntil: 'networkidle0' })
   await page.waitForSelector('[data-test="recovery-bar"]')
   await page.screenshot({ path: shotPath('recovery.png') })

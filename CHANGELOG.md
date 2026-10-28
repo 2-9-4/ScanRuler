@@ -5,6 +5,25 @@ bar and the imprint is the entry it belongs to; the `.scanruler` projects it
 saves carry the same number as `appVersion`. How a release is cut is in
 `docs/development.md` under "Releases".
 
+## 0.8.5 — 2026-10-28
+
+- **Releases on GitHub** (2026-10-28). Every version is now published as a
+  release of the GitHub repository, with its notes from this changelog.
+- **The README shows the hosted app's own workspaces** (2026-10-28). The
+  two workspaces that only scanruler.com has, closed source and not part of
+  this repository, are now described in the README with a picture each.
+- **A new tab no longer offers the checkpoints of tabs still open**
+  (2026-10-28). Opening ScanRuler in a second tab showed "A local checkpoint
+  is available" for the work going on in the first one. Only checkpoints
+  left by tabs that were closed or crashed are offered now. On a plain-HTTP
+  address on the local network, where the browser can't tell which tabs are
+  open, every checkpoint is still offered.
+- **Keys 7, 8 and 9 turn to the other iso views** (2026-10-28). **0** has
+  always turned the part to the iso view from the front right. Now **7**
+  turns it to the front-left corner, **8** to the rear-left and **9** to the
+  rear-right, all from the same height above. The view commands take them
+  as `iso-front-left`, `iso-rear-left` and `iso-rear-right`.
+
 ## 0.8.4 — 2026-10-28
 
 - **Click the part to move a section there** (2026-10-28). While a section

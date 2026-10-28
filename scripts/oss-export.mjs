@@ -13,9 +13,9 @@
 //
 // The tree is then read for what must not be in it: the plugins' license
 // marker, the phrases plugins/oss-export.json lists under "forbidden" (regular
-// expressions, any case), the names it lists under "identifiers" (exact, as
-// whole words), and any import into plugins/. A hit stops the export with
-// every place listed.
+// expressions, any case) unless "allowIn" lets that file carry the phrase,
+// the names it lists under "identifiers" (exact, as whole words), and any
+// import into plugins/. A hit stops the export with every place listed.
 //
 // --verify installs, type-checks, tests and builds the tree, the proof that
 // the open-source edition stands without plugins/. --link-modules skips the
@@ -52,6 +52,12 @@ const forbidden = [
   ...(config.forbidden ?? []).map((term) => ({ term, re: new RegExp(term, 'i') })),
   ...(config.identifiers ?? []).map((term) => ({ term, re: new RegExp('(?<![\\w$])' + escapeRe(term) + '(?![\\w$])') })),
 ]
+
+/** A forbidden term a file may carry all the same — "allowIn" maps a path to
+ *  the terms, exactly as listed under "forbidden": the README naming what
+ *  the hosted app has beyond this tree, say. */
+const allowIn = config.allowIn ?? {}
+const allowed = (path, term) => (allowIn[path] ?? []).includes(term)
 
 const excluded = (path) =>
   path === 'plugins' ||
@@ -129,7 +135,7 @@ for (const file of walk(out)) {
   const lines = buffer.toString('utf8').split('\n')
   lines.forEach((line, i) => {
     if (line.includes(MARKER)) leaks.push(`${rel}:${i + 1}  plugin license marker`)
-    for (const { term, re } of forbidden) if (re.test(line)) leaks.push(`${rel}:${i + 1}  "${term}"`)
+    for (const { term, re } of forbidden) if (!allowed(rel, term) && re.test(line)) leaks.push(`${rel}:${i + 1}  "${term}"`)
   })
 }
 

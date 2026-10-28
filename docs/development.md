@@ -126,6 +126,11 @@ The push builds and deploys the site (below), so the number on scanruler.com is
 the one that was pushed. A plain `git push` leaves the tag behind, and so does
 VS Code's **Sync Changes** unless `git.followTagsWhenSync` is on.
 
+Each version tag on GitHub becomes a release, its notes the version's section
+of `CHANGELOG.md` (`.github/workflows/release.yml`;
+`node scripts/release-notes.mjs 0.3.0` prints them). Run that workflow by hand
+to release a tag again or catch up on tags that have no release.
+
 ## Deploying to Cloudflare
 
 The app is a static Vite build (`dist/`) served by a Cloudflare Worker with no

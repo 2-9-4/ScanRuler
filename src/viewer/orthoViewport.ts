@@ -41,18 +41,34 @@ const PICTURE_KEY_UP = 0.4
 const PICTURE_KEY_LEFT = 0.25
 const PICTURE_FILL_MORE = 0.3
 
-/** The named camera poses: the six axis-aligned views and the three-quarter
- *  one, keyed the way PrusaSlicer keys them (0 iso, 1 top, 2 bottom, 3 front,
- *  4 rear, 5 left, 6 right). Z up throughout, the pose a part standing on the
+/** The named camera poses: the six axis-aligned views and the four
+ *  three-quarter ones from above, keyed the way PrusaSlicer keys them (0 iso,
+ *  1 top, 2 bottom, 3 front, 4 rear, 5 left, 6 right) with the other three
+ *  corners on the keys left over (7 front-left, 8 rear-left, 9 rear-right —
+ *  round the part from 0). Z up throughout, the pose a part standing on the
  *  floor plane looks upright in — the same convention the datum stage is read
  *  in. Top and bottom cannot hold Z up, so they take Y: the top view has +Y at
  *  the top of the screen, and the bottom view is that view with the part
  *  turned over about X, which puts −Y there instead. */
-export type StandardView = 'iso' | 'top' | 'bottom' | 'front' | 'rear' | 'left' | 'right'
+export type StandardView =
+  | 'iso'
+  | 'iso-front-left'
+  | 'iso-rear-left'
+  | 'iso-rear-right'
+  | 'top'
+  | 'bottom'
+  | 'front'
+  | 'rear'
+  | 'left'
+  | 'right'
 
 export const STANDARD_VIEWS: Record<StandardView, { dir: THREE.Vector3; up: THREE.Vector3 }> = {
-  /** Front-top-right: the pose the datum stage is framed in. */
+  /** Front-top-right: the pose the datum stage is framed in. The other
+   *  corners are this one mirrored, the part seen from as high up. */
   iso: { dir: new THREE.Vector3(0.72, -0.95, 0.55), up: new THREE.Vector3(0, 0, 1) },
+  'iso-front-left': { dir: new THREE.Vector3(-0.72, -0.95, 0.55), up: new THREE.Vector3(0, 0, 1) },
+  'iso-rear-left': { dir: new THREE.Vector3(-0.72, 0.95, 0.55), up: new THREE.Vector3(0, 0, 1) },
+  'iso-rear-right': { dir: new THREE.Vector3(0.72, 0.95, 0.55), up: new THREE.Vector3(0, 0, 1) },
   top: { dir: new THREE.Vector3(0, 0, 1), up: new THREE.Vector3(0, 1, 0) },
   bottom: { dir: new THREE.Vector3(0, 0, -1), up: new THREE.Vector3(0, -1, 0) },
   front: { dir: new THREE.Vector3(0, -1, 0), up: new THREE.Vector3(0, 0, 1) },

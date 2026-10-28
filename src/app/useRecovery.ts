@@ -54,6 +54,7 @@ export function useRecovery(capture: () => Snapshot, blocked: () => boolean, ope
   useEffect(() => {
     const db = new RecoveryStorage()
     storage.current = db
+    const release = db.hold()
     let disposed = false, writing = false, pending = true
     let checkpointKey = '', timer: ReturnType<typeof setTimeout> | undefined
     cache.invalidate()
@@ -61,7 +62,7 @@ export function useRecovery(capture: () => Snapshot, blocked: () => boolean, ope
     const reportError = (error: unknown) => {
       if (!disposed) update({ status: `Local recovery unavailable: ${error instanceof Error ? error.message : String(error)}. Use Save Project.` })
     }
-    void db.list().then((available) => { if (!disposed) update({ available }) }, reportError)
+    void db.left().then((available) => { if (!disposed) update({ available }) }, reportError)
 
     // What was last found, for a question asked while the session is busy.
     let dirty = false
@@ -156,6 +157,7 @@ export function useRecovery(capture: () => Snapshot, blocked: () => boolean, ope
       window.removeEventListener('beforeunload', beforeUnload)
       refresh.current = () => {}
       storage.current = null
+      release()
       db.close()
     }
   }, [cache])
@@ -180,7 +182,7 @@ export function useRecovery(capture: () => Snapshot, blocked: () => boolean, ope
     update({ working: true })
     try {
       await storage.current.remove(id)
-      update({ available: (await storage.current.list()).filter((item) => item.id !== storage.current?.id) })
+      update({ available: await storage.current.left() })
     } catch (error) { update({ status: `Could not discard checkpoint: ${String(error)}` }) }
     finally { update({ working: false }) }
   }

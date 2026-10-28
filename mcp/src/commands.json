@@ -1,6 +1,6 @@
 {
-  "app": "0.8.4",
-  "saved": "2026-10-28T15:30:32.341Z",
+  "app": "0.8.5",
+  "saved": "2026-10-28T19:55:59.259Z",
   "commands": [
     {
       "name": "align.auto",
@@ -4506,6 +4506,9 @@
             "type": "string",
             "enum": [
               "iso",
+              "iso-front-left",
+              "iso-rear-left",
+              "iso-rear-right",
               "top",
               "bottom",
               "front",
@@ -4513,7 +4516,7 @@
               "left",
               "right"
             ],
-            "description": "A standard view, the camera turned about the middle of the screen: iso (from the front, right and above), top (down the Z axis, Y up the screen), bottom, front (from −Y, Z up), rear (from +Y), left (from −X), right (from +X)."
+            "description": "A standard view, the camera turned about the middle of the screen: iso (from the front, right and above), iso-front-left, iso-rear-left and iso-rear-right (the other corners, as high up), top (down the Z axis, Y up the screen), bottom, front (from −Y, Z up), rear (from +Y), left (from −X), right (from +X)."
           },
           "views": {
             "type": "array",
@@ -4521,6 +4524,9 @@
               "type": "string",
               "enum": [
                 "iso",
+                "iso-front-left",
+                "iso-rear-left",
+                "iso-rear-right",
                 "top",
                 "bottom",
                 "front",
@@ -4528,7 +4534,7 @@
                 "left",
                 "right"
               ],
-              "description": "A standard view, the camera turned about the middle of the screen: iso (from the front, right and above), top (down the Z axis, Y up the screen), bottom, front (from −Y, Z up), rear (from +Y), left (from −X), right (from +X)."
+              "description": "A standard view, the camera turned about the middle of the screen: iso (from the front, right and above), iso-front-left, iso-rear-left and iso-rear-right (the other corners, as high up), top (down the Z axis, Y up the screen), bottom, front (from −Y, Z up), rear (from +Y), left (from −X), right (from +X)."
             },
             "description": "Several standard views in one picture, each fitted, in this order.",
             "minItems": 2,
@@ -4677,6 +4683,9 @@
             "type": "string",
             "enum": [
               "iso",
+              "iso-front-left",
+              "iso-rear-left",
+              "iso-rear-right",
               "top",
               "bottom",
               "front",
@@ -4684,7 +4693,7 @@
               "left",
               "right"
             ],
-            "description": "A standard view, the camera turned about the middle of the screen: iso (from the front, right and above), top (down the Z axis, Y up the screen), bottom, front (from −Y, Z up), rear (from +Y), left (from −X), right (from +X)."
+            "description": "A standard view, the camera turned about the middle of the screen: iso (from the front, right and above), iso-front-left, iso-rear-left and iso-rear-right (the other corners, as high up), top (down the Z axis, Y up the screen), bottom, front (from −Y, Z up), rear (from +Y), left (from −X), right (from +X)."
           },
           "fit": {
             "type": "boolean",

@@ -359,7 +359,8 @@ pole. Left-drag to rotate, right-drag to pan, scroll to zoom; the **XYZ gizmo**
 in the bottom-right corner shows the current orientation. The **number keys**
 turn the part to the standard views the way PrusaSlicer's do — **0** iso,
 **1** top, **2** bottom, **3** front, **4** rear, **5** left, **6** right, Z
-up — about the point you are looking at and at the zoom you are at, so a
+up — and **7**, **8** and **9** to the other three iso corners, front-left,
+rear-left and rear-right, going round the part from **0**. They turn it about the point you are looking at and at the zoom you are at, so a
 feature you have zoomed into stays on screen and just shows another face;
 the fit button brings the whole part back. The gizmo's arrows do the same
 with the mouse: click one to look down that axis, and click it again to turn

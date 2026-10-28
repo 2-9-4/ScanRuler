@@ -3,13 +3,17 @@
 // two tabs never overwrite each other. The source files are the bulk of a
 // checkpoint, so they are written again only when they have changed, and
 // listing the checkpoints never reads them: the list, the manifests and the
-// files are kept in object stores of their own.
+// files are kept in object stores of their own. A page holds a Web Lock on
+// its slot while it is open, so the checkpoints offered for recovery are only
+// those of pages since closed or crashed, not of another tab still working.
 
 import type { ProjectManifest } from '../core/project/manifest'
 import type { ArchiveMember } from '../core/project/archive'
 
 export interface CheckpointInfo { id: string; name: string; savedAt: number }
 interface Checkpoint extends CheckpointInfo { manifest: ProjectManifest }
+
+const lockName = (id: string) => `scanruler-recovery:${id}`
 
 /** Each page owns a separate slot. A tab can never overwrite another tab's
  *  checkpoint. Metadata reads deliberately do not load the large source files. */
@@ -53,6 +57,25 @@ export class RecoveryStorage {
       const request = tx.objectStore('info').getAll()
       request.onsuccess = () => result((request.result as CheckpointInfo[]).sort((a, b) => b.savedAt - a.savedAt))
     })
+  }
+
+  /** Marks this slot as an open page's until the returned function is called;
+   *  the browser lets go of it by itself when the page closes or crashes.
+   *  Without Web Locks (an HTTP page on the LAN) it does nothing. */
+  hold(): () => void {
+    if (!navigator.locks) return () => {}
+    let release = () => {}
+    const held = new Promise<void>((resolve) => { release = resolve })
+    navigator.locks.request(lockName(this.id), () => held).catch(() => {})
+    return release
+  }
+
+  /** The checkpoints no open page holds — what closed or crashed pages left
+   *  behind. Without Web Locks every one but this page's own is offered. */
+  async left(): Promise<CheckpointInfo[]> {
+    const [rows, locks] = await Promise.all([this.list(), navigator.locks?.query().catch(() => null)])
+    const held = new Set((locks?.held ?? []).map((lock) => lock.name))
+    return rows.filter((row) => row.id !== this.id && !held.has(lockName(row.id)))
   }
 
   read(id: string): Promise<{ manifest: ProjectManifest; members: ArchiveMember[] }> {

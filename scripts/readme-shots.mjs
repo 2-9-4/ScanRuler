@@ -3,7 +3,8 @@
 // commands (the scanruler-mcp server, as an agent drives it) and each
 // workspace photographed with its panel, into docs/images/. Runs the build
 // without plugins, as the open-source edition has it. Each picture gets a
-// session of its own — a fresh server, browser and page.
+// session of its own — a fresh server, browser and page; `session` is
+// exported for a plugin's pictures to be taken the same way.
 //
 // Prereqs: dev server running (npm run dev), Chrome, the server's
 // dependencies (npm --prefix mcp ci), the local scan pair at the repository
@@ -16,24 +17,26 @@
 import { existsSync, mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { launchAgent, launchApp, repoFile, requireFixture, sleep } from './e2e-lib.mjs'
 
-const SCAN = repoFile('block-marius.stl')
+export const SCAN = repoFile('block-marius.stl')
 const NOMINAL = repoFile('side bracket left.stl')
 const MEASURE_PROJECT = process.env.MEASURE_PROJECT ?? join(homedir(), 'Downloads', 'para-std-03.scanruler')
 const THICKNESS_PROJECT = process.env.THICKNESS_PROJECT ?? join(homedir(), 'Downloads', 'prusa_hood (1).scanruler')
-for (const f of [SCAN, NOMINAL, MEASURE_PROJECT, THICKNESS_PROJECT]) requireFixture(f)
-if (!existsSync(repoFile('mcp/node_modules/@modelcontextprotocol/sdk/package.json'))) {
-  console.error('FATAL: the MCP server has no dependencies yet — run npm --prefix mcp ci.')
-  process.exit(1)
-}
 const OUT = repoFile('docs/images')
-mkdirSync(OUT, { recursive: true })
-const { startAgent } = await import('../mcp/tests/client.js')
 
 /** A server, a browser paired with it, and the helpers a picture is taken
- *  with; `shot` runs on them and everything is closed after. */
-async function session(name, shot) {
+ *  with; `shot` runs on them, the window is written to docs/images/<name>.png
+ *  and everything is closed after. `plugins: false` runs the app as the
+ *  open-source edition has it. */
+export async function session(name, shot, { plugins = false, idleSeconds = 300 } = {}) {
+  if (!existsSync(repoFile('mcp/node_modules/@modelcontextprotocol/sdk/package.json'))) {
+    console.error('FATAL: the MCP server has no dependencies yet — run npm --prefix mcp ci.')
+    process.exit(1)
+  }
+  mkdirSync(OUT, { recursive: true })
+  const { startAgent } = await import('../mcp/tests/client.js')
   const { agent } = await launchAgent(startAgent)
   const call = async (tool, args = {}) => {
     const r = await agent.call(tool, args)
@@ -41,7 +44,7 @@ async function session(name, shot) {
     return r.json
   }
   const link = /(\S+#agent=\d+:[\w-]+)/.exec((await agent.call('scanruler_status')).json?.howToConnect ?? '')?.[1]
-  const { browser, page } = await launchApp({ url: link.replace('#', '?plugins=none#'), width: 1440, height: 860 })
+  const { browser, page } = await launchApp({ url: plugins ? link : link.replace('#', '?plugins=none#'), width: 1440, height: 860 })
   try {
     // The thank-you card and the hint ring stay out of the pictures.
     await page.evaluate(() => {
@@ -50,7 +53,7 @@ async function session(name, shot) {
     })
     await page.reload({ waitUntil: 'networkidle0' })
     await call('scanruler_wait', { for: 'page', timeoutSeconds: 60 })
-    const idle = () => call('scanruler_wait', { for: 'idle', timeoutSeconds: 300 })
+    const idle = () => call('scanruler_wait', { for: 'idle', timeoutSeconds: idleSeconds })
     await shot({ agent, call, idle, page })
     await idle()
     await page.mouse.move(1, 1)
@@ -158,6 +161,9 @@ const SHOTS = {
   },
 }
 
-for (const [name, shot] of Object.entries(SHOTS)) {
-  if (!process.env.ONLY || process.env.ONLY === name) await session(name, shot)
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  for (const f of [SCAN, NOMINAL, MEASURE_PROJECT, THICKNESS_PROJECT]) requireFixture(f)
+  for (const [name, shot] of Object.entries(SHOTS)) {
+    if (!process.env.ONLY || process.env.ONLY === name) await session(name, shot)
+  }
 }

@@ -8,7 +8,9 @@
 // counts when it isn't a drag — the middle button also drives the camera.
 //
 // The number keys turn the camera to the standard views, PrusaSlicer's way:
-// 0 iso, 1 top, 2 bottom, 3 front, 4 rear, 5 left, 6 right. They work whatever
+// 0 iso, 1 top, 2 bottom, 3 front, 4 rear, 5 left, 6 right — and the other
+// three-quarter views from above on the keys left over, 7 front-left, 8
+// rear-left, 9 rear-right, round the part from 0. They work whatever
 // else is pending — a part is turned to see where the next pick goes, and
 // making the draft first stand down would defeat that.
 import { useEffect } from 'react'
@@ -27,7 +29,7 @@ import type { StandardView } from '../viewer/orthoViewport'
 /** The keys of the plugin whose workspace is on screen, if one is. */
 const pluginKeys = () => plugins().find((p) => p.workspace?.id === useShell.getState().workspace)?.keyboard ?? null
 
-/** The number row, bound as PrusaSlicer binds it. */
+/** The number row, bound as PrusaSlicer binds it, 7–9 our own. */
 const VIEW_KEYS: Record<string, StandardView> = {
   '0': 'iso',
   '1': 'top',
@@ -36,6 +38,9 @@ const VIEW_KEYS: Record<string, StandardView> = {
   '4': 'rear',
   '5': 'left',
   '6': 'right',
+  '7': 'iso-front-left',
+  '8': 'iso-rear-left',
+  '9': 'iso-rear-right',
 }
 
 /** The arrow keys, as steps through what lies under the cursor: down and
