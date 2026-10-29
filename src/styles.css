@@ -4021,6 +4021,13 @@ button.x:disabled {
   padding: 3px;
 }
 
+/* Too little room under the button (ui/useOpenUp): the list opens above it. */
+.picklist.up {
+  top: auto;
+  bottom: calc(100% + 3px);
+  box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.35);
+}
+
 .pickgroup-label {
   font-size: 10.5px;
   letter-spacing: 0.04em;

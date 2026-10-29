@@ -95,6 +95,9 @@ export async function launchApp({ width = 1500, height = 950, protocolTimeout, u
   // back on itself (e2e-import does).
   await page.evaluateOnNewDocument(() => {
     try { localStorage.setItem('scanruler.askstlunits', '0') } catch { /* private mode: the question is answered by hand */ }
+    // Every workspace still in beta switched on, as Settings would: the
+    // checks cover them too.
+    try { localStorage.setItem('scanruler.beta', 'all') } catch { /* as above */ }
   })
   try {
     await page.goto(url, { waitUntil: 'networkidle0' })

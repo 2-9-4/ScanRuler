@@ -4,9 +4,10 @@
 // a 3MF, which says millimetres and keeps the part's colours — and the
 // format picked is what is written.
 
-import { useId, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import { MESH_FORMATS, MESH_FORMAT_LABEL, type MeshFormat } from '../core/exportMesh'
 import { useDismiss } from './useDismiss'
+import { useOpenUp } from './useOpenUp'
 
 const FORMAT_TITLE: Record<MeshFormat, string> = {
   stl: 'Binary STL — every program reads it; it does not say its units (millimetres)',
@@ -33,6 +34,8 @@ export function ExportMeshButton({
   const [open, setOpen] = useState(false)
   const menuId = useId()
   useDismiss(open, () => setOpen(false), { outside: `[data-menu="${menuId}"]` })
+  const list = useRef<HTMLDivElement>(null)
+  const up = useOpenUp(open && !disabled, list)
   const choose = (format: MeshFormat) => {
     setOpen(false)
     onExport(format)
@@ -51,7 +54,7 @@ export function ExportMeshButton({
         {label} <i aria-hidden>▾</i>
       </button>
       {open && !disabled && (
-        <div className="picklist" role="menu">
+        <div className={'picklist' + (up ? ' up' : '')} role="menu" ref={list}>
           {MESH_FORMATS.map((f) => (
             <button key={f} type="button" role="menuitem" className="pickoption" data-test={`${testId}-${f}`} title={FORMAT_TITLE[f]} onClick={() => choose(f)}>
               {MESH_FORMAT_LABEL[f]}

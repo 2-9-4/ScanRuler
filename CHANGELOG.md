@@ -5,6 +5,20 @@ bar and the imprint is the entry it belongs to; the `.scanruler` projects it
 saves carry the same number as `appVersion`. How a release is cut is in
 `docs/development.md` under "Releases".
 
+## 0.8.6 — 2026-10-29
+
+- **Drop-down lists open upward when there is no room below** (2026-10-29).
+  On a short screen, the formats under **Export mesh ▾** could open below the
+  bottom of the panel, where they were cut off. Scrolling closed the list,
+  so there was no way to reach them. That list, and the lists that choose a
+  reference, now open above their button when there isn't room below and
+  there is more room above.
+- **Workspaces in beta are off until switched on** (2026-10-29). A
+  workspace of the hosted app that is still in beta no longer shows among
+  the tabs by default. **Settings → Beta** lists each one with a switch;
+  the change takes effect when the page is reloaded. A project made with a
+  beta workspace keeps that work while the workspace is off.
+
 ## 0.8.5 — 2026-10-28
 
 - **Releases on GitHub** (2026-10-28). Every version is now published as a

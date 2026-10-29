@@ -7,11 +7,12 @@
 // are not here: those change with the job in hand and live on the view bar,
 // in the corner of the stage.
 
-import { useSyncExternalStore } from 'react'
+import { useState, useSyncExternalStore } from 'react'
 import { COLORMAPS, colormapById, cssRgb, legendGradient } from '../core/field/colormap'
 import { CREASE_ANGLE_DEG, CREASE_ANGLE_MAX, CREASE_ANGLE_MIN, CREASE_ANGLE_STEP, type CreaseMode } from '../core/geometry/crease'
 import { MESH_UNITS, type MeshUnits } from '../core/meshUnits'
 import { AGENT_STATUS, useAgentLink } from '../commands/agentLink'
+import { betaOn, betaPlugins, pluginEnabled, plugins, setBetaOn } from '../plugins/registry'
 import { useHintPrefs } from '../state/hintStore'
 import { UI_THEMES, usePrefs } from '../state/prefsStore'
 import { useStore } from '../state/store'
@@ -38,6 +39,50 @@ const PUCK_AXES: { id: SpaceMouseAxisId; label: string }[] = [
   { id: 'rz', label: 'Spin' },
   { id: 'ry', label: 'Roll' },
 ]
+
+/** The beta workspaces in the build, each with a switch — off until switched
+ *  on, and taken into use or put away when the page is next loaded, since a
+ *  plugin installs once. Nothing at all in a build that has none. */
+function BetaWorkspaces() {
+  // The switches read storage; this re-renders them when one is flipped.
+  const [, flipped] = useState(0)
+  const beta = betaPlugins()
+  if (beta.length === 0) return null
+  const pending = beta.some((p) => pluginEnabled(p) !== plugins().includes(p))
+  return (
+    <>
+      <h3>Beta</h3>
+      {beta.map((p) => (
+        <label key={p.id} className="checkrow settings-check">
+          <input
+            type="checkbox"
+            data-test={`toggle-beta-${p.id}`}
+            checked={betaOn(p.id)}
+            onChange={(e) => {
+              setBetaOn(p.id, e.target.checked)
+              flipped((n) => n + 1)
+            }}
+          />
+          <span>
+            <b>{p.workspace?.label ?? p.name}</b> — {p.workspace ? `${p.workspace.title}. ` : ''}A
+            workspace still in beta: it may change, and work done in it may not open the same in a
+            later version. Off, a project made with it keeps that work, untouched.
+          </span>
+        </label>
+      ))}
+      {pending && (
+        <div className="setting" data-test="beta-reload">
+          <small>
+            Takes effect when the page is reloaded.{' '}
+            <button type="button" onClick={() => location.reload()}>
+              Reload now
+            </button>
+          </small>
+        </div>
+      )}
+    </>
+  )
+}
 
 export function SettingsModal() {
   const open = usePrefs((s) => s.settingsOpen)
@@ -460,6 +505,8 @@ export function SettingsModal() {
             )}
           </small>
         </div>
+
+        <BetaWorkspaces />
 
         <h3>Support</h3>
         <label className="checkrow settings-check">

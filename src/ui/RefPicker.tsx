@@ -7,6 +7,7 @@
 // Escape to close.
 
 import { useEffect, useRef, useState } from 'react'
+import { useOpenUp } from './useOpenUp'
 
 export interface PickerOption {
   key: string
@@ -37,6 +38,8 @@ export function RefPicker({
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(-1)
   const root = useRef<HTMLDivElement>(null)
+  const list = useRef<HTMLDivElement>(null)
+  const up = useOpenUp(open, list)
   const hoverRef = useRef(onHover)
   hoverRef.current = onHover
 
@@ -94,8 +97,9 @@ export function RefPicker({
       </button>
       {open && (
         <div
-          className="picklist"
+          className={'picklist' + (up ? ' up' : '')}
           role="listbox"
+          ref={list}
           data-test={`${testId}-list`}
           onPointerLeave={() => hoverRef.current?.(null)}
           // The picker usually stands inside a <label>, and a click on an

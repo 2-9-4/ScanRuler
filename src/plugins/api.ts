@@ -243,6 +243,11 @@ export interface ScanRulerPlugin {
   id: string
   /** The plugin's name as a person reads it. */
   name: string
+  /** Still in beta: left out — not installed at all — until switched on in
+   *  Settings, where it is offered under its workspace's label. A project
+   *  opened while it is off keeps its part of the file, as in a build
+   *  without it. */
+  beta?: boolean
   /** The workspace the plugin adds, if it adds one. */
   workspace?: WorkspaceTab
   /** Its workspace's keys. */

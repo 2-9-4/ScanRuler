@@ -14,16 +14,60 @@ import type { ScanRulerPlugin } from './api'
 
 const found = import.meta.glob<{ default: ScanRulerPlugin }>('/plugins/*/plugin.ts', { eager: true })
 
+/** Where the beta workspaces switched on in Settings are remembered: a JSON
+ *  list of plugin ids, or `all` — what the browser checks set, so every
+ *  workspace in the build is checked whatever it is called. */
+const BETA_KEY = 'scanruler.beta'
+
+const storedBeta = (): string[] | 'all' => {
+  try {
+    const v = localStorage.getItem(BETA_KEY)
+    if (v === 'all') return 'all'
+    const ids: unknown = v ? JSON.parse(v) : []
+    return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string') : []
+  } catch {
+    // Storage blocked or unreadable, or no browser at all: none switched on.
+    return []
+  }
+}
+
+/** Whether a beta plugin is switched on in this browser. */
+export function betaOn(id: string): boolean {
+  const on = storedBeta()
+  return on === 'all' || on.includes(id)
+}
+
+/** Switch a beta plugin on or off in this browser — from the next start of
+ *  the app, since what a plugin installs is installed once. */
+export function setBetaOn(id: string, on: boolean): void {
+  const stored = storedBeta()
+  const ids = (stored === 'all' ? betaPlugins().map((p) => p.id) : stored).filter((x) => x !== id)
+  try {
+    localStorage.setItem(BETA_KEY, JSON.stringify(on ? [...ids, id] : ids))
+  } catch {
+    // Not remembered: the choice cannot outlive the reload that applies it.
+  }
+}
+
+/** The beta plugins in the build, whether switched on or not — what
+ *  Settings offers. */
+export function betaPlugins(): ScanRulerPlugin[] {
+  return Object.values(found)
+    .map((m) => m.default)
+    .filter((p) => p.beta)
+    .sort((a, b) => a.id.localeCompare(b.id))
+}
+
 /**
- * Whether a plugin found in the build is to be used. Every one is, for now;
- * this is where a licence or a sign-in will decide it. For a look at the
- * app as the open-source build has it, `?plugins=none` in the address
- * leaves them all out.
+ * Whether a plugin found in the build is to be used. Every one is, but a
+ * beta one only once switched on in Settings; this is where a licence or a
+ * sign-in will decide it. For a look at the app as the open-source build
+ * has it, `?plugins=none` in the address leaves them all out.
  */
 export function pluginEnabled(plugin: ScanRulerPlugin): boolean {
-  void plugin
   const query = typeof location === 'undefined' ? null : new URLSearchParams(location.search).get('plugins')
-  return query !== 'none'
+  if (query === 'none') return false
+  return !plugin.beta || betaOn(plugin.id)
 }
 
 let installed: readonly ScanRulerPlugin[] | null = null
