@@ -4,6 +4,15 @@ import type { ProjectSection } from '../../../src/app/projectSections'
 import { DEFAULT_MOLD_SETTINGS, MOLD_SETTING_KEYS, parseMoldSettings, type MoldSettings } from '../core/settings'
 import { moldSettings, useMold } from '../state/moldStore'
 
+function changed(a:MoldSettings,b:MoldSettings):boolean {
+  return MOLD_SETTING_KEYS.some(k=>{
+    if(k==='keyPositions'){
+      return a.keyPositions.length!==b.keyPositions.length ||
+        a.keyPositions.some((x,i)=>x!==b.keyPositions[i])
+    }
+    return a[k]!==b[k]
+  })
+}
 export const moldSection: ProjectSection<MoldSettings> = {
   key:'moldMaking',
   collect(){return moldSettings()},
@@ -12,15 +21,15 @@ export const moldSection: ProjectSection<MoldSettings> = {
     return () => useMold.setState({...next})
   },
   hasContent(value){
-    return MOLD_SETTING_KEYS.some(key=>value[key]!==DEFAULT_MOLD_SETTINGS[key])
+    return changed(value, DEFAULT_MOLD_SETTINGS)
   },
   holdsWork(){
     const s=moldSettings()
-    return MOLD_SETTING_KEYS.some(key=>s[key]!==DEFAULT_MOLD_SETTINGS[key])
+    return changed(s, DEFAULT_MOLD_SETTINGS)
   },
   watch(changed){
     return useMold.subscribe((next,prev)=>{
-      if(MOLD_SETTING_KEYS.some(key=>next[key]!==prev[key]))changed()
+      if(changed(next,prev))changed()
     })
   },
 }

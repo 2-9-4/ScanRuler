@@ -4,7 +4,7 @@ import { SCAN_ACCEPT,REFERENCE_ACCEPT,REFERENCE_FORMATS } from '../../../src/cor
 import { ModelSlot } from '../../../src/ui/ModelSlot'
 import { useStore } from '../../../src/state/store'
 import { useDeviation } from '../../../src/state/deviationStore'
-import { MOLD_MODES,MOLD_MODE_LABELS,type MoldDimension,type PartCount,type SplitAxis,type BoxShape } from '../core/settings'
+import { MOLD_MODES,MOLD_MODE_LABELS,type MoldDimension,type PartCount,type SplitAxis,type BoxShape, type KeyStyle, type KeyPlacement } from '../core/settings'
 import { useMold } from '../state/moldStore'
 import type { MoldBuild } from '../core/geometry'
 
@@ -15,9 +15,9 @@ const FIELDS:readonly {key:MoldDimension;label:string;help:string}[]=[
   {key:'wallThickness',label:'Printed wall',help:'Wall thickness of the silicone box or conformal shell'},
   {key:'siliconeThickness',label:'Silicone space',help:'Distance between master and containment walls'},
   {key:'splitPosition',label:'Split location (0–1)',help:'Fraction of model bounds along selected X/Y/Z axis'},
-  {key:'keyDiameter',label:'Pin diameter',help:'Round registration pin diameter, millimetres'},
-  {key:'keyDepth',label:'Pin depth',help:'Mating cylindrical pin length'},
-  {key:'keyClearance',label:'Pin fit clearance',help:'Radial clearance around mating pocket'},
+  {key:'keyDiameter',label:'Registration diameter',help:'Printed key base or nominal diameter of a separately inserted metal dowel'},
+  {key:'keyDepth',label:'Registration depth',help:'Printed pin engagement or blind hole depth in each half for a separate metal dowel'},
+  {key:'keyClearance',label:'Radial fit clearance',help:'Added radius to the female printed-key pocket or both metal-dowel holes'},
   {key:'boxDraftDeg',label:'Interior wall draft (°)',help:'Silicone containment-box wall taper; does not change the master cavity'},
   {key:'previewGap',label:'Exploded view gap',help:'Spacing between parts in the viewport. Zero shows assembled geometry.'},
 ]
@@ -37,6 +37,8 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
   const source=useMold(s=>s.source),mode=useMold(s=>s.mode)
   const parts=useMold(s=>s.parts),splitAxis=useMold(s=>s.splitAxis)
   const boxShape=useMold(s=>s.boxShape),keys=useMold(s=>s.keys)
+  const keyStyle=useMold(s=>s.keyStyle),keyPlacement=useMold(s=>s.keyPlacement)
+  const keyPositions=useMold(s=>s.keyPositions)
   const clearance=useMold(s=>s.clearance)
   const sideMargin=useMold(s=>s.sideMargin)
   const baseThickness=useMold(s=>s.baseThickness)
@@ -53,6 +55,8 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
   const setSource=useMold(s=>s.setSource),setMode=useMold(s=>s.setMode)
   const setParts=useMold(s=>s.setParts),setSplitAxis=useMold(s=>s.setSplitAxis)
   const setBoxShape=useMold(s=>s.setBoxShape),setKeys=useMold(s=>s.setKeys)
+  const setKeyStyle=useMold(s=>s.setKeyStyle),setKeyPlacement=useMold(s=>s.setKeyPlacement)
+  const setKeyPositions=useMold(s=>s.setKeyPositions)
   const setDimension=useMold(s=>s.setDimension)
   const active=source==='scan'?scanName:refName
   const multi=parts>1
@@ -115,9 +119,47 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
             <option value="z">Z (top/bottom)</option>
           </select></label>
         {parts===4&&<p className="hint">The second split is perpendicular: X→Y, Y→X, or Z→X.</p>}
-        <label className="kv"><span className="name">Registration pins</span>
+        <label className="kv"><span className="name">Alignment features</span>
           <input data-test="mold-keys" type="checkbox" checked={keys&&mode!=='thin-negative-shell'}
             disabled={mode==='thin-negative-shell'} onChange={e=>setKeys(e.target.checked)}/></label>
+        {keys&&mode!=='thin-negative-shell'&&<>
+          <label className="kv"><span className="name">Mating feature shape</span>
+            <select data-test="mold-key-style" value={keyStyle}
+              onChange={e=>setKeyStyle(e.target.value as KeyStyle)}>
+              <option value="tapered-key">Tapered printed keys</option>
+              <option value="printed-pin">Straight printed pins</option>
+              <option value="metal-dowel">Matching holes for metal dowels</option>
+            </select></label>
+          {keyStyle==='metal-dowel'&&<p className="hint">Both halves receive blind holes. Insert separately purchased metal dowels during assembly. Diameter is the nominal hardware diameter.</p>}
+          <label className="kv"><span className="name">Key positions</span>
+            <select data-test="mold-key-placement" value={keyPlacement}
+              onChange={e=>setKeyPlacement(e.target.value as KeyPlacement)}>
+              <option value="auto">Automatically distribute</option>
+              <option value="manual">Edit positions along seam</option>
+            </select></label>
+          {keyPlacement==='manual'&&<>
+            <p className="hint">Positions are percentages along each mating seam, measured from the smaller coordinate. The same pattern is applied to every split interface; invalid overlaps show an error rather than moving your keys.</p>
+            {keyPositions.map((value,index)=><div className="kv" key={index}>
+              <label className="name" htmlFor={`mold-key-${index}`}>Feature {index+1} · %</label>
+              <input id={`mold-key-${index}`} data-test={`mold-key-position-${index}`}
+                type="number" min={1} max={99} step={1} value={Number((value*100).toFixed(3))}
+                onChange={e=>{
+                  if(e.target.value==='')return
+                  const update=keyPositions.slice()
+                  update[index]=Number(e.target.value)/100
+                  setKeyPositions(update)
+                }}/>
+              <button type="button" aria-label={`Remove feature ${index+1}`}
+                onClick={()=>setKeyPositions(keyPositions.filter((_,i)=>i!==index))}>Remove</button>
+            </div>)}
+            <button type="button" disabled={keyPositions.length>=12}
+              onClick={()=>{
+                const candidates=[0.5,0.25,0.75,0.125,0.875,0.375,0.625]
+                const next=candidates.find(v=>!keyPositions.includes(v))
+                if(next!==undefined)setKeyPositions([...keyPositions,next].sort((a,b)=>a-b))
+              }}>Add feature</button>
+          </>}
+        </>}
       </>}
       {mode==='thin-negative-shell'&&multi&&<p className="hint">Conformal shell pins are not implemented yet. Use an outer jacket or clamps.</p>}
     </div>

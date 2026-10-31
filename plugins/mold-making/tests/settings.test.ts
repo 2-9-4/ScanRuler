@@ -10,6 +10,21 @@ describe('Mold Making configuration',()=>{
     expect(DEFAULT_MOLD_SETTINGS.parts).toBe(2)
     expect(DEFAULT_MOLD_SETTINGS.clearance).toBe(0)
   })
+  it('persists manually editable metal-dowel hole locations',()=>{
+    const s={...DEFAULT_MOLD_SETTINGS,keyStyle:'metal-dowel' as const,
+      keyPlacement:'manual' as const,keyPositions:[0.2,0.53,0.8]}
+    const restore=moldSection.prepare(s,{manifest:{} as never,members:new Map()})
+    restore()
+    expect(moldSection.collect({sources:{} as never,scanSaved:true,addMember(){}})).toEqual(s)
+    expect(moldSection.holdsWork()).toBe(true)
+    useMold.setState({...DEFAULT_MOLD_SETTINGS})
+    expect(moldSection.holdsWork()).toBe(false)
+  })
+  it('rejects invalid or duplicate manual key fractions',()=>{
+    expect(()=>parseMoldSettings({...DEFAULT_MOLD_SETTINGS,keyPositions:[0.3,0.3]})).toThrow(/distinct/)
+    expect(()=>parseMoldSettings({...DEFAULT_MOLD_SETTINGS,keyPositions:[-1]})).toThrow(/1–99/)
+    expect(()=>parseMoldSettings({...DEFAULT_MOLD_SETTINGS,keyPlacement:'manual',keyPositions:[]})).toThrow(/manual/)
+  })
   it('saves all newer settings in project/undo recipes',()=>{
     const state={...DEFAULT_MOLD_SETTINGS,mode:'silicone-box' as const,
       boxShape:'cylindrical' as const,parts:4 as const,boxDraftDeg:2.4,splitAxis:'y' as const}

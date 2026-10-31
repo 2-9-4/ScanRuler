@@ -152,54 +152,97 @@ function offset(mesh:Triangles,d:number,warnings:string[]):Triangles {
   }
   return result
 }
+/** Select seam coordinates, excluding too-close edges and collisions.
+ * Auto dynamically fits as many keys as the seam supports. Manual entries
+ * are honored exactly or rejected with the offending percent. */
+export function seamPositions(
+  lo:number,hi:number,s:Pick<MoldSettings,
+  'keyPlacement'|'keyPositions'|'keyDiameter'|'keyClearance'>,
+):number[] {
+  const r=s.keyDiameter/2+s.keyClearance
+  const inset=r+0.75
+  const stride=2*r+0.75
+  if(hi-lo<=inset*2)throw new Error('No safe room for alignment features along this seam. Reduce the diameter or use another split.')
+  const chosen:number[]=[]
+  const options=[...s.keyPositions].sort((a,b)=>a-b)
+  for(const fraction of options){
+    const x=lo+(hi-lo)*fraction
+    if(x<lo+inset||x>hi-inset||chosen.some(y=>Math.abs(x-y)<stride)){
+      if(s.keyPlacement==='manual'){
+        throw new Error(`Alignment feature at ${Math.round(fraction*100)}% overlaps an edge or another feature on this seam. Move or remove it.`)
+      }
+      continue
+    }
+    chosen.push(x)
+  }
+  if(chosen.length<(s.keyPlacement==='auto'?2:1)){
+    throw new Error('Insufficient space for the requested alignment features. Reduce diameter, move keys, or disable alignment.')
+  }
+  return chosen
+}
 function pinSolid(
-  wasm:ManifoldToplevel,axis:SplitAxis,centre:Vec3,length:number,radius:number,
+  wasm:ManifoldToplevel,axis:SplitAxis,centre:Vec3,length:number,
+  radiusLow:number,radiusHigh:number,
   keep:(m:Manifold)=>Manifold,
 ):Manifold {
-  const raw=keep(wasm.Manifold.cylinder(length,radius,radius,32,true))
+  const raw=keep(wasm.Manifold.cylinder(length,radiusLow,radiusHigh,32,true))
   const rotation:Vec3=axis==='x'?[0,90,0]:axis==='y'?[-90,0,0]:[0,0,0]
   return keep(keep(raw.rotate(rotation)).translate(centre))
 }
 function addKeys(
   wasm:ManifoldToplevel,negative:Manifold,positive:Manifold,
   axis:SplitAxis,split:number,s:MoldSettings,plan:MoldPlan,keep:(m:Manifold)=>Manifold,
+  seamSpan?:readonly [number,number],
 ):[Manifold,Manifold] {
-  // Keys are located in the solid floor below the target. They cannot
-  // pierce fine cavity features. For Z parting, use the outer wall.
+  // Key geometry sits in the backing base, not against casting surfaces.
+  // Metal dowel mode cuts blind clearance sockets on BOTH mating halves.
   if(s.mode==='thin-negative-shell')return [negative,positive]
-  if(s.mode==='silicone-box'&&axis==='z')throw new Error('Z split registration pins could break through the silicone box wall. Choose an X/Y split or disable pins.')
-  if(s.baseThickness<s.keyDiameter+2*s.keyClearance+0.2)throw new Error('Base is too thin for the registration pins. Increase it or turn pins off.')
+  if(s.mode==='silicone-box'&&axis==='z')throw new Error('Z split registration could pierce silicone box walls; choose X/Y or disable keys.')
+  if(s.baseThickness<s.keyDiameter+2*s.keyClearance+0.2)throw new Error('Base too thin for registration features. Increase base or reduce dowel diameter.')
   const base=plan.outer,idx=axisIndex(axis),z=base.min[2]+s.baseThickness/2
-  const locs:Vec3[]=[]
+  const locations:Vec3[]=[]
   if(axis==='z'){
-    const cy=center(base.min[1],base.max[1])
-    const cx=center(base.min[0],base.max[0])
+    const cy=center(base.min[1],base.max[1]),cx=center(base.min[0],base.max[0])
     const radius=(plan.cylinder?.outerR??(base.max[0]-base.min[0])/2)
-    const rx=radius-s.keyDiameter/2-s.keyClearance-0.35
-    if(rx<s.keyDiameter)throw new Error('Mold too narrow for Z-parting keys.')
-    locs.push([cx-rx,cy,split],[cx+rx,cy,split])
+    const rx=radius-s.keyDiameter/2-s.keyClearance-1.2
+    if(rx<s.keyDiameter)throw new Error('Not enough exterior wall for Z-parting registration.')
+    locations.push([cx-rx,cy,split],[cx+rx,cy,split])
   }else{
     const n:SplitAxis=axis==='x'?'y':'x',t=axisIndex(n)
     const a=negative.boundingBox(),b=positive.boundingBox()
-    const lo=Math.max(a.min[t],b.min[t]),hi=Math.min(a.max[t],b.max[t])
-    if(hi-lo<2.5*s.keyDiameter+2*s.keyClearance)throw new Error('Mold too narrow for paired keys; reduce pin diameter.')
-    const mid=center(lo,hi),spread=(hi-lo)*0.24
-    for(const x of [mid-spread,mid+spread]){
+    const lo=seamSpan?.[0]??Math.max(a.min[t],b.min[t])
+    const hi=seamSpan?.[1]??Math.min(a.max[t],b.max[t])
+    const coords=seamPositions(lo,hi,s)
+    for(const x of coords){
       const p:Vec3=[center(base.min[0],base.max[0]),center(base.min[1],base.max[1]),z]
       p[idx]=split
       p[t]=x
-      locs.push(p)
+      locations.push(p)
     }
   }
   let a=negative,b=positive
   const L=s.keyDepth,embed=Math.min(0.5,L*0.25)
-  for(const p of locs){
-    const male:Vec3=[...p],female:Vec3=[...p]
-    male[idx]+=(L-embed)/2
-    female[idx]+=(L+2*s.keyClearance+0.3)/2-0.15
-    a=keep(a.add(pinSolid(wasm,axis,male,L+embed,s.keyDiameter/2,keep)))
-    b=keep(b.subtract(pinSolid(wasm,axis,female,L+2*s.keyClearance+0.3,s.keyDiameter/2+s.keyClearance,keep)))
-    if(a.isEmpty()||b.isEmpty())throw new Error('Registration keys removed a mold component.')
+  const radial=s.keyClearance,r=s.keyDiameter/2
+  for(const p of locations){
+    if(s.keyStyle==='metal-dowel'){
+      const negCentre:Vec3=[...p],posCentre:Vec3=[...p]
+      // Each pocket reaches 0.15 mm across the seam to avoid a paper-thin
+      // membrane over the bore; at the exterior only material is removed.
+      negCentre[idx]-=L/2-0.15
+      posCentre[idx]+=L/2-0.15
+      const holeLength=L+0.3
+      a=keep(a.subtract(pinSolid(wasm,axis,negCentre,holeLength,r+radial,r+radial,keep)))
+      b=keep(b.subtract(pinSolid(wasm,axis,posCentre,holeLength,r+radial,r+radial,keep)))
+    }else{
+      const maleCentre:Vec3=[...p],femaleCentre:Vec3=[...p]
+      maleCentre[idx]+=(L-embed)/2
+      femaleCentre[idx]+=(L+2*radial+0.3)/2-0.15
+      const taper=s.keyStyle==='tapered-key'
+      a=keep(a.add(pinSolid(wasm,axis,maleCentre,L+embed,r,taper?r*0.7:r,keep)))
+      b=keep(b.subtract(pinSolid(wasm,axis,femaleCentre,L+2*radial+0.3,
+        r+radial,taper?r*0.7+radial:r+radial,keep)))
+    }
+    if(a.isEmpty()||b.isEmpty())throw new Error('Registration feature destroyed a mold part. Reduce depth or move its position.')
   }
   return [a,b]
 }
@@ -228,12 +271,20 @@ function keyFourParts(
 ):Manifold[] {
   if(pieces.length!==4)throw new Error('Four-part registration needs four separate pieces.')
   const registered=pieces.slice()
+  // Always measure key locations on the ORIGINAL four parts. Otherwise
+  // first-seam pins extend the bounding boxes and move second-seam keys.
+  const initial=pieces.map(p=>p.boundingBox())
+  const span=(i:number,j:number,axis:SplitAxis):readonly [number,number]=>{
+    const tangent=axis==='x'?1:0
+    return [Math.max(initial[i].min[tangent],initial[j].min[tangent]),
+      Math.min(initial[i].max[tangent],initial[j].max[tangent])]
+  }
   for(const [i,j] of [[0,2],[1,3]]){
-    const [low,high]=addKeys(wasm,registered[i],registered[j],first,firstAt,s,plan,keep)
+    const [low,high]=addKeys(wasm,registered[i],registered[j],first,firstAt,s,plan,keep,span(i,j,first))
     registered[i]=low;registered[j]=high
   }
   for(const [i,j] of [[0,1],[2,3]]){
-    const [low,high]=addKeys(wasm,registered[i],registered[j],second,secondAt,s,plan,keep)
+    const [low,high]=addKeys(wasm,registered[i],registered[j],second,secondAt,s,plan,keep,span(i,j,second))
     registered[i]=low;registered[j]=high
   }
   return registered
@@ -314,7 +365,12 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
           pieces=keyFourParts(wasm,pieces,a,firstAt,second,secondAt,s,plan,keep)
         }
       }
-      if(s.keys&&s.mode==='thin-negative-shell')warnings.push('Pins on thin conformal shells are not yet implemented; use an external clamp/jacket.')
+      if(s.keys&&s.mode==='thin-negative-shell')warnings.push('Registration on thin conformal shells is not implemented; use an external clamp/jacket.')
+      if(s.keys&&s.mode!=='thin-negative-shell'){
+        warnings.push(s.keyStyle==='metal-dowel'?
+          `Paired blind sockets are sized for ${s.keyDiameter} mm metal dowels, with ${s.keyClearance} mm radial fit clearance. Insert separate dowels during assembly.`:
+          `${s.keyStyle==='tapered-key'?'Tapered':'Straight'} printed registration pins and matching clearance sockets.`)
+      }
       warnings.push('Splits do not guarantee demoldability: inspect the target for trapped undercuts and add a sprue or vent before casting.')
     }
     const parts=pieces.map((x,i)=>toPart(x,`Mold part ${i+1}`))
