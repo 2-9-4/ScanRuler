@@ -9,6 +9,7 @@ not in this repository.
 |---|---|
 | [reverse/](reverse/) | The Reverse engineer workspace — scan to solid STEP body |
 | [mesh-tools/](mesh-tools/) | The Mesh Tools workspace — clean up and reduce a scan |
+| [mold-making/](mold-making/) | The Mold Making workspace — first one-sided negative, silicone box, and conformal shell tooling |
 
 ## The rules
 
