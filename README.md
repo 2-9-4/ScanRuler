@@ -19,7 +19,7 @@ scan the way a measuring microscope would. You can also model the scan into a
 solid STEP body and clean up or reduce the mesh.
 
 **Everything runs locally.** Your files are processed in your browser and
-never leave your computer.
+never leave your computer, unless you connect an [AI agent](#agents).
 
 ![The 3D Measure workspace: a scan of a ball bar with a sphere fitted to each ball and the centre distance between them](docs/images/measure.png)
 
@@ -202,15 +202,19 @@ codex mcp add scanruler -- npx -y scanruler-mcp@latest                 # Codex
 
 For Claude Desktop, Cursor and others, add `"command": "npx", "args": ["-y",
 "scanruler-mcp@latest"]` to their MCP settings. Then say *"Connect to
-ScanRuler"*. It opens the app paired with the agent, and the first time the
-browser asks whether the site may reach *apps and services on this device*;
-click **Allow**. After that, ask for what you want measured, naming files by
-their full path.
+ScanRuler"*. It opens the app paired with the agent. The first time, ScanRuler
+warns you what connecting means for your data (below) and connects only once
+you accept; then the browser asks whether the site may reach *apps and services
+on this device*; click **Allow**. After that, ask for what you want measured,
+naming files by their full path.
 
-The helper runs on your own machine and the tab talks to it on `127.0.0.1`.
-Nothing leaves your computer through ScanRuler, though what the agent reads
-goes to its model provider as usual. Setup per agent, troubleshooting and
-every option are in [mcp/README.md](mcp/README.md).
+**With an agent connected, your data no longer stays on your computer.** The
+helper runs on your own machine and the tab talks to it on `127.0.0.1`, so
+ScanRuler itself sends nothing anywhere. But what the agent reads (measurements,
+reports, pictures of the part, file names, notes and any file it opens itself)
+is processed by the agent and goes to its model's provider, unless the model
+runs on your computer. Setup per agent, troubleshooting and every option are in
+[mcp/README.md](mcp/README.md).
 
 ## Automatic reverse engineering
 

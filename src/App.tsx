@@ -54,6 +54,7 @@ import { Viewer } from './ui/Viewer'
 import { Panel } from './ui/Panel'
 import { TopBar } from './ui/TopBar'
 import { RecoveryBar } from './ui/RecoveryBar'
+import { AgentDataWarning } from './ui/AgentDataWarning'
 import { ConnectorBar } from './ui/ConnectorBar'
 import { StatusStrip } from './ui/StatusStrip'
 import { BusyOverlay } from './ui/BusyOverlay'
@@ -1856,6 +1857,7 @@ export default function App() {
       <SupportAsk />
       <SettingsModal />
       <UnitsModal />
+      <AgentDataWarning />
       <ImprintModal />
     </div>
   )

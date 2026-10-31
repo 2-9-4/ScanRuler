@@ -7,6 +7,7 @@
 
 import { useStore } from '../state/store'
 import { useCommandActivity } from '../commands/activity'
+import { useAgentLink } from '../commands/agentLink'
 
 export function StatusStrip() {
   const busy = useStore((s) => s.busy)
@@ -17,6 +18,7 @@ export function StatusStrip() {
   const openImprint = useStore((s) => s.openImprint)
   // A command an agent is running: named here, for as long as it runs.
   const agent = useCommandActivity((s) => s.running)
+  const agentConnected = useAgentLink((s) => s.status === 'connected')
 
   const fitting = draft?.status === 'fitting' || elements.some((e) => e.status === 'fitting')
   const lamp = errorText ? 'lamp err' : busy || fitting || agent ? 'lamp busy' : 'lamp'
@@ -56,8 +58,16 @@ export function StatusStrip() {
       >
         § <span className="btxt">IMPRINT</span>
       </button>
-      <a href="https://www.cnckitchen.com" target="_blank" rel="noreferrer">
-        LOCAL ONLY<span className="ltxt"> · FILES NEVER LEAVE YOUR BROWSER</span>
+      <a href="https://www.cnckitchen.com" target="_blank" rel="noreferrer" data-test="local-note">
+        {agentConnected ? (
+          <>
+            AGENT CONNECTED<span className="ltxt"> · WHAT IT READS GOES TO ITS AI MODEL</span>
+          </>
+        ) : (
+          <>
+            LOCAL ONLY<span className="ltxt"> · FILES NEVER LEAVE YOUR BROWSER</span>
+          </>
+        )}
       </a>
     </footer>
   )

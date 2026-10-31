@@ -227,9 +227,32 @@ describe('the agent bridge', () => {
     // Left stubbed: unstubbing every global would take the worker's `self`
     // away from the other tests in this file.
     expect(takePairingLink()).toBe(true)
-    expect(usePrefs.getState()).toMatchObject({ agentLink: true, agentPort: 7400, agentToken: 'abcdEFGH_1234-xyz' })
+    expect(usePrefs.getState()).toMatchObject({ agentPort: 7400, agentToken: 'abcdEFGH_1234-xyz' })
     expect(replaced).toEqual(['/?plugins=none'])
     vi.stubGlobal('location', { hash: '#view=top', pathname: '/', search: '' })
     expect(takePairingLink()).toBe(false)
+  })
+
+  it('stays off until the warning about the data is accepted, by a pairing link or by hand', () => {
+    const fresh = { agentLink: false, agentDataOk: false, agentDataAsking: false }
+    usePrefs.setState(fresh)
+
+    vi.stubGlobal('location', { hash: '#agent=7400:abcdEFGH_1234-xyz', pathname: '/', search: '' })
+    takePairingLink()
+    expect(usePrefs.getState()).toMatchObject({ agentLink: false, agentDataAsking: true })
+    usePrefs.getState().answerAgentData(false)
+    expect(usePrefs.getState()).toMatchObject(fresh)
+
+    // A "no" is not remembered: switching it on asks again.
+    usePrefs.getState().setAgentLink(true)
+    expect(usePrefs.getState()).toMatchObject({ agentLink: false, agentDataAsking: true })
+    usePrefs.getState().answerAgentData(true)
+    expect(usePrefs.getState()).toMatchObject({ agentLink: true, agentDataOk: true, agentDataAsking: false })
+
+    // A "yes" is: off and on again does not ask.
+    usePrefs.getState().setAgentLink(false)
+    expect(usePrefs.getState()).toMatchObject({ agentLink: false, agentDataOk: true })
+    usePrefs.getState().setAgentLink(true)
+    expect(usePrefs.getState()).toMatchObject({ agentLink: true, agentDataAsking: false })
   })
 })

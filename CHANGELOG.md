@@ -5,6 +5,17 @@ bar and the imprint is the entry it belongs to; the `.scanruler` projects it
 saves carry the same number as `appVersion`. How a release is cut is in
 `docs/development.md` under "Releases".
 
+## 0.9.2 — 2026-10-31
+
+- **A warning before an agent connects** (2026-10-31). The first time the agent
+  connection comes on in a browser, by **Settings → Agents** or by an agent's
+  pairing link, ScanRuler says that your data no longer stays on this computer:
+  what the agent reads is processed by the agent and goes to its model's
+  provider, unless the model runs on this computer. Nothing connects until you
+  accept, and a connection already on from before asks once too. While an agent
+  is connected, the status strip says so in place of *Local only*, and the
+  privacy notice now says the same.
+
 ## 0.9.1 — 2026-10-31
 
 - **A bigger support card after a save or an export** (2026-10-31). The thank-you

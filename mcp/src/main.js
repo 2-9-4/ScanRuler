@@ -163,7 +163,7 @@ export async function main(argv = process.argv.slice(2)) {
   const app = values.app ?? (values.serve ? `http://127.0.0.1:${port}/` : HOSTED_APP)
   const pairing = `${app.replace(/#.*$/, '')}#agent=${port}:${token}`
   const connectHelp = () =>
-    `Open ScanRuler — ${app} — in Chrome, Edge or Firefox and either open this pairing link once: ${pairing} — or in ScanRuler go to Settings → Agents, switch on "Local agent connection", and enter port ${port} and token ${token}.`
+    `Open ScanRuler — ${app} — in Chrome, Edge or Firefox and either open this pairing link once: ${pairing} — or in ScanRuler go to Settings → Agents, switch on "Local agent connection", and enter port ${port} and token ${token}. The first time, ScanRuler warns that what the agent reads goes to the agent and its model, and connects only once the warning is accepted.`
   if (values.pair) {
     process.stdout.write(`Port:  ${port}\nToken: ${token}\nLink:  ${pairing}\n`)
     return

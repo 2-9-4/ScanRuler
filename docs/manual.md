@@ -428,7 +428,9 @@ remembered per browser and none of it saved with a project:
 - **Guided hints** — the amber ring around the control to press next.
 - **Agents** — **Local agent connection** lets an AI agent on this computer
   drive the tab through the scanruler-mcp server, with the **Port** and
-  **Token** it connects on — see [Agents](../README.md#agents).
+  **Token** it connects on — see [Agents](../README.md#agents). The first time
+  it comes on, here or by a pairing link, a warning says that what the agent
+  reads goes to the agent and its model, and nothing connects until you accept.
 - **Support card** — whether the thank-you card comes up in the corner of the
   stage on each visit. Its × closes it until the page is reloaded; switched
   off here it stays away, and so does the big card.

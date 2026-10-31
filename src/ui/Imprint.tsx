@@ -93,7 +93,11 @@ export function ImprintModal() {
           <li>
             Your scans, reference models, fitted elements and every measurement made from them
             are processed entirely in your browser. They are held in memory for the duration of
-            the session only, are never uploaded, and are gone when you close the tab.
+            the session only, are never uploaded, and are gone when you close the tab. The one
+            exception is the optional agent connection: if you switch it on and accept its warning,
+            what the AI agent you connected reads is processed by that agent and, unless its model
+            runs on your computer, by the model’s provider, under that provider’s terms. ScanRuler
+            itself sends none of this anywhere and has no part in that processing.
           </li>
           <li>
             The only things this tool stores on your device are four preferences — your chosen

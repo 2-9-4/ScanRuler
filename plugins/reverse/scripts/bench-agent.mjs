@@ -48,6 +48,7 @@ const browser = await puppeteer.launch({ executablePath: CHROME, headless: 'new'
 const page = await browser.newPage()
 await page.evaluateOnNewDocument(() => {
   try { localStorage.setItem('scanruler.askstlunits', '0') } catch { /* no storage */ }
+  try { localStorage.setItem('scanruler.agentdataok', '1') } catch { /* no storage */ }
   const tally = (window.__bench = { gpu: 0, gpuCalls: 0, worker: 0, workerMessages: 0, displayMs: 0 })
   for (const C of [window.WebGLRenderingContext, window.WebGL2RenderingContext]) {
     if (!C) continue

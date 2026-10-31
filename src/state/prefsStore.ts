@@ -52,6 +52,7 @@ const UNITS_KEY = 'scanruler.units'
 const STL_UNITS_KEY = 'scanruler.stlunits'
 const ASK_STL_UNITS_KEY = 'scanruler.askstlunits'
 const AGENT_LINK_KEY = 'scanruler.agentlink'
+const AGENT_DATA_OK_KEY = 'scanruler.agentdataok'
 const AGENT_PORT_KEY = 'scanruler.agentport'
 const AGENT_TOKEN_KEY = 'scanruler.agenttoken'
 const SPACE_MOUSE_SPEED_KEY = 'scanruler.spacemouse.speed'
@@ -144,8 +145,16 @@ interface PrefsState {
    *  answer the question offers first: the last one given. */
   stlUnits: MeshUnits
   /** Whether this page connects to an AI agent's local server — see
-   *  commands/bridge. Off unless switched on, here or by a pairing link. */
+   *  commands/bridge. Off unless switched on, here or by a pairing link, and
+   *  never on before `agentDataOk`. */
   agentLink: boolean
+  /** Whether the person has accepted, in this browser, that what an agent
+   *  reads leaves the local-only promise behind (ui/AgentDataWarning). Asked
+   *  once; a "no" is not remembered, so the next switching on asks again. */
+  agentDataOk: boolean
+  /** The connection was switched on before that was accepted: the warning is
+   *  up, and nothing connects until it is answered. */
+  agentDataAsking: boolean
   /** The port on 127.0.0.1 that server listens on. */
   agentPort: number
   /** The token it was started with, which the page presents. */
@@ -172,6 +181,7 @@ interface PrefsState {
   setAskStlUnits: (on: boolean) => void
   setStlUnits: (units: MeshUnits) => void
   setAgentLink: (on: boolean) => void
+  answerAgentData: (ok: boolean) => void
   setAgentPort: (port: number) => void
   setAgentToken: (token: string) => void
   setSpaceMouseSpeed: (speed: number) => void
@@ -181,6 +191,9 @@ interface PrefsState {
 
 export const usePrefs = create<PrefsState>()((set) => {
   const uiTheme = storedUiTheme()
+  // A connection left on from before the warning existed asks first too.
+  const agentLinkStored = read(AGENT_LINK_KEY) === '1'
+  const agentDataOk = read(AGENT_DATA_OK_KEY) === '1'
   return {
     uiTheme,
     dark: resolveDark(uiTheme),
@@ -195,7 +208,9 @@ export const usePrefs = create<PrefsState>()((set) => {
     units: displayUnitsOf(read(UNITS_KEY)) ?? 'mm',
     askStlUnits: read(ASK_STL_UNITS_KEY) !== '0',
     stlUnits: meshUnitsOf(read(STL_UNITS_KEY)) ?? 'mm',
-    agentLink: read(AGENT_LINK_KEY) === '1',
+    agentLink: agentLinkStored && agentDataOk,
+    agentDataOk,
+    agentDataAsking: agentLinkStored && !agentDataOk,
     agentPort: agentPortOf(read(AGENT_PORT_KEY)),
     agentToken: read(AGENT_TOKEN_KEY) ?? '',
     spaceMouseSpeed: spaceMouseSpeedOf(read(SPACE_MOUSE_SPEED_KEY)),
@@ -258,9 +273,16 @@ export const usePrefs = create<PrefsState>()((set) => {
       write(STL_UNITS_KEY, stlUnits)
       set({ stlUnits })
     },
-    setAgentLink: (agentLink) => {
-      write(AGENT_LINK_KEY, agentLink ? '1' : '0')
-      set({ agentLink })
+    setAgentLink: (on) =>
+      set((s) => {
+        if (on && !s.agentDataOk) return { agentDataAsking: true }
+        write(AGENT_LINK_KEY, on ? '1' : '0')
+        return { agentLink: on, agentDataAsking: false }
+      }),
+    answerAgentData: (ok) => {
+      if (ok) write(AGENT_DATA_OK_KEY, '1')
+      write(AGENT_LINK_KEY, ok ? '1' : '0')
+      set({ agentDataOk: ok, agentLink: ok, agentDataAsking: false })
     },
     setAgentPort: (port) => {
       const agentPort = agentPortOf(port)

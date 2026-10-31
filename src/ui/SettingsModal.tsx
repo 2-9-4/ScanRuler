@@ -121,6 +121,7 @@ export function SettingsModal() {
   const setHintsOn = useHintPrefs((s) => s.setOn)
   const agentLink = usePrefs((s) => s.agentLink)
   const setAgentLink = usePrefs((s) => s.setAgentLink)
+  const agentDataAsking = usePrefs((s) => s.agentDataAsking)
   const agentPort = usePrefs((s) => s.agentPort)
   const setAgentPort = usePrefs((s) => s.setAgentPort)
   const agentToken = usePrefs((s) => s.agentToken)
@@ -135,8 +136,8 @@ export function SettingsModal() {
 
   // Escape closes it. Captured, like the imprint's, so the workspace's own
   // Escape handling — which would discard the draft behind the dialog — never
-  // sees the key.
-  useDismiss(open, () => close(false))
+  // sees the key. With the agent warning up over it, the key is the warning's.
+  useDismiss(open && !agentDataAsking, () => close(false))
 
   if (!open) return null
   const scheme = schemeById(navScheme)
@@ -491,10 +492,11 @@ export function SettingsModal() {
           <span>
             <b>Local agent connection</b> — let an AI agent on this computer (Claude Code, Claude
             Desktop, Cursor …) drive this tab through its ScanRuler tools, the scanruler-mcp server.
-            You watch every step here and can undo it. Nothing leaves this computer through
-            ScanRuler — the connection is to 127.0.0.1 — but what the agent asks for, the
-            figures and the report, goes to the agent’s own model provider like everything else
-            it reads.
+            You watch every step here and can undo it. <b>Your data no longer stays on this
+            computer:</b> what the agent reads — measurements, reports, pictures of the part, file
+            names, notes — is processed by the agent and goes to its model’s provider, unless the
+            model runs on this computer. ScanRuler itself sends nothing anywhere; the connection is
+            to 127.0.0.1.
           </span>
         </label>
         <div className="setting">

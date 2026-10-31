@@ -52,6 +52,7 @@ const browser = await puppeteer.launch({ executablePath: CHROME, headless: 'new'
 const page = await browser.newPage()
 await page.evaluateOnNewDocument(() => {
   try { localStorage.setItem('scanruler.askstlunits', '0') } catch { /* no storage */ }
+  try { localStorage.setItem('scanruler.agentdataok', '1') } catch { /* no storage */ }
 })
 await page.goto(link, { waitUntil: 'networkidle0' })
 await ok('scanruler_wait', { for: 'page', timeoutSeconds: 120 })

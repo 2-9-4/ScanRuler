@@ -95,9 +95,11 @@ Ask the agent for something in ScanRuler — or just *"Connect to ScanRuler"*.
 With no tab connected, it calls `scanruler_open`, which opens ScanRuler in
 your default browser with the pairing in its address: the tab switches the
 connection on with this server's port and token, and connects. The first
-time, **Chrome and Edge** ask whether scanruler.com may access "apps and
-services on this device" — allow it, that is this server. **Firefox** asks
-the same. The tab keeps the pairing, so this is done once per browser.
+time, ScanRuler warns that what the agent reads goes to the agent and its model,
+not only this computer, and connects once you accept. Then **Chrome and Edge**
+ask whether scanruler.com may access "apps and services on this device" — allow
+it, that is this server. **Firefox** asks the same. The tab keeps the pairing,
+so this is done once per browser.
 
 When the default browser is not the one you use ScanRuler in, or the agent
 runs somewhere it cannot open one, pair by hand:

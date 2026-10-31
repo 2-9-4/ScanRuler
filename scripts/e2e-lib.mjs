@@ -72,9 +72,10 @@ export async function finish(browser, consoleErrors) {
 /** Launch Chrome, open the app, and collect console/page errors as they come.
  *  `url` opens it at another address than APP_URL — with a fragment, say;
  *  `headless: false` opens a window on the screen (a real tab, which a
- *  minimised window hides as a person's would).
+ *  minimised window hides as a person's would); `agentDataOk: false` leaves the
+ *  agent connection's warning unanswered.
  *  Returns { browser, page, consoleErrors }. */
-export async function launchApp({ width = 1500, height = 950, protocolTimeout, url = APP_URL, headless = 'new' } = {}) {
+export async function launchApp({ width = 1500, height = 950, protocolTimeout, url = APP_URL, headless = 'new', agentDataOk = true } = {}) {
   const browser = await puppeteer.launch({
     executablePath: CHROME,
     headless,
@@ -102,6 +103,13 @@ export async function launchApp({ width = 1500, height = 950, protocolTimeout, u
     // e2e-support-ask switches it back on in Settings.
     try { localStorage.setItem('scanruler.supportask', '0') } catch { /* as above */ }
   })
+  // The agent connection's warning, accepted the way a person would have:
+  // every pairing link would stall on it. e2e-agent-warning asks to see it.
+  if (agentDataOk) {
+    await page.evaluateOnNewDocument(() => {
+      try { localStorage.setItem('scanruler.agentdataok', '1') } catch { /* as above */ }
+    })
+  }
   try {
     await page.goto(url, { waitUntil: 'networkidle0' })
     await page.waitForSelector('.panel')

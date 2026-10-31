@@ -926,7 +926,7 @@ export function createMcpServer({
     {
       name: 'scanruler_open',
       title: 'Open ScanRuler',
-      description: 'Open ScanRuler in the user’s default browser, paired with this server, and wait for the page to connect — for when scanruler_status says none is. The first time, the browser asks the user whether the site may reach apps on this computer; they must allow it. Returns the status, with opened: whether the browser was asked to open it. If connected is still false, tell the user what howToConnect says.',
+      description: 'Open ScanRuler in the user’s default browser, paired with this server, and wait for the page to connect — for when scanruler_status says none is. The first time, ScanRuler warns the user that what you read goes to you and your model, and connects only once they accept; then the browser asks whether the site may reach apps on this computer, and they must allow it. Returns the status, with opened: whether the browser was asked to open it. If connected is still false, tell the user what howToConnect says.',
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: false, openWorldHint: false },
       call: async () => {

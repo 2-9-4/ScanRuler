@@ -87,8 +87,9 @@ export const AGENT_STATUS: Record<AgentLinkStatus, string> = {
 }
 
 /** `#agent=<port>:<token>` in the address — the pairing link scanruler-mcp
- *  hands out — switches the connection on with that port and token, and is
- *  taken out of the address again. True when there was one. */
+ *  hands out — switches the connection on with that port and token (the first
+ *  time, once the warning about the person's data is accepted: prefsStore's
+ *  agentDataOk), and is taken out of the address again. True when there was one. */
 export function takePairingLink(): boolean {
   if (typeof location === 'undefined') return false
   const m = /(?:^#|&)agent=(\d{1,5}):([A-Za-z0-9_-]{8,})/.exec(location.hash)

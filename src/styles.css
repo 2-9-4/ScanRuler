@@ -2884,11 +2884,22 @@ button.x:disabled {
   line-height: 1.45;
 }
 
-.modal.units .modalfoot {
+.modal.units .modalfoot,
+.modal.agentdata .modalfoot {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
   margin-top: 6px;
+}
+
+.modal.agentdata {
+  width: 520px;
+}
+
+.modal.agentdata > p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
 }
 
 /* ---------------- responsive ---------------- */
