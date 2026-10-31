@@ -4,7 +4,7 @@
 import {beforeAll,describe,expect,it} from 'vitest'
 import Module,{type ManifoldToplevel} from 'manifold-3d'
 import {DEFAULT_MOLD_SETTINGS} from '../core/settings'
-import {boxSolid,buildMold,planMold} from '../core/geometry'
+import {boxSolid,buildMold,planMold,seamPositions} from '../core/geometry'
 import {closedness} from '../../mesh-tools/core/boolean'
 import {signedVolume} from '../../mesh-tools/core/hollow'
 
@@ -67,6 +67,40 @@ describe('Mold Making assembly',()=>{
     const build=buildMold(wasm,p,{...noKeys,parts:4,splitPosition:0.123456})
     expect(build.parts.length).toBe(4)
     intact(build.parts)
+  })
+  it('spreads five automatic registration features on a sufficiently large seam',()=>{
+    expect(seamPositions(-12,12,DEFAULT_MOLD_SETTINGS)).toHaveLength(5)
+    // Smaller four-part interface chooses a safe subset rather than
+    // overlapping adjacent keys or cutting into the parting intersection.
+    expect(seamPositions(-12,0,DEFAULT_MOLD_SETTINGS)).toHaveLength(2)
+  })
+  it('respects manually edited positions or reports collisions',()=>{
+    const keys={...DEFAULT_MOLD_SETTINGS,keyPlacement:'manual' as const,keyPositions:[0.25,0.75]}
+    expect(seamPositions(-12,0,keys)).toEqual([-9,-3])
+    expect(()=>seamPositions(-12,0,{...keys,keyPositions:[0.24,0.25]}))
+      .toThrow(/overlaps/)
+  })
+  it('cuts matching blind metal-dowel sockets in both mating halves',()=>{
+    const plain=buildMold(wasm,master,{...DEFAULT_MOLD_SETTINGS,keys:false})
+    const sockets=buildMold(wasm,master,{...DEFAULT_MOLD_SETTINGS,keyStyle:'metal-dowel'})
+    expect(sockets.parts).toHaveLength(2)
+    intact(sockets.parts)
+    expect(sockets.parts[0].volumeMm3).toBeLessThan(plain.parts[0].volumeMm3)
+    expect(sockets.parts[1].volumeMm3).toBeLessThan(plain.parts[1].volumeMm3)
+    expect(sockets.warnings.join(' ')).toMatch(/metal dowels/)
+  })
+  it('makes tapered printed male keys and clearance-fit female cavities',()=>{
+    const plain=buildMold(wasm,master,{...DEFAULT_MOLD_SETTINGS,keys:false})
+    const m=buildMold(wasm,master,{...DEFAULT_MOLD_SETTINGS,keyStyle:'tapered-key'})
+    expect(m.parts).toHaveLength(2)
+    intact(m.parts)
+    expect(m.parts[0].volumeMm3).toBeGreaterThan(plain.parts[0].volumeMm3)
+    expect(m.parts[1].volumeMm3).toBeLessThan(plain.parts[1].volumeMm3)
+  })
+  it('handles four-part rigid tooling with blind holes instead of printed pins',()=>{
+    const m=buildMold(wasm,master,{...DEFAULT_MOLD_SETTINGS,parts:4,keyStyle:'metal-dowel'})
+    expect(m.parts).toHaveLength(4)
+    intact(m.parts)
   })
   it('adds physical pins and corresponding negative pockets',()=>{
     const plain=buildMold(wasm,master,noKeys)
