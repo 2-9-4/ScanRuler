@@ -232,7 +232,7 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
     }else if(s.parts!==1){
       onProgress?.('Cutting exact parting planes; applying mating pins and pockets…')
       const a=s.splitAxis,k=axisIndex(a)
-      if(s.parts===4&&a==='z'&&s.keys)throw new Error('Four-part Z-first tooling with pins is not yet supported. Choose X/Y as the primary parting axis, or disable pins.')
+      if(s.parts===4&&a==='z'&&s.keys&&s.mode!=='thin-negative-shell')throw new Error('Four-part Z-first tooling with pins is not yet supported. Choose X/Y as the primary parting axis, or disable pins.')
       pieces=split(wasm,pieces,a,extent.min[k]+(extent.max[k]-extent.min[k])*s.splitPosition,s,plan,keep)
       if(s.parts===4){
         const second:SplitAxis=a==='x'?'y':'x',j=axisIndex(second)
