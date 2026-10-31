@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Targets and modes are real ScanRuler project inputs. Geometry generation is
 // deliberately not shown as available until the worker, preview and QA exist.
-import { REFERENCE_ACCEPT, REFERENCE_FORMATS } from '../../../src/core/formats'
+import { SCAN_ACCEPT, REFERENCE_ACCEPT, REFERENCE_FORMATS } from '../../../src/core/formats'
 import { ModelSlot } from '../../../src/ui/ModelSlot'
 import { useStore } from '../../../src/state/store'
 import { useDeviation } from '../../../src/state/deviationStore'
@@ -29,7 +29,13 @@ export function MoldPanel({ onOpenScan, onOpenReference }: {
   const setSource = useMold((s) => s.setSource)
   const setMode = useMold((s) => s.setMode)
   const setDimension = useMold((s) => s.setDimension)
-  const settings = useMold((s) => DIMENSIONS.map((d) => s[d.key]))
+  // Zustand 5 selectors must return stable values, not a new array each render.
+  const clearance = useMold((s) => s.clearance)
+  const sideMargin = useMold((s) => s.sideMargin)
+  const baseThickness = useMold((s) => s.baseThickness)
+  const wallThickness = useMold((s) => s.wallThickness)
+  const siliconeThickness = useMold((s) => s.siliconeThickness)
+  const settings = { clearance, sideMargin, baseThickness, wallThickness, siliconeThickness }
   const activeName = source === 'scan' ? scanName : referenceName
 
   return (
@@ -48,7 +54,7 @@ export function MoldPanel({ onOpenScan, onOpenReference }: {
         {source === 'scan' ? (
           <ModelSlot role="Target" name={scanName}
             detail={`${scanTriangles.toLocaleString('en-US')} triangles · imported as working scan`}
-            dotColor="#8b9099" busy={busy} accept={REFERENCE_ACCEPT}
+            dotColor="#8b9099" busy={busy} accept={SCAN_ACCEPT}
             formats={REFERENCE_FORMATS} onOpen={onOpenScan} />
         ) : (
           <ModelSlot role="Target reference" name={referenceName} detail="CAD or mesh reference"
@@ -84,7 +90,7 @@ export function MoldPanel({ onOpenScan, onOpenReference }: {
           mode === 'silicone-box' ? d.key !== 'clearance' :
           d.key !== 'siliconeThickness'
         ).map((d) => {
-          const val = settings[DIMENSIONS.findIndex((entry) => entry.key === d.key)]
+          const val = settings[d.key]
           return (
             <label key={d.key} className="kv" title={d.detail}>
               <span className="name">{d.name}</span>
