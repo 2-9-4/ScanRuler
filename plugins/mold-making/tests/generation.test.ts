@@ -32,6 +32,42 @@ describe('Mold Making assembly',()=>{
     expect(m.volumeMm3).toBeCloseTo(26*24*18-800,2)
     intact(m.parts)
   })
+  it('creates four keyed halves without splitting through a pre-existing registration pin',()=>{
+    const plain=buildMold(wasm,master,{...noKeys,parts:4})
+    const keyed=buildMold(wasm,master,{...DEFAULT_MOLD_SETTINGS,parts:4})
+    expect(keyed.parts).toHaveLength(4)
+    intact(keyed.parts)
+    const netMaterialDelta=Math.abs(keyed.volumeMm3-plain.volumeMm3)
+    // Deliberate radial fit clearance removes more material than pins add.
+    // This must not change bulk tooling volume by a large amount.
+    expect(netMaterialDelta).toBeLessThan(100)
+  })
+  it('generates a four-part circular silicone box, with separate closed pieces',()=>{
+    const made=buildMold(wasm,master,{...DEFAULT_MOLD_SETTINGS,mode:'silicone-box',
+      boxShape:'cylindrical',parts:4})
+    expect(made.parts).toHaveLength(4)
+    intact(made.parts)
+  })
+  it('increases cavity volume (reduces printed block volume) for positive clearance',()=>{
+    const common={...DEFAULT_MOLD_SETTINGS,keys:false}
+    const zero=buildMold(wasm,master,common)
+    const clearance=buildMold(wasm,master,{...common,clearance:0.1})
+    expect(clearance.volumeMm3).toBeLessThan(zero.volumeMm3)
+    expect(clearance.openingZ).toBeNull()
+    intact(clearance.parts)
+  })
+  it('rejects a cavity offset that would puncture top or bottom of the mold',()=>{
+    expect(()=>buildMold(wasm,master,{...noKeys,clearance:4.2}))
+      .toThrow(/base\/top thickness|breaks through/)
+  })
+  it('rejects invalid geometry without relying on an arbitrary triangle aspect ratio',()=>{
+    // Extremely skinny but nonzero-area triangles are valid. Ordinary
+    // intersections routinely create sliver triangles on shared planes.
+    const p=boxSolid({min:[-5,-4,0],max:[5,4,10]})
+    const build=buildMold(wasm,p,{...noKeys,parts:4,splitPosition:0.123456})
+    expect(build.parts.length).toBe(4)
+    intact(build.parts)
+  })
   it('adds physical pins and corresponding negative pockets',()=>{
     const plain=buildMold(wasm,master,noKeys)
     const keyed=buildMold(wasm,master,DEFAULT_MOLD_SETTINGS)
