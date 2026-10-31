@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Targets and modes are real ScanRuler project inputs. Geometry generation is
-// deliberately not shown as available until the worker, preview and QA exist.
+// Native ScanRuler target, mold controls, generated-component QA and export.
 import { SCAN_ACCEPT, REFERENCE_ACCEPT, REFERENCE_FORMATS } from '../../../src/core/formats'
 import { ModelSlot } from '../../../src/ui/ModelSlot'
 import { useStore } from '../../../src/state/store'
 import { useDeviation } from '../../../src/state/deviationStore'
 import { MOLD_MODE_LABELS, MOLD_MODES, type MoldDimension } from '../core/settings'
 import { useMold } from '../state/moldStore'
+import type { MoldBuild } from '../core/geometry'
 
 const DIMENSIONS: readonly { key: MoldDimension; name: string; detail: string }[] = [
   { key: 'clearance', name: 'Casting clearance', detail: 'Offset between the finished casting and target' },
@@ -16,9 +16,14 @@ const DIMENSIONS: readonly { key: MoldDimension; name: string; detail: string }[
   { key: 'siliconeThickness', name: 'Silicone jacket', detail: 'Space around the master to pour silicone' },
 ]
 
-export function MoldPanel({ onOpenScan, onOpenReference }: {
+export function MoldPanel({ onOpenScan, onOpenReference, onGenerate, onExport, generated, generating, error }: {
   onOpenScan: (file: File) => void
   onOpenReference: (file: File) => void
+  onGenerate: () => void
+  onExport: (format: 'stl' | '3mf') => void
+  generated: MoldBuild | null
+  generating: boolean
+  error: string | null
 }) {
   const scanName = useStore((s) => s.fileName)
   const scanTriangles = useStore((s) => s.triangleCount)
@@ -86,9 +91,9 @@ export function MoldPanel({ onOpenScan, onOpenReference }: {
       <div className="group">
         <div className="sec-head">3. Dimensions · mm</div>
         {DIMENSIONS.filter((d) =>
-          mode === 'direct' ? d.key !== 'siliconeThickness' :
-          mode === 'silicone-box' ? d.key !== 'clearance' :
-          d.key !== 'siliconeThickness'
+          mode === 'direct' ? ['clearance', 'sideMargin', 'baseThickness'].includes(d.key) :
+          mode === 'silicone-box' ? ['siliconeThickness', 'wallThickness', 'baseThickness'].includes(d.key) :
+          ['clearance', 'wallThickness'].includes(d.key)
         ).map((d) => {
           const val = settings[d.key]
           return (
@@ -107,12 +112,26 @@ export function MoldPanel({ onOpenScan, onOpenReference }: {
       </div>
       <div className="group">
         <div className="sec-head">4. Generate &amp; export</div>
-        <p className="hint" data-test="mold-foundation-status">
-          {activeName
-            ? `${activeName} is selected. Geometry generation, part preview, print validation and STL export are not implemented in this foundation step.`
-            : 'Choose a target above. Geometry generation follows after the geometry worker and export checks are implemented.'}
+        <p className="hint" data-test="mold-generation-note">
+          {mode === 'silicone-box'
+            ? 'Open-top casting box: place and support your physical master before pouring. Supports, sealing and keys are not automated yet.'
+            : 'One-sided impression only: the cavity ends at the target midplane. It cannot reproduce the entire target. Under-cut and release validation are not yet available.'}
         </p>
-        <button type="button" disabled title="Generation is not available in the workspace foundation">Generate mold (not yet available)</button>
+        <button type="button" disabled={busy || generating || !activeName}
+          data-test="mold-generate" onClick={onGenerate}>{generating ? 'Generating…' : 'Generate mold'}</button>
+        {error && <p className="hint" role="alert" data-test="mold-error">{error}</p>}
+        {generated && (
+          <div data-test="mold-result">
+            <div className="kv"><span className="name">Mold triangles</span><b>{(generated.indices.length/3).toLocaleString('en-US')}</b></div>
+            <div className="kv"><span className="name">Printed material</span><b>{(generated.volumeMm3/1000).toFixed(1)} cm³</b></div>
+            <p className="hint">Preview is the exported solid. Verify orientation, fit, supports, and releases in your slicer before printing.</p>
+            {generated.warnings.map((warning, index) => <p className="hint" key={index}>{warning}</p>)}
+            <div className="kindrow featurekeys">
+              <button type="button" data-test="mold-export-stl" onClick={() => onExport('stl')}>Export STL · mm</button>
+              <button type="button" data-test="mold-export-3mf" onClick={() => onExport('3mf')}>Export 3MF</button>
+            </div>
+          </div>
+        )}
       </div>
     </aside>
   )
