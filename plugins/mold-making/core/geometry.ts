@@ -134,6 +134,7 @@ function addKeys(
   // Keys are located in the solid floor below the target. They cannot
   // pierce fine cavity features. For Z parting, use the outer wall.
   if(s.mode==='thin-negative-shell')return [negative,positive]
+  if(s.mode==='silicone-box'&&axis==='z')throw new Error('Z split registration pins could break through the silicone box wall. Choose an X/Y split or disable pins.')
   if(s.baseThickness<s.keyDiameter+2*s.keyClearance+0.2)throw new Error('Base is too thin for the registration pins. Increase it or turn pins off.')
   const base=plan.outer,idx=axisIndex(axis),z=base.min[2]+s.baseThickness/2
   const locs:Vec3[]=[]
