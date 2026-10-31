@@ -13,6 +13,22 @@ Native ScanRuler plugin to turn a scanned part or STEP model into a printable mo
 - Save recipe settings in `.scanruler`; source assets are already saved by core ScanRuler. Regenerate output after reopening.
 - Generation runs off the main thread via ScanRuler's mesh worker and reuses Mesh Tools' Manifold Booleans and offset code. Refuse nonwatertight or inward-wound inputs/outputs. A STEP file is tessellated through the existing STEP importer, and all operations from there are mesh-based.
 
+## Local smoke test
+
+From the fork:
+
+```sh
+npm ci
+npm run build
+npm test
+node scripts/check-plugin-boundary.mjs
+npm run dev
+```
+
+Open the local Vite URL (not scanruler.com), select **Mold Making**, and import [cube-10mm.stl](fixtures/cube-10mm.stl) as **Scan / model**. With **Direct-print mold**, set **Casting clearance** to **0 mm**, generate, and export an STL; verify a solid, single-sided square cavity in a slicer. Change to **Silicone mold box**, generate and verify the bottom and open walls. Switch to **Thin negative shell**, use a small printed wall and generate again; offset failures must be reported, not exported. Repeat the flow with a known watertight STEP solid, and with a nonwatertight mesh to verify that generation refuses the invalid source.
+
+These are manual smoke checks, not claims that CI or a local build has already succeeded.
+
 ## Known limitations before production use
 
 Molds are currently **single-sided**, and have no parting/key system, sprues, venting, smart sealing, undercut detection, demold simulation, or print minimum-wall guarantee. Do not interpret a successful Boolean as a proof of casting manufacturability. Test on small sacrificial prints, check mesh inspection in a slicer, and account for silicone inhibition and printer tolerances.
