@@ -7,6 +7,8 @@ saves carry the same number as `appVersion`. How a release is cut is in
 
 ## Unreleased
 
+- **Mold Making: multipart tooling and opaque preview** (2026-10-31, fork only). Direct rigid molds and silicone boxes now support one, two or four separate printable pieces with configurable axis-aligned splits and radial-clearance registration pins. Silicone boxes support circular outer walls and drafted containment walls. The opaque viewport and one-STL-per-component / plate-laid-out 3MF export replace the initial ghosted preview and merged-part behavior. Default cavity clearance is now 0 mm to avoid unrequested smoothing of thin details. True cavity draft, undercut-safe extraction, robust high-fidelity conformal offsets and gates/vents remain in development. See `plugins/mold-making/README.md`.
+
 - **Mold Making workspace (initial vertical slice, fork only)** (2026-10-31). A new plugin accepts STEP/STP models or scanned meshes through the existing importers and generates one-sided rigid negative molds, printable silicone containment boxes, and thin conformal negative shells. Preview and export to STL/3MF reuse the same validated mesh. It does not yet make two-part molds, add keys, gates or vents, or validate demolding; testing and first-slice limitations are in `plugins/mold-making/README.md`.
 
 - **Ask your agent to update its connector** (2026-10-31). The banner that says
