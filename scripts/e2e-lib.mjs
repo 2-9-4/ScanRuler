@@ -98,6 +98,9 @@ export async function launchApp({ width = 1500, height = 950, protocolTimeout, u
     // Every workspace still in beta switched on, as Settings would: the
     // checks cover them too.
     try { localStorage.setItem('scanruler.beta', 'all') } catch { /* as above */ }
+    // The big support card would take the next click after any export.
+    // e2e-support-ask switches it back on in Settings.
+    try { localStorage.setItem('scanruler.supportask', '0') } catch { /* as above */ }
   })
   try {
     await page.goto(url, { waitUntil: 'networkidle0' })

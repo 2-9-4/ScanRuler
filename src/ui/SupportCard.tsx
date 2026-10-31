@@ -3,12 +3,15 @@
 
 // Support card — the same call-to-action bumpmesh.com carries, in the
 // bottom-left corner of the stage: a thank-you, then the three ways to give
-// something back. Deliberately not a modal. bumpmesh can afford one because it
-// has a wait to fill while the STL is processed; here the user came to look at
-// a part, and a dialog over it would be a dialog over the thing they came to
-// see. The corner is the one the instrument itself leaves empty — the colour
-// scale and its statistics run down the right edge, the orientation gizmo sits
-// bottom right.
+// something back. Not a modal: the user came to look at a part, and a dialog
+// over it would be a dialog over the thing they came to see. The corner is the
+// one the instrument itself leaves empty — the colour scale and its statistics
+// run down the right edge, the orientation gizmo sits bottom right.
+//
+// SupportAsk below is the modal, bumpmesh's, for the one moment the user has
+// what they came for: a save or an export has just handed over a file. It holds
+// nothing up. The file has already gone (app/exports.saveFile), workers carry
+// on behind it, and one click anywhere or any of Escape and Enter takes it away.
 //
 // The close is for this page load only, held in a module-level flag rather than
 // in storage: the card is meant to be seen once per visit, and a visit ends
@@ -21,8 +24,10 @@
 // the prefs store with the instrument's others — for the operator who has seen
 // it and works in the tool every day.
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { usePrefs } from '../state/prefsStore'
+import { useStore } from '../state/store'
+import { ASK_OFF_MS, useSupportAsk } from '../state/supportAskStore'
 
 let closedThisLoad = false
 
@@ -31,7 +36,7 @@ const LINKS = [
     kind: 'store',
     icon: '🛒',
     label: 'Visit CNCKitchen.STORE',
-    href: 'https://geni.us/CNCStoreSim',
+    href: 'https://geni.us/CNCStoreScan',
   },
   {
     kind: 'paypal',
@@ -46,6 +51,23 @@ const LINKS = [
     href: 'https://ko-fi.com/cnckitchen',
   },
 ] as const
+
+const supportLinks = (onOpen?: () => void) =>
+  LINKS.map((l) => (
+    <a
+      key={l.kind}
+      className={`sc-btn ${l.kind}`}
+      href={l.href}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={onOpen}
+    >
+      <span className="sc-icon" aria-hidden="true">
+        {l.icon}
+      </span>
+      {l.label}
+    </a>
+  ))
 
 export function SupportCard() {
   const [closed, setClosed] = useState(closedThisLoad)
@@ -67,20 +89,86 @@ export function SupportCard() {
         This tool is provided <b>completely free</b> by CNC Kitchen. Once you have finished
         measuring, why not have a look at the store that keeps us making things like this?
       </p>
-      {LINKS.map((l) => (
-        <a
-          key={l.kind}
-          className={`sc-btn ${l.kind}`}
-          href={l.href}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <span className="sc-icon" aria-hidden="true">
-            {l.icon}
-          </span>
-          {l.label}
-        </a>
-      ))}
+      {supportLinks()}
     </aside>
+  )
+}
+
+export function SupportAsk() {
+  const open = useSupportAsk((s) => s.open)
+  const closeAsk = useSupportAsk((s) => s.close)
+  const errorText = useStore((s) => s.errorText)
+  const setSupportAskOffUntil = usePrefs((s) => s.setSupportAskOffUntil)
+  const [offForAWeek, setOffForAWeek] = useState(false)
+
+  const close = () => {
+    if (offForAWeek) setSupportAskOffUntil(Date.now() + ASK_OFF_MS)
+    setOffForAWeek(false)
+    closeAsk()
+  }
+
+  // An error that comes up meanwhile is not left behind an ask for money.
+  useEffect(() => {
+    if (open && errorText) closeAsk()
+  }, [open, errorText, closeAsk])
+
+  // While it is up the workspace behind sees no keys: what it would do to them
+  // cannot be seen through the blur. Caught on the way down, which leaves the
+  // browser's own handling alone: Tab, and Enter on the focused button.
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      e.stopPropagation()
+      const onLink = (e.target as Element | null)?.closest?.('a, button')
+      if (e.key === 'Escape' || (e.key === 'Enter' && !onLink)) close()
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  })
+
+  if (!open) return null
+  const store = LINKS[0]
+  return (
+    <div
+      className="modalback supportask-back"
+      // Only the press stops here, for the middle-button confirm on the window.
+      // A release still has to reach whatever drag it ends.
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={close}
+    >
+      <div
+        className="modal supportask"
+        data-test="support-ask"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="support-ask-title"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 id="support-ask-title">Thanks for using ScanRuler by CNC Kitchen!</h2>
+        <p>
+          This tool is provided <b>completely free</b> by CNC Kitchen. Your file is on its way —
+          why not check out the{' '}
+          <a href={store.href} target="_blank" rel="noopener noreferrer" onClick={close}>
+            store
+          </a>{' '}
+          that helps us keep making things like this?
+        </p>
+        {supportLinks(close)}
+        <label className="supportask-off">
+          <input
+            type="checkbox"
+            data-test="support-ask-off"
+            checked={offForAWeek}
+            onChange={(e) => setOffForAWeek(e.target.checked)}
+          />
+          Don't show this again for a week
+        </label>
+        <div className="supportask-foot">
+          <button data-test="support-ask-close" autoFocus onClick={close}>
+            Close &amp; Continue
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }

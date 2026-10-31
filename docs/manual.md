@@ -431,7 +431,13 @@ remembered per browser and none of it saved with a project:
   **Token** it connects on — see [Agents](../README.md#agents).
 - **Support card** — whether the thank-you card comes up in the corner of the
   stage on each visit. Its × closes it until the page is reloaded; switched
-  off here it stays away.
+  off here it stays away, and so does the big card.
+- **Big card on saving** — whether a save or an export also puts the thank-you
+  in the middle of the screen, over a blurred background, at most once in ten
+  minutes. The file has already been handed to the browser by then and whatever
+  is running carries on behind it; a click anywhere, Escape or Enter closes it.
+  Its **Don't show this again for a week** shows here as off until the week is
+  over; switched off here it stays away until switched back on.
 
 The ways of *looking* at a part are not settings and are not here: they are on
 the [view bar](#the-view-bar) in the bottom-left corner of the stage, where

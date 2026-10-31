@@ -60,7 +60,7 @@ import { BusyOverlay } from './ui/BusyOverlay'
 import { ImprintModal } from './ui/Imprint'
 import { SettingsModal } from './ui/SettingsModal'
 import { UnitsModal } from './ui/UnitsModal'
-import { SupportCard } from './ui/SupportCard'
+import { SupportAsk, SupportCard } from './ui/SupportCard'
 import { ViewBar } from './ui/ViewBar'
 import { DeviationPanel } from './ui/DeviationPanel'
 import { ThicknessPanel } from './ui/ThicknessPanel'
@@ -1851,6 +1851,9 @@ export default function App() {
         </div>
       </div>
       <StatusStrip />
+      {/* First of the windows: same height, so a question it comes up against
+          stays on top of it. */}
+      <SupportAsk />
       <SettingsModal />
       <UnitsModal />
       <ImprintModal />

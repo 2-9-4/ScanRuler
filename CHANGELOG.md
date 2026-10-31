@@ -5,6 +5,19 @@ bar and the imprint is the entry it belongs to; the `.scanruler` projects it
 saves carry the same number as `appVersion`. How a release is cut is in
 `docs/development.md` under "Releases".
 
+## 0.9.1 — 2026-10-31
+
+- **A bigger support card after a save or an export** (2026-10-31). The thank-you
+  from the corner of the stage comes up in the middle of the screen over a blurred
+  background, as it does in BumpMesh, at most once in ten minutes. Nothing waits
+  on it: the file has already gone to the browser and running jobs carry on behind
+  it. A click anywhere, Escape or Enter closes it, and it stays away while an error
+  is showing or for an agent's saves. **Don't show this again for a week** on the
+  card puts it away for a week; **Settings → Support** brings it back sooner or
+  switches it off for good.
+- **The store links go to the right address** (2026-10-31): the support card's
+  store links now point to ScanRuler's own link, not another tool's.
+
 ## 0.9.0 — 2026-10-31
 
 - **Reverse engineer and Mesh Tools are open source** (2026-10-31). The two

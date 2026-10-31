@@ -46,6 +46,8 @@ const SHEET_LINES_KEY = 'scanruler.sheetlines'
 const EDGE_LINES_KEY = 'scanruler.edgelines'
 const PINS_BEHIND_KEY = 'scanruler.pinsbehind'
 const SUPPORT_CARD_KEY = 'scanruler.supportcard'
+const SUPPORT_ASK_KEY = 'scanruler.supportask'
+const SUPPORT_ASK_OFF_UNTIL_KEY = 'scanruler.supportask.offuntil'
 const UNITS_KEY = 'scanruler.units'
 const STL_UNITS_KEY = 'scanruler.stlunits'
 const ASK_STL_UNITS_KEY = 'scanruler.askstlunits'
@@ -123,6 +125,13 @@ interface PrefsState {
    *  visit. On by default; its own × puts it away for the page load only,
    *  this puts it away for good. */
   supportCard: boolean
+  /** Whether a save or an export also puts up the big card (ui/SupportCard's
+   *  SupportAsk). On by default, and only ever with `supportCard` on. */
+  supportAsk: boolean
+  /** When the card's "Don't show this again for a week" runs out, by
+   *  `Date.now()`; 0 when it was not asked for. The settings window's switch
+   *  ends it early. */
+  supportAskOffUntil: number
   /** What lengths are shown and typed in. Only the screen: what is held,
    *  saved, exported to STEP and answered to an agent stays in millimetres
    *  (core/units). Millimetres until switched. */
@@ -157,6 +166,8 @@ interface PrefsState {
   setEdgeLines: (px: number) => void
   setHidePinsBehind: (on: boolean) => void
   setSupportCard: (on: boolean) => void
+  setSupportAsk: (on: boolean) => void
+  setSupportAskOffUntil: (time: number) => void
   setUnits: (units: DisplayUnits) => void
   setAskStlUnits: (on: boolean) => void
   setStlUnits: (units: MeshUnits) => void
@@ -179,6 +190,8 @@ export const usePrefs = create<PrefsState>()((set) => {
     edgeLines: clampLineWidth(read(EDGE_LINES_KEY), EDGE_LINE_DEFAULT),
     hidePinsBehind: read(PINS_BEHIND_KEY) !== '0',
     supportCard: read(SUPPORT_CARD_KEY) !== '0',
+    supportAsk: read(SUPPORT_ASK_KEY) !== '0',
+    supportAskOffUntil: Number(read(SUPPORT_ASK_OFF_UNTIL_KEY)) || 0,
     units: displayUnitsOf(read(UNITS_KEY)) ?? 'mm',
     askStlUnits: read(ASK_STL_UNITS_KEY) !== '0',
     stlUnits: meshUnitsOf(read(STL_UNITS_KEY)) ?? 'mm',
@@ -221,6 +234,15 @@ export const usePrefs = create<PrefsState>()((set) => {
     setSupportCard: (supportCard) => {
       write(SUPPORT_CARD_KEY, supportCard ? '1' : '0')
       set({ supportCard })
+    },
+    setSupportAsk: (supportAsk) => {
+      write(SUPPORT_ASK_KEY, supportAsk ? '1' : '0')
+      write(SUPPORT_ASK_OFF_UNTIL_KEY, '0')
+      set({ supportAsk, supportAskOffUntil: 0 })
+    },
+    setSupportAskOffUntil: (supportAskOffUntil) => {
+      write(SUPPORT_ASK_OFF_UNTIL_KEY, String(supportAskOffUntil))
+      set({ supportAskOffUntil })
     },
     setUnits: (value) => {
       const units = displayUnitsOf(value) ?? 'mm'

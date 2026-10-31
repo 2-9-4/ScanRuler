@@ -100,6 +100,9 @@ export function SettingsModal() {
   const setEdgeLines = usePrefs((s) => s.setEdgeLines)
   const supportCard = usePrefs((s) => s.supportCard)
   const setSupportCard = usePrefs((s) => s.setSupportCard)
+  const supportAsk = usePrefs((s) => s.supportAsk)
+  const setSupportAsk = usePrefs((s) => s.setSupportAsk)
+  const supportAskOffUntil = usePrefs((s) => s.supportAskOffUntil)
   const askStlUnits = usePrefs((s) => s.askStlUnits)
   const setAskStlUnits = usePrefs((s) => s.setAskStlUnits)
   const stlUnits = usePrefs((s) => s.stlUnits)
@@ -544,7 +547,21 @@ export function SettingsModal() {
           <span>
             <b>Support card</b> — the thank-you in the corner of the stage, with the ways to
             give something back. Its × closes it for this visit; switched off here it stays
-            away.
+            away, the big one below with it.
+          </span>
+        </label>
+        <label className="checkrow settings-check">
+          <input
+            type="checkbox"
+            data-test="toggle-support-ask"
+            checked={supportCard && supportAsk && Date.now() >= supportAskOffUntil}
+            disabled={!supportCard}
+            onChange={(e) => setSupportAsk(e.target.checked)}
+          />
+          <span>
+            <b>Big card on saving</b> — the same thank-you in the middle of the screen after a save
+            or an export, at most once in ten minutes. The file does not wait for it. Its "Don't
+            show this again for a week" shows here as off until the week is over.
           </span>
         </label>
       </div>

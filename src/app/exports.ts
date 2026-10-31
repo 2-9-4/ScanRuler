@@ -16,12 +16,14 @@ import { isExtruded } from '../state/sectionModel'
 import { useStore, type Section } from '../state/store'
 import { useDeviation } from '../state/deviationStore'
 import { sectionElementsOf, useFlat } from '../state/flatStore'
+import { useSupportAsk } from '../state/supportAskStore'
 import type { SceneManager } from '../viewer/SceneManager'
 
 /** Hand a built file to the browser. The link goes into the document for the
  *  length of the click — WebKit ignores `download` on an anchor that was never
  *  in the page — and the object URL outlives it by long enough for the
- *  download to start, then goes. */
+ *  download to start, then goes. The support card is asked for after the
+ *  click, so the file never waits on it. */
 export const saveFile = (name: string, blob: Blob) => {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -32,6 +34,7 @@ export const saveFile = (name: string, blob: Blob) => {
   a.click()
   a.remove()
   setTimeout(() => URL.revokeObjectURL(url), 10_000)
+  useSupportAsk.getState().ask()
 }
 
 /** The stem every export is built on: the project's name, else the scan's
