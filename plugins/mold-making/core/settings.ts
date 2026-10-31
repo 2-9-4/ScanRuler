@@ -53,9 +53,9 @@ export const DEFAULT_MOLD_SETTINGS: Readonly<MoldSettings> = Object.freeze({
   previewGap: 3,
 })
 
-export type MoldDimension = {
+export type MoldDimension = Exclude<{
   [K in keyof MoldSettings]: MoldSettings[K] extends number ? K : never
-}[keyof MoldSettings]
+}[keyof MoldSettings], 'parts'>
 export const MOLD_DIMENSIONS: readonly MoldDimension[] = [
   'clearance', 'sideMargin', 'baseThickness', 'wallThickness', 'siliconeThickness',
   'splitPosition', 'keyDiameter', 'keyDepth', 'keyClearance', 'boxDraftDeg', 'previewGap',
