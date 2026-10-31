@@ -16,9 +16,9 @@ describe('Mold Making configuration',()=>{
     const restore=moldSection.prepare(s,{manifest:{} as never,members:new Map()})
     restore()
     expect(moldSection.collect({sources:{} as never,scanSaved:true,addMember(){}})).toEqual(s)
-    expect(moldSection.holdsWork()).toBe(true)
+    expect(moldSection.holdsWork!()).toBe(true)
     useMold.setState({...DEFAULT_MOLD_SETTINGS})
-    expect(moldSection.holdsWork()).toBe(false)
+    expect(moldSection.holdsWork!()).toBe(false)
   })
   it('rejects invalid or duplicate manual key fractions',()=>{
     expect(()=>parseMoldSettings({...DEFAULT_MOLD_SETTINGS,keyPositions:[0.3,0.3]})).toThrow(/distinct/)
