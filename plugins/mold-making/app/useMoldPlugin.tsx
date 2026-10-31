@@ -142,6 +142,7 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
       blurb: 'Import STEP directly or a scanned STL, OBJ, PLY or 3MF. Make a single-sided rigid negative, a silicone casting box, or a thin conformal negative shell with printable STL/3MF output.',
     },
     hideScan: !!generated && source === 'scan' && inWorkspace,
+    canSave: !!referenceName && source === 'reference',
     panel: inWorkspace ? (
       <MoldPanel
         onOpenScan={(file) => void host.openScan(file)}
