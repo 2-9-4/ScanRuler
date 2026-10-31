@@ -53,6 +53,13 @@ export class MoldPreview {
     host.invalidate()
   }
 
+  setVisible(visible: boolean): void {
+    if (this.mesh) {
+      this.mesh.visible = visible
+      this.scene.layerHost().invalidate()
+    }
+  }
+
   clear(): void {
     if (!this.mesh) return
     this.mesh.parent?.remove(this.mesh)

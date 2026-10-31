@@ -28,11 +28,13 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
   const [error, setError] = useState<string | null>(null)
   const preview = useRef<MoldPreview | null>(null)
   const generation = useRef(0)
+  const generatedVersion = useRef<number | null>(null)
   const busy = useRef(false)
 
   const invalidate = useCallback(() => {
     generation.current++
     setGenerated(null)
+    generatedVersion.current = null
     setError(null)
     preview.current?.clear()
   }, [])
@@ -49,6 +51,10 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
   }, [invalidate])
   useEffect(() => invalidate(), [scanName, referenceName, invalidate])
   useEffect(() => () => { preview.current?.dispose(); preview.current = null }, [])
+  useEffect(() => { preview.current?.setVisible(inWorkspace) }, [inWorkspace, generated])
+  useEffect(() => useDeviation.subscribe((s,prev) => {
+    if (s.nominalName !== prev.nominalName || s.nominalBusy !== prev.nominalBusy || s.nominalStep !== prev.nominalStep) invalidate()
+  }), [invalidate])
 
   const runGenerate = async () => {
     if (busy.current) return
@@ -63,6 +69,7 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
     setGenerating(true)
     setError(null)
     setGenerated(null)
+    generatedVersion.current = null
     preview.current?.clear()
     let stagedId: number | null = null
     try {
@@ -88,6 +95,7 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
         preview.current = new MoldPreview(host.sceneRef.current, invalidate)
       }
       preview.current?.set(made, settings.source)
+      generatedVersion.current = selectedVersion
       setGenerated(made)
       host.sceneRef.current?.frameAll()
       useStore.getState().setStatus('Generated a watertight mold component. Review the release and casting warnings before printing.')
@@ -106,6 +114,12 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
 
   const exportPart = (format: Extract<MeshFormat, 'stl' | '3mf'>) => {
     if (!generated || generating) return
+    const client = host.clientRef.current
+    if (!client || generatedVersion.current !== (source === 'scan' ? client.scanVersion : client.nominalVersion)) {
+      invalidate()
+      setError('Target geometry changed. Regenerate the mold before exporting.')
+      return
+    }
     const made = buildMeshFile(format, [{
       name: 'Mold component',
       positions: generated.positions,
