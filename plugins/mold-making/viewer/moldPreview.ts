@@ -16,7 +16,6 @@ export class MoldPreview {
   private remove:()=>void
   private source:MoldSource='scan'
   private priorNominal:boolean|null=null
-  private gap=3
   private extent=0
   constructor(private scene:SceneManager,private changed:()=>void) {
     this.host=scene.layerHost()
@@ -40,7 +39,6 @@ export class MoldPreview {
   set(build:MoldBuild,source:MoldSource,gap:number):void {
     this.clear()
     this.source=source
-    this.gap=gap
     this.extent=0
     this.group.visible=true
     if(source==='reference'){
@@ -75,7 +73,6 @@ export class MoldPreview {
   }
   setGap(gap:number):void {
     if(!Number.isFinite(gap)||gap<0)return
-    this.gap=gap
     this.parts.forEach((p,i)=>{
       // At zero the assembly is closed. Positive gap means a separated parts
       // layout, with no coplanar face clashes in the viewport.
