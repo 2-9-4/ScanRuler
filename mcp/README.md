@@ -148,8 +148,9 @@ of the repository. To turn it off: `--no-update`, or
 `SCANRULER_MCP_NO_UPDATE=1`.
 
 When ScanRuler shows **Your ScanRuler connector is out of date**, the server
-your app starts is older than the page needs: change the setting to the
-`@latest` line it shows, then quit the app completely — not just its window —
+your app starts is older than the page needs: ask your agent to update it, with
+the sentence the banner gives you to paste, or change the setting to the
+`@latest` line it shows. Then quit the app completely — not just its window —
 and open it again.
 
 ### Several agents

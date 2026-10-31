@@ -43,6 +43,12 @@ export function olderVersion(a: string, b: string): boolean {
   return false
 }
 
+/** What the person can paste into the agent's chat to have it update the
+ *  connector: it says the setting, for an agent that has not read the page,
+ *  and the restart, which the agent cannot do itself. */
+export const CONNECTOR_ASK =
+  'Update the scanruler MCP server in this app to scanruler-mcp@latest, then tell me to quit the app completely and open it again.'
+
 /** One step per AI app to update the connector, copy-ready: the setting
  *  with `@latest`, which has npx fetch the newest at each start. */
 export const CONNECTOR_STEPS: { app: string; how: string; text: string }[] = [
@@ -73,7 +79,7 @@ export function serverTooOld(server: AgentServer | null = useAgentLink.getState(
   const steps = CONNECTOR_STEPS.map((s) => `${s.app} — ${s.how}: ${s.text.split('\n').map((line) => `\`${line}\``).join(', then ')}`).join('; ')
   return (
     `Your ScanRuler connector is out of date: the scanruler-mcp your AI app started is ${which}, and this ScanRuler needs ${WANTS_SERVER} or newer — some of what the agent asks may not work. ` +
-    `To update it, change its setting to the @latest one. ${steps}. Then quit the app completely and open it again. ` +
+    `To update it, ask the agent to, or change its setting to the @latest one. ${steps}. Then quit the app completely and open it again. ` +
     'With more than one AI app open, the old connector may be another app’s — one left open in the background holds the connection for all of them: quit it.'
   )
 }

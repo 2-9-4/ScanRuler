@@ -5,6 +5,14 @@ bar and the imprint is the entry it belongs to; the `.scanruler` projects it
 saves carry the same number as `appVersion`. How a release is cut is in
 `docs/development.md` under "Releases".
 
+## Unreleased
+
+- **Ask your agent to update its connector** (2026-10-31). The banner that says
+  your ScanRuler connector is out of date now starts with a sentence to copy and
+  paste into your AI agent's chat, and the agent changes the setting for you. All
+  that is left for you is to quit the app and open it again. The steps by hand
+  are still below it.
+
 ## 0.9.2 — 2026-10-31
 
 - **A warning before an agent connects** (2026-10-31). The first time the agent

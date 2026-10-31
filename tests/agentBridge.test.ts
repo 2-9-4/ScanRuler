@@ -119,6 +119,7 @@ describe('the agent bridge', () => {
     expect(old.server).toEqual({ version: null })
     expect(old.tooOld).toMatch(/^Your ScanRuler connector is out of date: .*older than 0\.4\.0/)
     expect(old.tooOld).toContain('npx -y scanruler-mcp@latest')
+    expect(old.tooOld).toContain('ask the agent to')
     expect(old.tooOld).toContain('quit the app completely and open it again')
     expect(old.inState).toBe(old.tooOld)
     const older = await welcomed({ server: 'scanruler-mcp', version: '0.3.9' })

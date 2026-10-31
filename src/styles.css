@@ -226,6 +226,7 @@ body {
   font-size: 12px;
 }
 .connector-bar p { flex: 1 1 100%; margin: 0; }
+.connector-ask { flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
 .connector-bar ul { flex: 1 1 auto; margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
 .connector-bar li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
 .connector-bar code { font-family: var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; background: var(--well); padding: 2px 6px; border-radius: var(--r); }
