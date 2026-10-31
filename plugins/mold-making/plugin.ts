@@ -26,7 +26,7 @@ const plugin: ScanRulerPlugin = {
       }],
       actions:[{
         store:useMold,label:'Mold Making',
-        names:['setSource','setMode','setParts','setSplitAxis','setBoxShape','setKeys','setDimension'],
+        names:['setSource','setMode','setParts','setSplitAxis','setBoxShape','setKeys','setKeyStyle','setKeyPlacement','setKeyPositions','setDimension'],
       }],
     })
   },
