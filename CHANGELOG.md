@@ -5,6 +5,140 @@ bar and the imprint is the entry it belongs to; the `.scanruler` projects it
 saves carry the same number as `appVersion`. How a release is cut is in
 `docs/development.md` under "Releases".
 
+## 0.8.7 — 2026-10-31
+
+- **A cylinder fit says when a wall is drafted** (2026-10-31). Fitted on part of
+  a turn, a cylinder leans to take up a taper and reads a good fit, and a wall
+  drafted both ways from a parting line reads as two cylinders at an angle. The
+  answer now gives the draft along the part's axis, read off the normals, and
+  names a double cone with its parting line and a box for each part
+  (`region.taper`). On a cast triple clamp the rings read 3.1° and the lug holes
+  as double cones, 2.4° and 4.4°; the machined bores stay silent.
+- **`project.save` says what the file holds** (2026-10-31): counted, with whether
+  the scan stands aligned. The MCP server warns when a save holds less than the
+  last one it wrote, as after the page was reset: a file named for a revision
+  held none of it, and nothing said so.
+- **An unknown field names the fields there are** (2026-10-31), everywhere a
+  command's input is checked.
+- **`scanruler_wait { for: "idle" }` counts a read still being answered**
+  (2026-10-31): an export read as idle while it wrote its file, and a second
+  began on top of it. A change refused busy runs again once the page is idle,
+  as a batch's calls already did. `--trace-args` also keeps the first 500
+  characters of each answer, so a refusal can be read after the run.
+- **Opening a project no longer moves what was measured** (2026-10-30). Every
+  fitted element was fitted anew on opening, and could land elsewhere: one cone
+  came back 2.42 mm along its axis and 0.17° off, with nothing changed. Each
+  fit now stands as saved, and only the surface it was measured on is read
+  again; an element saved without a fit is fitted.
+- **The volume error reads over a hole in the reference** (2026-10-30). A hole
+  in the reference's mesh left whole columns reading as inside, up to the top
+  of the grid, and stood a false lump on it. Such columns are now read from the
+  ones beside them, and the answer says where (`referenceOpen`), with
+  `warnings`.
+- **`scan.qa` calls a skin closed when its rims are only pinholes** (2026-10-30),
+  rims of 2 % of the part's diagonal in all, with the same advice as a skin with
+  no rims.
+- **`view.render` waits for a map it has to read** (2026-10-30), up to 35 s,
+  and says how far it got if it is not read.
+- **Agents: `scanruler_read`, and a job's picture** (2026-10-30). The new
+  `scanruler_read` reads an answer too long to carry, and text files beside the
+  scan, in parts, for an agent with no folder access. `scanruler_wait` for a
+  job now brings the job's picture with its answer. The note on a slow job says
+  when the tab is hidden.
+
+- **The README explains automatic reverse engineering** (2026-10-30). A new
+  section says how an agent turns a scan into a solid on scanruler.com, where
+  that reaches its limits, with four measured runs, and what to do when a part
+  does not come out right.
+- **A step of the history answers in brief** (2026-10-30). `history.undo`,
+  `history.redo` and `history.restore` answer the step and a short `after`
+  instead of the whole session, which ran to 12 k on a modelled part;
+  `detail: "full"` gives it as `state`, as before. An agent reading `state`
+  from these answers needs that flag. Both wait for the rebuild the step set
+  off, so what they say is the part after it.
+- **Section offsets count from zero** (2026-10-30). `section.render` with a
+  coordinate plane by name and `offsets` counts from the world's zero, as
+  sketch planes do; it counted from the part's middle, so a slice meant for
+  Z 5 could land 14 mm off. Without `offsets` the plane still lies through
+  the part's middle.
+- **Guides read in two steps** (2026-10-29). A guide's section that opens
+  with `<!-- read when: … -->` is left out of a whole read and listed under
+  `later` with its moment; `guide.read { topic, section }` gives it whole,
+  and the index shows when. The page keeps which guides and sections were
+  read, so a workspace can say when a step comes before its reading.
+- **Shorter tool descriptions** (2026-10-29). An agent is handed every
+  tool's definition at the start of a chat — 360 kB on the hosted build.
+  Each description now says what the tool does, needs and answers; the
+  how-to that stood in them is in the guides' command shapes, read by
+  section when needed. The longest schemas' field texts are cut the same
+  way.
+- **scanruler-mcp lists the namespaces you name** (2026-10-29). `--tools`
+  takes a comma list of namespaces, plain (only these, with the server's
+  own) or with `-` (all but these): an agent whose task stays in one
+  workspace no longer carries every other's tools in every turn. Fixed at
+  start; `full` and `compact` as before.
+- **CLA wording** (2026-10-29). Signing is the comment `I agree to CLA.md`;
+  section 4.2 now points at the licence list in CONTRIBUTING.md instead of
+  banning "other copyleft" licences, which contradicted the MPL-2.0 allowance
+  there. Signatures on file stay valid.
+- **New logo** (2026-10-29). The top bar and the browser tab wear the new
+  ScanRuler mark instead of the blue "SR" tile, and the README opens with
+  the logo. The full set (marks, wordmarks, light, dark and mono) is in
+  `docs/brand`.
+- **Curved strips told from faces** (2026-10-29). `scan.segment` grows
+  each plane until its fit nearly reaches `maxRms`, so a gently curved wall
+  used to come back as a row of "planes" a few degrees apart, each just
+  inside the limit, that read like facets. Each region now says when it is
+  a strip of a curved surface (`curved`, with its sagitta), each neighbour
+  whether it joins smoothly or at a crease (`smooth`; neighbours within 35°
+  are listed even past the limit), and `curvedRuns` joins the strips of one
+  surface and says how to model it — a profile extruded along a direction,
+  one cylinder, or freeform. The answer also gives `maxRms` and the scan's
+  `noise`. On a 1 M-vertex die-cast part a side wall that came out as ten
+  planes reads as one run of an extruded profile.
+- **Height maps on a plane in the sketch's frame** (2026-10-29).
+  `scan.heightmap` and `scan.outline` on a plane element lay u and v as a
+  sketch on that plane has them, also when they look at it from the other
+  side, and say `flipped: true` then. A plane element's map used to answer
+  v reversed.
+- **Long guides read in parts** (2026-10-29). `guide.read` on a guide
+  longer than one answer carries gives its sections in order while they
+  fit and names the rest in `sectionsLeft`, each to read by section,
+  instead of an answer the agent's client writes to a file.
+- **scanruler-mcp keeps its working files apart** (2026-10-29). A batch's
+  pictures and answers too long to carry now go into `scanruler-work`
+  inside the open scan's folder, apart from your own files; the result
+  names the folder.
+
+- **Millimetres or inches** (2026-10-29, issue #16). **Settings → Units**
+  switches every length the app shows or takes between millimetres and
+  decimal inches: element rows, dimensions and tolerances with their limits,
+  the pins on the part, deviation and thickness maps with their legends and
+  ranges, sections, the 2D sheet, every number field, and the status line.
+  Inches get one decimal more than millimetres and never fewer than three
+  (0.001 mm reads 0.0001 in), areas read in in², volumes in in³; angles,
+  percentages and pixels are unchanged. Steps and suggested figures in
+  inches are round inch figures. The choice is remembered in this browser.
+  Only the screen changes: what is measured, saved in a `.scanruler`
+  project, written to STEP, 3MF and the sheet's SVG, and answered to an
+  agent stays in millimetres, so switching moves nothing. The copied
+  summary and the reports say "Lengths in inches" when they are.
+- **STL in inches** (2026-10-29). **Export mesh ▾** offers an STL in
+  millimetres, an STL in inches — its vertices divided by 25.4, for a
+  program that reads an STL as inches — and a 3MF. The STL in the units
+  shown comes first. The STL import question is unchanged; its default in
+  Settings is now called **STL import units**.
+- **2D sheet in inches** (2026-10-29). With inches chosen, a calibrated
+  sheet's DXF is written in inches (`$INSUNITS` 1, five decimals) and its
+  CSV in inch columns. The SVG stays in millimetres at 1:1, as it says.
+- **Agents see the units on screen** (2026-10-29). `session_state` has
+  `ui.units`, `mm` or `in`, so an agent can tell the person where to look;
+  every answer stays in millimetres, and the measure guide says so.
+- **A check for lengths that say mm** (2026-10-29).
+  `node scripts/check-units.mjs`, run in CI beside the plugin boundary,
+  fails on text in the app that writes mm itself instead of going through
+  the units module (`src/core/units.ts`).
+
 ## 0.8.6 — 2026-10-29
 
 - **Drop-down lists open upward when there is no room below** (2026-10-29).

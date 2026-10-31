@@ -802,7 +802,7 @@ function handle(msg: Exclude<WorkerRequest, { type: 'align-abort' }>): void {
     try {
       const scan = scanSurfaceOf(graph, progress, 'Preparing the scan for the map on the reference…')
       const spacing = sampleSpacing(meshArea(mesh.positions, mesh.indices), msg.spacing, meshLongEdges(mesh.positions, mesh.indices))
-      progress(`Cutting the reference into readings ${spacing} mm apart…`)
+      progress(`Cutting the reference into readings ${spacing} mm apart…`) // units-ok: built in the worker
       const samples = subdivideForMap(mesh.positions, mesh.indices, null, spacing)
       let lastPercent = -1
       const values = readReference(scan, samples, {

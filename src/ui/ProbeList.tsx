@@ -6,6 +6,7 @@
 // with the list it thins.
 
 import { usePrefs } from '../state/prefsStore'
+import { useLength } from '../app/useUnits'
 import type { Probe } from '../state/probes'
 import { Icon } from './icons'
 import { InfoDot } from './InfoDot'
@@ -33,6 +34,8 @@ export function ProbeList({
 }) {
   const hidePinsBehind = usePrefs((s) => s.hidePinsBehind)
   const setHidePinsBehind = usePrefs((s) => s.setHidePinsBehind)
+  // Where each pin is, in the units shown.
+  const len = useLength()
   return (
     <div className={className}>
       <div className="g-label">
@@ -63,7 +66,7 @@ export function ProbeList({
           {probes.map((p, i) => (
             <div className="kv" data-test={rowTestId} key={p.id}>
               <span className="probeno">{i + 1}</span>
-              <span className="name">{p.point.map((v) => v.toFixed(1)).join(', ')}</span>
+              <span className="name">{p.point.map((v) => len.fmt(v, 1, { bare: true })).join(', ')}</span>
               <b>{format(p.value)}</b>
               <button className="x" title="Remove" onClick={() => onRemove(p.id)}>
                 <Icon name="bin" size={14} />

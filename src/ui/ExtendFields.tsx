@@ -6,6 +6,8 @@
 // can be typed here and what comes back is what was allowed.
 
 import { InfoDot } from './InfoDot'
+import { useLength } from '../app/useUnits'
+import { useFieldUnits } from './NumberField'
 import { useStore } from '../state/store'
 import {
   extendedSpans,
@@ -36,6 +38,7 @@ export function ExtendFields({ fit }: { fit: ExtendableFit }) {
 
   const ext = extensionOf(fit, extend)
   const spans = extendedSpans(fit, ext)
+  const len = useLength()
   const plane = fit.kind === 'plane'
 
   return (
@@ -47,7 +50,7 @@ export function ExtendFields({ fit }: { fit: ExtendableFit }) {
             <p>
               How far past the surface it was measured on the element is <b>drawn and exported</b>.
               A cylinder grows out of each end, a plane out of each of its four edges — type the
-              millimetres here, or drag the grips on the element itself in the viewport.
+              lengths here, or drag the grips on the element itself in the viewport.
             </p>
             <p>
               <b>U</b> and <b>V</b> are the patch's own two axes, the ones its extents are reported
@@ -69,8 +72,8 @@ export function ExtendFields({ fit }: { fit: ExtendableFit }) {
         </span>
         <b data-test="extend-size">
           {plane
-            ? `${spans[0].toFixed(2)} × ${spans[1].toFixed(2)} mm`
-            : `${spans[0].toFixed(3)} mm long`}
+            ? `${len.fmt(spans[0], 2, { bare: true })} × ${len.fmt(spans[1], 2)}`
+            : `${len.fmt(spans[0], 3)} long`}
         </b>
       </div>
 
@@ -133,9 +136,10 @@ export function ExtendFields({ fit }: { fit: ExtendableFit }) {
   )
 }
 
-/** One side's millimetres. Committed on blur or Enter like every other number
- *  in the panel, and re-keyed on the value so a grip dragged in the viewport
- *  types itself into the field. */
+/** One side's length, held in millimetres and typed in the units shown.
+ *  Committed on blur or Enter like every other number in the panel, and
+ *  re-keyed on the value so a grip dragged in the viewport types itself into
+ *  the field. */
 function SideField({
   label,
   value,
@@ -147,6 +151,8 @@ function SideField({
   testId: string
   onCommit: (v: number) => void
 }) {
+  const u = useFieldUnits('length', undefined)
+  const shown = u.text(round(value))
   return (
     <label className="extend-field">
       <span>{label}</span>
@@ -155,14 +161,16 @@ function SideField({
         step="any"
         data-test={testId}
         key={value}
-        defaultValue={round(value)}
+        defaultValue={shown}
         onBlur={(e) => {
-          const v = Number(e.target.value)
-          if (Number.isFinite(v)) onCommit(v)
+          // Text left as it was shown commits nothing: in inches it is
+          // rounded, and committing it back would move the edge.
+          const v = u.read(Number(e.target.value))
+          if (e.target.value !== shown && Number.isFinite(v)) onCommit(v)
           // Rewrite the text either way: a commit the store clamps back to
           // the value already held re-renders nothing, and the rejected text
           // would otherwise stay. A changed value re-keys the input over this.
-          e.target.value = String(round(value))
+          e.target.value = shown
         }}
         onKeyDown={(e) => {
           if (e.key === 'Enter') e.currentTarget.blur()

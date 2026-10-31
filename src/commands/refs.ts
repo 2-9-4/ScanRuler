@@ -27,7 +27,7 @@ import { CommandError } from './types'
 export type ElementRef = number | string
 
 export const elementRefSchema = (description: string): JsonSchema =>
-  oneOf([int('The element’s id.', { minimum: 1 }), str('The element’s name, as the list shows it — "Sphere 1".', { minLength: 1 })], description)
+  oneOf([int('Its id.', { minimum: 1 }), str('Its name — "Sphere 1".', { minLength: 1 })], description)
 
 /** A reference by id or name as it was meant: an id sent as a string — "185",
  *  as some agents' clients send every number — is the id when nothing in
@@ -113,10 +113,10 @@ export type Location =
 export const locationSchema = (description: string): JsonSchema =>
   oneOf(
     [
-      obj({ vertex: int('A scan vertex, as a project file and session.state name it.', { minimum: 0 }) }, ['vertex']),
-      obj({ point: vec3('A point in millimetres, in the frame the part is measured in now; the scan vertex nearest it is taken.') }, ['point']),
-      obj({ screen: arr(num(), 'A pixel of the viewport, x right and y down from its top left, as on a view.render picture.', { minItems: 2, maxItems: 2 }) }, ['screen']),
-      obj({ candidate: int('A feature from scan.candidates.', { minimum: 0 }) }, ['candidate']),
+      obj({ vertex: int('A scan vertex number.', { minimum: 0 }) }, ['vertex']),
+      obj({ point: vec3('[x, y, z] mm in the current frame; the nearest scan vertex is taken.') }, ['point']),
+      obj({ screen: arr(num(), 'A viewport pixel [x, y] (not available yet).', { minItems: 2, maxItems: 2 }) }, ['screen']),
+      obj({ candidate: int('A feature from scan.candidates (not available yet).', { minimum: 0 }) }, ['candidate']),
     ],
     description,
   )

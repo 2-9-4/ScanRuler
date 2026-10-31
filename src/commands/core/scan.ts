@@ -27,7 +27,7 @@ import { setMarked } from '../marked'
 
 export const unitsSchema = enumOf(
   MESH_UNITS.map((u) => u.id),
-  'What the file’s coordinates are in: mm (the default), cm, m or in. An STL carries no units of its own; PLY and OBJ are taken in millimetres unless told otherwise. Everything is measured in millimetres once read.',
+  'The file’s units: mm (the default), cm, m or in. Everything is measured in mm once read.',
 )
 
 /** The scan as the readout names it. */
@@ -50,7 +50,7 @@ const open: Command<{ bytes: Uint8Array; name: string; units?: MeshUnits; discar
   name: 'open',
   title: 'Open a scan',
   description:
-    'Open a mesh as the scan to measure — STL, PLY, OBJ or 3MF, or a STEP part, cut into triangles a few hundred to the part’s diagonal — in place of the one there is; everything measured on the old one goes with it, so it refuses while the session holds measurements unless discard is true — the refusal names what the session holds. A reference part opened from a file stays, its alignment and maps gone (referenceKept names it); one the app made from the session’s own work goes with that work (referenceDropped). Returns the scan: name, units, vertex and triangle counts, its bounding box (min and max corners), the box’s centre and its diagonal (size), in millimetres. Not undoable: a new scan starts a new history.',
+    'Open a mesh as the scan to measure — STL, PLY, OBJ or 3MF, or a STEP part cut into triangles — in place of the one there is; everything measured on the old one goes with it, so it refuses while the session holds measurements unless discard is true (the refusal names what is held). A reference part opened from a file stays, its alignment and maps gone (referenceKept); one made from the session’s own work goes (referenceDropped). Returns the scan: name, units, vertex and triangle counts, bounding box, centre and diagonal (size), mm. Not undoable: a new scan starts a new history.',
   input: obj(
     {
       bytes: bytes('The file’s contents.'),
@@ -105,18 +105,18 @@ const query: Command<QueryIn> = {
   name: 'query',
   title: 'Read the scan’s points',
   description:
-    'The scan’s vertices inside a box, or within a radius of a point, with their outward normals — the points on a face, to measure a dimension or a draft angle off, or to see what the scan has where a model is being built. normal keeps only the vertices facing a direction (within withinDeg, 30 by default): the top face alone, say. At most limit come back (1000 by default, 20000 at most): past it every k-th matching vertex is kept, spread evenly, and step says which k. Returns how many matched, the vertices kept (their numbers, as scan.nearest and element.fit_marked name them), their points and normals in millimetres, in the frame the part is measured in now, the box round the points kept, their centroid and mean normal. fields: count gives the numbers alone, without the vertices, points and normals; ids adds the vertices; all everything — the default, but with mark, where count is. mark: true leaves every vertex that matched marked — all of them, not the limit’s thinned list; marked.points counts them — for element.fit_marked { marked: true } and whatever else takes the marked points, so the list need not come back at all. Changes nothing on the part.',
+    'The scan’s vertices inside a box, or within a radius of a point (near), with their outward normals — the points on a face, to measure a dimension or a draft off; normal keeps only those facing a direction. Returns matched, the vertex numbers, points and normals (mm, current frame), the box round them, centroid and mean normal; fields: count, ids or all (the default) says how much. Trap: at most limit come back (1000 by default, 20000 at most), every k-th spread evenly, step saying k — mark: true marks every matching vertex, not the thinned list, for element.fit_marked { marked: true }. Changes nothing on the part.',
   input: obj({
-    box: obj({ min: vec3('The lowest corner, mm.'), max: vec3('The highest corner, mm.') }, ['min', 'max'], 'A box in the frame the part is measured in now.'),
-    near: obj({ at: vec3('The centre, mm.'), radius: num('How far from it, mm.', { exclusiveMinimum: 0 }) }, ['at', 'radius'], 'A ball about a point — in place of box.'),
+    box: obj({ min: vec3('Lowest corner, mm.'), max: vec3('Highest corner, mm.') }, ['min', 'max'], 'A box in the current frame.'),
+    near: obj({ at: vec3('The centre, mm.'), radius: num('mm.', { exclusiveMinimum: 0 }) }, ['at', 'radius'], 'A ball about a point, in place of box.'),
     normal: obj(
-      { dir: vec3('The direction, any length.'), withinDeg: num('How far from it a normal may lean, degrees; 30 by default.', { exclusiveMinimum: 0, maximum: 180 }) },
+      { dir: vec3('A direction, any length.'), withinDeg: num('Degrees; 30 by default.', { exclusiveMinimum: 0, maximum: 180 }) },
       ['dir'],
-      'Keep only the vertices whose outward normal faces this way.',
+      'Only the vertices whose outward normal faces this way.',
     ),
     limit: int(`How many vertices at most; ${QUERY_LIMIT} by default, ${QUERY_MAX} at most.`, { minimum: 1, maximum: QUERY_MAX }),
-    mark: bool('Leave every vertex that matched marked — not only those kept — for element.fit_marked { marked: true }.'),
-    fields: enumOf(['count', 'ids', 'all'], 'What comes back: count (the numbers alone; the default with mark), ids (with the vertices), all (with points and normals too; the default otherwise).'),
+    mark: bool('Leave every matching vertex marked, for element.fit_marked { marked: true }.'),
+    fields: enumOf(['count', 'ids', 'all'], 'count: the numbers alone (the default with mark); ids: with the vertices; all: with points and normals (the default).'),
   }),
   readOnly: true,
   run: async ({ box, near, normal, limit = QUERY_LIMIT, mark = false, fields = mark ? 'count' : 'all' }) => {
@@ -202,7 +202,7 @@ const nearest: Command<{ at: Location }> = {
   name: 'nearest',
   title: 'Find a place on the scan',
   description:
-    'Where a location lands on the scan: the vertex (a point snaps to the nearest one), its coordinates and outward normal, a triangle it is a corner of, and how far it is from the point asked about. Use it to check a point lies on the surface before fitting there.',
+    'Where a place lands on the scan: the vertex (a point snaps to the nearest), its coordinates and outward normal, a triangle it is a corner of, and how far it lies from the point asked about. Use it to check a point lies on the surface before fitting there.',
   input: obj({ at: locationSchema('The place on the scan.') }, ['at']),
   readOnly: true,
   run: async ({ at }) => resolveLocation(at),
@@ -215,11 +215,11 @@ const fitSurface: Command<{ vertices?: number[]; box?: { min: Vec3; max: Vec3 };
   name: 'fit_surface',
   title: 'Fit a sloped or curved patch',
   description:
-    'A patch of the scan measured as a surface — a sloped side, a twisted ruled face, a dome, a saddle, a fairing — the points given as vertices (from scan.query or a patch) or as a box (normal keeps those facing a way, within withinDeg, 30 by default). The best plane through them sets the patch’s own frame: origin at their centroid, normal (w) out of it, basisU and basisV in it, all in the frame the part is measured in now. Each model is a height over (u, v) along the normal: plane h = a + b·u + c·v; bilinear + d·u·v (a hyperbolic paraboloid: a straight-lined twisted face); quadric + d·u² + e·u·v + f·v² (a dome, bowl, saddle or a cylinder’s strip). Each answers its coefficients, rms and worst (mm off along the normal); the quadric also curvature: k1 and k2 (1/mm, the larger first), r1 and r2 (their radii, null where flat), axis1 and axis2 (their directions in the world) and shape (flat, cylinder, dome or saddle) at the patch’s middle. model: one of them, or best (the default) — every one, and best names the simplest whose rms is within a tenth of the lowest: the model that holds, plain. At most limit points are fitted (20000), spread evenly. Changes nothing.',
+    'A patch of the scan measured as a surface — a sloped side, a twisted ruled face, a dome, a saddle — from vertices or a box (normal keeps those facing a way). Returns the patch’s frame (origin, normal, basisU, basisV) and each model as a height over (u, v): plane (a + b·u + c·v), bilinear (+ d·u·v) and quadric (+ d·u² + e·u·v + f·v², with curvature { k1, k2, r1, r2, axis1, axis2, shape }), each with coefficients, rms and worst; model: best (the default) fits every one and names the simplest whose rms is within a tenth of the lowest. Trap: 7 points at least, at most limit (20000) spread evenly. Changes nothing.',
   input: obj({
     vertices: arr(int(undefined, { minimum: 0 }), 'The scan vertices of the patch.', { minItems: 7 }),
-    box: obj({ min: vec3('The lowest corner, mm.'), max: vec3('The highest corner, mm.') }, ['min', 'max'], 'The patch as the scan inside a box, in place of vertices.'),
-    normal: obj({ dir: vec3('The direction, any length.'), withinDeg: num('Degrees; 30 by default.', { exclusiveMinimum: 0, maximum: 180 }) }, ['dir'], 'With box: only the vertices facing this way.'),
+    box: obj({ min: vec3('Lowest corner, mm.'), max: vec3('Highest corner, mm.') }, ['min', 'max'], 'The scan inside a box, in place of vertices.'),
+    normal: obj({ dir: vec3('A direction, any length.'), withinDeg: num('Degrees; 30 by default.', { exclusiveMinimum: 0, maximum: 180 }) }, ['dir'], 'With box: only the vertices facing this way.'),
     model: enumOf(['plane', 'bilinear', 'quadric', 'best'], 'Which surface; best (the default) fits each and names the simplest that holds.'),
     limit: int(`How many points at most; ${SURFACE_LIMIT} by default.`, { minimum: 7, maximum: SURFACE_LIMIT }),
   }),
@@ -311,10 +311,10 @@ const draft: Command<{ pull: Vec3; box?: { min: Vec3; max: Vec3 }; nearDeg?: num
   name: 'draft',
   title: 'Read the draft against a pull',
   description:
-    'The scan’s walls that run near a pull direction — the sides a mould opens along, a side core slides along — gathered into patches, each with the angle it leans off the pull: draftDeg, positive where the wall faces partly along the pull (it lets go as the tool moves that way), negative where it faces back (a back draft, an undercut to that pull); sigmaDeg its standard error, spreadDeg the points’ own spread (mostly the scan’s normal noise); with centroid, box, area (mm²), count, facing (which way the wall faces across the pull) and turnDeg (how far that turns across the patch). Neighbouring walls are parted where the way they face jumps, so a box’s four sides are four patches, and a thin wall’s two sides (a blade, a rib) two patches facing opposite ways; a point joins a patch only while it faces within 20° of the patch’s mean, so a smooth freeform wall comes in patches that turn 40° at most. A boss’s or a hole’s round side is one patch with round: true, its facing no one way. Read it early on a moulded or cast part, along each direction the tools open: walls that lean half a degree to a few explain fits that miss by the lean. pull: the direction, any length; box: only the scan inside it; nearDeg: how far off square to the pull a wall may lean and still count (10 by default); patches: how many, the largest first (12); minArea: smaller ones left out, mm² (1); split: no patch reaches across this plane — "symmetry" (the scan’s mirror plane: the last measured symmetry plane, else searched for), a plane element, "XY", "YZ", "XZ", or { point, normal } — each patch then says its side (1 along the plane’s normal, −1 against), and the answer the plane. Changes nothing.',
+    'The scan’s walls that run near a pull direction — the sides a mould opens along — gathered into patches, each with draftDeg, the angle it leans off the pull: positive where the wall faces partly along the pull, negative where it faces back (a back draft, an undercut); with sigmaDeg, spreadDeg, centroid, box, area (mm²), count, facing, turnDeg and round for a boss’s or hole’s round side. Needs pull; box, nearDeg (10), patches (12), minArea (1 mm²) and split (a plane no patch reaches across: "symmetry", a plane element, "XY", "YZ", "XZ" or { point, normal }) narrow it. Trap: read it early on a moulded or cast part, along each direction the tools open — walls that lean half a degree to a few explain fits that miss by the lean. Changes nothing.',
   input: obj({
-    pull: vec3('The pull direction, any length — the way the tool opens.'),
-    box: obj({ min: vec3('The lowest corner, mm.'), max: vec3('The highest corner, mm.') }, ['min', 'max'], 'Only the scan inside this box.'),
+    pull: vec3('The pull direction, any length.'),
+    box: obj({ min: vec3('Lowest corner, mm.'), max: vec3('Highest corner, mm.') }, ['min', 'max'], 'Only the scan inside this box.'),
     nearDeg: num('Degrees; 10 by default.', { exclusiveMinimum: 0, maximum: 45 }),
     patches: int('How many patches; 12 by default.', { minimum: 1, maximum: 50 }),
     minArea: num('mm²; 1 by default.', { minimum: 0 }),
@@ -390,9 +390,9 @@ type BoxIn = { min?: Vec3; max?: Vec3; world?: { min: Vec3; max: Vec3 } }
 const mapBoxSchema = (description: string) =>
   obj(
     {
-      min: vec3('The lowest corner, mm — [u, v, height] with plane.'),
-      max: vec3('The highest corner, mm — [u, v, height] with plane.'),
-      world: obj({ min: vec3('The lowest corner, [x, y, z] mm.'), max: vec3('The highest corner, [x, y, z] mm.') }, ['min', 'max'], 'The box in the world, in place of min and max: with plane, the box round its corners in the plane’s frame.'),
+      min: vec3('Lowest corner, mm ([u, v, height] with plane).'),
+      max: vec3('Highest corner, mm ([u, v, height] with plane).'),
+      world: obj({ min: vec3('Lowest corner, [x, y, z] mm.'), max: vec3('Highest corner, [x, y, z] mm.') }, ['min', 'max'], 'A box in the world, in place of min and max.'),
     },
     [],
     description,
@@ -437,12 +437,15 @@ const dot3 = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 const unit = (i: number, s = 1): Vec3 => [i === 0 ? s : 0, i === 1 ? s : 0, i === 2 ? s : 0]
 
 /** The plane a map is read on, as its frame: a coordinate plane by name, a
- *  plane element (its normal turned to the side the scan is not, so the
- *  map looks at the face it was fitted on), or a plane given by a point and
- *  a normal; laid as a sketch on it is (sketchFrameOn), `flip` turning it
- *  over. `center` is where the element's centre, or the origin given,
- *  lies in its [u, v] — the frame's zero is the world origin's foot, not
- *  that. */
+ *  plane element, or a plane given by a point and a normal; laid as a
+ *  sketch on it is (sketchFrameOn). The map looks down `normal`: the
+ *  sketch's, but turned over for an element when most of the scan lies in
+ *  front of it (so the map looks at the face it was fitted on), and by
+ *  `flip` — u and v stay the sketch's either way, so a point has the same
+ *  [u, v] in the map as in a sketch on the plane, and `flipped` says the
+ *  map sees that sheet from behind. `center` is where the element's
+ *  centre, or the origin given, lies in its [u, v] — the frame's zero is
+ *  the world origin's foot, not that. */
 function planeFrame(plane: PlaneIn, flip: boolean, sample: Float32Array) {
   let point: Vec3
   let normal: Vec3
@@ -475,21 +478,30 @@ function planeFrame(plane: PlaneIn, flip: boolean, sample: Float32Array) {
   const len = Math.hypot(normal[0], normal[1], normal[2])
   if (!(len > 1e-9)) throw new CommandError('invalid_input', 'plane.normal: give a direction, not a zero vector.')
   normal = [normal[0] / len, normal[1] / len, normal[2] / len]
+  let flipped = flip
   if (element) {
     // Most of the scan lies behind the face a plane was fitted on.
     const hs: number[] = []
     for (let i = 0; i + 2 < sample.length; i += 3) hs.push((sample[i] - point[0]) * normal[0] + (sample[i + 1] - point[1]) * normal[1] + (sample[i + 2] - point[2]) * normal[2])
     hs.sort((a, b) => a - b)
-    if (hs.length && hs[Math.floor(hs.length / 2)] > 0) normal = [-normal[0], -normal[1], -normal[2]]
+    if (hs.length && hs[Math.floor(hs.length / 2)] > 0) flipped = !flipped
   }
-  if (flip) normal = [-normal[0], -normal[1], -normal[2]]
   const f = sketchFrameOn({ origin: point, normal }, seedU)
   if (!f) throw new CommandError('invalid_input', 'plane.normal: give a direction, not a zero vector.')
-  return { name, origin: f.origin, u: f.basisU, v: f.basisV, normal: f.normal, ...(centred ? { center: pointOnSheet(f, point).at } : {}) }
+  return {
+    name,
+    origin: f.origin,
+    u: f.basisU,
+    v: f.basisV,
+    normal: flipped ? ([-f.normal[0], -f.normal[1], -f.normal[2]] as Vec3) : f.normal,
+    flipped,
+    ...(centred ? { center: pointOnSheet(f, point).at } : {}),
+  }
 }
 
-/** A map's plane as the answer gives it: its frame in the world, and
- *  where the element's centre (or the origin given) lies in [u, v]. */
+/** A map's plane as the answer gives it: its frame in the world, whether
+ *  it looks at the sketch's sheet from behind, and where the element's
+ *  centre (or the origin given) lies in [u, v]. */
 function planeOut(frame: ReturnType<typeof planeFrame>) {
   return {
     ...(frame.name ? { name: frame.name } : {}),
@@ -497,6 +509,7 @@ function planeOut(frame: ReturnType<typeof planeFrame>) {
     u: frame.u.map((x) => roundTo(x, 6)),
     v: frame.v.map((x) => roundTo(x, 6)),
     normal: frame.normal.map((x) => roundTo(x, 6)),
+    ...(frame.flipped ? { flipped: true } : {}),
     ...(frame.center ? { center: frame.center.map((x) => roundTo(x, 4)) } : {}),
   }
 }
@@ -630,25 +643,25 @@ const heightmap: Command<{
   name: 'heightmap',
   title: 'Map the scan’s heights',
   description:
-    `Where the scan is first met looking along an axis, or square onto a plane, over a grid of cells: pocket floors, ledges, a step's height, a face's tilt, a pad's tiers, an icon on a key in one call. axis is the way looked: -z (the default) looks down from above and gives the top surface's z; +z looks up from below and gives the underside's; ±x, ±y likewise. Cells lie on the two other axes in order — x, y for z; y, z for x; x, z for y — as u and v. plane, in place of axis: a plane element (id or name; its normal turned to the side the scan is not, so it looks at the face it was fitted on), a coordinate plane "XY", "YZ", "XZ", or any other — a face of a model, say — as { origin, normal, u? }; the map then looks down the normal onto it, height is the distance from the plane along the normal, and u, v are the plane's own, laid as a sketch on that plane has them (section.render { plane } draws the same sheet) — u seeds its direction; flip turns the plane over. The answer's plane gives its frame in world: a cell's point is origin + u·U + v·V + height·normal — and, for an element or a plane given by its origin, center: where the element's centre (or that origin) lies in [u, v], for the frame's zero is the world origin's foot on the plane, not the element's centre. box: the part looked at, the scan's box by default; rays start at its face and stop at the far one. With plane, box is in the plane's frame: min and max are [u, v, height], and by default it takes in the whole scan; or box: { world: { min, max } } gives it in the world, [x, y, z] — the map takes the box round its corners in the plane's frame, so a box round a place on the part needs no working out. Where under a fifth of the cells meet the scan, scanLies says where the scan lies in the map's frame (min and max, [u, v, height] — or along the axis looked) beside the grid's span. of: height (the default); deviation — the scan's signed deviation where each ray lands (the map deviation.align or deviation.set_target measured, read off the triangle met), null where the map has no reading within its search distance; relief — the height less the surface round it (at each cell a plane fitted to its neighbours, weighed by a Gaussian smooth mm wide, three cells by default; make it about the width of what is looked for): icons, grooves, lettering and parting lines stand out of a face that curves or leans, positive proud and negative sunk. cell: mm (by default a round size that makes ${HEIGHT_SIDE} cells on the longer side; widened to keep ${HEIGHT_CELLS} cells at most — and ${HEIGHT_SIDE_FINE} and ${HEIGHT_CELLS_FINE} when the numbers are not returned). Returns along, across, cell, origin [u0, v0] (the grid's low corner), cols, rows and grid: rows of values (mm; heights to 0.01, deviation and relief to 0.001) from the low v up, null where there is none — grid[r][c] stands at u0 + (c + ½)·cell, v0 + (r + ½)·cell — with min, max, hit (cells met) and valued (cells with a value). levels: true returns, in place of the grid, the values gathered into levels — a pad's tiers, a pocket's floor, the face round them — the largest first (${HEIGHT_LEVELS} at most): each its height (the median), sigma, range, cells, area (mm²), sharePct of the cells counted, and box ([u, v] min and max). Of a height, the cells sloped more than slopeDeg (${LEVEL_SLOPE_DEG}° by default; 90 keeps every one) are left out first and counted as sloped — a fillet's ramp, a cone, a wall met at a glance — so two tiers a ramp joins stay two levels; a face that leans more is read by looking square onto it (plane). Two levels lie at least gap apart (mm; three times the cell-to-cell noise on the cells counted by default, ${LEVEL_GAP_MIN} at least), and unassigned counts the cells counted that fall in none (walls, edges). Where the sloped cells are more than a fifth of those with a value, or one run of them borders a single level (a ramp off a tier that meets no other), ramps says so — "ramps between tiers (sloped 34 %) — a section along them gives their profile" — with the largest runs: cells, area, box and joins (the heights of the levels each borders). grid: true keeps the grid as well, false leaves it out and returns the picture. picture: true adds the map coloured by its values with coordinates in the margins and a scale (a deviation in the workspace's colour map over its range); needs the browser. Changes nothing.`,
+    `Where the scan is first met looking along an axis (axis, -z by default: the top surface from above) or square onto a plane (plane: an element, "XY", "YZ", "XZ", or { origin, normal, u? }), over a grid of cells: pocket floors, ledges, a step's height, a face's tilt, a pad's tiers, an icon on a key in one call. of: height (the default), deviation (the map's reading where each ray lands) or relief (the height less the surface round it, for icons, grooves and lettering). Returns cell, origin [u0, v0], cols, rows, grid (rows of mm from the low v up, null where nothing; grid[r][c] stands at u0 + (c + ½)·cell, v0 + (r + ½)·cell), min, max, hit, valued; with plane also its frame (a cell's point is origin + u·U + v·V + height·normal). levels: true gives the values gathered into levels in place of the grid; picture: true adds the map coloured. Trap: with plane, box is [u, v, height] in the plane's frame (or { world }), and scanLies says where the scan lies when few cells meet it. Changes nothing.`,
   input: obj({
-    box: mapBoxSchema('The part looked at; the scan’s box by default. In the plane’s frame with plane — or world: { min, max } in the world.'),
-    axis: enumOf(AXIS_NAMES, 'The way looked: -z (the default) from above, +z from below, and so on.'),
+    box: mapBoxSchema('The part looked at; the scan’s box by default. With plane: [u, v, height], or world: { min, max }.'),
+    axis: enumOf(AXIS_NAMES, 'The way looked: -z (the default) from above, +z from below, ±x, ±y.'),
     plane: oneOf(
       [
-        elementRefSchema('A plane element, or a coordinate plane "XY", "YZ", "XZ".'),
+        elementRefSchema('A plane element, or "XY", "YZ", "XZ".'),
         obj({ origin: vec3('A point on the plane, mm.'), normal: vec3('Its normal: the side looked from.'), u: vec3('A direction for u, flattened into the plane; a sketch’s by default.') }, ['origin', 'normal']),
       ],
-      'Look square onto this plane instead of along an axis: heights along its normal, cells in its own u, v.',
+      'Look square onto this plane instead of along an axis.',
     ),
     flip: bool('With plane: look from its other side.'),
-    of: enumOf(['height', 'deviation', 'relief'], 'What the cells hold: height (the default), deviation (the map’s, where the ray lands) or relief (height less the surface round it).'),
-    smooth: num('relief: the smoothing’s width (a Gaussian’s sigma), mm; three cells by default.', { exclusiveMinimum: 0 }),
+    of: enumOf(['height', 'deviation', 'relief'], 'height (the default), deviation (the map’s, where the ray lands) or relief (height less the surface round it).'),
+    smooth: num('relief: the smoothing sigma, mm; three cells by default.', { exclusiveMinimum: 0 }),
     cell: num('The cell’s side, mm.', { exclusiveMinimum: 0 }),
-    grid: bool('The grid of numbers: returned unless levels is asked for; false returns the picture alone.'),
-    levels: bool('Gather the values into levels with their areas, the largest first, in place of the grid.'),
+    grid: bool('The grid of numbers (the default unless levels); false returns the picture alone.'),
+    levels: bool('Gather the values into levels, largest first, in place of the grid.'),
     gap: num('levels: the least gap between two levels, mm.', { exclusiveMinimum: 0 }),
-    slopeDeg: num(`levels of a height: cells steeper than this are left out, degrees; ${LEVEL_SLOPE_DEG} by default, 90 keeps every one.`, { exclusiveMinimum: 0, maximum: 90 }),
+    slopeDeg: num(`levels of a height: cells steeper are left out, degrees; ${LEVEL_SLOPE_DEG} by default, 90 keeps every one.`, { exclusiveMinimum: 0, maximum: 90 }),
     picture: bool('Add a picture of the map with a scale.'),
   }),
   readOnly: true,
@@ -833,18 +846,18 @@ const OUTLINE_LOOPS = 4
 const outline: Command<{ axis?: AxisName; plane?: PlaneIn; flip?: boolean; box?: BoxIn; tolerance?: number; loops?: number }> = {
   name: 'outline',
   title: 'Read the scan’s outline',
-  description: `The scan’s outline seen along an axis, or square onto a plane, read as a sketch would draw it: a flange’s plan, a bezel’s opening, a gasket’s shape. Rays over a grid of cells (half the tolerance, widened to keep ${OUTLINE_CELLS} at most) find where the scan is and where it is not; the line between is traced round and each loop read as the fewest lines and arcs that follow it within tolerance (mm, ${OUTLINE_TOLERANCE} by default): straight sides are fitted as lines and met at sharp corners; an arc between two sides is that corner’s round (rounds: at, the corner’s index in points, radius and center); any other arc is a side of its own (arcs: from, the index of the point it starts at, running to the next, radius and center) — a slot’s ends; and a loop that is round all the way is one circle. axis, plane, flip and box as scan.heightmap takes them, box: { world: { min, max } } too — the coordinates are u, v as it lays them (the two other axes in order, or the plane’s own; plane.center is the element’s centre in them). Returns loops, the largest first (loops: how many, ${OUTLINE_LOOPS} by default): each with hole (true for one inside another), area (mm²), box, points ([u, v] corners in order), rounds and arcs, or circle { center, radius, rms }, and worst — how far the traced outline strays from what is drawn, mm, with worstAt where, when it is past the tolerance. Changes nothing.`,
+  description: `The scan’s outline seen along an axis, or square onto a plane, read as a sketch would draw it: a flange’s plan, a bezel’s opening, a gasket’s shape — each loop as the fewest lines and arcs that follow it within tolerance (mm, ${OUTLINE_TOLERANCE} by default), a round loop as one circle. axis, plane, flip and box as scan.heightmap takes them, u, v as it lays them. Returns loops, the largest first (${OUTLINE_LOOPS} by default): hole, area (mm²), box, points ([u, v] corners), rounds { at, radius, center }, arcs { from, radius, center } or circle { center, radius, rms }, and worst (mm the trace strays from what is drawn, worstAt when past the tolerance). Changes nothing.`,
   input: obj({
     axis: enumOf(AXIS_NAMES, 'The way looked: -z (the default) from above, and so on.'),
     plane: oneOf(
       [
-        elementRefSchema('A plane element, or a coordinate plane "XY", "YZ", "XZ".'),
+        elementRefSchema('A plane element, or "XY", "YZ", "XZ".'),
         obj({ origin: vec3('A point on the plane, mm.'), normal: vec3('Its normal: the side looked from.'), u: vec3('A direction for u, flattened into the plane.') }, ['origin', 'normal']),
       ],
       'Look square onto this plane instead of along an axis.',
     ),
     flip: bool('With plane: look from its other side.'),
-    box: mapBoxSchema('Only the scan inside it; the whole scan by default. In the plane’s frame with plane — or world: { min, max } in the world.'),
+    box: mapBoxSchema('Only the scan inside it; the whole scan by default. With plane: [u, v, height], or world: { min, max }.'),
     tolerance: num(`How closely the sketch follows the outline, mm; ${OUTLINE_TOLERANCE} by default.`, { exclusiveMinimum: 0 }),
     loops: int(`How many loops, the largest first; ${OUTLINE_LOOPS} by default.`, { minimum: 1, maximum: 50 }),
   }),
@@ -936,7 +949,7 @@ function axisLine(axis: AxisIn): { origin: Vec3; dir: Vec3; name?: string } {
 const pattern: Command<{ axis: AxisIn; at?: (number | Vec3)[]; radius?: { min?: number; max?: number }; maxCount?: number; instances?: boolean }> = {
   name: 'pattern',
   title: 'Count the repeats round an axis',
-  description: `Rotational repeats about an axis — a fan's blades, a flange's holes and pads, a wheel's spokes, a gear's teeth — counted from the scan. The scan is cut square to the axis at each height in at, and each cut (only what lies between radius.min and radius.max) is turned against itself: count, the number of copies whose outlines land on each other going round (up to maxCount, ${PATTERN_COUNT} by default); pitchDeg, 360/count; phaseDeg, where the first copy's middle lies (under one pitch), and betweenDeg midway to the next — angles about the axis as section.cut { across: { axis, angleDeg } } takes them: 0° the coordinate axis next round (X about Z), turning by the right hand. score, 0 to 1, is how well the copies' outlines land on each other; under 0.5 nothing is taken to repeat and count is 1 (tried gives the best count and its score). Each copy in instances: angleDeg and radius of its outline's middle, offDeg from where an even spacing puts it, rms and worst — how far its outline lies from the other copies' turned onto it (the median over them), mm — and share, its outline's length against the median copy's (well under 1: the scan misses part of it, or the copy is not there). rms, worst and worstInstance over all the copies. Round outlines about the axis — a bore, a hub, a rim — are not copies: they come back as rings, each its radius, off (how far its centre lies off the axis, mm), towardDeg (which way) and rms. axis: a cylinder, cone, line or circle element, by id or name, a coordinate axis "X", "Y" or "Z" through the origin, or { origin, dir }. at: heights along the axis, mm, counted from the world origin's foot on it (the coordinate itself on a coordinate axis) — or points [x, y, z] in the world, each the height of its foot on the axis; by default ${PATTERN_HEIGHTS} spread over the scan, ${PATTERN_HEIGHTS_MAX} at most. Features lie at different heights and radii: cut through each, and keep radius to the ring one lies in where two share a height — in one cut the feature with the most outline sets the count, and the other reads as what its copies miss (worst). instances: false leaves the copies out. Changes nothing.`,
+  description: `Rotational repeats about an axis — a fan's blades, a flange's holes, a wheel's spokes, a gear's teeth — counted from the scan: it is cut square to the axis at each height in at, and each cut (between radius.min and radius.max) is turned against itself. Needs axis: a cylinder, cone, line or circle element, "X", "Y", "Z", or { origin, dir }. Returns per height count, pitchDeg, phaseDeg, betweenDeg (angles as section.cut { across: { axis, angleDeg } } takes them), score (0 to 1; under 0.5 count is 1 and tried says the best), rms, worst, instances (each angleDeg, radius, offDeg, rms, worst, share) and rings (round outlines about the axis: radius, off, towardDeg, rms). Trap: features at different heights and radii need a cut through each, radius kept to one ring. Changes nothing.`,
   input: obj(
     {
       axis: oneOf(
@@ -946,10 +959,10 @@ const pattern: Command<{ axis: AxisIn; at?: (number | Vec3)[]; radius?: { min?: 
         ],
         'The axis the copies repeat round.',
       ),
-      at: arr(oneOf([num('mm along the axis.'), vec3('A point in the world, mm: the height of its foot on the axis.')]), `Heights to cut at; ${PATTERN_HEIGHTS} spread over the scan by default.`, { minItems: 1, maxItems: PATTERN_HEIGHTS_MAX }),
+      at: arr(oneOf([num('mm along the axis.'), vec3('A world point, mm: the height of its foot on the axis.')]), `Heights to cut at; ${PATTERN_HEIGHTS} spread over the scan by default.`, { minItems: 1, maxItems: PATTERN_HEIGHTS_MAX }),
       radius: obj({ min: num('mm', { minimum: 0 }), max: num('mm', { exclusiveMinimum: 0 }) }, [], 'Only the cut between these distances from the axis.'),
       maxCount: int(`The most copies looked for; ${PATTERN_COUNT} by default.`, { minimum: 2, maximum: 120 }),
-      instances: bool('List each copy (the default true).'),
+      instances: bool('List each copy; true by default.'),
     },
     ['axis'],
   ),
@@ -1020,6 +1033,13 @@ const QA_SIDE = 60
 const QA_SAMPLE = 60_000
 /** Faces this far out of parallel are worth a note, degrees. */
 const QA_TILT_NOTE = 0.2
+/** Open rims this short in all, against the part's diagonal, are pinholes a
+ *  wrap left, not holes the scanner saw through: 9 rims of 1.6 mm in all on a
+ *  149 × 89 × 71 mm pipe with two big openings bridged are 0.9 % of its 188 mm,
+ *  while one real hole of 1.5 mm, 4.7 mm round, is 2.5 %. */
+const QA_PINHOLES = 0.02
+/** What a skin closed all round asks of whoever reads holes off it. */
+const QA_WRAP_ADVICE = 'a wrap bridges holes it did not see through — read each hole from both ends (scan.heightmap along its axis each way); element.fit on a bore answers closed where its axis runs into the skin.'
 
 /** A rim's circle as an answer gives it. */
 const circleOut = (c: RimCircle) => ({ center: c.center.map((x) => roundTo(x, 3)), axis: c.axis.map((x) => roundTo(x, 4)), radius: roundTo(c.radius, 3), rms: roundTo(c.rms, 3) })
@@ -1028,8 +1048,8 @@ const qa: Command<{ axis?: 'x' | 'y' | 'z' | Vec3 }> = {
   name: 'qa',
   title: 'Check the scan before modelling',
   description:
-    'One call before modelling, to know what the scan will and will not give: rims — the open edges of its holes (count, total length, the longest few with their number rim, length, centre and size, mm; circles: other rims a circle fits — a hole the scan did not see into); a rim that lies on a circle has circle { center, axis, radius, rms } (rms its scatter off the circle, mm), and element.fit { kind: "circle", rim } makes it an element; noise — the median scatter of small plane fits round a sample of vertices (mm; near 0 is a CAD tessellation) and its 90th percentile; thickness through the part along axis (x, y, z or a direction; by default the alignment’s z when the part is aligned, else the way most of the surface faces — a plate’s faces) over a grid — p5, p50, p95 (mm), and on the cells near the median (the main faces) the thickness’s linear trend as tiltDeg, how far apart faces that should be parallel are, with the way it thickens and its run from end to end; faces gives each face’s own tilt off square to the axis (topDeg, bottomDeg), so a lean of the whole part shows apart from faces out of parallel. notes: what looks wrong, plainly — a scanned skin with no rims at all among it, since a wrap bridges the holes it did not see through. Changes nothing.',
-  input: obj({ axis: oneOf([enumOf(['x', 'y', 'z'], 'A world axis.'), vec3('A direction, any length.')], 'The thickness axis; see above.') }),
+    'One call before modelling, to know what the scan will and will not give. Returns rims (the open edges of its holes: count, total length, the longest few with rim number, centre, size and circle where one fits — element.fit { kind: "circle", rim } makes it an element), noise (the median scatter of small plane fits, mm; near 0 is a CAD tessellation), thickness through the part along axis (p5, p50, p95, the main faces’ tiltDeg and faces { topDeg, bottomDeg }) and notes, what looks wrong, plainly. Trap: a scanned skin with no rims, or only pinholes, is a wrap bridging the holes it did not see through. Changes nothing.',
+  input: obj({ axis: oneOf([enumOf(['x', 'y', 'z'], 'A world axis.'), vec3('A direction, any length.')], 'The thickness axis.') }),
   readOnly: true,
   run: async ({ axis }) => {
     requireScan()
@@ -1113,16 +1133,20 @@ const qa: Command<{ axis?: 'x' | 'y' | 'z' | Vec3 }> = {
       },
       noise: { median: roundTo(noise.median, 4), p90: roundTo(noise.p90, 4), sampled: noise.sampled },
     }
-    if (rims.count > 0) {
+    // A scan closed all round was wrapped: the skin runs across every hole
+    // the scanner did not see through — and so was one whose only rims are
+    // pinholes against its size. A CAD tessellation is closed by nature, and
+    // says so below.
+    const scanned = !(noise.median < 1e-4)
+    const size = Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2])
+    const pinholes = rims.count > 0 && scanned && rims.total <= QA_PINHOLES * size
+    if (pinholes) {
+      notes.push(`Closed skin but for pinholes, ${rims.count} open rim${rims.count === 1 ? '' : 's'}, ${roundTo(rims.total, 1)} mm in all on a part ${roundTo(size, 0)} mm across: ${QA_WRAP_ADVICE}`)
+    } else if (rims.count > 0) {
       const l = rims.largest[0]
       notes.push(`${rims.count} open rim${rims.count === 1 ? '' : 's'}, ${roundTo(rims.total, 1)} mm in all — the longest ${roundTo(l.length, 1)} mm round [${v3(l.at).join(', ')}]: the scan has holes there; fits and sections near them see less surface.`)
     }
-    // A scan closed all round was wrapped: the skin runs across every hole
-    // the scanner did not see through. A CAD tessellation is closed by
-    // nature, and says so below.
-    if (rims.count === 0 && !(noise.median < 1e-4)) {
-      notes.push('Closed skin, no open rims: a wrap bridges holes it did not see through — read each hole from both ends (scan.heightmap along its axis each way); element.fit on a bore answers closed where its axis runs into the skin.')
-    }
+    if (rims.count === 0 && scanned) notes.push(`Closed skin, no open rims: ${QA_WRAP_ADVICE}`)
     if (noise.median > 0.03) notes.push(`Noisy surface: ${roundTo(noise.median, 3)} mm median scatter — read sizes from fits over large patches, not single points.`)
     else if (noise.median < 1e-4) notes.push('The surface has no noise — a CAD tessellation, not a scan: read its numbers exactly.')
     if (ts.length < 12) {

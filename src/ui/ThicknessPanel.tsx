@@ -12,6 +12,8 @@ import { CopyButton } from './CopyButton'
 import { InfoDot } from './InfoDot'
 import { ModelSlot } from './ModelSlot'
 import { NumberField } from './NumberField'
+import { useLength } from '../app/useUnits'
+import { lengthInputText } from '../core/units'
 import { ProbeList } from './ProbeList'
 import { ScaleControls } from './ScaleControls'
 
@@ -28,6 +30,8 @@ export function ThicknessPanel({
   const scanTriangles = useStore((s) => s.triangleCount)
   const scanBusy = useStore((s) => s.busy)
   const t = useThickness()
+  // Lengths are held in millimetres and shown in the units shown.
+  const len = useLength()
   const pulse = usePulse('measure-thickness')
 
   const busy = scanBusy || t.status === 'running'
@@ -98,7 +102,7 @@ export function ThicknessPanel({
           value={t.maxThickness}
           step={1}
           min={0.001}
-          unit="mm"
+          kind="length"
           disabled={busy}
           onCommit={t.setMaxThickness}
           hint={
@@ -241,7 +245,7 @@ export function ThicknessPanel({
               value={t.low}
               step={0.1}
               min={0}
-              unit="mm"
+              kind="length"
               onCommit={t.setLow}
               hint="Wall thickness at the bottom of the scale — the red end. Anything thinner is drawn in a dark red cap."
             />
@@ -251,7 +255,7 @@ export function ThicknessPanel({
               value={t.high}
               step={0.1}
               min={0.001}
-              unit="mm"
+              kind="length"
               onCommit={t.setHigh}
               hint="Wall thickness at the top of the scale — the blue end. Anything thicker is drawn in a dark blue cap."
             />
@@ -272,12 +276,12 @@ export function ThicknessPanel({
               value={t.limit}
               step={0.1}
               min={0.0001}
-              unit="mm"
+              kind="length"
               onCommit={t.setLimit}
               hint={
                 <>
                   <p>
-                    The wall the <b>under {t.limit} mm</b> figure below the scale counts.
+                    The wall the <b>under {lengthInputText(t.limit, len.units)} {len.word()}</b> figure below the scale counts.
                   </p>
                   <p>
                     It is a tally only and does not change the colours. Set the thin end of the
@@ -291,7 +295,7 @@ export function ThicknessPanel({
           <ProbeList
             probes={t.probes}
             rowTestId="thickness-probe-row"
-            format={(v) => v.toFixed(3)}
+            format={(v) => len.fmt(v, 3, { bare: true })}
             onRemove={t.removeProbe}
             onClear={t.clearProbes}
           />

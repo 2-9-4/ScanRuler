@@ -1,18 +1,22 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // The MCP side: the tools an agent lists and calls. Each of the page's
-// commands is a tool (tools.js); six more are this server's own —
+// commands is a tool (tools.js); seven more are this server's own —
 // scanruler_status, to see whether a ScanRuler page is connected and how to
 // connect one; scanruler_open, to open one in the user's browser, paired;
 // scanruler_wait, to wait for it or for it to be idle; scanruler_batch, to
 // run several of the page's tools in one call; scanruler_write, to write a
-// text file — a report — next to the scan; and scanruler_files, to list
-// what is there. In compact mode, for a model with a small context window,
-// the page's tools are not listed but for those that return a picture,
+// text file — a report — next to the scan; scanruler_files, to list what is
+// there; and scanruler_read, to read a text file of it, an answer too long
+// to carry among them. In compact mode, for a model with a small context
+// window, the page's tools are not listed but for those that return a picture,
 // which a batch cannot show — it writes the picture to a file and gives its
 // text: one more of the server's own, scanruler_tools, lists them a line
 // each and gives the definitions of those asked for, and scanruler_batch
-// runs them. Headless (engine.js), the tools are the commands ScanRuler
-// runs in this process with no page, listed in either mode.
+// runs them. With a list of namespaces (--tools scan,view or
+// -flat,-thickness), only the commands of those namespaces, or all but
+// those, are tools, beside the server's own; the others are unknown here.
+// Headless (engine.js), the tools are the commands ScanRuler runs in this
+// process with no page, listed in any mode.
 //
 // No call is held past the answer limit (`answerWithinMs`): a client, or a
 // bridge between it and this computer, may cut a call at a minute. A change
@@ -20,12 +24,12 @@
 
 import { randomBytes } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { mkdir, open, readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
-import { absolute, agentJson, batchedPicture, fileKind, imageContent, inputFor, relativeFrom, replacesSession, saveFileResult, toolFor, toolName, waitIn, withFiles, writeNew } from './tools.js'
-import { jsonBytes, replyMeasure } from './trace.js'
+import { absolute, agentJson, batchedPicture, fileKind, imageContent, inputFor, relativeFrom, replacesSession, saveFileResult, TEXT_FILES, toolFor, toolName, waitIn, withFiles, wholeUtf8, writeNew } from './tools.js'
+import { jsonBytes, replyHead, replyMeasure } from './trace.js'
 
 /** The app's own commands as of this release, so the tools are there before
  *  a page connects — unless a page has connected before whose list was kept
@@ -75,8 +79,45 @@ export function listBeforePage(kept, snapshot = SNAPSHOT, of = SNAPSHOT_OF) {
 }
 
 /** How the page's commands are listed: `full`, each its own tool, or
- *  `compact`, read through scanruler_tools. */
+ *  `compact`, read through scanruler_tools. A third way is a list of
+ *  namespaces (parseToolMode). */
 export const TOOL_MODES = ['full', 'compact']
+
+/** The namespace of a command's tool: the part of its name before the
+ *  first underscore — scan for scan_open, view for view_render. */
+const namespaceOf = (command) => toolName(command).split('_')[0]
+
+/** How `--tools` reads. `full` and `compact` as they are; otherwise a
+ *  comma-separated list of namespaces, the part of a tool's name before
+ *  its first underscore: plain (`scan,view`) lists those namespaces alone,
+ *  each with a leading `-` (`-flat,-thickness`) lists every namespace but
+ *  those — and the server's own tools either way, each listed command a
+ *  tool of its own as in full. A list that mixes the two forms, or is
+ *  empty, throws, its message starting with `flag` (`--tools` or
+ *  `SCANRULER_MCP_TOOLS`). A namespace no page has is not refused: a page
+ *  may add it; the server says at a page's connection which entries match
+ *  none of its namespaces. Returns { text, compact, named, lists }: `text`
+ *  is the mode as given, what the status and serverInfo report; `named`
+ *  the namespaces in the list (null for full and compact); `lists(ns)`
+ *  whether a command of that namespace is listed. */
+export function parseToolMode(given, flag = '--tools') {
+  const text = String(given ?? '').trim()
+  if (TOOL_MODES.includes(text)) return { text, compact: text === 'compact', named: null, lists: () => true }
+  const forms = `${TOOL_MODES.join(', ')}, namespaces to list (scan,view) or namespaces to leave out (-flat,-thickness)`
+  if (text === '') throw new Error(`${flag} is empty: give ${forms}.`)
+  const entries = text.split(',').map((s) => s.trim())
+  const bad = entries.find((e) => !/^-?[A-Za-z0-9]+$/.test(e))
+  if (bad !== undefined) {
+    throw new Error(`${flag} ${text}: "${bad}" is no namespace — a namespace is the part of a tool's name before its first underscore (scan, view, element …), with a leading - to leave it out. Give ${forms}.`)
+  }
+  const out = entries.filter((e) => e.startsWith('-'))
+  if (out.length > 0 && out.length < entries.length) {
+    throw new Error(`${flag} ${text} mixes namespaces to list (${entries.filter((e) => !e.startsWith('-')).join(', ')}) with namespaces to leave out (${out.join(', ')}): give one form — scan,view lists those alone, -flat,-thickness lists all but those.`)
+  }
+  const named = new Set(entries.map((e) => e.replace(/^-/, '')))
+  const exclude = out.length > 0
+  return { text, compact: false, named, lists: (ns) => named.has(ns) !== exclude }
+}
 
 /** The most definitions scanruler_tools gives in one answer: twenty are
  *  some ten thousand tokens, a small window's fair share. */
@@ -294,6 +335,11 @@ const FOLDERS_KEPT = 10
 /** How many entries scanruler_files lists at most. */
 const FILES_LISTED = 300
 
+/** The folder in the scan's folder that the server's own files go into
+ *  when no path was given — answers too long to carry, a batch's pictures
+ *  — kept apart from the person's files beside the scan. */
+const WORK_FOLDER = 'scanruler-work'
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, Math.max(0, ms)))
 
 /** The notes an answer carries for the agent (`notes`), when it is an
@@ -328,13 +374,16 @@ const failure = (e) => {
  *   openPage?: () => Promise<boolean>,
  *   openGraceMs?: number,
  *   openWaitMs?: number,
- *   tools?: 'full' | 'compact',
+ *   tools?: string,
+ *   log?: (line: string) => void,
  *   trace?: ReturnType<typeof import('./trace.js').createTrace>,
  *   answerWithinMs?: number,
  *   folderStore?: { load(): string[] | null, save(folders: string[]): void } | null,
  *   listWaitMs?: number,
  *   answerCap?: number,
- * }} options — `tools` is how the page's commands are listed (TOOL_MODES).
+ * }} options — `tools` is how the page's commands are listed: full,
+ *   compact, or a list of namespaces (parseToolMode). `log` takes the
+ *   server's lines for the user — a namespace listed that no page has.
  *   `listWaitMs`: how long a listing waits for a page that connected before
  *   and is not back yet. `answerCap`: the most characters an answer
  *   carries; a longer one goes to a file in the folder the scan open now
@@ -364,6 +413,7 @@ export function createMcpServer({
   openGraceMs = 11_000,
   openWaitMs = 40_000,
   tools: toolMode = 'full',
+  log = (line) => process.stderr.write(`[scanruler-mcp] ${line}\n`),
   trace = null,
   answerWithinMs = ANSWER_WITHIN_MS,
   folderStore = null,
@@ -374,10 +424,19 @@ export function createMcpServer({
   const holdMs = answerWithinMs > 0 ? answerWithinMs : Infinity
   const holdS = answerWithinMs > 0 ? answerWithinMs / 1000 : null
   const headless = link.backend === 'headless'
-  const compact = toolMode === 'compact'
+  // Full, compact, or the namespaces to list: a command of a namespace
+  // left out is not listed, and not run either.
+  const selection = parseToolMode(toolMode)
+  const compact = selection.compact
+  const leftOut = (c) => !compact && !selection.lists(namespaceOf(c))
   const server = new Server(
     { name: 'scanruler', title: 'ScanRuler', version },
-    { capabilities: { tools: { listChanged: true } }, instructions: (headless ? HEADLESS_INSTRUCTIONS : INSTRUCTIONS)[compact ? 'compact' : 'full'] },
+    {
+      capabilities: { tools: { listChanged: true } },
+      instructions:
+        (headless ? HEADLESS_INSTRUCTIONS : INSTRUCTIONS)[compact ? 'compact' : 'full'] +
+        (selection.named ? ` This server lists ScanRuler’s tools by namespace, as it was started (--tools ${selection.text}); a tool of a namespace left out is unknown here.` : ''),
+    },
   )
 
   // The last connected page's commands, for listing before a page is back:
@@ -422,7 +481,7 @@ export function createMcpServer({
       job.reply = reply
       // Answered to the client: seen, unless queued or likely timed out.
       job.told = !job.queued && job.ms < SEEN_WITHIN_MS
-      if (job.queued && trace) trace.write({ ev: 'job', job: job.job, call: ctx?.call ?? null, tool, t: job.started, ms: job.ms, ...replyMeasure(reply) })
+      if (job.queued && trace) trace.write({ ev: 'job', job: job.job, call: ctx?.call ?? null, tool, t: job.started, ms: job.ms, ...replyMeasure(reply), ...(trace.args ? { head: replyHead(reply) } : {}) })
       return reply
     }
     job.done = Promise.resolve()
@@ -491,7 +550,7 @@ export function createMcpServer({
       job: job.job,
       tool: job.tool,
       after: holdS,
-      note: `Still running after ${holdS} s, and running on. scanruler_wait { for: "job", job: "${job.job}" } gives its answer — call it again while it says running.`,
+      note: `Still running after ${holdS} s, and running on${hiddenNow() ? '; the ScanRuler tab is hidden' : ''}. scanruler_wait { for: "job", job: "${job.job}" } gives its answer — call it again while it says running.`,
     })
   }
 
@@ -541,7 +600,7 @@ export function createMcpServer({
       ...(o.resultOmitted ? { resultOmitted: o.resultOmitted } : {}),
       ...(o.error ? { error: o.error } : {}),
     }))
-    const from = `the page (session.recent): this server copy, started at ${startedAt}, did not start ${job}; the page kept what was run under it.`
+    const from = `the page (session.recent): this server copy, started at ${startedAt}, did not start ${job}; the page kept what was run under it, but no picture or file it gave.`
     if (calls.length === 1) return { job, ...calls[0], from }
     return {
       job,
@@ -555,6 +614,9 @@ export function createMcpServer({
   /** Whether the tab is hidden now — null with no page, or headless. */
   const hiddenNow = () => (link.connected && link.page && !headless ? (link.page.hidden ?? false) : null)
   const runningJobs = () => [...jobs.values()].filter((j) => j.state === 'running').length
+  /** The page's reads being answered now, which no job stands for: an export
+   *  writing its file, a check — what a wait for idle has to count too. */
+  const callsInFlight = new Set()
 
   /** A finished job as scanruler_wait { for: "idle" } lists it: a failed
    *  one with its error, a batch with the call it stopped at. */
@@ -608,6 +670,14 @@ export function createMcpServer({
     const state = await sessionRead()
     if (state && kept.scan !== null && (state.scan?.fileName ?? null) !== kept.scan) return null
     return kept.folder
+  }
+  /** The folder in the scan's folder the server's own files go into — an
+   *  answer too long to carry, a batch's picture — so they do not lie
+   *  among the person's: WORK_FOLDER, or null as scanFolderNow. Still in
+   *  the scan's folder, which a sandboxed agent can open. */
+  const workFolderNow = async () => {
+    const folder = await scanFolderNow()
+    return folder ? join(folder, WORK_FOLDER) : null
   }
 
   // ---- the page that came back ----------------------------------------------
@@ -701,9 +771,12 @@ export function createMcpServer({
   // An answer past answerCap — a read with every point in it, a batch of
   // many — would crowd out the agent's context: it is written whole to a
   // file, and the answer says where, how large and what it holds. The file
-  // goes into the folder the scan open now came from (scanFolderNow) — a
-  // sandboxed agent can open that one, not the server's outDir — else, or
-  // when that folder takes no file, into outDir.
+  // goes into WORK_FOLDER in the folder the scan open now came from
+  // (workFolderNow) — a sandboxed agent can open that one, not the server's
+  // outDir — else, or when that folder takes no file, into outDir.
+  /** The answers this copy wrote to a file: scanruler_read reads them
+   *  wherever they lie, outDir being no folder of a scan's. */
+  const spilled = new Set()
   /** The most characters a command's answer carries (ANSWER_CAPS), never
    *  under answerCap. */
   const capOf = (command) => Math.max(answerCap, ANSWER_CAPS[command?.name] ?? 0)
@@ -718,16 +791,17 @@ export function createMcpServer({
     if (body.length <= cap) return value
     const stamp = new Date().toISOString().replace(/[:.]/g, '-')
     const name = `${tool}-${stamp}.json`
-    const scanFolder = await scanFolderNow()
+    const workFolder = await workFolderNow()
     let file
     let where
     try {
-      file = scanFolder ? await writeNew(scanFolder, name, body).catch(() => null) : null
-      where = file ? `It is in ${scanFolder}, the folder the scan open now was opened from.` : `It is in ${outDir}, the server's output folder${scanFolder ? ` — ${scanFolder}, the scan's folder, took no file` : ': the scan open now was not opened from a folder through this server'}.`
+      file = workFolder ? await writeNew(workFolder, name, body).catch(() => null) : null
+      where = file ? `It is in ${workFolder}, ${WORK_FOLDER} in the folder the scan open now was opened from.` : `It is in ${outDir}, the server's output folder${workFolder ? ` — ${workFolder}, in the scan's folder, took no file` : ': the scan open now was not opened from a folder through this server'}.`
       file ??= await writeNew(outDir, name, body)
     } catch {
       return value
     }
+    spilled.add(resolve(file))
     const object = value !== null && typeof value === 'object' && !Array.isArray(value)
     const short = (k, v) => keep.includes(k) || k === 'notes' || v === null || typeof v === 'number' || typeof v === 'boolean' || (typeof v === 'string' && v.length <= 200)
     const brief = object ? Object.fromEntries(Object.entries(value).filter(([k, v]) => short(k, v))) : {}
@@ -742,15 +816,16 @@ export function createMcpServer({
       bytes: Buffer.byteLength(body, 'utf8'),
       ...(object ? { keys: Object.keys(value) } : Array.isArray(value) ? { items: value.length } : {}),
       ...(Object.keys(brief).length ? { brief } : {}),
-      note: `The answer is ${Math.round(body.length / 1000)} k characters, past the ${Math.round(cap / 1000)} k an answer carries, so it was written whole to file as JSON: read what you need from there, or ask for less next time (${less}). ${where}`,
+      note: `The answer is ${Math.round(body.length / 1000)} k characters, past the ${Math.round(cap / 1000)} k an answer carries, so it was written whole to file as JSON: read what you need from there${headless ? '' : ' — scanruler_read { path: file } gives it in parts, where you cannot open the folder —'} or ask for less next time (${less}). ${where}`,
     }
   }
 
   // ---- folders -------------------------------------------------------------
   // The folders this server opened a scan or a project from, or saved one
-  // into, the latest first: where scanruler_write may write and what
-  // scanruler_files lists. Kept beside the command list (folderStore), so a
-  // copy started afresh — or the other copy beside this one — has them too.
+  // into, the latest first: where scanruler_write may write, and what
+  // scanruler_files lists and scanruler_read reads. Kept beside the command
+  // list (folderStore), so a copy started afresh — or the other copy beside
+  // this one — has them too.
   let folders = []
   const knownFolders = () => {
     try {
@@ -839,7 +914,7 @@ export function createMcpServer({
     {
       name: 'scanruler_status',
       title: 'ScanRuler connection status',
-      description: 'Whether a ScanRuler page is connected to this agent, which version and plugins it has, whether its tab is hidden (page.hidden), and — when none is — how the user connects one. session, with a page, says what it holds: the scan, the project’s name, whether it has changes not saved (unsaved), and its work counted — elements, features, notes … — so a session someone else left is seen before it is replaced (scan_open with saveTo keeps it). page.since: when the page loaded. page.stale, when there: the page could not load a part of the app (an answer said stale_page) — it is older than the app it came from, rebuilt since: save the project, then ask the person to reload, as page.staleNote says. lastProject: the project file last opened or saved through this server — what to open again when the page reloaded (an answer then says pageReloaded). backend says whether ScanRuler runs in a tab (page) or in this server (headless). jobs lists the calls that change the session still running and the latest five others, newest first, each running, done or failed, a running one with progress: { phase, percent } when the page has said how far it is — a call whose answer you did not get is among them; scanruler_wait { for: "job", job } gives its answer, also for a job of an earlier copy of this server, which the page remembers; jobsMore counts the older ones kept. folders: where a scan or a project was opened from or saved into, the latest first — what scanruler_write writes into and scanruler_files lists; kept when the server restarts. server.answerWithin: the seconds a call is held at most before it answers with its job. server.now: the time on this computer, local, with its offset from UTC (2026-10-23T18:04:05+02:00) — the clock to date a report or time a step by. server.cwd: the folder this server started in; server.relativeTo: the folder every relative path is taken from — the latest of folders, else cwd; server.outDir: where a file goes that no path was given for — but an answer too long to carry (truncated: true, file), and a picture in a batch, go into the folder the scan open now was opened from, when it was opened here by a path. server.version is this server’s, server.latest the newest on npm when known, server.handedOffFrom the older copy that started this one in its place. server.role: holder — this copy holds the port and the tab’s connection; relay — another copy (another chat or AI app) holds them and this one sends its calls through it, the work still running in the tab, server.holder.version saying which (null: from before 0.4.1); none — neither yet, server.error saying why. serverTooOld, when there, says the server the page is connected to is older than the page needs — while relaying, the holding copy, not this one: tell the person once, in its words, and install nothing yourself. tools, when there, says the tools you were given are not the ones the page offers now (stale): which were added, removed or changed — named the first time, counted after — and which page they were listed from.',
+      description: 'Whether a ScanRuler page is connected to this agent, which version and plugins it has, whether its tab is hidden (page.hidden), and — when none is — how the user connects one. session, with a page, says what it holds: the scan, the project’s name, whether it has changes not saved (unsaved), and its work counted — elements, features, notes … — so a session someone else left is seen before it is replaced (scan_open with saveTo keeps it). page.since: when the page loaded. page.stale, when there: the page could not load a part of the app (an answer said stale_page) — it is older than the app it came from, rebuilt since: save the project, then ask the person to reload, as page.staleNote says. lastProject: the project file last opened or saved through this server — what to open again when the page reloaded (an answer then says pageReloaded). backend says whether ScanRuler runs in a tab (page) or in this server (headless). jobs lists the calls that change the session still running and the latest five others, newest first, each running, done or failed, a running one with progress: { phase, percent } when the page has said how far it is — a call whose answer you did not get is among them; scanruler_wait { for: "job", job } gives its answer, also for a job of an earlier copy of this server, which the page remembers; jobsMore counts the older ones kept. folders: where a scan or a project was opened from or saved into, the latest first — what scanruler_write writes into, scanruler_files lists and scanruler_read reads; kept when the server restarts. server.answerWithin: the seconds a call is held at most before it answers with its job. server.now: the time on this computer, local, with its offset from UTC (2026-10-23T18:04:05+02:00) — the clock to date a report or time a step by. server.cwd: the folder this server started in; server.relativeTo: the folder every relative path is taken from — the latest of folders, else cwd; server.outDir: where a file goes that no path was given for — but an answer too long to carry (truncated: true, file), and a picture in a batch without a path, go into scanruler-work in the folder the scan open now was opened from, when it was opened here by a path — the server’s own files, kept apart from the person’s (scanruler_files { path: "scanruler-work" } lists them, scanruler_read reads them). server.version is this server’s, server.latest the newest on npm when known, server.handedOffFrom the older copy that started this one in its place. server.role: holder — this copy holds the port and the tab’s connection; relay — another copy (another chat or AI app) holds them and this one sends its calls through it, the work still running in the tab, server.holder.version saying which (null: from before 0.4.1); none — neither yet, server.error saying why. serverTooOld, when there, says the server the page is connected to is older than the page needs — while relaying, the holding copy, not this one: tell the person once, in its words, and install nothing yourself. tools, when there, says the tools you were given are not the ones the page offers now (stale): which were added, removed or changed — named the first time, counted after — and which page they were listed from.',
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true, openWorldHint: false },
       call: async () => {
@@ -867,7 +942,7 @@ export function createMcpServer({
     {
       name: 'scanruler_wait',
       title: 'Wait for ScanRuler',
-      description: `Wait until a ScanRuler page is connected (for: "page", the default), or until it is also done with what it is busy with and every change still running has finished (for: "idle" — then finished lists the changes done or failed since the last such answer, a failed one with its error, and state says idle or running; running, with busy — what the page is at, in its words: a model's build names the step in play and how long it has run — and running, the change still running, with runningS), or until a job is done (for: "job" with job — a call started with wait: false, one answered queued, or one whose answer did not come; scanruler_status lists them). Returns the status — for idle only connected, state and finished, and busy and running while running — or for a job its answer: { job, tool, state, ms, result } or { …, error: { code, message } } — state running if the time ran out first, with runningMs and, once the page has said how far it is, progress: { phase, percent } (its status line: "Measuring deviation", 42): call it again. A job of an earlier copy of this server is read from the page's record of it (session.recent), from says so.${holdS ? ` It waits ${holdS} s at most, this server's answer limit, whatever timeoutSeconds says.` : ''} connected is false if the time ran out waiting for a page.`,
+      description: `Wait until a ScanRuler page is connected (for: "page", the default), or until it is also done with what it is busy with and every change still running has finished (for: "idle" — then finished lists the changes done or failed since the last such answer, a failed one with its error, and state says idle or running; running, with busy — what the page is at, in its words: a model's build names the step in play and how long it has run — and running, the change still running, with runningS), or until a job is done (for: "job" with job — a call started with wait: false, one answered queued, or one whose answer did not come; scanruler_status lists them). Returns the status — for idle only connected, state and finished, and busy and running while running — or for a job its answer: { job, tool, state, ms, result } or { …, error: { code, message } } — state running if the time ran out first, with runningMs and, once the page has said how far it is, progress: { phase, percent } (its status line: "Measuring deviation", 42): call it again. A picture the job's tool gave comes with that answer, as an image. A job of an earlier copy of this server is read from the page's record of it (session.recent), from says so; that keeps no picture.${holdS ? ` It waits ${holdS} s at most, this server's answer limit, whatever timeoutSeconds says.` : ''} connected is false if the time ran out waiting for a page.`,
       inputSchema: {
         type: 'object',
         properties: {
@@ -894,18 +969,20 @@ export function createMcpServer({
           await Promise.race([j.done, new Promise((r) => (timer = setTimeout(r, Math.max(0, until - Date.now()))))])
           clearTimeout(timer)
           if (j.state !== 'running') j.told = true
-          return text(await fitted(jobAnswer(j), 'scanruler_wait'))
+          // The picture the job's tool gave, as the call itself would show it.
+          const answer = text(await fitted(jobAnswer(j), 'scanruler_wait'))
+          return { ...answer, content: [...answer.content, ...(j.reply?.content ?? []).filter((x) => x.type === 'image')] }
         }
         if (!(await link.waitForPage(Math.max(0, until - Date.now())))) return text(status())
         if (args?.for === 'idle') {
           // The changes still running first — their answers are what idle
           // waits for — then the page's own work.
-          for (const j of [...jobs.values()].filter((x) => x.state === 'running')) {
+          for (const done of [...[...jobs.values()].filter((x) => x.state === 'running').map((x) => x.done), ...callsInFlight]) {
             let timer
-            await Promise.race([j.done, new Promise((r) => (timer = setTimeout(r, Math.max(0, until - Date.now()))))])
+            await Promise.race([done, new Promise((r) => (timer = setTimeout(r, Math.max(0, until - Date.now()))))])
             clearTimeout(timer)
           }
-          const idle = (await pageIdle(until)) && runningJobs() === 0
+          const idle = (await pageIdle(until)) && runningJobs() === 0 && callsInFlight.size === 0
           // What finished since it was last said: each job once, a failed
           // one with its error.
           const finished = [...jobs.values()].filter((j) => j.state !== 'running' && !j.told)
@@ -967,6 +1044,29 @@ export function createMcpServer({
         }
       },
     })
+    own.push({
+      name: 'scanruler_read',
+      title: 'Read a text file beside the scan',
+      description: `A text file read part by part: ${TEXT_FILES.join(', ')}, in the folder this server last opened a scan or a project from, or saved one into, in a folder under it, or in one of the folders scanruler_status lists — or an answer too long to carry (truncated: true, file), wherever it was written. A relative path is taken in the first of those folders, and a path may not climb out with "..". Returns { text, offset, nextOffset, size }, in bytes of the file: nextOffset, when there, is where to read on from; without it the text reaches the file's end. An answer holds at most ${Math.round(answerCap / 1000)} k characters. Refused for any other kind of file, and, but for such an answer, while no scan or project has been opened from a folder.`,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', minLength: 1, description: 'The file: a name in the scan’s folder, a path under it ("scanruler-work/report.json"), or an absolute path.' },
+          offset: { type: 'integer', minimum: 0, description: 'Where to start, in bytes: the last answer’s nextOffset. The file’s start by default.' },
+          limit: { type: 'integer', minimum: 1, description: 'The most bytes to read, a whole character at least; as many as an answer holds by default, and never more.' },
+        },
+        required: ['path'],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+      call: async (args) => {
+        try {
+          return text(await readText(args?.path, args?.offset, args?.limit))
+        } catch (e) {
+          return failure(e)
+        }
+      },
+    })
   }
 
   /** scanruler_files' list — see its description. */
@@ -1007,6 +1107,76 @@ export function createMcpServer({
     }
   }
 
+  /** scanruler_read's part of a text file, kept to the folders a scan or a
+   *  project came from and the answers this copy wrote to a file — see its
+   *  description. Cut on a character, and short enough that its answer, its
+   *  JSON's escapes counted, stays within answerCap. */
+  const readText = async (path, offset = 0, limit = answerCap) => {
+    if (typeof path !== 'string' || path.length === 0) throw { code: 'invalid_input', message: 'path: give the file to read.' }
+    if (!Number.isInteger(offset) || offset < 0) throw { code: 'invalid_input', message: 'offset: give a whole number of bytes, 0 or more — the last answer’s nextOffset.' }
+    if (!Number.isInteger(limit) || limit < 1) throw { code: 'invalid_input', message: 'limit: give a whole number of bytes, 1 or more.' }
+    if (fileKind(path) !== 'text') throw { code: 'invalid_input', message: `path: only ${TEXT_FILES.join(', ')} files are read, as text — not "${extname(path).toLowerCase() || 'no extension'}".` }
+    if (path.split(/[\\/]/).includes('..')) throw { code: 'invalid_input', message: 'path: ".." is not taken — give a path in the scan’s folder or under it.' }
+    const folders = knownFolders()
+    const target = resolve(folders[0] ?? outDir, path)
+    const inside = (folder) => {
+      const r = relative(folder, target)
+      return r !== '' && !r.startsWith('..') && !isAbsolute(r)
+    }
+    if (!spilled.has(target)) {
+      if (folders.length === 0) throw { code: 'invalid_state', message: 'This server has opened no scan or project from a folder, so it has none to read from. Open the scan with scan_open (or a project with project_load) by its path first.' }
+      if (!folders.some(inside)) throw { code: 'invalid_input', message: `path: ${target} is outside the folders a scan or a project was opened from — ${folders.join(', ')}.` }
+    }
+    const most = Math.min(limit, answerCap)
+    let size
+    let start
+    let bytes
+    let handle
+    try {
+      handle = await open(target, 'r')
+      ;({ size } = await handle.stat())
+      start = Math.min(offset, size)
+      // Room to pass a character cut at the offset, and for a whole one after.
+      const buffer = Buffer.alloc(Math.min(Math.max(4, most) + 3, size - start))
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, start)
+      bytes = buffer.subarray(0, bytesRead)
+    } catch (e) {
+      throw { code: 'not_found', message: `${target} could not be read: ${e?.code === 'ENOENT' ? 'there is no such file' : (e?.message ?? String(e))}.` }
+    } finally {
+      await handle?.close()
+    }
+    // An offset in the middle of a character starts at the next one.
+    for (let i = 0; i < 3 && start > 0 && (bytes[0] & 0xc0) === 0x80; i++) {
+      bytes = bytes.subarray(1)
+      start++
+    }
+    let chars
+    try {
+      // Nothing whole is a character the file itself ends inside: refused.
+      const whole = wholeUtf8(bytes, most)
+      chars = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(whole.length > 0 ? whole : bytes)
+    } catch {
+      throw { code: 'invalid_input', message: `path: ${target} does not read as UTF-8 text, so it may not be a text file.` }
+    }
+    // The most characters whose answer fits, a surrogate pair kept whole.
+    const fits = (n) => agentJson({ text: chars.slice(0, n), offset: start, nextOffset: size, size }).length <= answerCap
+    let count = chars.length
+    if (!fits(count)) {
+      let low = 0
+      let high = count
+      while (high - low > 1) {
+        const mid = (low + high) >> 1
+        if (fits(mid)) low = mid
+        else high = mid
+      }
+      const last = chars.charCodeAt(low - 1)
+      count = last >= 0xd800 && last < 0xdc00 ? low - 1 : low
+    }
+    const part = chars.slice(0, count)
+    const next = start + Buffer.byteLength(part, 'utf8')
+    return { text: part, offset: start, ...(next < size ? { nextOffset: next } : {}), size }
+  }
+
   /** scanruler_write's file, kept to the folders a scan or a project came
    *  from — see its description. */
   const writeText = async (path, body) => {
@@ -1039,8 +1209,9 @@ export function createMcpServer({
   const definition = ({ call: _call, ...tool }) => tool
   // Compact, the list is the server's own tools and the page's that return
   // a picture — a batch gives a picture as its text and a file, so those are called
-  // directly; scanruler_tools reads commands() when it is called.
-  const shown = (c) => !compact || Boolean(c.returnsImage)
+  // directly; scanruler_tools reads commands() when it is called. With
+  // namespaces, the server's own and the page's of the namespaces listed.
+  const shown = (c) => (compact ? Boolean(c.returnsImage) : !leftOut(c))
   const listNow = () => [...own.map(definition), ...commands().filter(shown).map((c) => toolFor(c, { outDir, cwd }))]
   const listSource = () =>
     link.page?.commands?.length ? `the page, ScanRuler ${link.page.version ?? 'of no version'}` : lastPage ? lastPage.from : `this server’s own list (scanruler-mcp ${version})`
@@ -1103,19 +1274,35 @@ export function createMcpServer({
       },
     }
   }
+  // A namespace in --tools that none of the page's commands is in — a
+  // typo, or a plugin the page lacks — said once per page, and again when
+  // the page's commands change it.
+  let unmatchedSaid = null
+  const noteNamespaces = () => {
+    if (!selection.named || !link.page?.commands?.length) return
+    const have = new Set(link.page.commands.map(namespaceOf))
+    const unmatched = [...selection.named].filter((ns) => !have.has(ns))
+    const key = unmatched.join(',')
+    if (key === unmatchedSaid) return
+    unmatchedSaid = key
+    if (unmatched.length === 0) return
+    log(`--tools ${selection.text}: no tool of the ${headless ? 'engine' : 'page'} (ScanRuler ${link.page.version ?? 'of no version'}) is in ${unmatched.join(', ')}; its namespaces are ${[...have].sort().join(', ')}.`)
+  }
   for (const event of ['connected', 'commands']) {
     link.on(event, () => {
       seePage(event === 'connected')
       remember()
       relist()
+      noteNamespaces()
     })
   }
   seePage(true)
+  noteNamespaces()
 
   /** One of the page's tools run on the page: the result as MCP content,
    *  or a failure. `batched`: a picture is written to a file — the call's
-   *  path, or a new one in the scan's folder (scanFolderNow), else in
-   *  outDir — and
+   *  path, or a new one in WORK_FOLDER in the scan's folder (workFolderNow),
+   *  else in outDir — and
    *  given as its text, not shown. `job`:
    *  the job the call is part of, which the page keeps its outcome under.
    *  `deferred`: more changes follow straight after it (a batch with
@@ -1126,6 +1313,9 @@ export function createMcpServer({
     const needsPage = !command && headless ? link.pageCommand(name) : null
     if (needsPage) return failure({ code: 'unavailable', message: `${name} needs the ScanRuler page — a scan, the viewport or the browser — and this server runs ScanRuler headless, with none. Start scanruler-mcp in page mode (without --engine or --headless) and pair it with a ScanRuler tab for it.` })
     if (!command) return failure({ code: 'unknown_command', message: `There is no tool ${name}.` })
+    if (leftOut(command)) {
+      return failure({ code: 'unknown_command', message: `There is no tool ${name} here: this server was started with --tools ${selection.text}, which leaves the ${namespaceOf(command)}_ tools out. A server started with --tools full, or with a list that has ${namespaceOf(command)}, offers it.` })
+    }
     if (!link.connected && !(await link.waitForPage(pageTimeoutMs))) {
       return failure({ code: 'unavailable', message: `No ScanRuler page is connected; scanruler_open opens one. ${connectHelp()}` })
     }
@@ -1159,15 +1349,33 @@ export function createMcpServer({
         const { played: _played, ...steps } = result.steps
         result = { ...result, steps }
       }
-      const saved = command.returnsImage && batched ? await batchedPicture(result, args, { cwd: base, outDir, folder: args?.path ? null : await scanFolderNow() }) : await saveFileResult(result, args, { cwd: base, outDir })
+      const saved = command.returnsImage && batched ? await batchedPicture(result, args, { cwd: base, outDir, folder: args?.path ? null : await workFolderNow() }) : await saveFileResult(result, args, { cwd: base, outDir })
       // A project saved to a file: the one a reloaded page is pointed to.
       if (saved?.file?.path) rememberProject(saved.file.path)
+      if (saved?.holds && saved?.file?.path) {
+        const lost = lostSinceLastSave(saved)
+        if (lost) saved.warning = saved.warning ? `${saved.warning} ${lost}` : lost
+      }
       return text(await fitted(saved, name, Boolean(command.exact), [], { cap: capOf(command), ...(lessOf(command) ? { less: lessOf(command) } : {}) }), Boolean(command.exact))
     } catch (e) {
       // A page older than its app, said once so: the status keeps it.
       if (e?.code === 'stale_page' && pageSeen) pageSeen.stale ??= typeof e.message === 'string' ? e.message : 'stale_page'
       return failure(e)
     }
+  }
+
+  /** What the last save from this server held and this one does not — the
+   *  page was reset or reloaded between them, as its own memory cannot tell —
+   *  in a sentence; null when nothing fell away. */
+  let lastSave = null
+  const lostSinceLastSave = ({ holds, aligned, file }) => {
+    const was = lastSave
+    lastSave = { holds, aligned, path: file.path }
+    if (!was) return null
+    const gone = Object.entries(was.holds).filter(([what, n]) => n > 0 && !(holds[what] > 0)).map(([what, n]) => `${n} ${what}`)
+    const frame = was.aligned && !aligned
+    if (gone.length === 0 && !frame) return null
+    return `This file holds less than the last save (${was.path}): ${[...gone, ...(frame ? ['the alignment'] : [])].join(', ')} gone — the page was reset or reloaded between them, so it is no copy of that work${frame ? ', and coordinates from before no longer hold on the scan' : ''}.`
   }
 
   /** The session saved as a project file at `path` (a file, or a folder
@@ -1191,14 +1399,14 @@ export function createMcpServer({
   // Several of the page's tools in one call — what cuts a run of twenty
   // scan_nearest calls to one round trip. Each answer is the tool's own; a
   // picture comes back as the text beside it, not as an image, and is
-  // written to a file — the call's path, or a new one in the folder the
-  // scan open now came from (scanFolderNow), else in outDir — which the
-  // text names.
+  // written to a file — the call's path, or a new one in WORK_FOLDER in the
+  // folder the scan open now came from (workFolderNow), else in outDir —
+  // which the text names.
   own.push({
     name: 'scanruler_batch',
     title: 'Run several ScanRuler tools',
     description:
-      `Run several of the ScanRuler tools in one call, in order, each with its own arguments — a run of scan_nearest, element_fit or section_get calls, say. Returns results, one per call in order: { tool, ok, result } or { tool, ok: false, error: { code, message } }. The first refused stops the rest (stopped says which index, failed: { index, tool, error } which call) unless stopOnError is false. notes, when a call answered with the notes left for you, is the last call’s, repeated at the top. When the refused call is a change, then with rollback (the default) every change the batch made before it is undone, so the batch stands or falls whole: undone names the steps taken back, newest first, callsUndone counts the calls, and each of those answers ok: false and undone: true, its result kept as it was. Before anything runs, the names the calls would give new things (a command that says which of its fields name them, in one name space) are checked against each other: two alike — case and spaces at the ends aside — refuse the batch with nothing run, naming both calls; a name the session already has is the page’s to refuse. A refused read — section_get, scan_query, any tool that changes nothing — undoes nothing: what came before it stands (kept says so). A call refused busy is run again once the page is idle (retried: "busy" on its result). Each call that changes the session is still its own undo step. build: "end" builds a modelled part once for a run of changes to it — sketches edited one after another, say — rather than after each: every call but the last is sent deferred, and a change so sent answers before its rebuild (build: "held", its result and bodies the part as last built; a pick by index names a face of that part); the last call builds them all, and so does a read of the part, or any other kind of tool, met on the way. timings: true gives each call its ms and the batch total_ms, and a change\'s build the steps it played with their ms (result.steps.played). wait: false answers at once with { queued, job }, and so does a batch still running at the server’s answer limit (with after, its seconds); scanruler_wait { for: "job", job } gives the batch\'s answer. A { "$file": path } anywhere in a call’s arguments is that JSON file’s contents. ${relativeFrom(cwd)} A tool that returns a picture is not shown here: the picture is written to a file — its call’s path, or a new file in the folder the scan open now was opened from (by scan_open or project_load with a path), else in ${outDir} — and its result gives that file.path; call the tool directly to see the picture. The server’s own tools (scanruler_status, _open, _wait, _batch, _write, _files, _tools) cannot be batched.`,
+      `Run several of the ScanRuler tools in one call, in order, each with its own arguments — a run of scan_nearest, element_fit or section_get calls, say. Returns results, one per call in order: { tool, ok, result } or { tool, ok: false, error: { code, message } }. The first refused stops the rest (stopped says which index, failed: { index, tool, error } which call) unless stopOnError is false. notes, when a call answered with the notes left for you, is the last call’s, repeated at the top. When the refused call is a change, then with rollback (the default) every change the batch made before it is undone, so the batch stands or falls whole: undone names the steps taken back, newest first, callsUndone counts the calls, and each of those answers ok: false and undone: true, its result kept as it was. Before anything runs, the names the calls would give new things (a command that says which of its fields name them, in one name space) are checked against each other: two alike — case and spaces at the ends aside — refuse the batch with nothing run, naming both calls; a name the session already has is the page’s to refuse. A refused read — section_get, scan_query, any tool that changes nothing — undoes nothing: what came before it stands (kept says so). A call refused busy is run again once the page is idle (retried: "busy" on its result). Each call that changes the session is still its own undo step. build: "end" builds a modelled part once for a run of changes to it — sketches edited one after another, say — rather than after each: every call but the last is sent deferred, and a change so sent answers before its rebuild (build: "held", its result and bodies the part as last built; a pick by index names a face of that part); the last call builds them all, and so does a read of the part, or any other kind of tool, met on the way. timings: true gives each call its ms and the batch total_ms, and a change\'s build the steps it played with their ms (result.steps.played). wait: false answers at once with { queued, job }, and so does a batch still running at the server’s answer limit (with after, its seconds); scanruler_wait { for: "job", job } gives the batch\'s answer. A { "$file": path } anywhere in a call’s arguments is that JSON file’s contents. ${relativeFrom(cwd)} A tool that returns a picture is not shown here: the picture is written to a file — its call’s path, or a new file in ${WORK_FOLDER} in the folder the scan open now was opened from (by scan_open or project_load with a path), else in ${outDir} — and its result gives that file.path (and file.folder, the ${WORK_FOLDER} folder); call the tool directly to see the picture. The server’s own tools (scanruler_status, _open, _wait, _batch, _write, _files, _read, _tools) cannot be batched.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -1319,7 +1527,7 @@ export function createMcpServer({
         retried = 'busy'
       }
       if (ctx && trace) {
-        trace.write({ ev: 'entry', call: ctx.call, index: i, t: at, tool, ms: Date.now() - at, in: jsonBytes(callArgs), ...replyMeasure(one), hidden: [hiddenAt, hiddenNow()], ...(retried ? { retried } : {}), ...(trace.args ? { args: callArgs } : {}) })
+        trace.write({ ev: 'entry', call: ctx.call, index: i, t: at, tool, ms: Date.now() - at, in: jsonBytes(callArgs), ...replyMeasure(one), hidden: [hiddenAt, hiddenNow()], ...(retried ? { retried } : {}), ...(trace.args ? { args: callArgs, head: replyHead(one) } : {}) })
       }
       const ms = timings ? { ms: Date.now() - at } : {}
       const again = retried ? { retried } : {}
@@ -1466,7 +1674,7 @@ export function createMcpServer({
       hidden: [hiddenAt, hiddenNow()],
       ...(running ? { running } : {}),
       ...ctx.fields,
-      ...(trace.args ? { args: args ?? {} } : {}),
+      ...(trace.args ? { args: args ?? {}, head: replyHead(reply) } : {}),
     })
     return reply
   })
@@ -1491,10 +1699,27 @@ export function createMcpServer({
     // otherwise — and kept either way, for a client that stops waiting
     // before it is done.
     const command = commands().find((c) => toolName(c) === name)
-    if (!command || (command.readOnly && !command.long)) return runPageTool(name, args, onProgress)
+    if (!command || (command.readOnly && !command.long)) {
+      const answer = runPageTool(name, args, onProgress)
+      callsInFlight.add(answer)
+      return answer.finally(() => callsInFlight.delete(answer))
+    }
     const { wait, timings, ...rest } = args ?? {}
     const timed = timings === true && !command.readOnly
-    job = startJob(name, (id) => runPageTool(name, rest, onProgress, { timings: timed, ms: timed, job: id }), ctx, wait === false)
+    // Busy with something of the page's own, as a batch's calls are: once it
+    // is idle, the call is run again, once.
+    const runOnce = (id) => runPageTool(name, rest, onProgress, { timings: timed, ms: timed, job: id })
+    job = startJob(
+      name,
+      async (id) => {
+        const first = await runOnce(id)
+        if (replyMeasure(first).error !== 'busy') return first
+        await pageIdle(Date.now() + IDLE_WAIT_MS)
+        return runOnce(id)
+      },
+      ctx,
+      wait === false,
+    )
     return wait === false ? queuedReply(job) : answerFor(job, ctx)
   }
 

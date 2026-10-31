@@ -32,7 +32,7 @@ export const SCAN_ACCEPT = accept([...MODEL_EXTENSIONS, ...TEXTURE_EXTENSIONS])
 export const REFERENCE_ACCEPT = accept(MODEL_EXTENSIONS)
 export const IMAGE_ACCEPT = accept(IMAGE_EXTENSIONS)
 
-export const SCAN_FORMATS = 'STL, PLY, OBJ, 3MF or STEP · mm'
+export const SCAN_FORMATS = 'STL, PLY, OBJ, 3MF or STEP · mm' // units-ok: the unit a scan file is read in, not the display's
 export const REFERENCE_FORMATS = 'STL, PLY, OBJ, 3MF or STEP'
 export const IMAGE_FORMATS = 'PNG or JPEG'
 

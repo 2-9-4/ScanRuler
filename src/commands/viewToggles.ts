@@ -30,6 +30,10 @@ export interface ViewToggle {
    *  words, for a picture's answer (`<key>Why`); null, or left out, for
    *  nothing to say. */
   why?(): string | null
+  /** What showing it takes past the stage's next frames — a reading a worker
+   *  does — awaited by a picture that asks for it, `ms` at most. Never
+   *  rejects: the picture goes on without it, and says so. */
+  settle?(ms: number): Promise<unknown>
 }
 
 const own = new Map<string, ViewToggle[]>()
@@ -117,6 +121,13 @@ export function applyShow(all: ReadonlyMap<string, ViewToggle>, show: Record<str
     throw e
   }
   return { putBack, changed: done.length > 0, absent }
+}
+
+/** Wait for what `show` asks to be shown and takes its time (`settle`), `ms`
+ *  in all. */
+export async function settleShown(all: ReadonlyMap<string, ViewToggle>, show: Record<string, boolean> | undefined, ms: number): Promise<void> {
+  const until = Date.now() + ms
+  for (const [key, on] of Object.entries(show ?? {})) if (on) await all.get(key)?.settle?.(Math.max(0, until - Date.now()))
 }
 
 /** Why each toggle that is not shown now is not, as `<key>Why`, for those

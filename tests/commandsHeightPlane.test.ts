@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Heights and deviation in a plane's own frame, gathered into levels, and
 // the deviation as data: scan.heightmap { plane, of, levels } and
-// deviation.export. In the in-process worker (commandKit.ts).
+// deviation.export; a flipped map keeping the sketch's u, v. In the
+// in-process worker (commandKit.ts).
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { cellNoise, heightLevels, reliefGrid } from '../src/core/geometry/heightGrid'
+import { pointOnSheet, sketchFrameOn } from '../src/core/section/frame'
 import { boxMesh } from './helpers'
 import { refused, run, startHeadless, stlBytes, type Headless } from './commandKit'
 
@@ -126,6 +128,41 @@ describe('scan.heightmap on a plane', () => {
     // flip looks from below: the plate's underside, 4 mm behind.
     const under = await run<Map>('scan.heightmap', { plane: fit.element.id, flip: true, levels: true })
     expect(under.levels![0].height).toBeCloseTo(4, 1)
+  })
+
+  it('keeps a sketch’s u, v on the element when it looks from the other side, and says flipped', async () => {
+    await open(tieredPlate(), 'tiers.stl')
+    const fit = await run<{ element: { id: number; fit: { center: Vec3; normal: Vec3 } } }>('element.fit', { kind: 'plane', at: { point: P.place([15, 15, 0]) } })
+    const { center, normal } = fit.element.fit
+    const sketch = sketchFrameOn({ origin: center, normal })!
+    // The tier's middle, where a sketch on the element has it.
+    const tierAt = pointOnSheet(sketch, P.place([0, 0, 1.5])).at
+    const seen = await Promise.all([false, true].map((flip) => run<Map & { plane: { flipped?: true; center: [number, number] } }>('scan.heightmap', { plane: fit.element.id, flip, levels: true })))
+    // One of the two looks against the element's normal: the top from
+    // above, whichever way the fit's normal came out, and the flip.
+    expect(seen.filter((m) => m.plane.flipped).length).toBe(1)
+    for (const m of seen) {
+      const p = m.plane
+      const facing = p.normal[0] * normal[0] + p.normal[1] * normal[1] + p.normal[2] * normal[2]
+      expect(Math.abs(facing)).toBeCloseTo(1, 5)
+      expect(p.flipped === true).toBe(facing < 0)
+      for (let j = 0; j < 3; j++) {
+        expect(p.u[j]).toBeCloseTo(sketch.basisU[j], 5)
+        expect(p.v[j]).toBeCloseTo(sketch.basisV[j], 5)
+        expect(p.origin[j]).toBeCloseTo(sketch.origin[j], 3)
+      }
+      expect(p.center[0]).toBeCloseTo(pointOnSheet(sketch, center).at[0], 3)
+      expect(p.center[1]).toBeCloseTo(pointOnSheet(sketch, center).at[1], 3)
+    }
+    // Looking at the top, the tier stands where the sketch has it.
+    const top = seen.find((m) => m.levels![0].height < 1)!
+    const tier = top.levels!.find((l) => Math.abs(l.height - 1.5) < 0.1)!
+    expect((tier.box.min[0] + tier.box.max[0]) / 2).toBeCloseTo(tierAt[0], 0)
+    expect((tier.box.min[1] + tier.box.max[1]) / 2).toBeCloseTo(tierAt[1], 0)
+    // The outline lays the same sheet.
+    const o = await run<{ plane: { v: Vec3; flipped?: true } }>('scan.outline', { plane: fit.element.id })
+    expect(o.plane.flipped === true).toBe(top.plane.flipped === true)
+    for (let j = 0; j < 3; j++) expect(o.plane.v[j]).toBeCloseTo(sketch.basisV[j], 5)
   })
 
   it('on a coordinate plane is the axis map', async () => {

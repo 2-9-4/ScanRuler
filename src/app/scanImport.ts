@@ -23,6 +23,8 @@ import { prepareScan, runImport, type PreparedScan } from './imports'
 import type { SourceFiles } from './project'
 import { scanLoaded } from './scanEvents'
 import { forgetAllSurfaces } from './surfaces'
+import { usePrefs } from '../state/prefsStore'
+import { lengthInputText, unitWord } from '../core/units'
 
 const LARGE_TRIANGLE_WARNING = 5_000_000
 
@@ -54,7 +56,8 @@ export function scanFileNote(mesh: LoadedScan): string {
   }
   if (mesh.step) {
     const { surfaceDeviation, unsound, faces, gaps } = mesh.step
-    parts.push(`Cut from STEP to ${surfaceDeviation} mm.`)
+    const units = usePrefs.getState().units
+    parts.push(`Cut from STEP to ${lengthInputText(surfaceDeviation, units)} ${unitWord(units)}.`)
     if (unsound) {
       const missing = faces?.length ? `${faces.length} surface${faces.length === 1 ? '' : 's'} did not convert` : 'The conversion is incomplete'
       parts.push(`${missing}${gaps?.length ? ` — the part is open at ${gaps.length === 1 ? 'one place' : `${gaps.length} places`}` : ''}.`)

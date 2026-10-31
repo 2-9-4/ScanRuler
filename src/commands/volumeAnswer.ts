@@ -44,6 +44,13 @@ export function volumeOut(v: VolumeDeviation, tolerance: number, regions: number
     cell: round3(v.cell),
     smallestSeen: round3(v.smallestSeen),
     modelVolume: round1(v.modelVolume),
+    ...(v.referenceOpen
+      ? {
+          referenceOpen: { columns: v.referenceOpen.columns, box: { min: v3(v.referenceOpen.box.min), max: v3(v.referenceOpen.box.max) } },
+          // units-ok: the agent's answer — in millimetres always.
+          warnings: [`The reference's mesh has a hole over ${v.referenceOpen.columns} column${v.referenceOpen.columns === 1 ? '' : 's'} of cells, in (${v3(v.referenceOpen.box.min).join(', ')})–(${v3(v.referenceOpen.box.max).join(', ')}): read from the columns beside it, so no lump stands on it, and no finer than that there.`],
+        }
+      : {}),
     totals,
     found: v.regions.length,
     regions: listed.map((r) => regionOut(r, v.cell)),

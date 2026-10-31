@@ -92,6 +92,25 @@ describe('the deviation as volumes', () => {
     expect(all.totals.excess.volume).toBeLessThan(144 * 0.85)
   })
 
+  it('reads a hole in the reference from the columns beside it, and says so: no lump up the grid over it', () => {
+    // 4 × 4 mm of the top left out: the columns there go in and never out.
+    const kept: number[] = []
+    for (let t = 0; t < part.indices.length; t += 3) {
+      const [a, b, c] = [part.indices[t] * 3, part.indices[t + 1] * 3, part.indices[t + 2] * 3]
+      const mid = [0, 1, 2].map((k) => (part.positions[a + k] + part.positions[b + k] + part.positions[c + k]) / 3)
+      if (mid[2] === 20 && mid[0] > 8 && mid[0] < 12 && mid[1] > 8 && mid[1] < 12) continue
+      kept.push(part.indices[t], part.indices[t + 1], part.indices[t + 2])
+    }
+    const holed = { positions: part.positions, indices: Uint32Array.from(kept) }
+    const v = volumeDeviation({ reference: holed, scan: part, toReference: identityRigid(), tolerance: 0.1, cell: 0.25 })
+    expect(v.referenceOpen!.columns).toBeGreaterThan(200)
+    expect(v.referenceOpen!.box.min[0]).toBeGreaterThan(7)
+    expect(v.referenceOpen!.box.max[0]).toBeLessThan(13)
+    expect(v.totals.excess.volume).toBeLessThan(1)
+    expect(v.totals.missing.volume).toBeLessThan(1)
+    expect(volumeDeviation({ reference: part, scan: part, toReference: identityRigid(), tolerance: 0.1, cell: 0.25 }).referenceOpen).toBeNull()
+  })
+
   it('reads a scan open at the bottom as unsure there, and clean with the patch', () => {
     const open = box([0, 0, 0], [20, 20, 20], 1, [4])
     const bare = volumeDeviation({ reference: part, scan: open, farPatch: false, toReference: identityRigid(), tolerance: 0.1, cell: 0.25 })

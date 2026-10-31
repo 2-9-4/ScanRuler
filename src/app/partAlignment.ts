@@ -21,6 +21,11 @@ import type { ScanMaps } from '../plugins/api'
 import type { SceneManager } from '../viewer/SceneManager'
 import type { ImportQueue } from './importQueue'
 import { surfacesMoved } from './surfaces'
+import { usePrefs } from '../state/prefsStore'
+import { boundLength, type BoundLength } from './useUnits'
+
+/** The lengths of a note written now, in the units shown when it is. */
+const shownLength = (): BoundLength => boundLength(usePrefs.getState().units)
 
 export interface PartAlignmentDeps {
   clientRef: RefObject<MeshWorkerClient | null>
@@ -32,10 +37,11 @@ export interface PartAlignmentDeps {
 
 /** How square an auto-aligned pose came out, as the proposal's note says
  *  it: the largest face's tilt off its axis, and each axis's faces by area. */
-function squareNote(t: AutoAlignTilts, level: AutoAlignLevel): string {
+function squareNote(t: AutoAlignTilts, level: AutoAlignLevel, len: BoundLength): string {
   if (!t.largest) return ''
   const deg = (v: number) => `${v < 0.01 ? v.toFixed(3) : v.toFixed(2)}°`
-  const largest = `${level === 'largest' ? 'Squared to its largest face' : 'Its largest face'} (square to ${t.largest.axis.toUpperCase()}, ${Math.round(t.largest.area)} mm²)${level === 'largest' ? ` — it stands ${deg(t.largest.tiltDeg)} off` : ` stands ${deg(t.largest.tiltDeg)} off square`}`
+  const area = len.units === 'in' ? len.area(t.largest.area, 0) : `${Math.round(t.largest.area)} ${len.word(2)}`
+  const largest = `${level === 'largest' ? 'Squared to its largest face' : 'Its largest face'} (square to ${t.largest.axis.toUpperCase()}, ${area})${level === 'largest' ? ` — it stands ${deg(t.largest.tiltDeg)} off` : ` stands ${deg(t.largest.tiltDeg)} off square`}`
   const each = t.axes.map((a) => `${a.axis.toUpperCase()} ${deg(a.tiltDeg)}`).join(', ')
   return ` ${largest}; the faces square to each axis lean off it by ${each}, by area.`
 }
@@ -87,7 +93,7 @@ export function partAlignment({ clientRef, sceneRef, imports, maps, clearPreview
     useStore
       .getState()
       .setStatus(
-        `Part aligned — rotated ${rotationDeg.toFixed(2)}°, moved ${translation.toFixed(3)} mm. Elements and dimensions moved with it.`,
+        `Part aligned — rotated ${rotationDeg.toFixed(2)}°, moved ${shownLength().fmt(translation, 3)}. Elements and dimensions moved with it.`,
       )
     return true
   }
@@ -99,7 +105,7 @@ export function partAlignment({ clientRef, sceneRef, imports, maps, clearPreview
     useStore
       .getState()
       .setStatus(
-        `Part moved — rotated ${rotationDeg.toFixed(2)}°, moved ${translation.toFixed(3)} mm. Elements and dimensions moved with it.`,
+        `Part moved — rotated ${rotationDeg.toFixed(2)}°, moved ${shownLength().fmt(translation, 3)}. Elements and dimensions moved with it.`,
       )
     return true
   }
@@ -146,7 +152,7 @@ export function partAlignment({ clientRef, sceneRef, imports, maps, clearPreview
             : `Read off the scan: ${pct(r.planeShare)} of the surface is faces square to these axes${
                 r.wallShare >= 0.05 ? `, ${pct(r.wallShare)} more is wall running along them` : ''
               }.`
-      const note = `${read}${squareNote(tilts, level)} The part stands on ${stands}, its long side along X. Change a side or a direction below if it reads the part differently than you do.`
+      const note = `${read}${squareNote(tilts, level, shownLength())} The part stands on ${stands}, its long side along X. Change a side or a direction below if it reads the part differently than you do.`
       useStore.getState().proposeAlignment(autoAlignPicks(r, 0.2 * useStore.getState().modelSize), note)
       useStore.getState().setStatus('Auto-align — check the previewed pose, then press Confirm alignment.')
       return tilts
@@ -195,11 +201,11 @@ export function partAlignment({ clientRef, sceneRef, imports, maps, clearPreview
         const r = await client.symmetry(null)
         if (!Number.isFinite(r.rms) || r.rms > ALIGN_SYMMETRY_MAX_RMS_MM || r.sampled === 0 || r.matched / r.sampled < SYMMETRY_MIN_MATCHED) {
           useStore.getState().setStatus('')
-          useStore.getState().setError(`No symmetry plane found on the scan — the best mirror image stands ${Number.isFinite(r.rms) ? `${r.rms.toFixed(2)} mm` : 'far'} off it. The pose is left as it is.`)
+          useStore.getState().setError(`No symmetry plane found on the scan — the best mirror image stands ${Number.isFinite(r.rms) ? shownLength().fmt(r.rms, 2) : 'far'} off it. The pose is left as it is.`)
           return false
         }
         plane = { normal: r.normal, point: r.point }
-        from = `the scan’s mirror plane (σ ${r.rms.toFixed(3)} mm${r.rms > SYMMETRY_MAX_RMS_MM ? ', a loose match' : ''})`
+        from = `the scan’s mirror plane (σ ${shownLength().fmt(r.rms, 3)}${r.rms > SYMMETRY_MAX_RMS_MM ? ', a loose match' : ''})`
       }
       const settled = poseOnSymmetry(pose.axes, pose.origin, plane)
       if (!settled) {
@@ -207,7 +213,7 @@ export function partAlignment({ clientRef, sceneRef, imports, maps, clearPreview
         return false
       }
       const names = ['YZ', 'XZ', 'XY']
-      const note = `Settled on ${from}: it is the ${names[settled.axis]} plane now — ${'XYZ'[settled.axis]} turned ${settled.tiltDeg.toFixed(2)}° onto its normal, the zero point moved ${settled.shiftMm.toFixed(2)} mm onto it. The steps below are this pose as points; change a side or a direction if it reads the part differently than you do.`
+      const note = `Settled on ${from}: it is the ${names[settled.axis]} plane now — ${'XYZ'[settled.axis]} turned ${settled.tiltDeg.toFixed(2)}° onto its normal, the zero point moved ${shownLength().fmt(settled.shiftMm, 2)} onto it. The steps below are this pose as points; change a side or a direction if it reads the part differently than you do.`
       useStore.getState().proposeAlignment(autoAlignPicks(settled, 0.2 * useStore.getState().modelSize), note)
       useStore.getState().setStatus('Use symmetry — check the previewed pose, then press Confirm alignment.')
       return true

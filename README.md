@@ -1,3 +1,8 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/brand/scanruler-logo-horizontal-on-dark.svg" />
+  <img src="docs/brand/scanruler-logo-horizontal.svg" alt="ScanRuler by CNC Kitchen" width="420" />
+</picture>
+
 # ScanRuler by CNC Kitchen
 
 **Use it live at <https://scanruler.com/>** — nothing to install.
@@ -23,6 +28,7 @@ never leave your computer.
 - [Files in and out](#files-in-and-out)
 - [Good to know](#good-to-know)
 - [Agents](#agents)
+- [Automatic reverse engineering](#automatic-reverse-engineering)
 - [Development](#development)
 - [License](#license)
 
@@ -140,6 +146,8 @@ stage it works like a small parametric CAD tool.
 
 New here? An amber ring points to the control to press next and retires once
 you have used a workspace twice. You can switch it off under **⚙ Settings**.
+**⚙ Settings → Units** shows and takes lengths in millimetres or inches;
+files, projects and agent answers stay in millimetres.
 
 ## Files in and out
 
@@ -182,8 +190,9 @@ Claude Code, Codex, Claude Desktop, Cursor or anything else that speaks the
 [Model Context Protocol](https://modelcontextprotocol.io). For example: *"Open
 ballbar.stl, fit both spheres, measure the centre distance and give me the
 report."* It works the panels step by step in front of you, and every step
-can be undone. On scanruler.com it can also model in Reverse engineer and
-clean up a scan in Mesh Tools.
+can be undone. On scanruler.com it can also
+[model a scan into a solid](#automatic-reverse-engineering) in Reverse
+engineer and clean up a scan in Mesh Tools.
 
 You need [Node.js](https://nodejs.org/) 22 or newer and Chrome, Edge or
 Firefox. Add the helper to your agent once:
@@ -204,6 +213,127 @@ The helper runs on your own machine and the tab talks to it on `127.0.0.1`.
 Nothing leaves your computer through ScanRuler, though what the agent reads
 goes to its model provider as usual. Setup per agent, troubleshooting and
 every option are in [mcp/README.md](mcp/README.md).
+
+## Automatic reverse engineering
+
+An AI agent can drive Reverse engineer from start to finish: give it a scan
+and it hands back a solid STEP body, an editable project and a report of how
+well the two agree. Connect an agent [as above](#agents) on scanruler.com and
+ask, for example: *"Reverse engineer C:\parts\bracket.stl into a solid STEP.
+Ask me what you need to know before you start."*
+
+Expect a long working session rather than a button. ScanRuler measures and
+builds; your agent, on your own model subscription, makes the decisions.
+
+### How it works
+
+The app serves the agent a guide for the job, so the instructions always match
+the build in the tab. Following it, the agent:
+
+1. **Checks the scan**: open rims, noise, faces that should be parallel but
+   are not. Then it looks at the part from every side and lists its regions
+   and features.
+2. **Classifies the part.** How it was made sets the tolerance, from about
+   ±0.02 mm for a machined face to ±0.5 mm for a sand casting, and never finer
+   than three times the scan's noise. The part type sets how to build it. The
+   guide knows plates, turned, machined and sheet-metal parts, shelled and
+   faceted housings, moulded housings with keys, castings with machined
+   features, smooth solid castings, rotationally patterned parts such as fans,
+   volutes, and freeform shells and surfaces.
+3. **Asks you once**, in the chat, before the first feature: its defaults
+   (one continuous body, lettering left off and so on) and its approach. It
+   also sets a target: by default 90 % of the scan within tolerance on
+   analytic parts, 85 % on castings and mouldings, 75 % on freeform shapes.
+4. **Builds the way a designer would**: aligned to the faces the part mates
+   on, sketches fitted to sections through the scan, relations the design
+   means held as constraints, and round numbers where the measurement allows.
+5. **Loops on the deviation.** After each group of features it reads the
+   deviation map and the volume error, works on the worst place and measures
+   again.
+6. **Hands over** a STEP file, a `.scanruler` project with every feature
+   editable, deviation pictures and a report marking each feature as measured,
+   partly supported or inferred. The run ends when the target is met and every
+   listed region is built or named as skipped, or when you accept less.
+   Otherwise the agent is told to say "not done".
+
+### Where it reaches its limits
+
+Four real runs, on different builds of the app, so examples and not a
+benchmark. The fan, the rumble pak and the scooter cover also took notes from
+a person along the way.
+
+| Part | Part type | Scan within tolerance | RMS |
+| --- | --- | --- | --- |
+| Die-cast fan wheel | Rotationally patterned | 96.3 % within ±0.3 mm | 0.117 mm |
+| Moulded rumble pak | Moulded housing | 86.1 % within ±0.2 mm | 0.173 mm |
+| Die-cast mirror holder | Smooth solid casting | 72.5 % within ±0.2 mm, reported as "not done" | 0.387 mm |
+| Scooter head cover | Freeform thin shell | 68.9 % within ±0.4 mm (outer skin about 81 %) | 0.85 mm |
+
+- **The numbers compare the model with the scan, not with the real part.** A
+  high share says the surfaces are close. It does not say a bore has the right
+  nominal or that the part will fit. Check the dimensions that matter yourself.
+- **Freeform is the weakest case.** Grips, blades, fairings and organic shapes
+  come out as a skin of patches fitted to the scan, not as a designer's
+  parametric model.
+- **It cannot model what the scan does not show**: deep pockets, whether a hole
+  goes through, the inside of an assembly wrapped into one skin. It infers
+  those, and the report says where.
+- **A poor scan limits everything.** Nothing is trustworthy finer than about
+  three times the scan's noise, and a warped or tilted scan can read as the
+  shape of the part.
+- **Design intent is a judgement.** Round numbers, symmetry and relations are
+  the agent's choices, and they can be wrong.
+- **Some features will not build.** Rounds are a common failure, and getting
+  one to build can mean rebuilding what lies under it.
+- **Agents cut corners.** Results differ from run to run and from model to
+  model. An agent can skip a step of the guide or sum up too kindly, so read
+  the report's numbers and look at the maps.
+- **It costs time and tokens.** The fan wheel took 106 minutes and 284 tool
+  calls. A run like that can use up a good part of your agent's usage limit.
+
+### When your part does not come out right
+
+Work down this list, cheapest first:
+
+1. **Look at the scan.** Ask the agent what its scan check found. Rescan if the
+   scan is warped or tilted. Mesh Tools can remove islands and fill holes.
+2. **Tell it what the scan cannot**: what the part is, how it was made, what it
+   mates with and which dimensions matter. Correct the part type if it chose
+   the wrong one: *"This is a sand-cast pump housing at ±0.5 mm, build it as a
+   volute. The bearing seat is machined."*
+3. **Say how such parts are designed**: what the form grows from, and which
+   features share lines and planes. A pump housing modelled from the scan's
+   shapes was withdrawn twice; the third, based on how such pumps are designed,
+   stood.
+4. **Point at the problem on the part.** With the agent connection on
+   (**⚙ Settings → Agents**), the Reverse engineer panel has **Notes for the
+   agent**: press **Note**, click the place and say what is wrong. Fixing place
+   by place usually beats starting over.
+5. **Take over by hand.** Everything the agent built is an ordinary feature you
+   can edit, suppress or undo.
+6. **Keep what worked.** You cannot edit the guide the app serves, but your own
+   first message or agent instructions (`CLAUDE.md`, `AGENTS.md`) go on top of
+   it on every run: your part types, your tolerances, your order of work.
+
+### Help improve the guide
+
+Most of the guide was written from runs that went wrong, so a part that fails
+is useful to us. The Reverse engineer guides are closed source like the
+workspace, so there is nothing here to send a pull request against. Open a
+[feature request](https://github.com/CNCKitchen/scanruler/issues/new?template=feature_request.yml)
+instead, and we write what it teaches into the guide, as a refinement or a new
+part type, in our own words. It helps to include:
+
+- what the part is, how it was made and how you would have modelled it
+- the report and deviation pictures, and where the run went wrong
+- the scan or the `.scanruler` project, if you are allowed to share it. Issues
+  are public, so a similar part you can share works too.
+- a trace of the run, written when the helper is started with
+  `--trace <dir> --trace-args`. It holds your file paths, so read it first.
+
+Pull requests are welcome for what is in this repository: the measuring guides
+in [src/commands/guides/](src/commands/guides/), and the fits, sections and
+deviation underneath. They need the CLA, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Development
 

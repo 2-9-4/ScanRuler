@@ -10,8 +10,9 @@ import { fitInFrame, frameMirrored } from './datum'
 import type { FlatDimensionValue } from './dimensions'
 import type { FlatElement } from './elements'
 import type { PixelsPerMm } from './image'
-import { formatFlatDetail, formatFlatPrimary } from './summary'
+import { formatFlatDetail, formatFlatPrimary, sheetUnits, sheetWord } from './summary'
 import type { FlatFit } from './types'
+import { MM_PER_INCH, toDisplay, type DisplayUnits } from '../units'
 
 export interface EvaluatedFlatDimension {
   title: string
@@ -31,6 +32,9 @@ export interface FlatReportInput {
   datum: FlatDatum | null
   frame: FlatFrame | null
   unit: string
+  /** What a sheet in millimetres is written in — millimetres unless the
+   *  screen shows inches. The dimensions come evaluated in it already. */
+  units?: DisplayUnits
   elements: readonly FlatElement[]
   dimensions: readonly EvaluatedFlatDimension[]
   counts?: readonly { name: string; picks: readonly unknown[] }[]
@@ -39,11 +43,20 @@ export interface FlatReportInput {
 }
 
 export function scaleLine(r: FlatReportInput): string {
-  if (r.section || r.calSource === 'section') return 'Scale: millimetres of the 3D scan (a section, not an image)'
+  const inches = r.units === 'in'
+  if (r.section || r.calSource === 'section') {
+    return inches
+      ? 'Scale: the 3D scan’s own, written in inches (a section, not an image)'
+      : 'Scale: millimetres of the 3D scan (a section, not an image)'
+  }
   if (r.calSource === 'measured' && r.pxPerMm) {
+    // Pixels to the unit shown: per millimetre to four decimals, per inch
+    // (the scan's own dpi) to two.
+    const per = (v: number): string => (inches ? (v * MM_PER_INCH).toFixed(2) : v.toFixed(4))
+    const word = `px/${sheetWord(sheetUnits('mm', r.units ?? 'mm'))}` // units-ok: the sheet's unit and the default units, ids
     return r.pxPerMm.x === r.pxPerMm.y
-      ? `Scale: CALIBRATED, ${r.pxPerMm.x.toFixed(4)} px/mm`
-      : `Scale: CALIBRATED, X ${r.pxPerMm.x.toFixed(4)} / Y ${r.pxPerMm.y.toFixed(4)} px/mm`
+      ? `Scale: CALIBRATED, ${per(r.pxPerMm.x)} ${word}`
+      : `Scale: CALIBRATED, X ${per(r.pxPerMm.x)} / Y ${per(r.pxPerMm.y)} ${word}`
   }
   if (r.calSource === 'metadata' && r.pxPerMm) {
     return `Scale: UNCALIBRATED — nominal ${(r.pxPerMm.x * 25.4).toFixed(0)} dpi from file metadata`
@@ -86,8 +99,8 @@ export function buildFlatReport(r: FlatReportInput): string {
         continue
       }
       const shown = fitInFrame(el.fit, r.frame)
-      const detail = formatFlatDetail(shown, r.unit)
-      lines.push(`  ${el.name}: ${formatFlatPrimary(shown, r.unit)}${detail ? ` (${detail})` : ''}`)
+      const detail = formatFlatDetail(shown, r.unit, r.units)
+      lines.push(`  ${el.name}: ${formatFlatPrimary(shown, r.unit, r.units)}${detail ? ` (${detail})` : ''}`)
     }
   }
   if (r.dimensions.length > 0) {
@@ -145,13 +158,19 @@ function fitColumns(fit: FlatFit): (number | '')[] {
  *  raw (no unit suffixes) — the header row carries the unit once. */
 export function buildFlatCsv(r: FlatReportInput): string {
   const rows: string[] = []
+  // The columns' unit: the sheet's pixels, or the units shown on a sheet in
+  // millimetres, the figures converted with one more decimal in inches.
+  const su = sheetUnits(r.unit, r.units ?? 'mm') // units-ok: the default units, an id
+  const unit = sheetWord(su)
+  const shown = (v: number, mmDecimals: number): string =>
+    su === 'in' ? toDisplay(v, su).toFixed(mmDecimals + 1) : v.toFixed(mmDecimals)
   rows.push(
     `# ${r.section ? `${r.section.name} of ${r.section.scanName}, ${r.section.cut}` : r.imageName} — ${scaleLine(r)} — ${
       r.frame ? 'aligned part frame' : r.section ? 'section frame' : 'image frame'
     }`,
   )
   rows.push(
-    ['name', 'kind', `x_${r.unit}`, `y_${r.unit}`, `diameter_${r.unit}`, `length_${r.unit}`, 'angle_deg', 'sweep_deg', `sigma_${r.unit}`, `form_${r.unit}`, 'points', 'note']
+    ['name', 'kind', `x_${unit}`, `y_${unit}`, `diameter_${unit}`, `length_${unit}`, 'angle_deg', 'sweep_deg', `sigma_${unit}`, `form_${unit}`, 'points', 'note']
       .map(csv)
       .join(','),
   )
@@ -160,16 +179,17 @@ export function buildFlatCsv(r: FlatReportInput): string {
       rows.push([el.name, el.kind, '', '', '', '', '', '', '', '', '', el.error ?? 'no fit'].map(csv).join(','))
       continue
     }
-    const shown = fitInFrame(el.fit, r.frame)
-    const cols = fitColumns(shown)
+    const fit = fitInFrame(el.fit, r.frame)
+    const cols = fitColumns(fit)
     rows.push(
       [
         el.name,
         el.kind,
-        ...cols.map((c) => (c === '' ? '' : (c as number).toFixed(4))),
-        shown.sigma.toFixed(5),
-        shown.formError !== undefined ? shown.formError.toFixed(5) : '',
-        shown.usedPoints,
+        // x, y, diameter and length are lengths; the two angles are not.
+        ...cols.map((c, i) => (c === '' ? '' : i < 4 ? shown(c, 4) : c.toFixed(4))),
+        shown(fit.sigma, 5),
+        fit.formError !== undefined ? shown(fit.formError, 5) : '',
+        fit.usedPoints,
         '',
       ]
         .map(csv)
@@ -178,13 +198,15 @@ export function buildFlatCsv(r: FlatReportInput): string {
   }
   if (r.dimensions.length > 0) {
     rows.push('')
-    rows.push(['dimension', 'label', `value_${r.unit === 'px' ? 'px_or_deg' : 'mm_or_deg'}`, 'note'].map(csv).join(','))
+    rows.push(['dimension', 'label', `value_${unit}_or_deg`, 'note'].map(csv).join(','))
     for (const d of r.dimensions) {
+      // An angle's value is in degrees whatever the lengths are in.
+      const angle = d.value.arc !== undefined
       rows.push(
         [
           d.title,
           d.value.label,
-          d.value.raw !== undefined ? d.value.raw.toFixed(4) : '',
+          d.value.raw !== undefined ? (angle ? d.value.raw.toFixed(4) : shown(d.value.raw, 4)) : '',
           d.value.invalid ?? d.value.warning ?? '',
         ]
           .map(csv)

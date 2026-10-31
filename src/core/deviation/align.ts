@@ -101,6 +101,7 @@ function* fine(
     onIteration:
       onProgress || onTransform
         ? (i, d, m) => {
+            // units-ok: built in the worker, which holds no display units
             onProgress?.(`Aligning — pass ${i}, mean deviation ${d.toFixed(4)} mm…`)
             onTransform?.(m, i, d)
           }
@@ -415,6 +416,7 @@ export function* alignLocalSteps(
     onIteration:
       options.onProgress || options.onTransform
         ? (i, d, m) => {
+            // units-ok: built in the worker, which holds no display units
             options.onProgress?.(`Fine fit — pass ${i}, mean deviation ${d.toFixed(4)} mm…`)
             options.onTransform?.(m, i, d)
           }
@@ -423,6 +425,7 @@ export function* alignLocalSteps(
 
   if (r.matched === 0) {
     throw new Error(
+      // units-ok: built in the worker, which holds no display units
       `No marked point found reference surface within ${options.maxDistance} mm. Raise the maximum search distance, or run the global best fit first.`,
     )
   }

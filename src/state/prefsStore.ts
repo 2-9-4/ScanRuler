@@ -14,6 +14,7 @@
 import { create } from 'zustand'
 import { colormapById, type ColormapId } from '../core/field/colormap'
 import { meshUnitsOf, type MeshUnits } from '../core/meshUnits'
+import { displayUnitsOf, type DisplayUnits } from '../core/units'
 import {
   EDGE_LINE_DEFAULT,
   SECTION_LINE_DEFAULT,
@@ -45,6 +46,7 @@ const SHEET_LINES_KEY = 'scanruler.sheetlines'
 const EDGE_LINES_KEY = 'scanruler.edgelines'
 const PINS_BEHIND_KEY = 'scanruler.pinsbehind'
 const SUPPORT_CARD_KEY = 'scanruler.supportcard'
+const UNITS_KEY = 'scanruler.units'
 const STL_UNITS_KEY = 'scanruler.stlunits'
 const ASK_STL_UNITS_KEY = 'scanruler.askstlunits'
 const AGENT_LINK_KEY = 'scanruler.agentlink'
@@ -121,6 +123,10 @@ interface PrefsState {
    *  visit. On by default; its own × puts it away for the page load only,
    *  this puts it away for good. */
   supportCard: boolean
+  /** What lengths are shown and typed in. Only the screen: what is held,
+   *  saved, exported to STEP and answered to an agent stays in millimetres
+   *  (core/units). Millimetres until switched. */
+  units: DisplayUnits
   /** Whether opening an STL asks what units its coordinates are in — the
    *  format carries none. On by default; the question's "Don't ask again"
    *  switches it off, and the settings window switches it back on. */
@@ -151,6 +157,7 @@ interface PrefsState {
   setEdgeLines: (px: number) => void
   setHidePinsBehind: (on: boolean) => void
   setSupportCard: (on: boolean) => void
+  setUnits: (units: DisplayUnits) => void
   setAskStlUnits: (on: boolean) => void
   setStlUnits: (units: MeshUnits) => void
   setAgentLink: (on: boolean) => void
@@ -172,6 +179,7 @@ export const usePrefs = create<PrefsState>()((set) => {
     edgeLines: clampLineWidth(read(EDGE_LINES_KEY), EDGE_LINE_DEFAULT),
     hidePinsBehind: read(PINS_BEHIND_KEY) !== '0',
     supportCard: read(SUPPORT_CARD_KEY) !== '0',
+    units: displayUnitsOf(read(UNITS_KEY)) ?? 'mm',
     askStlUnits: read(ASK_STL_UNITS_KEY) !== '0',
     stlUnits: meshUnitsOf(read(STL_UNITS_KEY)) ?? 'mm',
     agentLink: read(AGENT_LINK_KEY) === '1',
@@ -213,6 +221,11 @@ export const usePrefs = create<PrefsState>()((set) => {
     setSupportCard: (supportCard) => {
       write(SUPPORT_CARD_KEY, supportCard ? '1' : '0')
       set({ supportCard })
+    },
+    setUnits: (value) => {
+      const units = displayUnitsOf(value) ?? 'mm'
+      write(UNITS_KEY, units)
+      set({ units })
     },
     setAskStlUnits: (askStlUnits) => {
       write(ASK_STL_UNITS_KEY, askStlUnits ? '1' : '0')

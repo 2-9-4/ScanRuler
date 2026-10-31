@@ -202,4 +202,35 @@ describe('a bore that steps, and one a wrap closed', () => {
     await open(boxMesh(40, 20), 'box.stl')
     expect((await run<Qa>('scan.qa', { axis: 'z' })).notes.join(' ')).not.toMatch(/Closed skin/)
   })
+
+  /** The soup with two of its triangles, far apart, taken out. */
+  const pinholed = (soup: Float32Array) => {
+    const kept = Array.from(soup)
+    const last = Math.floor(soup.length / 9) - 1
+    kept.splice(last * 9, 9)
+    kept.splice(0, 9)
+    return Float32Array.from(kept)
+  }
+
+  it('reads rims very short against the part as a wrap too, and says what it holds', async () => {
+    // 150 mm on a side, 260 across; triangles 0.75 mm a side: 5 mm of rim.
+    await open(scattered(pinholed(boxMesh(150, 200)), 0.01), 'pinholes.stl')
+    const qa = await run<Qa>('scan.qa', { axis: 'z' })
+    expect(qa.rims.count).toBe(2)
+    expect(qa.rims.total).toBeLessThan(0.02 * 260)
+    const said = qa.notes.join(' ')
+    expect(said).toMatch(/Closed skin but for pinholes, 2 open rims, 5(\.\d)? mm in all on a part 260 mm across: a wrap bridges holes it did not see through — read each hole from both ends/)
+    expect(said).not.toMatch(/the scan has holes there/)
+  })
+
+  it('leaves a rim of any length as a hole, and a CAD tessellation’s pinholes as holes', async () => {
+    await open(scattered(openBox(), 0.01), 'open-scan.stl')
+    const hole = (await run<Qa>('scan.qa', { axis: 'x' })).notes.join(' ')
+    expect(hole).toMatch(/1 open rim, 160 mm in all/)
+    expect(hole).not.toMatch(/Closed skin/)
+    await open(pinholed(boxMesh(150, 200)), 'pinholes-cad.stl')
+    const cad = (await run<Qa>('scan.qa', { axis: 'z' })).notes.join(' ')
+    expect(cad).toMatch(/2 open rims/)
+    expect(cad).not.toMatch(/Closed skin/)
+  })
 })

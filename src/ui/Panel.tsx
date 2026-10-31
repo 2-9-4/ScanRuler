@@ -28,6 +28,7 @@ import { ModelSlot } from './ModelSlot'
 import { SectionEditor } from './SectionEditor'
 import { ExportMeshButton } from './ExportMeshButton'
 import type { MeshFormat } from '../core/exportMesh'
+import { useUnits } from '../app/useUnits'
 
 /** The picture on each element type's key. */
 const KIND_ICON: Record<(typeof ELEMENT_KINDS)[number]['id'], IconName> = {
@@ -119,6 +120,8 @@ export function Panel({
 }) {
   const fileName = useStore((s) => s.fileName)
   const busy = useStore((s) => s.busy)
+  // Every reading in the lists is written in the units shown.
+  const units = useUnits()
   const triangleCount = useStore((s) => s.triangleCount)
   const elements = useStore((s) => s.elements)
   const draft = useStore((s) => s.draft)
@@ -335,7 +338,7 @@ export function Panel({
                     fitting
                   </b>
                 ) : el.fit ? (
-                  <b>{formatPrimary(el.fit)}</b>
+                  <b>{formatPrimary(el.fit, units)}</b>
                 ) : (
                   <b className="warn" title={el.message}>
                     ⚠
@@ -371,9 +374,10 @@ export function Panel({
               sec.offset,
               tiltOf(sec.refDir, sec.frame.normal),
               sec.kind,
+              units,
             )
             const chains = sec.cut ? cutSummary(sec.cut).chains : 0
-            const shadow = sec.cut?.shadow ? describeShadow(sec.cut.shadow) : null
+            const shadow = sec.cut?.shadow ? describeShadow(sec.cut.shadow, units) : null
             const measured = measuredOn(sec.id)
             return (
               <ElementRow

@@ -44,7 +44,7 @@ const openReference: Command<{ bytes: Uint8Array; name: string; units?: MeshUnit
   name: 'open_reference',
   title: 'Open the reference part',
   description:
-    'Open the nominal part the scan is compared with — STEP straight from CAD, or STL, PLY, OBJ or 3MF — in place of the one there is; any alignment and map against the old one go. The elements measured on the scan stay. Returns the deviation state. Not undoable: a new reference starts a new history.',
+    'Open the nominal part the scan is compared with — STEP from CAD, or STL, PLY, OBJ or 3MF — in place of the one there is; any alignment and map against the old one go, the elements measured on the scan stay. Returns the deviation state. Not undoable: a new reference starts a new history.',
   input: obj({ bytes: bytes('The file’s contents.'), name: fileNameSchema('"bracket.step"'), units: unitsSchema }, ['bytes', 'name']),
   history: false,
   run: async ({ bytes: data, name, units }) => {
@@ -65,16 +65,16 @@ const align: Command<{ mode?: 'auto' | 'points' | 'local'; pairs?: Pair[]; verti
   name: 'align',
   title: 'Best-fit the scan onto the reference',
   description:
-    'Rigid best fit (no scale) of the scan onto the reference part, then the deviation map under it. mode auto (the default) finds the pose on its own; points starts from three or more pairs of corresponding points — a point on the scan and the same point on the reference, mm — then refines; local refines the fit in hand on a marked surface only (vertices, scan vertex numbers), within searchDistance mm. Returns the alignment (RMS, points matched, transform) and the map’s statistics. One undo step.',
+    'Rigid best fit (no scale) of the scan onto the reference part, then the deviation map under it. mode auto (the default) finds the pose on its own; points starts from three or more pairs of corresponding points (scan and reference, mm) then refines; local refines the fit in hand on a marked surface only (vertices), within searchDistance mm. Returns the alignment (RMS, points matched, transform) and the map’s statistics. One undo step.',
   input: obj({
-    mode: enumOf(['auto', 'points', 'local'], 'auto (default), points or local.'),
+    mode: enumOf(['auto', 'points', 'local'], 'auto (the default), points or local.'),
     pairs: arr(
       obj({ scan: vec3('On the scan, mm.'), reference: vec3('The same point on the reference, mm.') }, ['scan', 'reference']),
       'points: the corresponding pairs.',
       { minItems: 3 },
     ),
-    vertices: arr(int(undefined, { minimum: 0 }), 'local: the marked surface, scan vertex numbers.', { minItems: 3 }),
-    searchDistance: num('local: how far a point may be from the reference to count, mm.', { exclusiveMinimum: 0 }),
+    vertices: arr(int(undefined, { minimum: 0 }), 'local: the surface to refine on, scan vertex numbers.', { minItems: 3 }),
+    searchDistance: num('local: how far a point may lie from the reference to count, mm.', { exclusiveMinimum: 0 }),
   }),
   label: ({ mode = 'auto' }) => (mode === 'local' ? 'local fine fit' : 'best-fit alignment'),
   run: async ({ mode = 'auto', pairs, vertices, searchDistance }) => {
@@ -134,12 +134,12 @@ const setTarget: Command<{ element: ElementRef | null; side?: 'outward' | 'inwar
   name: 'set_target',
   title: 'Measure against an element',
   description:
-    'Map how far the scan strays from one of its own fitted elements — a plane, cylinder, cone, sphere or torus — instead of from a reference part, as choosing the element in the panel does; null goes back to the reference. side is the material side, read off the scan when the element is chosen (outward: the element’s outer side; inward: a bore or shell) — give it to override. facingDeg limits which surface counts to what faces the element within that many degrees, null for any. Needs the viewport. Returns the map’s statistics. One undo step.',
+    'Map how far the scan strays from one of its own fitted elements — a plane, cylinder, cone, sphere or torus — instead of from a reference part; null goes back to the reference. side is the material side, read off the scan when the element is chosen (outward: the element’s outer side; inward: a bore or shell) — give it to override. facingDeg limits which surface counts to what faces the element within that many degrees, null for any. Needs the viewport. Returns the map’s statistics. One undo step.',
   input: obj(
     {
       element: oneOf([elementRefSchema('The element.'), { type: 'null', description: 'Back to the reference part.' }], 'The element, or null.'),
-      side: enumOf(['outward', 'inward'], 'The material side.'),
-      facingDeg: nullable(num(undefined, { minimum: 1, maximum: 90 }), 'The facing limit, degrees.'),
+      side: enumOf(['outward', 'inward'], 'The material side; read off the scan by default.'),
+      facingDeg: nullable(num(undefined, { minimum: 1, maximum: 90 }), 'The facing limit, degrees, or null for any.'),
     },
     ['element'],
   ),
@@ -194,7 +194,7 @@ const settings: Command<{ range?: number; maxDistance?: number; bands?: number |
   name: 'settings',
   title: 'Set how the deviation is read',
   description:
-    'The deviation map’s reading: range, the colour scale ± mm; maxDistance, how far from the reference a point may be to count, mm; bands, a stepped scale of that many colours or null for smooth; tolerance, ± mm, the share within which the statistics give; facingDeg, how far the reference surface a point is measured against may turn from facing it, degrees, or null for the nearest surface whatever it faces — a change of it measures the map again; colormap, the colour map every deviation map and the live map of the bodies are drawn in — the person’s own choice, kept in the browser and outside the undo, so set it only to read a render by its colours and read settings.colormap for what the ramp shows at −range, 0 and +range and the caps past either end before judging a picture; on, which surface a map against the reference part is painted on — "scan" (the scan by its distance to the reference, the default) or "reference" (the reference by its distance to the scan, measured the first time it is asked for: positive where the reference stands outside the scan — material the part has not, a boss or a wall the model has and the scan does not — negative where it is short of it, grey where no scan stands behind it, a reading past the search distance in the cap of its end). Read both: the scan’s side finds what the model lacks, the reference’s what the model has that the part has not, and how much of the model no scan supports (onReference.noScanPct in the state). show, the map switch (the view bar’s Map key): false leaves the surface bare to look at its shape, the map still measured and read — the figures, hotspots and pins go on; true paints it again; a project keeps it, so read settings.show in the state when a render comes out uncoloured. The map paints in the Deviation workspace only — a command of another workspace puts that one on screen, and workspace.set deviation brings the map back; view.render pictures the side on screen there and says which map it painted (map) or why none (mapWhy), elsewhere that the Deviation workspace is not on screen. Returns the deviation state. One undo step.',
+    'The deviation map’s reading: range (colour scale, ± mm), maxDistance (search distance, mm), bands, tolerance (± mm the statistics count within), facingDeg (a change measures the map again), colormap (the person’s own choice, kept outside the undo — read settings.colormap for the ramp before judging a picture), on (which surface a map against the reference is painted on; read both sides) and show (the map switch; false leaves the surface bare, the map still measured). Returns the deviation state. Trap: the map paints in the Deviation workspace only — workspace.set deviation brings it back, and view.render says which map it painted (map) or why none (mapWhy). One undo step.',
   input: obj({
     range: readingInput.range,
     maxDistance: readingInput.maxDistance,
@@ -203,10 +203,10 @@ const settings: Command<{ range?: number; maxDistance?: number; bands?: number |
     facingDeg: nullable(num(undefined, { minimum: 1, maximum: 90 }), 'Facing limit, degrees, or null.'),
     colormap: enumOf(
       COLORMAPS.map((m) => m.id),
-      'The colour map: jet (blue inside, green on the surface, red outside) or one of the perceptual ramps.',
+      'jet (blue inside, green on the surface, red outside) or a perceptual ramp.',
     ),
-    on: enumOf(['scan', 'reference'], 'The surface the map is painted on: the scan, or the reference.'),
-    show: bool('The map painted on the part (true) or the surface left bare (false).'),
+    on: enumOf(['scan', 'reference'], 'The surface the map is painted on; scan by default.'),
+    show: bool('The map painted (true) or the surface left bare (false).'),
   }),
   label: () => 'deviation settings',
   run: async ({ range, maxDistance, bands, tolerance, facingDeg, colormap, on, show }) => {
@@ -266,11 +266,11 @@ const hotspotsCommand: Command<{ tolerance?: number; patches?: number; grain?: n
   name: 'hotspots',
   title: 'Where the deviation lies over tolerance',
   description:
-    `The deviation map read as patches: the scan vertices whose deviation lies past the tolerance (the map’s own, under deviation.settings, unless tolerance says otherwise) gathered into connected regions, the largest and farthest first — where the part is off, how large each place is and by how much, instead of one number over the whole part. Each patch: its centre and box in mm (in the frame the scan is measured in — what scan.query { box } and element.fit take), its area, how many vertices, the mean and the extreme deviation, ${PATCH_KIND_WORDS}, and which side (outside the reference or inside), the point of the extreme and the scan vertex there, and a few of its vertices (what element.fit_marked takes). With a map against the reference part the patch’s centre and extreme are given on the reference too (onReference — what the Deviation workspace shows and view.render { frame } takes there). grain is how close two vertices over tolerance have to be to be one patch, three point spacings by default. features says how many of all the patches found are features and their share of everything past the tolerance (shareOfExcess, 0–1), with what a feature patch asks: a patch over a tolerance well above the scan’s noise is never noise, so read each by its kind — a feature is modelled or named, never put down to scatter. found and over say how many patches and vertices over tolerance there were in all — within the search distance, the vertices the map draws as a measurement. Then far, the vertices past the search distance, which the map draws bare: read it every time — far.inside is the scan deeper inside the reference than the search distance, where the reference has material the part has not (a hole, a pocket or a slot the model lacks), far.outside the scan further off it, where the part has what the model has not, or scan spray; each with its count and its patches, the largest first, and far.count both together; unmeasured says how many vertices the facing limit left without a reading. Needs a deviation map (deviation.align, or deviation.set_target). on: "reference" reads the map on the reference instead (deviation.settings { on }, measured if it is not yet): the patches are of the reference, in its frame, outside where the reference stands proud of the scan (material the part has not) and inside where it is short of it; far is the reference past the search distance from the scan, by side; and noScan, the reference with no scan behind it, in patches the largest first — surface the model has on no evidence: inferred, unscanned, or not on the part. Changes nothing.`,
+    `The deviation map read as patches: the vertices past the tolerance gathered into connected regions, the largest and farthest first — where the part is off, how large each place is and by how much. Needs a map (deviation.align or deviation.set_target). Returns each patch’s centroid, box, area, count, mean, extreme, depth, volume, kind ("feature": material missing or misplaced, to model or name; "texture": roughness), side, the extreme’s point and vertex, a few vertices, and onReference; features, found, over and unmeasured; on: "reference" reads the map on the reference, adding noScan. Trap: read far every time — the vertices past the search distance, which the map draws bare: far.inside is scan deep inside the reference (a hole, pocket or slot the model lacks), far.outside scan standing off it. Changes nothing.`,
   input: obj({
     tolerance: num('± mm; the map’s tolerance by default.', { exclusiveMinimum: 0 }),
     patches: int(`How many patches to name; ${HOTSPOT_PATCHES} by default, 50 at most.`, { minimum: 1, maximum: 50 }),
-    grain: num('mm — how close two vertices over tolerance have to be to be one patch; three point spacings by default.', { exclusiveMinimum: 0 }),
+    grain: num('mm two vertices over tolerance may lie apart and be one patch; three point spacings by default.', { exclusiveMinimum: 0 }),
     on: enumOf(['scan', 'reference'], 'The map read: on the scan (the default) or on the reference.'),
   }),
   readOnly: true,
@@ -346,6 +346,38 @@ const hotspotsCommand: Command<{ tolerance?: number; patches?: number; grain?: n
   },
 }
 
+/** The patches of kind "feature" over the tolerance on the scan's map —
+ *  within the search distance, and past it by side — each with the point
+ *  of its extreme, its depth past the tolerance and whether it lies far:
+ *  material missing, misplaced or extra, as hotspotsCommand reads it,
+ *  for a judgement on the model as a whole. Empty with no map to read. */
+export async function scanFeaturePatches(tolerance: number | undefined, limit = 50): Promise<{ at: Vec3; depth: number; far: boolean; outside: boolean }[]> {
+  const d = useDeviation.getState()
+  const maps = commandHost().session.maps
+  const values = d.source === 'element' ? maps.elementField.current : maps.deviation.current
+  const ready = d.source === 'element' ? d.elementStatus === 'ready' : d.mapStatus === 'ready'
+  if (!ready || !values) return []
+  const client = commandHost().session.clientRef.current
+  if (!client) return []
+  const n = useStore.getState().vertexCount
+  const all = await client.query({ min: [-Infinity, -Infinity, -Infinity], max: [Infinity, Infinity, Infinity], limit: n })
+  if (all.positions.length !== values.length * 3) return []
+  const tol = tolerance ?? d.tolerance
+  const { hotspots } = await import('../../core/deviation/hotspots')
+  const search = d.maxDistance
+  const out: { at: Vec3; depth: number; far: boolean; outside: boolean }[] = []
+  const take = (report: ReturnType<typeof hotspots>, far: boolean) => {
+    for (const p of report.patches) if (p.kind === 'feature') out.push({ at: [p.at[0], p.at[1], p.at[2]], depth: p.depth, far, outside: p.extreme > 0 })
+  }
+  take(hotspots(all.positions, values, tol, { limit, only: (i) => Math.abs(values[i]) <= search }), false)
+  for (const inside of [true, false]) {
+    let any = false
+    for (let i = 0; i < values.length && !any; i++) if (Number.isFinite(values[i]) && Math.abs(values[i]) > search && values[i] < 0 === inside) any = true
+    if (any) take(hotspots(all.positions, values, search, { limit, featureDepth: FEATURE_DEPTH * tol, only: (i) => Number.isFinite(values[i]) && Math.abs(values[i]) > search && values[i] < 0 === inside }), true)
+  }
+  return out
+}
+
 /** The map on the reference read as patches — see hotspotsCommand. */
 export async function referenceHotspots(tolerance: number | undefined, patches: number, grain: number | undefined) {
   const d = useDeviation.getState()
@@ -403,7 +435,7 @@ const exportCommand: Command<{ side?: MapSide; format?: DeviationFormat }> = {
   name: 'export',
   title: 'Export the deviation as data',
   description:
-    'The deviation map as a file of readings, for working on it elsewhere: side "scan" (the default) a reading per scan vertex — its place in the frame the scan is measured in (what scan.query gives) and its signed distance from the reference part, or from the element deviation.set_target measures against; side "reference" a reading per sample of the map on the reference (deviation.settings { on: "reference" } — measured if it is not yet), in the reference’s frame, positive where the reference stands outside the scan. format: ply (the default; binary, float x, y, z, deviation and uchar measured), npy (an N × 4 float32 array x, y, z, d, for numpy.load) or csv (x,y,z,d, for a spreadsheet). The distance is NaN ("nan" in the CSV) where there is no reading; a reading past the search distance is kept as it is — the map draws it bare and the statistics leave it out, so measured is 0 on it (PLY), and in the others |d| ≤ searchDistance says it counts. Returns the file and the figures to check it by: readings, measured, withinTolerance and withinTolerancePct (of the measured, ± tolerance — on the scan’s side what the deviation state’s stats give; on the reference’s, by reading, where the state gives it by area), tolerance and searchDistance. Changes nothing.',
+    'The deviation map as a file of readings, for working on it elsewhere: side "scan" (the default) a reading per scan vertex with its signed distance from the reference (or the element measured against), side "reference" a reading per sample on the reference; format ply (the default, binary), npy (N × 4 float32 x, y, z, d) or csv. Returns the file with readings, measured, withinTolerance, withinTolerancePct, tolerance and searchDistance. Trap: the distance is NaN where there is no reading, and a reading past the search distance is kept as it is — |d| ≤ searchDistance says it counts. Changes nothing.',
   input: obj({
     side: enumOf(['scan', 'reference'], 'The readings: per scan vertex (the default), or per sample on the reference.'),
     format: enumOf(['ply', 'npy', 'csv'], 'ply (the default), npy or csv.'),

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // The scan's flat regions through the commands: scan.segment on a faceted
-// block, mirror twins across a plane, a region marked — or several — and
+// block, a round sheet's strips named curved and joined into one run while
+// a faceted one's facets stay faces, mirror twins across a plane, a region
+// marked — or several — and
 // fitted with element.fit_marked; element.fit answering the region it grew
 // and warning when it grew across two surfaces, or on the crown of a bead,
 // and answering each of several seeds, a seed left out with a warning. In
@@ -51,6 +53,36 @@ function beadedPlate(R: number, r: number, noise = 0.01): Float32Array {
   return Float32Array.from(tris)
 }
 
+/** A sheet bent round the z axis at radius R across `spanDeg`, `length`
+ *  long — or, with `facets`, the polygon of that many flat facets inscribed
+ *  in the arc — every vertex moved a little along the radius, the same way
+ *  wherever it repeats. */
+function arcSheet(R: number, spanDeg: number, length: number, { facets = 0, noise = 0.005 } = {}): Float32Array {
+  const tris: number[] = []
+  const span = (spanDeg * Math.PI) / 180
+  const N = Math.ceil((R * span) / 0.3)
+  const M = Math.ceil(length / 0.3)
+  const hash = (i: number, k: number) => {
+    const h = Math.sin(i * 12.9898 + k * 78.233) * 43758.5453
+    return h - Math.floor(h) - 0.5
+  }
+  const at = (i: number, k: number): Vec3 => {
+    const th = -span / 2 + (span * i) / N
+    let r = R
+    if (facets) {
+      // On the chord of the facet the angle falls in.
+      const w = span / facets
+      const mid = -span / 2 + w * (Math.min(facets - 1, Math.floor((th + span / 2) / w)) + 0.5)
+      r = (R * Math.cos(w / 2)) / Math.cos(th - mid)
+    }
+    r += 2 * noise * hash(i, k)
+    return [r * Math.cos(th), r * Math.sin(th), (length * k) / M]
+  }
+  for (let i = 0; i < N; i++)
+    for (let k = 0; k < M; k++) tris.push(...at(i, k), ...at(i + 1, k), ...at(i + 1, k + 1), ...at(i, k), ...at(i + 1, k + 1), ...at(i, k + 1))
+  return Float32Array.from(tris)
+}
+
 const open = (faces = chamferedBlock(), noise = 0.01) =>
   run('scan.open', { bytes: stlBytes(soupOf(facetedSolid(faces, { noise }))), name: 'block.stl', discard: true })
 
@@ -62,10 +94,25 @@ interface Region {
   area: number
   box: { min: Vec3; max: Vec3 }
   vertices: number
-  neighbours: { id: number; deg: number }[]
+  curved?: { sagitta: number }
+  run?: number
+  neighbours: { id: number; deg: number; smooth: boolean }[]
   mirror?: { id: number | 'self'; deg: number; mm: number }
 }
-interface Segmented { found: number; shown?: number; considered: number; claimed: number; regions: Region[]; marked?: { points: number; from: string }; region?: Region | Region[] }
+interface CurvedRun { id: number; regions: number[]; area: number; along?: Vec3; cylinder?: { radius: number; axis: Vec3; sigma: number }; note: string }
+interface Segmented {
+  found: number
+  shown?: number
+  considered: number
+  claimed: number
+  maxRms: number
+  noise: number
+  regions: Region[]
+  curvedRuns?: CurvedRun[]
+  runsFound?: number
+  marked?: { points: number; from: string }
+  region?: Region | Region[]
+}
 
 const near = (a: readonly number[], b: readonly number[]) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2] > Math.cos((0.5 * Math.PI) / 180)
 const byNormal = (s: Segmented, n: Vec3) => s.regions.find((r) => near(r.normal, n))!
@@ -84,11 +131,68 @@ describe('scan.segment', () => {
     expect(top.neighbours.find((n) => n.id === bevel.id)?.deg).toBeCloseTo(25, 0)
     // No vertex lists in the answer.
     expect(JSON.stringify(s).length).toBeLessThan(6000)
+    // Faces, not strips: nothing curved, no edge smooth, no runs.
+    expect(s.maxRms).toBe(0.05)
+    expect(s.noise).toBeGreaterThan(0)
+    expect(s.noise).toBeLessThan(0.02)
+    expect(s.regions.some((r) => r.curved || r.run)).toBe(false)
+    expect(s.regions.some((r) => r.neighbours.some((n) => n.smooth))).toBe(false)
+    expect(s.curvedRuns).toBeUndefined()
 
+    // Past the limit, the neighbours within 35° — a run's chain goes on
+    // through them — are listed all the same.
     const few = await run<Segmented>('scan.segment', { minArea: 10, limit: 3 })
     expect(few.shown).toBe(3)
     expect(few.regions).toHaveLength(3)
-    for (const r of few.regions) for (const n of r.neighbours) expect(n.id).toBeLessThanOrEqual(3)
+    expect(few.regions.map((r) => r.neighbours)).toEqual(s.regions.slice(0, 3).map((r) => r.neighbours.filter((n) => n.id <= 3 || n.deg <= 35)))
+    const past = few.regions.flatMap((r) => r.neighbours.filter((n) => n.id > 3))
+    expect(past.length).toBeGreaterThan(0)
+    for (const n of past) expect(n.deg).toBeLessThanOrEqual(35)
+  })
+
+  it('names the strips a curved surface is cut into, and the run they make', async () => {
+    // R40 over 60°: a plane grows about 10° of it before its σ reaches
+    // maxRms, so it comes out as several regions.
+    await run('scan.open', { bytes: stlBytes(arcSheet(40, 60, 40)), name: 'arc.stl', discard: true })
+    const s = await run<Segmented>('scan.segment', { minArea: 10 })
+    expect(s.found).toBeGreaterThanOrEqual(4)
+    const strips = s.regions.filter((r) => r.area > 50)
+    for (const r of strips) {
+      expect(r.curved, `region ${r.id}`).toBeDefined()
+      expect(r.sigma).toBeGreaterThan(0.01)
+    }
+    const across = strips.flatMap((r) => r.neighbours.filter((n) => strips.some((o) => o.id === n.id)))
+    expect(across.length).toBeGreaterThan(0)
+    for (const n of across) expect(n.smooth).toBe(true)
+    // One run holds them all: one cylinder along z, R40.
+    expect(s.curvedRuns).toHaveLength(1)
+    const [one] = s.curvedRuns!
+    for (const r of strips) {
+      expect(one.regions).toContain(r.id)
+      expect(r.run).toBe(1)
+    }
+    expect(Math.abs(one.along![2])).toBeGreaterThan(0.999)
+    expect(one.cylinder!.radius).toBeCloseTo(40, 0)
+    expect(one.cylinder!.sigma).toBeLessThan(0.01)
+    expect(one.note).toMatch(/^one curved surface cut into \d+ strips — smooth joins \d+(–\d+)?°, planes’ σ [\d.]+(–[\d.]+)? against maxRms 0\.05; one cylinder R40(\.\d)? σ/)
+    // Marking a run's regions marks the surface.
+    const marked = await run<Segmented>('scan.segment', { minArea: 10, mark: one.regions })
+    expect(marked.marked!.points).toBe(s.regions.filter((r) => one.regions.includes(r.id)).reduce((n, r) => n + r.vertices, 0))
+  })
+
+  it('leaves a faceted prism its facets: no strip curved, no join smooth, no run', async () => {
+    await run('scan.open', { bytes: stlBytes(arcSheet(40, 60, 40, { facets: 6 })), name: 'facets.stl', discard: true })
+    const s = await run<Segmented>('scan.segment', { minArea: 10 })
+    expect(s.found).toBe(6)
+    for (const r of s.regions) {
+      expect(r.curved).toBeUndefined()
+      expect(r.sigma).toBeLessThan(0.01)
+      for (const n of r.neighbours) {
+        expect(n.deg).toBeCloseTo(10, 0)
+        expect(n.smooth).toBe(false)
+      }
+    }
+    expect(s.curvedRuns).toBeUndefined()
   })
 
   it('pairs mirror twins across a plane', async () => {

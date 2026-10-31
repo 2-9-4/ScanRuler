@@ -20,6 +20,8 @@ import { ValueWindow } from './DroValue'
 import { InfoDot } from './InfoDot'
 import { RefSelect } from './RefSelect'
 import { DimDraftHead } from './DimensionSection'
+import { sheetUnits } from '../core/flat/summary'
+import { useUnits } from '../app/useUnits'
 
 export function FlatDimensionSection({
   editorOpen,
@@ -44,7 +46,12 @@ export function FlatDimensionSection({
   const toggleDimensionVisible = useFlat((s) => s.toggleDimensionVisible)
   const setAllDimensionsVisible = useFlat((s) => s.setAllDimensionsVisible)
 
-  const evaluated = useMemo(() => evaluateFlatDimensions(dimensions, elements), [dimensions, elements])
+  // Written in the units shown on a sheet in millimetres, in pixels on one
+  // with no scale.
+  const units = useUnits()
+  const scaled = useFlat((s) => s.pxPerMm !== null)
+  const su = sheetUnits(scaled ? 'mm' : 'px', units) // units-ok: the sheet's document unit, an id
+  const evaluated = useMemo(() => evaluateFlatDimensions(dimensions, elements, su), [dimensions, elements, su])
 
   // Live preview of the dimension being built, once both slots hold something.
   const dimInfo = dimDraft ? flatDimensionTypeInfo(dimDraft.type) : null
@@ -52,7 +59,7 @@ export function FlatDimensionSection({
   if (dimDraft && dimInfo && dimDraft.refs.every((r) => r !== null)) {
     const fits = dimDraft.refs.map((id) => elements.find((e) => e.id === id)?.fit)
     dimPreview = fits.every((f): f is FlatFit => f !== undefined && f !== null)
-      ? evaluateFlatDimension(dimDraft.type, fits)
+      ? evaluateFlatDimension(dimDraft.type, fits, su)
       : { label: dimInfo.label, invalid: 'A referenced element is unavailable.' }
   }
   const measurable = elements.filter((e) => e.fit).length

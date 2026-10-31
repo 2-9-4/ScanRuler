@@ -32,6 +32,7 @@
 
 import type { CylinderFit, FitData, PlaneFit, SphereFit, TorusFit } from '../types'
 import { writeDirection } from './deflection'
+import { fmtLen, type DisplayUnits } from '../units'
 
 /** The kinds a signed deviation can be measured against: the three with a
  *  surface and therefore two sides. A point and a line have neither — the
@@ -268,16 +269,17 @@ export function computeElementDeviation(
 }
 
 /** What the element is, for the readout and the report: the one number that
- *  says which surface this map is measured against. */
-export function describeTarget(fit: ElementTarget): string {
+ *  says which surface this map is measured against, in `units`. */
+export function describeTarget(fit: ElementTarget, units: DisplayUnits = 'mm'): string {
+  const len = (v: number, mmDecimals: number): string => fmtLen(v, units, mmDecimals)
   if (fit.kind === 'plane') {
-    return `plane, ${(2 * fit.extentU).toFixed(1)} × ${(2 * fit.extentV).toFixed(1)} mm as drawn`
+    return `plane, ${fmtLen(2 * fit.extentU, units, 1, { bare: true })} × ${len(2 * fit.extentV, 1)} as drawn`
   }
   if (fit.kind === 'cylinder') {
-    return `cylinder, ⌀${(2 * fit.radius).toFixed(3)} mm × ${fit.length.toFixed(1)} mm as drawn`
+    return `cylinder, ⌀${len(2 * fit.radius, 3)} × ${len(fit.length, 1)} as drawn`
   }
   if (fit.kind === 'torus') {
-    return `torus, tube R ${fit.minorRadius.toFixed(3)} mm on a ring ⌀${(2 * fit.majorRadius).toFixed(3)} mm`
+    return `torus, tube R ${len(fit.minorRadius, 3)} on a ring ⌀${len(2 * fit.majorRadius, 3)}`
   }
-  return `sphere, ⌀${(2 * fit.radius).toFixed(3)} mm`
+  return `sphere, ⌀${len(2 * fit.radius, 3)}`
 }

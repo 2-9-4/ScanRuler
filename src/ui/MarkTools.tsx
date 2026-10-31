@@ -14,6 +14,7 @@ import { brushRange, useMark, type MarkGesture } from '../state/markStore'
 import { useStore } from '../state/store'
 import { Icon, type IconName } from './icons'
 import { InfoDot } from './InfoDot'
+import { useLength } from '../app/useUnits'
 
 /** The marking modes, with plain navigation as one of them. A gesture takes
  *  both plain mouse drags away from the camera for as long as it is on, so
@@ -41,16 +42,18 @@ interface BrushDiameter {
   setDiameter: (mm: number) => void
 }
 
-/** The brush's diameter to type, in millimetres. */
+/** The brush's diameter to type: held in millimetres, typed in the units
+ *  shown. */
 export function BrushNumber({ diameter, setDiameter, testId }: BrushDiameter & { testId: string }) {
+  const len = useLength()
   return (
     <input
       type="number"
       step="any"
       min={0}
       data-test={testId}
-      value={Number(diameter.toFixed(3))}
-      onChange={(e) => e.target.value !== '' && setDiameter(Number(e.target.value))}
+      value={Number(len.toDisplay(diameter).toFixed(len.decimals(3)))}
+      onChange={(e) => e.target.value !== '' && setDiameter(len.fromDisplay(Number(e.target.value)))}
     />
   )
 }
@@ -87,6 +90,7 @@ export function MarkTools({
   const m = useMark()
   const modelSize = useStore((s) => s.modelSize)
   const brush = brushRange(modelSize)
+  const len = useLength()
 
   return (
     <>
@@ -131,7 +135,7 @@ export function MarkTools({
       {m.gesture === 'brush' && (
         <>
           <label className="field">
-            <span>Brush Ø (mm)</span>
+            <span>Brush Ø ({len.word()})</span>
             <BrushNumber diameter={m.diameter} setDiameter={m.setDiameter} testId="mark-brush-diameter" />
           </label>
           <BrushSlider diameter={m.diameter} setDiameter={m.setDiameter} brush={brush} />

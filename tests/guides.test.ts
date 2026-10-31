@@ -8,7 +8,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { registerCoreCommands } from '../src/commands/core'
 import { GUIDES_READ_MOST } from '../src/commands/core/guide'
-import { registerGuide } from '../src/commands/guides'
+import { guideSectionRead, registerGuide, resetGuideReads } from '../src/commands/guides'
 import { listCommands, runCommand } from '../src/commands/registry'
 import { CommandError } from '../src/commands/types'
 import { GUIDE_ANSWER_CAP, quotedReads } from './guideReads'
@@ -30,6 +30,28 @@ const TEXT = [
   'Check the frame.',
 ].join('\r\n')
 
+/** A guide with a section read when its moment comes, not with the guide. */
+const LATER = [
+  '# Later guide',
+  '',
+  'Opening.',
+  '',
+  '## 1. Setup',
+  'Open the scan.',
+  '',
+  '## 2. Measuring',
+  '',
+  '<!-- read when: before the first fit -->',
+  '',
+  'Fit the cylinder.',
+  '',
+  '### 2a. Seeds',
+  'Seed in the middle.',
+  '',
+  '## 3. Handover',
+  'Check the frame.',
+].join('\n')
+
 /** A guide of about `chars` characters. */
 const long = (chars: number) => ['# A long guide', '', '## 1. All of it', 'x'.repeat(chars)].join('\n')
 
@@ -41,6 +63,9 @@ beforeAll(() => {
     registerGuide({ id: 'test-long-a', title: 'A long guide', when: 'testing what fits', text: async () => long(50_000) }),
     registerGuide({ id: 'test-long-b', title: 'Another long guide', when: 'testing what fits', text: async () => long(50_000) }),
     registerGuide({ id: 'test-huge', title: 'A huge guide', when: 'testing what fits', text: async () => long(85_000) }),
+    registerGuide({ id: 'test-later', title: 'A guide with a later section', when: 'testing what waits', text: async () => LATER }),
+    registerGuide({ id: 'test-parts-later', title: 'A long guide with a later section', when: 'testing what waits', text: async () => ['# Parts', '', 'Opening.', '', '## 1. Shapes', 'a'.repeat(40_000), '', '## 2. Frames', '', '<!-- read when: before the first frame -->', 'b'.repeat(40_000), '', '## 3. Errors', 'c'.repeat(40_000)].join('\n') }),
+    registerGuide({ id: 'test-parts', title: 'A guide of long parts', when: 'testing what fits', text: async () => ['# Parts', '', 'Opening.', '', '## 1. Shapes', 'a'.repeat(40_000), '', '## 2. Frames', 'b'.repeat(40_000), '', '## 3. Errors', 'c'.repeat(40_000)].join('\n') }),
   ]
 })
 afterAll(() => unregister.forEach((off) => off()))
@@ -104,6 +129,19 @@ describe('guide.read', () => {
     expect(listCommands().find((c) => c.name === 'guide.read')!.description).toContain('as many as fit in about 80 k characters, the rest named in next')
   })
 
+  it('cuts a guide too long by itself to the sections that fit, and names the rest', async () => {
+    const parts = await read({ topic: ['test-parts', 'test-guide'] })
+    expect(parts.guides).toHaveLength(1)
+    const [g] = parts.guides
+    expect(g.text).toMatch(/^# Parts\n\nOpening\.\n\n## 1\. Shapes\na{40000}$/)
+    expect(g.sectionsLeft).toEqual(['2. Frames', '3. Errors'])
+    expect(parts.next).toEqual(['test-guide'])
+    expect(parts.note).toMatch(/^test-parts is longer than one answer carries: its "2\. Frames", "3\. Errors" sections are left out — read each when you need it, guide_read \{ topic: "test-parts", section: "2\. Frames" \}\./)
+    expect(JSON.stringify(parts).length).toBeLessThan(GUIDES_READ_MOST)
+    // Each one left, read as the note says.
+    expect((await read({ topic: 'test-parts', section: '2. Frames' })).text).toMatch(/^## 2\. Frames\nb{40000}$/)
+  })
+
   it('answers every read the app’s guides prescribe within what the server carries', async () => {
     const dir = new URL('../src/commands/guides/', import.meta.url)
     const files = readdirSync(dir).filter((f) => f.endsWith('.md'))
@@ -128,6 +166,68 @@ describe('guide.read', () => {
     expect(datums.text).not.toContain('Check the frame')
     expect((await read({ topic: 'test-guide', section: 'small' })).section).toBe('Small angles')
     expect((await read({ topic: 'test-guide', section: '2. Datum check' })).text).toContain('Check the frame')
+  })
+
+  it('leaves a section marked to be read when its moment comes out of a whole read, and names it in later', async () => {
+    const whole = await read({ topic: 'test-later' })
+    const [g] = whole.guides
+    expect(g.text).toBe(['# Later guide', '', 'Opening.', '', '## 1. Setup', 'Open the scan.', '', '## 3. Handover', 'Check the frame.'].join('\n'))
+    expect(g.text).not.toContain('read when')
+    expect(g.later).toEqual([{ section: '2. Measuring', when: 'before the first fit' }])
+    expect(whole.note).toBe('test-later keeps "2. Measuring" (before the first fit) for later: read it when that moment comes, before the step it is for — guide_read { topic: "test-later", section: "2. Measuring" }.')
+    // The index says when.
+    const index = await read({})
+    const sections = index.guides.find((x: any) => x.topic === 'test-later').sections
+    expect(sections.map((s: any) => s.heading)).toEqual(['1. Setup', '2. Measuring', '2a. Seeds', '3. Handover'])
+    expect(sections[1].when).toBe('before the first fit')
+    expect(sections[0].when).toBeUndefined()
+    // A guide without one has no later.
+    expect((await read({ topic: 'test-guide' })).guides[0].later).toBeUndefined()
+    // What the description says.
+    expect(listCommands().find((c) => c.name === 'guide.read')!.description).toContain('later names each with when to read it')
+  })
+
+  it('gives a section marked for later whole when read by name, without the marker', async () => {
+    const s = await read({ topic: 'test-later', section: 'Measuring' })
+    expect(s.section).toBe('2. Measuring')
+    expect(s.text).toBe(['## 2. Measuring', '', 'Fit the cylinder.', '', '### 2a. Seeds', 'Seed in the middle.'].join('\n'))
+    expect((await read({ topic: 'test-later', section: '2a. Seeds' })).text).toBe('### 2a. Seeds\nSeed in the middle.')
+  })
+
+  it('takes the later sections out before cutting a guide too long by itself', async () => {
+    const parts = await read({ topic: 'test-parts-later' })
+    const [g] = parts.guides
+    expect(g.text).toMatch(/^# Parts\n\nOpening\.\n\n## 1\. Shapes\na{40000}$/)
+    expect(g.later).toEqual([{ section: '2. Frames', when: 'before the first frame' }])
+    expect(g.sectionsLeft).toEqual(['3. Errors'])
+    expect(parts.note).toMatch(/^test-parts-later keeps "2\. Frames" \(before the first frame\) for later: .* test-parts-later is longer than one answer carries: its "3\. Errors" section is left out/)
+    expect(JSON.stringify(parts).length).toBeLessThan(GUIDES_READ_MOST)
+    expect((await read({ topic: 'test-parts-later', section: 'Frames' })).text).toMatch(/^## 2\. Frames\n\nb{40000}$/)
+  })
+
+  it('records what was read, per guide and section', async () => {
+    resetGuideReads()
+    expect(guideSectionRead('test-later', '1. Setup')).toBe(false)
+    expect(guideSectionRead('test-later', '2. Measuring')).toBe(false)
+    // A whole read: the sections it carried, not the one kept for later.
+    await read({ topic: ['test-later', 'test-guide'] })
+    expect(guideSectionRead('test-later', '1. Setup')).toBe(true)
+    expect(guideSectionRead('test-later', 'Setup')).toBe(true)
+    expect(guideSectionRead('test-later', '3. Handover')).toBe(true)
+    expect(guideSectionRead('test-later', '2. Measuring')).toBe(false)
+    expect(guideSectionRead('test-later', '2a. Seeds')).toBe(false)
+    expect(guideSectionRead('test-guide', 'Small angles')).toBe(true)
+    expect(guideSectionRead('nope', '1. Setup')).toBe(false)
+    // A section read by name: it and its parts.
+    await read({ topic: 'test-later', section: 'Measuring' })
+    expect(guideSectionRead('test-later', '2. Measuring')).toBe(true)
+    expect(guideSectionRead('test-later', 'measuring')).toBe(true)
+    expect(guideSectionRead('test-later', 'Seeds')).toBe(true)
+    // A long guide's sections left for the next call are not read yet.
+    resetGuideReads()
+    await read({ topic: 'test-parts' })
+    expect(guideSectionRead('test-parts', '1. Shapes')).toBe(true)
+    expect(guideSectionRead('test-parts', '2. Frames')).toBe(false)
   })
 
   it('says what is wrong with a name, and what there is', async () => {

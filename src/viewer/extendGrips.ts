@@ -13,6 +13,7 @@ import { CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js'
 import { CYLINDER_SIDES, PLANE_SIDES, type ExtendSide } from '../core/elements/extend'
 import type { SectionFrame } from '../core/section/frame'
 import type { FitData, Vec3 } from '../core/types'
+import { lengthDecimals } from '../core/units'
 
 /** A plugin grip's side: a name of the plugin's own, none of the app's. */
 export type PluginGripSide = string & {}
@@ -276,9 +277,12 @@ export class ExtendGrips {
     // Only a settled value is shown: not the one under a hand still typing.
     // Given text — what the number is written as — the field shows that,
     // with the value it comes to as its tooltip.
-    const shown = field.text ?? String(Math.round(field.value * 100) / 100)
+    // Two decimals in millimetres; in inches one more, as every length reads.
+    const places = field.unit === 'in' ? lengthDecimals(2, 'in') : 2
+    const round = (v: number): number => Math.round(v * 10 ** places) / 10 ** places
+    const shown = field.text ?? String(round(field.value))
     if (document.activeElement !== f.input && (f.value !== field.value || f.input.value !== shown)) f.input.value = shown
-    f.input.title = field.text ? `${field.text} = ${Math.round(field.value * 100) / 100} ${field.unit}` : 'The number this grip drags — type a value and press Enter; Escape closes the field'
+    f.input.title = field.text ? `${field.text} = ${round(field.value)} ${field.unit}` : 'The number this grip drags — type a value and press Enter; Escape closes the field'
     f.value = field.value
     this.placeField()
   }

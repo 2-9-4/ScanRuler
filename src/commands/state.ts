@@ -34,7 +34,7 @@ import { hintNow } from '../app/useHints'
 import { APP_VERSION } from '../version'
 import { commandHost, sessionBusy, type FlatSheetView } from './host'
 import { useCommandActivity } from './activity'
-import { readStateSections } from './stateSections'
+import { readStateBriefs, readStateSections } from './stateSections'
 import { guideRead, listGuides } from './guides'
 import { describeView } from './core/view'
 import { serverTooOld } from './agentLink'
@@ -415,6 +415,23 @@ const withServerTooOld = () => {
   return text ? { serverTooOld: text } : {}
 }
 
+/** The session in brief, as a step of the history answers: what a walk
+ *  through the steps changes, counted — the whole readout ran to 12 k on a
+ *  modelled part, on every undo. */
+export function sessionAfterStep() {
+  const s = useStore.getState()
+  const history = useHistory.getState()
+  const plugins = readStateBriefs()
+  return {
+    elements: s.elements.length,
+    dimensions: s.dimensions.length,
+    sections: s.sections.length,
+    history: { undo: history.past.at(-1)?.label ?? null, redo: history.future.at(-1)?.label ?? null },
+    ...(historyBlocked() ? { held: 'a rebuild or an open panel still holds the history: the next undo is refused until it lets go, and what follows may change with it' } : {}),
+    ...(Object.keys(plugins).length > 0 ? { plugins } : {}),
+  }
+}
+
 export async function sessionState() {
   const bounds = await scanBounds()
   const s = useStore.getState()
@@ -468,6 +485,11 @@ export async function sessionState() {
       blocked: historyBlocked(),
     },
     view: describeView(),
+    // What the person's screen shows lengths in — a browser preference.
+    // Every figure in this readout and in every answer stays millimetres;
+    // this is for an agent telling the person a figure the screen shows in
+    // inches.
+    ui: { units: usePrefs.getState().units },
     plugins: readStateSections(),
   }
 }

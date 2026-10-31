@@ -27,10 +27,10 @@ type Slot =
 const slotSchema = (what: string, count: number, points: string): JsonSchema =>
   oneOf(
     [
-      obj({ element: elementRefSchema(`A measured element for ${what}.`) }, ['element']),
+      obj({ element: elementRefSchema(`An element for ${what}.`) }, ['element']),
       count === 1
         ? obj({ point: vec3(`A point for ${what}, mm.`) }, ['point'])
-        : obj({ points: arr(vec3('A point, mm.'), `${count} points on the scan for ${what} — ${points}.`, { minItems: count, maxItems: count }) }, ['points']),
+        : obj({ points: arr(vec3('A point, mm.'), `${count} points, mm — ${points}.`, { minItems: count, maxItems: count }) }, ['points']),
     ],
     `${what[0].toUpperCase()}${what.slice(1)}: an element, or ${count === 1 ? 'a point' : `${count} points`} on the scan.`,
   )
@@ -76,7 +76,7 @@ const closeBox = () => {
 
 type Detail = 'brief' | 'full'
 
-const detailIn = enumOf(['brief', 'full'], 'brief (the default): the transform and how many elements moved with the part. full: every element where it now is, as the list gives it.')
+const detailIn = enumOf(['brief', 'full'], 'brief (the default): the transform and how many elements moved. full: every element where it now is.')
 
 /** The elements after an alignment: how many moved with the part — or,
  *  with detail full, each where it now is. */
@@ -200,14 +200,14 @@ const datum: Command<{
   name: 'datum',
   title: 'Align the part to datums',
   description:
-    'A 3-2-1 alignment, as the panel’s alignment box sets it up: primary levels the part — a plane (or 3 points on a face) whose outward normal becomes primaryAxis (default z-, the face the part stands on facing down); secondary turns it — a line or an axis (or 2 points along an edge) laid along secondaryAxis (default x+), or a plane, whose outward NORMAL goes on secondaryAxis, not along it (a side wall as secondary with x+ ends up facing x+), turned square to the primary; origin is the zero point — a point, sphere or circle (or 1 point). Each is an element by id or name, or points in mm: points are used as given, not snapped to the scan (an origin point is the zero exactly where it is; scan.nearest puts a point on the surface first). Each datum zeroes the coordinates it owns (a plane the one along its normal, an axis or line the two across it); the origin sets only the coordinates they leave open — with a plane and a line, the one along the line. An origin alone moves the part without turning it, all three coordinates. Everything measured moves with the part. On the part’s first alignment the coordinates nothing sets are centred on the scan’s box centre; keepFree: true leaves them where they are. Returns the transform applied — the whole alignment the part carries, when it was aligned before — how many elements moved with it, centred (the coordinates centred, as ["y"]), with an origin which coordinates it set and where its point now stands (a note when that is off zero), and parallelFace when a face parallel to a levelling plane and within 5 mm of it holds more of the scan (its offset along the plane’s outward normal, how many times the area, a note) — the part may stand on that one. One undo step.',
+    'A 3-2-1 alignment, as the panel’s alignment box sets it up: primary levels the part — a plane (or 3 points) whose outward normal becomes primaryAxis (default z-); secondary turns it — a line or axis (or 2 points) laid along secondaryAxis (default x+), or a plane; origin is the zero point — a point, sphere or circle (or 1 point). Elements by id or name, or points in mm used as given, not snapped. Trap: a plane as secondary puts its outward NORMAL on secondaryAxis, not its face along it. Each datum zeroes the coordinates it owns, the origin only those left open; an origin alone moves without turning. On a first alignment the coordinates nothing sets are centred on the scan’s box (keepFree: true leaves them). Returns the transform applied, how many elements moved, centred, origin { set, at, note } and parallelFace when a face parallel to the levelling plane within 5 mm holds more of the scan. One undo step.',
   input: obj({
     primary: slotSchema('levelling', 3, 'they span the face'),
-    primaryAxis: enumOf(AXES, 'The axis the primary’s outward normal becomes — default z-.'),
+    primaryAxis: enumOf(AXES, 'The axis the primary’s outward normal becomes; default z-.'),
     secondary: slotSchema('rotation', 2, 'they run along the edge'),
-    secondaryAxis: enumOf(AXES, 'The axis the secondary runs along — a plane’s normal, for a plane — default x+.'),
+    secondaryAxis: enumOf(AXES, 'The axis the secondary runs along (a plane: its normal); default x+.'),
     origin: slotSchema('the zero point', 1, ''),
-    keepFree: bool('On a first alignment, leave the coordinates nothing sets where they are instead of centring the part on them.'),
+    keepFree: bool('First alignment: leave the coordinates nothing sets where they are instead of centring.'),
     detail: detailIn,
   }),
   label: () => 'datum alignment',
@@ -250,9 +250,9 @@ const auto: Command<{ level?: AutoAlignLevel; detail?: Detail }> = {
   name: 'auto',
   title: 'Auto-align the part',
   description:
-    'Read a coordinate system off the scan and apply it, as Auto-align then Confirm alignment do: the directions most faces are square to and the axis round walls run along, the part standing on its base, its long side along X. level: settled (the default) lays all the faces on the axes at once, by area — a flange a degree off square shares its error with the base; largest squares the axis nearest the largest flat face exactly onto its normal and turns the other two about it onto the faces square to them. Returns what the pose was read from, the transform, how many elements moved with it, and square — how square it came out: largest (the largest flat face: the axis it is square to, its area in mm², tiltDeg — the angle between its fitted plane’s normal and that axis) and per axis the faces square to it (tiltDeg weighted by area, their area, the largest three each with area, tiltDeg and centre in the new frame). A drafted wall reads as its draft. One undo step.',
+    'Read a coordinate system off the scan and apply it, as Auto-align then Confirm alignment do: the directions most faces are square to and the axis round walls run along, the part standing on its base, its long side along X. level: settled (the default) lays all the faces on the axes at once, by area; largest squares the largest flat face exactly and settles the rest about its normal. Returns what the pose was read from, the transform, how many elements moved, and square — how square it came out: largest (the largest flat face’s axis, area, tiltDeg) and per axis the faces square to it with their tilts. Trap: a drafted wall reads as its draft, not as an alignment error. One undo step.',
   input: obj({
-    level: enumOf(['settled', 'largest'], 'settled (the default): the best fit of all the faces square to the axes. largest: square to the largest flat face exactly, the others settled about its normal.'),
+    level: enumOf(['settled', 'largest'], 'settled (the default): all faces at once, by area. largest: the largest flat face exactly, the rest settled about its normal.'),
     detail: detailIn,
   }),
   label: () => 'auto-align',
@@ -277,7 +277,7 @@ const symmetry: Command<{ detail?: Detail }> = {
   name: 'symmetry',
   title: 'Align the part on its symmetry plane',
   description:
-    'Settle the part’s pose on its mirror plane and apply it, as Use symmetry then Confirm alignment do: the pose is Auto-align’s, the mirror plane a measured symmetry plane or one searched for on the scan; the axis nearest its normal is turned onto it and the zero point put on it. Refuses when the scan has no symmetry plane. Returns the note on what it settled on, the transform and how many elements moved with it. One undo step.',
+    'Settle the part’s pose on its mirror plane and apply it, as Use symmetry then Confirm alignment do: the pose is Auto-align’s, the mirror plane a measured symmetry plane or one searched for on the scan; the axis nearest its normal is turned onto it and the zero point put on it. Refuses when the scan has no symmetry plane. Returns the note on what it settled on, the transform and how many elements moved. One undo step.',
   input: obj({ detail: detailIn }),
   label: () => 'symmetry alignment',
   run: async ({ detail }) => {

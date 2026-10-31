@@ -4,6 +4,7 @@
 // going back to the panel.
 
 import type { FitData } from '../core/types'
+import { fmtLen, type DisplayUnits } from '../core/units'
 import { CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js'
 
 /** What a measurement's pin says beyond its value: small lines under it —
@@ -57,10 +58,11 @@ export function pinLabel(
 }
 
 /** What an element's viewport pin says under its name: the diameter where
- *  there is one, nothing otherwise — sigma and coordinates stay in the panel. */
-export function pinValue(fit: FitData): string {
+ *  there is one, nothing otherwise — sigma and coordinates stay in the panel.
+ *  Written in `units`. */
+export function pinValue(fit: FitData, units: DisplayUnits = 'mm'): string {
   if (fit.kind === 'sphere' || fit.kind === 'cylinder' || fit.kind === 'circle')
-    return `Ø ${(fit.radius * 2).toFixed(3)} mm`
+    return `Ø ${fmtLen(fit.radius * 2, units, 3)}`
   if (fit.kind === 'cone') return `∠ ${(fit.halfAngle * 2).toFixed(2)}°`
   return ''
 }

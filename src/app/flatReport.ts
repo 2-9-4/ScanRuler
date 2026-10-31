@@ -13,10 +13,13 @@ import { textBytes, type BuiltFile } from './exports'
 import { sheetFrame } from './flatSheet'
 import { chainCount } from '../core/flat/edges'
 import type { FlatDrawingInput } from '../core/flat/drawing'
+import { sheetUnits } from '../core/flat/summary'
+import type { DisplayUnits } from '../core/units'
 
 /** The section on the 2D stage, described for the report: its name, the
- *  scan it cuts, and where. Undefined with the image on the stage. */
-function activeSectionInfo(): FlatReportInput['section'] {
+ *  scan it cuts, and where, in `units`. Undefined with the image on the
+ *  stage. */
+function activeSectionInfo(units: DisplayUnits = 'mm'): FlatReportInput['section'] {
   const subject = useFlat.getState().subject
   if (subject.kind !== 'section') return undefined
   const store = useStore.getState()
@@ -27,25 +30,30 @@ function activeSectionInfo(): FlatReportInput['section'] {
     sec.offset,
     tiltOf(sec.refDir, sec.frame.normal),
     sec.kind,
+    units,
   )
   return { name: sec.name, scanName: store.fileName ?? 'scan', cut: where, ...(sec.kind === 'shadow' ? { kind: 'shadow' as const } : {}) }
 }
 
-/** Everything the 2D report and CSV need, gathered once. */
-export function flatReportInput(): FlatReportInput {
+/** Everything the 2D report and CSV need, gathered once, a sheet in
+ *  millimetres written in `units` — the screen's for the panel's buttons,
+ *  millimetres for the agent and the drawings. */
+export function flatReportInput(units: DisplayUnits = 'mm'): FlatReportInput {
   const s = useFlat.getState()
+  const unit = s.pxPerMm ? 'mm' : 'px' // units-ok: the sheet's document unit, an id
   return {
     imageName: s.imageName ?? 'image',
     imageWidth: s.imageWidth,
     imageHeight: s.imageHeight,
     calSource: s.calSource,
-    section: activeSectionInfo(),
+    section: activeSectionInfo(units),
     pxPerMm: s.pxPerMm,
     datum: s.datum,
     frame: sheetFrame(s),
-    unit: s.pxPerMm ? 'mm' : 'px',
+    unit,
+    units,
     elements: s.elements,
-    dimensions: evaluateFlatDimensions(s.dimensions, s.elements),
+    dimensions: evaluateFlatDimensions(s.dimensions, s.elements, sheetUnits(unit, units)),
     counts: s.counts,
     notes: s.notes,
   }
@@ -60,10 +68,11 @@ export const flatExportStem = (): string => {
   return named !== '' ? named : (useFlat.getState().imageName ?? 'scan').replace(/\.[^.]+$/, '')
 }
 
-/** The measurements as CSV, for a spreadsheet. */
-export function buildFlatCsvFile(): BuiltFile {
+/** The measurements as CSV, for a spreadsheet — its lengths in `units`, as
+ *  its header says. */
+export function buildFlatCsvFile(units: DisplayUnits = 'mm'): BuiltFile {
   const name = `${flatExportStem()}-measurements.csv`
-  return { name, mimeType: 'text/csv', bytes: textBytes(buildFlatCsv(flatReportInput())), status: `Measurements exported to ${name}.` }
+  return { name, mimeType: 'text/csv', bytes: textBytes(buildFlatCsv(flatReportInput(units))), status: `Measurements exported to ${name}.` }
 }
 
 /** "1,234 edge chains and 3 elements" — with a word on the edges when a

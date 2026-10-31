@@ -90,14 +90,14 @@ export const agentJson = (value, exact = false) =>
  *  false answers with the job at once. */
 export const waitIn = {
   type: 'boolean',
-  description: 'false: answer at once with { queued: true, job } while the call runs on; scanruler_wait { for: "job", job } gives its answer. true (the default): answer once it is done — or, still running at the server’s answer limit (scanruler_status: server.answerWithin, seconds), with { queued: true, job, after } all the same.',
+  description: 'false: answer { queued: true, job } at once and run on; scanruler_wait { for: "job", job } gives the answer. true, the default: answer when done — or queued all the same past the server’s answer limit.',
 }
 
 /** The `timings` a tool that changes the session takes: the server keeps
  *  what the page's answer carries of the build's steps (mcp.js). */
 export const timingsIn = {
   type: 'boolean',
-  description: 'true: the answer adds ms (the call, start to answer) and, where the change built, steps.played — each step the build played with its ms (steps.restored counts those taken up from a kept state, not played).',
+  description: 'true: the answer adds ms and, where the change built, steps.played — each step with its ms.',
 }
 
 export function toolFor(command, { outDir, cwd }) {
@@ -297,9 +297,26 @@ const KINDS = {
   drawing: ['.dxf', '.svg', '.pdf'],
   text: ['.md', '.txt', '.csv', '.json', '.jsonl'],
 }
+/** The extensions of the files scanruler_read reads. */
+export const TEXT_FILES = KINDS.text
 export const fileKind = (name) => {
   const ext = extname(name).toLowerCase()
   return Object.keys(KINDS).find((kind) => KINDS[kind].includes(ext)) ?? 'other'
+}
+
+/** How many bytes the UTF-8 character that starts with `byte` takes. */
+const utf8Length = (byte) => (byte < 0x80 ? 1 : byte >= 0xf0 ? 4 : byte >= 0xe0 ? 3 : 2)
+
+/** The start of UTF-8 `bytes` up to `most` of them, ending on a character's
+ *  end — the first character at least, when they hold it whole. */
+export function wholeUtf8(bytes, most = bytes.length) {
+  const cut = bytes.subarray(0, Math.max(most, utf8Length(bytes[0])))
+  for (let back = 1; back <= Math.min(4, cut.length); back++) {
+    const byte = cut[cut.length - back]
+    if ((byte & 0xc0) === 0x80) continue
+    return utf8Length(byte) > back ? cut.subarray(0, cut.length - back) : cut
+  }
+  return cut
 }
 
 /** A picture a command handed back, as MCP content: the image, and the rest
@@ -342,16 +359,18 @@ export async function writeNew(folder, name, data) {
 }
 
 /** A picture a batched call handed back, which a batch cannot show:
- *  written where the call asked, or into `folder` — the latest a scan or
- *  a project came from, which a sandboxed agent can open — else, or when
- *  that folder takes no file, into `outDir`; as saveFileResult writes any
- *  file, numbered past one already there, so a batch of renders, or a
- *  render from an earlier batch, is not written over. The result says
- *  where, in place of the bytes. */
+ *  written where the call asked, or into `folder` — the server's work
+ *  folder in the one the scan came from, which a sandboxed agent can open,
+ *  made when it is not there — else, or when that folder takes no file,
+ *  into `outDir`; as saveFileResult writes any file, numbered past one
+ *  already there, so a batch of renders, or a render from an earlier
+ *  batch, is not written over. The result says where, in place of the
+ *  bytes — written into `folder`, that folder too (file.folder). */
 export async function batchedPicture(result, args, { cwd, outDir, folder }) {
   if (args?.path || !folder) return saveFileResult(result, args, { cwd, outDir })
   try {
-    return await saveFileResult(result, args, { cwd, outDir: folder })
+    const saved = await saveFileResult(result, args, { cwd, outDir: folder })
+    return saved?.file?.path ? { ...saved, file: { ...saved.file, folder } } : saved
   } catch {
     return saveFileResult(result, args, { cwd, outDir })
   }

@@ -109,7 +109,7 @@ test('a server lists the last page’s commands before a page connects, and keep
   const listedBefore = (await client.listTools()).tools
   const before = listedBefore.map((t) => t.name)
   assert.ok(before.includes('demo_thing'), 'the kept command is listed with no page')
-  assert.equal(before.length, SNAPSHOT.length + 7)
+  assert.equal(before.length, SNAPSHOT.length + 8)
   assert.ok(listedBefore.find((t) => t.name === toolOf(SNAPSHOT[0])).inputSchema.properties.old, 'as it was kept')
 
   const page = await fakePage(port, { token: TOKEN, commands: SNAPSHOT })
@@ -157,5 +157,5 @@ test('with nothing kept, a listing does not wait', async () => {
   const t = Date.now()
   const tools = (await client.listTools()).tools
   assert.ok(Date.now() - t < 1_000)
-  assert.equal(tools.length, SNAPSHOT.length + 6)
+  assert.equal(tools.length, SNAPSHOT.length + 7)
 })

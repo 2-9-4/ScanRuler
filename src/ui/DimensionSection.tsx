@@ -17,6 +17,7 @@ import { useStore } from '../state/store'
 import { dimensionRefsOf } from '../state/sectionModel'
 import { usePulse } from '../app/useHints'
 import { surfaceSource, useSurfaces } from '../app/surfaces'
+import { useUnits } from '../app/useUnits'
 import { ValueWindow } from './DroValue'
 import { InfoDot } from './InfoDot'
 import { NameField, providersFor, RefSelect } from './RefSelect'
@@ -95,10 +96,12 @@ export function DimensionSection({
   // an unrelated render (a checkbox, a hover) does not repeat it. A surface
   // arriving or moving is a change of what is read too.
   const surfaceVersion = useSurfaces((s) => s.version)
+  // Values and verdicts are written in the units shown.
+  const units = useUnits()
   const evaluated = useMemo(
-    () => evaluateDimensions(own, refs, surfaceSource),
+    () => evaluateDimensions(own, refs, surfaceSource, units),
     // Runs on the listed dependencies only, not on everything it reads.
-    [own, refs, surfaceVersion],
+    [own, refs, surfaceVersion, units],
   )
 
   // Live preview of the dimension being built.
@@ -110,7 +113,7 @@ export function DimensionSection({
   if (dimDraft && dimInfo && dimDraft.refs.every((r) => r !== null)) {
     const fits = dimDraft.refs.map((id) => refs.find((e) => e.id === id)?.fit)
     dimPreview = fits.every((f): f is FitData => f !== undefined)
-      ? evaluateDimension(dimDraft.type, fits, { anchor: dimDraft.anchor })
+      ? evaluateDimension(dimDraft.type, fits, { anchor: dimDraft.anchor, units })
       : {
           label: dimInfo.label,
           invalid: 'A referenced element is unavailable.',
@@ -121,7 +124,7 @@ export function DimensionSection({
     dimDraft.refs.every((id) => elements.find((e) => e.id === id)?.kind === 'sphere')
   const previewVerdict =
     dimPreview?.raw !== undefined && !dimPreview.invalid && dimDraft?.limit && dimInfo
-      ? judgeLimit(dimPreview.raw, dimDraft.limit, dimInfo.unit)
+      ? judgeLimit(dimPreview.raw, dimDraft.limit, dimInfo.unit, units)
       : undefined
 
   return (

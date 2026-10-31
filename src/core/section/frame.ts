@@ -23,6 +23,7 @@ import { orthoBasis } from '../fit/linalg'
 import { rigidApply, rigidFromAxisAngle, rigidRotate, type Rigid } from '../deviation/rigid'
 import type { ElementKind, FitData, Vec3 } from '../types'
 import { addScaled, angleBetween, cross, dot, normalize } from '../vec'
+import { fmtLen, type DisplayUnits } from '../units'
 
 export interface SectionFrame {
   origin: Vec3
@@ -473,9 +474,10 @@ export function frameKey(frame: SectionFrame): string {
 /** "along Plane 1, +2.000 mm" — for the list row, the report and the sheet.
  *  A plane turned off its reference by the gizmo says by how much: "along
  *  Plane 1, +2.000 mm, tilted 4.3°". A shadow says it is one, and no offset
- *  — it is drawn in the middle of the part: "shadow onto Plane 1". */
-export function describeCut(refName: string | null, offset: number, tilt = 0, kind: 'cut' | 'shadow' = 'cut'): string {
-  const mm = `${offset >= 0 ? '+' : '−'}${Math.abs(offset).toFixed(3)} mm`
+ *  — it is drawn in the middle of the part: "shadow onto Plane 1". The
+ *  offset is written in `units`. */
+export function describeCut(refName: string | null, offset: number, tilt = 0, kind: 'cut' | 'shadow' = 'cut', units: DisplayUnits = 'mm'): string {
+  const mm = `${offset >= 0 ? '+' : '−'}${fmtLen(Math.abs(offset), units, 3)}`
   const turned = tilt > 0 ? `, tilted ${tilt.toFixed(1)}°` : ''
   if (kind === 'shadow') return refName ? `shadow onto ${refName}${turned}` : `shadow onto a deleted element${turned}`
   return refName ? `along ${refName}, ${mm}${turned}` : `${mm} from a deleted element${turned}`

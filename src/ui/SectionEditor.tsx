@@ -6,6 +6,8 @@
 // what the cut produces. Renders nothing without a section draft.
 
 import { describeShadow } from '../core/section/shadow'
+import { useLength } from '../app/useUnits'
+import { useFieldUnits } from './NumberField'
 import { cutSummary } from '../core/section/slice'
 import {
   isRadialRef,
@@ -64,6 +66,10 @@ export function SectionEditor({
   const setName = useStore((s) => s.setSectionDraftName)
   const setKind = useStore((s) => s.setSectionDraftKind)
   const setShadow = useStore((s) => s.setSectionDraftShadow)
+  // The lengths typed here are held in millimetres and typed in the units
+  // shown.
+  const len = useLength()
+  const u = useFieldUnits('length', undefined)
 
   if (draft === null) return null
 
@@ -79,7 +85,9 @@ export function SectionEditor({
   const kind: SectionKind = shadow ? 'shadow' : 'cut'
   const params = shadowParams(draft)
   const shape = shadow && draft.cut?.shadow ? draft.cut.shadow : null
-  const words = shape ? describeShadow(shape) : null
+  const words = shape ? describeShadow(shape, len.units) : null
+  const shownOffset = u.text(round(draft.offset))
+  const shownLen = (mm: number): string => u.text(mm)
 
   const hint = !draft.axis
     ? shadow
@@ -100,7 +108,7 @@ export function SectionEditor({
           <p>
             A section is the scan cut with a plane. It becomes a <b>source in the 2D Measure
             workspace</b>, listed there beside the flatbed image: the cut’s edges lie on the
-            sheet in millimetres, ready to be snapped to, fitted and measured exactly like a
+            sheet at true size, ready to be snapped to, fitted and measured exactly like a
             scan image’s edges.
           </p>
           <p>
@@ -209,7 +217,7 @@ export function SectionEditor({
         <label className="field">
           {/* A plane still square to a coordinate axis has a coordinate, not an
               offset: its Z is what the field holds. */}
-          <span>{isWorldAxis(draft.ref) && tilt === 0 ? `${draft.ref.toUpperCase()} (mm)` : 'Offset (mm)'}</span>
+          <span>{isWorldAxis(draft.ref) && tilt === 0 ? `${draft.ref.toUpperCase()} (${u.word})` : `Offset (${u.word})`}</span>
           <input
             type="number"
             step="any"
@@ -218,12 +226,14 @@ export function SectionEditor({
             title="Where the plane lies along its normal, which is where it cuts the part"
             // Re-keyed on the value, so a grip dragged in the viewport types
             // itself into the field.
-            key={round(draft.offset)}
-            defaultValue={round(draft.offset)}
+            key={shownOffset}
+            defaultValue={shownOffset}
             onBlur={(e) => {
-              const v = Number(e.target.value)
-              if (Number.isFinite(v)) setOffset(v)
-              e.target.value = String(round(draft.offset))
+              // Text left as it was shown commits nothing: in inches it is
+              // rounded, and committing it back would move the plane.
+              const v = u.read(Number(e.target.value))
+              if (e.target.value !== shownOffset && Number.isFinite(v)) setOffset(v)
+              e.target.value = shownOffset
             }}
             onKeyDown={(e) => {
               if (e.key === 'Enter') e.currentTarget.blur()
@@ -235,18 +245,18 @@ export function SectionEditor({
       {shadow && (
         <>
           <label className="field">
-            <span>Play (mm)</span>
+            <span>Play ({u.word})</span>
             <input
               type="number"
               step="any"
               data-test="section-play"
               title="How far outside the part the outline lies: positive is clearance, negative a press fit"
-              key={`play-${params.play}`}
-              defaultValue={params.play}
+              key={`play-${shownLen(params.play)}`}
+              defaultValue={shownLen(params.play)}
               onBlur={(e) => {
-                const v = Number(e.target.value)
-                if (e.target.value.trim() !== '' && Number.isFinite(v)) setShadow({ play: v })
-                e.target.value = String(shadowParams(useStore.getState().sectionDraft ?? {}).play)
+                const v = u.read(Number(e.target.value))
+                if (e.target.value.trim() !== '' && e.target.value !== shownLen(params.play) && Number.isFinite(v)) setShadow({ play: v })
+                e.target.value = shownLen(shadowParams(useStore.getState().sectionDraft ?? {}).play)
               }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') e.currentTarget.blur()
@@ -254,19 +264,19 @@ export function SectionEditor({
             />
           </label>
           <label className="field">
-            <span>Tolerance (mm)</span>
+            <span>Tolerance ({u.word})</span>
             <input
               type="number"
               step="any"
               min="0"
               data-test="section-tolerance"
               title="How closely the lines and arcs follow the outline; it is traced on cells of half of it"
-              key={`tol-${params.tolerance}`}
-              defaultValue={params.tolerance}
+              key={`tol-${shownLen(params.tolerance)}`}
+              defaultValue={shownLen(params.tolerance)}
               onBlur={(e) => {
-                const v = Number(e.target.value)
-                if (Number.isFinite(v) && v > 0) setShadow({ tolerance: v })
-                e.target.value = String(shadowParams(useStore.getState().sectionDraft ?? {}).tolerance)
+                const v = u.read(Number(e.target.value))
+                if (e.target.value !== shownLen(params.tolerance) && Number.isFinite(v) && v > 0) setShadow({ tolerance: v })
+                e.target.value = shownLen(shadowParams(useStore.getState().sectionDraft ?? {}).tolerance)
               }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') e.currentTarget.blur()
@@ -373,13 +383,13 @@ export function SectionEditor({
         </div>
         {shape?.widened && draft.status === 'ready' && (
           <p className="hint" data-test="section-shadow-cell">
-            A part this size is traced on {shape.cell.toFixed(2)} mm cells, not{' '}
-            {(shape.tolerance / 2).toFixed(2)} mm: features narrower than that may close.
+            A part this size is traced on {len.fmt(shape.cell, 2)} cells, not{' '}
+            {len.fmt(shape.tolerance / 2, 2)}: features narrower than that may close.
           </p>
         )}
         {shape && params.extrude && draft.status === 'ready' && shape.loops.length > 0 && (
           <p className="hint" data-test="section-extrude-height">
-            A block {(shape.extent.max - shape.extent.min).toFixed(2)} mm high, through the part from
+            A block {len.fmt(shape.extent.max - shape.extent.min, 2)} high, through the part from
             its lowest point to its highest — exported as a solid with STEP as Solids &amp; faces.
           </p>
         )}

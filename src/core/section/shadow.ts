@@ -58,6 +58,7 @@ import type { Vec3 } from '../types'
 import type { FlatFit } from '../flat/types'
 import type { SectionFrame } from './frame'
 import type { SectionCut } from './slice'
+import { fmtArea, fmtLen, unitWord, type DisplayUnits } from '../units'
 
 /** The tolerance a shadow is read to unless told otherwise, mm. The raster
  *  cell is half of it. */
@@ -1239,14 +1240,15 @@ function liftLoops(loops: readonly ShadowLoop[], frame: SectionFrame, step: numb
 }
 
 /** "2 loops · 11 243 mm²" and the band the contour lies in — the readout's
- *  words, and the row's. */
-export function describeShadow(sh: ShadowShape): { loops: string; area: string; band: string } {
+ *  words, and the row's, in `units`. */
+export function describeShadow(sh: ShadowShape, units: DisplayUnits = 'mm'): { loops: string; area: string; band: string } {
   const n = sh.loops.length
-  const mm = (v: number) => `${v < 0 ? '−' : ''}${Math.abs(v).toFixed(2)}`
+  const mm = (v: number) => `${v < 0 ? '−' : ''}${fmtLen(Math.abs(v), units, 2, { bare: true })}`
   return {
     loops: `${n} loop${n === 1 ? '' : 's'}`,
-    area: `${Math.round(sh.area).toLocaleString('en-US')} mm²`,
-    band: `${mm(sh.margin.min)} to ${mm(sh.margin.max)} mm outside the part`,
+    // A whole number of square millimetres; square inches to three decimals.
+    area: units === 'in' ? fmtArea(sh.area, units, 0) : `${Math.round(sh.area).toLocaleString('en-US')} ${unitWord(units, 2)}`,
+    band: `${mm(sh.margin.min)} to ${mm(sh.margin.max)} ${unitWord(units)} outside the part`,
   }
 }
 

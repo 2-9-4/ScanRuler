@@ -53,8 +53,8 @@ function implausible(t: Torus, g: MeshGraph): { why: string; size: boolean } | n
   if (!Number.isFinite(t.R) || !Number.isFinite(t.r) || !(t.r > 0)) return { why: 'no torus', size: false }
   if (!(t.R > t.r * 0.999)) return { why: `R ${round(t.R)} is no larger than r ${round(t.r)} — a spindle, not a round`, size: false }
   const maxR = TORUS_MAX_R_DIAGS * g.bboxDiag
-  if (!(t.R < maxR)) return { why: `R ${round(t.R)} is past the limit of ${TORUS_MAX_R_DIAGS} × the scan's diagonal (${round(maxR)} mm) — the surface bends too little the long way to place the spine; fit a cylinder or a B-spline surface`, size: true }
-  if (!(t.r < 0.5 * g.bboxDiag)) return { why: `r ${round(t.r)} is past the limit of half the scan's diagonal (${round(0.5 * g.bboxDiag)} mm)`, size: true }
+  if (!(t.R < maxR)) return { why: `R ${round(t.R)} is past the limit of ${TORUS_MAX_R_DIAGS} × the scan's diagonal (${round(maxR)} mm) — the surface bends too little the long way to place the spine; fit a cylinder or a B-spline surface`, size: true } // units-ok: built in the worker, which holds no display units
+  if (!(t.r < 0.5 * g.bboxDiag)) return { why: `r ${round(t.r)} is past the limit of half the scan's diagonal (${round(0.5 * g.bboxDiag)} mm)`, size: true } // units-ok: built in the worker, which holds no display units
   return null
 }
 

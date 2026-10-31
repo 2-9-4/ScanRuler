@@ -25,6 +25,7 @@ import {
 } from './elements/refs'
 import { hasDiameter } from './elements/assumed'
 import { TOLERANCE_TYPES, evaluateTolerance, type ToleranceOptions } from './tolerances'
+import { fmtLen, unitWord, type DisplayUnits } from './units'
 import {
   acuteAngle,
   add,
@@ -55,7 +56,8 @@ export type DimensionGroup =
 /** How a point–point distance between two spheres is anchored. */
 export type SphereAnchor = 'center' | 'gap' | 'span'
 
-/** The unit a type's value is in, which is also how a limit on it reads. */
+/** The unit a type's value is in, which is also how a limit on it reads: a
+ *  length, held in millimetres and shown in the display units, or degrees. */
 export type DimensionUnit = 'mm' | '°'
 
 export interface DimensionTypeInfo {
@@ -83,7 +85,7 @@ const DIMENSIONS: readonly DimensionTypeInfo[] = [
     group: 'distance',
     label: 'Point – Point',
     stem: 'Distance',
-    unit: 'mm',
+    unit: 'mm', // units-ok: the value's kind, an id — printed through unitWord
     hint: 'Straight-line distance between two points or sphere centers.',
     slots: [
       { roles: ['point'], label: 'From' },
@@ -96,7 +98,7 @@ const DIMENSIONS: readonly DimensionTypeInfo[] = [
     group: 'distance',
     label: 'Point – Axis',
     stem: 'Distance',
-    unit: 'mm',
+    unit: 'mm', // units-ok: the value's kind, an id — printed through unitWord
     hint: 'Perpendicular distance from a point to a cylinder axis or line.',
     slots: [
       { roles: ['point'], label: 'Point' },
@@ -109,7 +111,7 @@ const DIMENSIONS: readonly DimensionTypeInfo[] = [
     group: 'distance',
     label: 'Point – Plane',
     stem: 'Distance',
-    unit: 'mm',
+    unit: 'mm', // units-ok: the value's kind, an id — printed through unitWord
     hint: 'Perpendicular distance from a point to a fitted plane, signed along the plane normal — the CMM way to measure a width, free of the in-plane offset two picked points carry.',
     slots: [
       { roles: ['point'], label: 'Point' },
@@ -122,7 +124,7 @@ const DIMENSIONS: readonly DimensionTypeInfo[] = [
     group: 'distance',
     label: 'Axis – Axis',
     stem: 'Distance',
-    unit: 'mm',
+    unit: 'mm', // units-ok: the value's kind, an id — printed through unitWord
     hint: 'Distance between two near-parallel axes, or at the closest approach of skew axes.',
     slots: [
       { roles: ['axis'], label: 'Axis A' },
@@ -135,7 +137,7 @@ const DIMENSIONS: readonly DimensionTypeInfo[] = [
     group: 'distance',
     label: 'Axis – Plane',
     stem: 'Distance',
-    unit: 'mm',
+    unit: 'mm', // units-ok: the value's kind, an id — printed through unitWord
     hint: 'Distance from the middle of an axis to a near-parallel plane, signed along the normal.',
     slots: [
       { roles: ['axis'], label: 'Axis' },
@@ -148,7 +150,7 @@ const DIMENSIONS: readonly DimensionTypeInfo[] = [
     group: 'distance',
     label: 'Plane – Plane',
     stem: 'Distance',
-    unit: 'mm',
+    unit: 'mm', // units-ok: the value's kind, an id — printed through unitWord
     hint: 'Distance between two near-parallel planes, measured from the center of the first.',
     slots: [
       { roles: ['plane'], label: 'From' },
@@ -200,7 +202,7 @@ const DIMENSIONS: readonly DimensionTypeInfo[] = [
     group: 'size',
     label: 'Diameter',
     stem: 'Diameter',
-    unit: 'mm',
+    unit: 'mm', // units-ok: the value's kind, an id — printed through unitWord
     hint: 'The fitted diameter of a sphere, a cylinder or a circle — so a size can carry a nominal and a tolerance.',
     slots: [{ roles: ['point', 'axis'], kinds: ['sphere', 'cylinder', 'circle'], label: 'Feature' }],
   },
@@ -334,12 +336,15 @@ export interface Verdict {
   alarm?: string
 }
 
-const inUnit = (v: number, unit: DimensionUnit): string =>
-  unit === '°' ? `${v.toFixed(2)}°` : `${v.toFixed(3)} mm`
-const signedInUnit = (v: number, unit: DimensionUnit): string =>
-  `${v >= 0 ? '+' : ''}${inUnit(v, unit)}`
+const inUnit = (v: number, unit: DimensionUnit, units: DisplayUnits): string =>
+  unit === '°' ? `${v.toFixed(2)}°` : fmtLen(v, units, 3)
+const signedInUnit = (v: number, unit: DimensionUnit, units: DisplayUnits): string =>
+  `${v >= 0 ? '+' : ''}${inUnit(v, unit, units)}`
 
-export function judgeLimit(raw: number, limit: Limit, unit: DimensionUnit): Verdict {
+/** How a value stands to its limit, the figures written in `units`. */
+export function judgeLimit(raw: number, limit: Limit, unit: DimensionUnit, units: DisplayUnits = 'mm'): Verdict {
+  const shown = (v: number): string => inUnit(v, unit, units)
+  const signed = (v: number): string => signedInUnit(v, unit, units)
   if (limit.kind === 'max') {
     const deviation = raw - limit.max
     const over = Math.max(0, deviation)
@@ -347,9 +352,9 @@ export function judgeLimit(raw: number, limit: Limit, unit: DimensionUnit): Verd
       deviation,
       over,
       pass: over === 0,
-      allowance: `limit ${inUnit(limit.max, unit)}`,
-      delta: `Δ ${signedInUnit(deviation, unit)}`,
-      alarm: over > 0 ? `${inUnit(over, unit)} over the limit` : undefined,
+      allowance: `limit ${shown(limit.max)}`,
+      delta: `Δ ${signed(deviation)}`,
+      alarm: over > 0 ? `${shown(over)} over the limit` : undefined,
     }
   }
   const hi = limit.nominal + limit.plus
@@ -360,13 +365,13 @@ export function judgeLimit(raw: number, limit: Limit, unit: DimensionUnit): Verd
     deviation,
     over,
     pass: over === 0,
-    allowance: `nominal ${inUnit(limit.nominal, unit)} +${inUnit(limit.plus, unit)} / −${inUnit(limit.minus, unit)}`,
-    delta: `Δ ${signedInUnit(deviation, unit)}`,
+    allowance: `nominal ${shown(limit.nominal)} +${shown(limit.plus)} / −${shown(limit.minus)}`,
+    delta: `Δ ${signed(deviation)}`,
     alarm:
       over > 0
-        ? `${inUnit(over, unit)} over the upper limit`
+        ? `${shown(over)} over the upper limit`
         : over < 0
-          ? `${inUnit(-over, unit)} under the lower limit`
+          ? `${shown(-over)} under the lower limit`
           : undefined,
   }
 }
@@ -436,11 +441,13 @@ export function diameterRange(fit: FitData): [number, number] | null {
   return s && [2 * (fit.radius + s[0]), 2 * (fit.radius + s[1])]
 }
 
-const rangeText = (r: [number, number]): string => `${r[0].toFixed(3)} – ${r[1].toFixed(3)} mm`
-const signedRangeText = (r: [number, number]): string => {
-  const f = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(3)}`
-  return `${f(r[0])} to ${f(r[1])} mm`
-}
+const bare = (v: number, units: DisplayUnits): string => fmtLen(v, units, 3, { bare: true })
+const signedBare = (v: number, units: DisplayUnits): string => `${v >= 0 ? '+' : ''}${bare(v, units)}`
+
+const rangeText = (r: [number, number], units: DisplayUnits): string =>
+  `${bare(r[0], units)} – ${bare(r[1], units)} ${unitWord(units)}`
+const signedRangeText = (r: [number, number], units: DisplayUnits): string =>
+  `${signedBare(r[0], units)} to ${signedBare(r[1], units)} ${unitWord(units)}`
 
 /** A signed distance read to a plane, moved to the plane's measured surface:
  *  a point of the face at residual e sits e further out along the normal, so
@@ -455,8 +462,6 @@ const PARALLEL_MAX_DEG = 3
 /** Beyond this fold angle, a parallel distance carries a warning. */
 const PARALLEL_WARN_DEG = 0.5
 
-const mm = (v: number): string => `${v.toFixed(3)} mm`
-const signedMm = (v: number): string => `${v >= 0 ? '+' : ''}${v.toFixed(3)} mm`
 const deg = (v: number): string => `${v.toFixed(2)}°`
 
 const invalid = (label: string, why: string): DimensionValue => ({ label, invalid: why })
@@ -476,10 +481,10 @@ function overPatch(plane: PlaneFit, p: Vec3): boolean {
   )
 }
 
-function deltaDetail(a: Vec3, b: Vec3): string {
+function deltaDetail(a: Vec3, b: Vec3, units: DisplayUnits): string {
   const d = sub(b, a)
-  const f = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(3)}`
-  return `ΔX ${f(d[0])} · ΔY ${f(d[1])} · ΔZ ${f(d[2])} mm`
+  const f = (v: number) => signedBare(v, units)
+  return `ΔX ${f(d[0])} · ΔY ${f(d[1])} · ΔZ ${f(d[2])} ${unitWord(units)}`
 }
 
 export interface EvaluateOptions extends ToleranceOptions {
@@ -500,13 +505,17 @@ export function evaluateDimension(
 ): DimensionValue {
   if (TOLERANCE_TYPES.some((t) => t.id === type)) return evaluateTolerance(type, fits, opts)
   const anchor = opts.anchor
+  // The value and its supporting figures, in the units shown.
+  const units = opts.units ?? 'mm' // units-ok: the default units, an id
+  const mm = (v: number): string => fmtLen(v, units, 3)
+  const signedMm = (v: number): string => `${v >= 0 ? '+' : ''}${mm(v)}`
   switch (type) {
     case 'dist-point-point': {
       const a = refPoint(fits[0])
       const b = refPoint(fits[1])
       if (!a || !b) return invalid('Distance', 'A reference is not a point.')
       const centerDist = len(sub(b, a))
-      const detail = deltaDetail(a, b)
+      const detail = deltaDetail(a, b, units)
 
       const bothSpheres = fits[0].kind === 'sphere' && fits[1].kind === 'sphere'
       if (bothSpheres && anchor && anchor !== 'center') {
@@ -573,7 +582,7 @@ export function evaluateDimension(
         raw: d,
         segment: [p, foot],
         detail: `Signed along the plane normal: + is outside the surface.${
-          range ? ` To the measured surface itself ${signedRangeText(range)}.` : ''
+          range ? ` To the measured surface itself ${signedRangeText(range, units)}.` : ''
         }`,
         range,
         warning: overPatch(plane, foot)
@@ -660,7 +669,7 @@ export function evaluateDimension(
         value: signedMm(d),
         raw: d,
         segment: [axis.origin, foot],
-        detail: range ? `To the measured surface itself ${signedRangeText(range)}` : undefined,
+        detail: range ? `To the measured surface itself ${signedRangeText(range, units)}` : undefined,
         range,
         warning: warnings.length ? warnings.join(' ') : undefined,
       }
@@ -713,7 +722,7 @@ export function evaluateDimension(
         raw: d,
         segment: [a.center, foot],
         detail: `Planes ${deg(fold)} off parallel${
-          range ? ` · surface to surface ${rangeText(range)}` : ''
+          range ? ` · surface to surface ${rangeText(range, units)}` : ''
         }`,
         range,
         warning: warnings.length ? warnings.join(' ') : undefined,
@@ -805,7 +814,7 @@ export function evaluateDimension(
         raw: 2 * f.radius,
         anchor: f.center,
         detail: range
-          ? `Gaussian mean · min ${range[0].toFixed(3)} · max ${range[1].toFixed(3)} mm from the radial extremes of the used points`
+          ? `Gaussian mean · min ${bare(range[0], units)} · max ${bare(range[1], units)} ${unitWord(units)} from the radial extremes of the used points`
           : undefined,
         range,
       }
@@ -867,6 +876,9 @@ export function evaluateDimensions(
   dims: readonly Dimension[],
   elements: readonly NamedGeometry[],
   surfaces?: SurfaceSource,
+  /** What the values and verdicts are written in; the agent's are in
+   *  millimetres. */
+  units: DisplayUnits = 'mm',
 ): EvaluatedDimension[] {
   return dims.map((dim) => {
     const info = dimensionTypeInfo(dim.type)
@@ -877,6 +889,7 @@ export function evaluateDimensions(
       ? evaluateDimension(dim.type, fits, {
           anchor: dim.anchor,
           basic: dim.basic,
+          units,
           surfaces:
             info.family === 'tolerance' && surfaces ? dim.refs.map((id) => surfaces(id)) : undefined,
         })
@@ -886,7 +899,7 @@ export function evaluateDimensions(
         }
     const verdict =
       dim.limit && value.raw !== undefined && !value.invalid
-        ? judgeLimit(value.raw, dim.limit, info.unit)
+        ? judgeLimit(value.raw, dim.limit, info.unit, units)
         : undefined
     return { dim, title, value, verdict }
   })

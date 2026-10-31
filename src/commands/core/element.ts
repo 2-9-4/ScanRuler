@@ -47,38 +47,38 @@ const ALL_KINDS: readonly ElementKind[] = ['point', 'line', 'plane', 'sphere', '
 
 const sigmaSchema = enumOf(
   [3, 2, 1, 0] as SigmaPreset[],
-  'The outlier cut-off: residuals beyond this many sigma are left out of the fit — 3 (the default the panel starts on), 2, 1, or 0 for all points.',
+  'Outlier cut-off, sigma: 3 (the default), 2, 1, or 0 for all points.',
 )
 
 const orientSchema = obj(
   {
-    to: elementRefSchema('The reference plane: a plane element, a section (the plane it was cut on), or a coordinate plane "XY", "YZ" or "XZ".'),
-    relation: enumOf(['normal', 'inPlane'] as OrientRelation[], 'normal (the default): the element’s direction is the plane’s normal — a parallel face, a perpendicular bore. inPlane: it lies in the plane.'),
+    to: elementRefSchema('A plane element, a section, or "XY", "YZ", "XZ".'),
+    relation: enumOf(['normal', 'inPlane'] as OrientRelation[], 'normal (the default): the direction is the plane’s normal. inPlane: it lies in the plane.'),
   },
   ['to'],
-  'Align the element’s direction to a reference plane, as designed; the fit as measured is kept beside it and reported.',
+  'Align the direction to a plane, as designed; the measured fit is kept beside it.',
 )
 
 const extendSchema = obj(
   {
-    start: num('Cylinder: millimetres past the start of the measured surface (negative pulls it in).'),
-    end: num('Cylinder: millimetres past its end.'),
-    uMin: num('Plane: millimetres past one edge of the patch along its first axis.'),
-    uMax: num('Plane: past the opposite edge.'),
-    vMin: num('Plane: past one edge along its second axis.'),
-    vMax: num('Plane: past the opposite edge.'),
+    start: num('Cylinder: mm past the start (negative pulls it in).'),
+    end: num('Cylinder: mm past the end.'),
+    uMin: num('Plane: mm past the edge along its first axis.'),
+    uMax: num('Plane: the opposite edge.'),
+    vMin: num('Plane: along its second axis.'),
+    vMax: num('Plane: the opposite edge.'),
   },
   [],
-  'How far past the measured surface a cylinder or plane is drawn and exported. What is reported stays what was measured.',
+  'Mm a cylinder or plane is drawn and exported past the measured surface.',
 )
 
 const finishing = {
   sigma: sigmaSchema,
-  knownDiameter: num('Sphere: the ball’s known diameter, mm — a gauge ball, a ballbar’s balls. The fit holds it and places the centre alone, which keeps the centre right on a ball scanned only partly; fit.held then gives the diameter the same points fit freely (freeDiameter — it should be close: a scan reading off moves a held centre by about as much) and how far holding it moved the centre (shift). Refused when the surface fits a sphere more than 1 mm or 10 % off it.', { exclusiveMinimum: 0 }),
-  assumed: num('The diameter the feature was designed at, mm — a sphere, cylinder or circle is then drawn and exported at it, and still reported as measured.', { exclusiveMinimum: 0 }),
+  knownDiameter: num('Sphere: a known diameter held, mm (a gauge ball); the centre alone is fitted.', { exclusiveMinimum: 0 }),
+  assumed: num('The designed diameter, mm: drawn and exported at it, reported as measured.', { exclusiveMinimum: 0 }),
   orient: orientSchema,
   extend: extendSchema,
-  name: str('A name for it; otherwise it is numbered by kind — "Sphere 2".', { minLength: 1 }),
+  name: str('A name; else numbered by kind — "Sphere 2".', { minLength: 1 }),
 }
 
 interface Finishing {
@@ -219,6 +219,27 @@ async function regionAnswer(kind: FitKind, region: Uint32Array, elementId: numbe
       `the crown of a bead or round, not a face? 95 % of its normals lie within ${roundTo(r.normalSpreadDeg ?? 0, 1)}° of the plane's and it fills ${Math.round((r.fill ?? 1) * 100)} % of the rectangle it spans (${roundTo(r.area, 0)} mm²)${curved} — seed in the middle of the face, or give within.`,
     )
   }
+  const taper = fit?.kind === 'cylinder' ? r.taper : undefined
+  if (taper) {
+    out.region.taper = {
+      double: taper.double,
+      axis: v(taper.axis, 3),
+      parts: taper.parts.map((c) => ({ band: v(c.band, 2), draftDeg: roundTo(c.draftDeg, 2), box: { min: v(c.min, 2), max: v(c.max, 2) } })),
+      ...(taper.parting ? { parting: { at: v(taper.parting.at, 3), radius: roundTo(taper.parting.radius, 2), t: roundTo(taper.parting.t, 2) } } : {}),
+    }
+    const box = (c: { min: readonly number[]; max: readonly number[] }) => `[${v(c.min, 1).join(', ')}]–[${v(c.max, 1).join(', ')}]`
+    const degs = taper.parts.map((c) => `${roundTo(Math.abs(c.draftDeg), 1)}°`).join(' and ')
+    const off = `along [${v(taper.axis, 3).join(', ')}]`
+    if (taper.parting) {
+      const line = `at [${v(taper.parting.at, 2).join(', ')}], radius about ${roundTo(taper.parting.radius, 2)}`
+      warnings.push(
+        `${taper.double ? `a double cone, not a cylinder: the wall tapers ${degs} ${off}, away from its ${taper.parts[0].draftDeg > 0 ? 'widest' : 'narrowest'} line ${line} — where a casting drafted both ways parts` : `two tapers, not one cylinder: ${degs} ${off}, breaking ${line}`} — ` +
+          `fit each with kind "cone" and within, the boxes ${taper.parts.map(box).join(' and ')}.`,
+      )
+    } else {
+      warnings.push(`a cone, not a cylinder: the wall tapers ${degs} ${off}; a cylinder fitted on part of a turn leans to take that up — fit it with kind "cone", or read how far this axis lies off that one.`)
+    }
+  }
   const two = r.secondCylinder
   if (two && fit?.kind === 'cylinder') {
     out.region.second = {
@@ -231,12 +252,14 @@ async function regionAnswer(kind: FitKind, region: Uint32Array, elementId: numbe
       leanDeg: v(two.leanDeg, 2),
       rmsTwo: roundTo(two.rmsTwo, 4),
     }
-    warnings.push(
-      `two surfaces? ${Math.round(two.share * 100)} % of the region lies on a second cylinder, its axis ${roundTo(two.angleDeg, 2)}° off and its radius ${roundTo(two.radiusSecond, 3)} against ${roundTo(two.radius, 3)}, ` +
-        `in the band ${roundTo(two.band[0], 2)} to ${roundTo(two.band[1], 2)} mm along this axis from the centre, box [${v(two.min, 1).join(', ')}]–[${v(two.max, 1).join(', ')}]; ` +
-        `the normals lean ${roundTo(two.leanDeg[0], 1)}° and ${roundTo(two.leanDeg[1], 1)}° off square to this axis (σ ${roundTo(fit.sigma, 4)} mm${fit.formError !== undefined ? `, form error ${roundTo(fit.formError, 3)}` : ''}; two cylinders leave ${roundTo(two.rmsTwo, 4)}) — ` +
-        'fit each part with within (a box round its band) or axis, or move the seed.',
-    )
+    if (!taper) {
+      warnings.push(
+        `two surfaces? ${Math.round(two.share * 100)} % of the region lies on a second cylinder, its axis ${roundTo(two.angleDeg, 2)}° off and its radius ${roundTo(two.radiusSecond, 3)} against ${roundTo(two.radius, 3)}, ` +
+          `in the band ${roundTo(two.band[0], 2)} to ${roundTo(two.band[1], 2)} mm along this axis from the centre, box [${v(two.min, 1).join(', ')}]–[${v(two.max, 1).join(', ')}]; ` +
+          `the normals lean ${roundTo(two.leanDeg[0], 1)}° and ${roundTo(two.leanDeg[1], 1)}° off square to this axis (σ ${roundTo(fit.sigma, 4)} mm${fit.formError !== undefined ? `, form error ${roundTo(fit.formError, 3)}` : ''}; two cylinders leave ${roundTo(two.rmsTwo, 4)}) — ` +
+          'fit each part with within (a box round its band) or axis, or move the seed.',
+      )
+    }
   }
   const closed = r.closed
   if (closed && fit?.kind === 'cylinder') {
@@ -309,17 +332,17 @@ const fit: Command<{ kind: FitKind; at?: Location | Location[]; rim?: number; ma
   name: 'fit',
   title: 'Fit an element',
   description:
-    'Fit an element on the scan where the panel would take a click: a plane, sphere, cylinder, cone or torus grows its surface from the place given and is best-fitted to it; a point is the place itself; a circle goes through three or more places. `at` is one place, or a list — a feature seen in patches can be seeded on each. A place is { vertex } (a scan vertex), { point: [x, y, z] } (the nearest scan vertex to a point, mm, in the current frame), or { screen } / { candidate } (not available yet). A seed near an edge can land on the wrong surface (a cup’s underside for its inside): say what is sought — side, radius, axis, within — and surfaces that do not match are passed over; a fit that finds none is refused with the radii it saw — a round turned down for its axis with that axis, a point on it, how far off it lay and its points, to give as axis or to drop axis for. Returns the element with its fit and the seed actually used (vertex and point), so a recipe can be replayed on another scan — several seeds each with inRegion (whether the surface grew from it: one surface grows, from the seeds on it), offMm (how far it lies off the fitted surface along its normal, a round one’s outward) and deg (how far its normal turns from the surface’s there), and a seed left out warns where it lies: on another surface (fit each, or mark both and fit the marked), or on this one outside the region; a surface also the region it grew to — region { area (mm²), box } and, a plane’s, normalSpreadDeg (95 % of its normals lie within it) — and a plane or a cylinder a warning when its points look like two surfaces, with region.second naming where the other lies (a cylinder’s: its share, band along the axis from the centre, axis angle, radius and how far each part’s normals lean off square to the axis). A cylinder whose region grew over two surfaces one after the other along the axis — a bore stepping wider below a flange — is parted where two cylinders fit it best and the part the seed is on answered, with note and second { radius, band (mm along the axis from the centre), share }; a refusal lists the radii it turned down and why (σ over its length, arc). A bore whose axis meets the scan at an end answers closed { from, to (mm along the axis from the centre, where the axis meets the scan and leaves it), at } with a warning — a floor, or a wrap bridging a hole. A plane warns, with region.fill (the share of the rectangle it spans that it fills) and region.sagitta (how far a quadric over the region curves across it, mm), when it fills under 15 %, or its normals spread past 10° and the region is curved — the sagitta over three times what the quadric leaves: the crown of a bead or round, not a face. Relief on a flat face (lettering) spreads the normals as wide and does not warn. mark: true leaves the region’s points marked for element.fit_marked { marked: true }. A circle may come off an open rim of the scan instead — rim: its number from scan.qa, in place of at: fitted through the rim’s whole loop, the answer giving rim { index, points, rms }. One undo step.',
+    'Fit an element on the scan where the panel would take a click: a plane, sphere, cylinder, cone or torus grows its surface from the place (or places) in at and is best-fitted to it; a point is the place itself; a circle goes through three or more places, or round an open rim (rim, numbered by scan.qa). A place is { vertex } or { point: [x, y, z] } (mm, current frame; the nearest vertex is taken). Trap: a seed near an edge can land on the wrong surface — say what is sought with side, radius, axis or within, and surfaces that do not match are passed over. Returns the element with its fit, the seeds used (inRegion, offMm, deg), the region grown (area, box, normalSpreadDeg, fill, sagitta) and a warning when the points look like two surfaces, a bore steps or is closed at an end, or a plane is a bead’s crown — the measure-reference guide (Elements) says how to read each. One undo step.',
   input: obj(
     {
       kind: enumOf(FIT_KINDS, 'What to fit.'),
       at: oneOf([locationSchema('One place.'), arr(locationSchema('A place.'), 'Several places.', { minItems: 1 })], 'Where on the scan.'),
-      side: enumOf(['inside', 'outside'], 'Sphere, cylinder, cone: inside — concave, normals toward the axis or centre (a bore, a cup’s inside, a countersink); outside — convex (a shaft, a ball).'),
-      radius: obj({ min: num('mm.', { exclusiveMinimum: 0 }), max: num('mm.', { exclusiveMinimum: 0 }) }, [], 'Sphere, cylinder, cone: the radius range the surface lies in.'),
+      side: enumOf(['inside', 'outside'], 'Sphere, cylinder, cone: inside (concave, a bore) or outside (convex, a shaft).'),
+      radius: obj({ min: num('mm.', { exclusiveMinimum: 0 }), max: num('mm.', { exclusiveMinimum: 0 }) }, [], 'Sphere, cylinder, cone: the radius range sought.'),
       axis: vec3('Cylinder, cone: the axis direction, roughly (within 20°).'),
       within: obj({ min: vec3('Lowest corner, mm.'), max: vec3('Highest corner, mm.') }, ['min', 'max'], 'The surface stays inside this box.'),
-      mark: bool('Leave the region the surface grew to marked, for element.fit_marked { marked: true }.'),
-      rim: int('A circle through an open rim of the scan, by its number from scan.qa — in place of at.', { minimum: 0 }),
+      mark: bool('Leave the grown region marked for element.fit_marked.'),
+      rim: int('Circle: an open rim of the scan by its scan.qa number, in place of at.', { minimum: 0 }),
       ...finishing,
     },
     ['kind'],
@@ -417,14 +440,14 @@ const fitMarked: Command<{ kind: (typeof SURFACE_KINDS)[number]; vertices?: numb
   name: 'fit_marked',
   title: 'Fit an element to a marked surface',
   description:
-    'Fit a plane, sphere, cylinder, cone or torus to exactly the scan vertices given — a surface marked by hand in the panel, with no search for the surface — or, with marked: true in place of vertices, to the points the last element.fit { mark: true }, scan.segment { mark } or scan.query { mark: true } left marked, or with box (and normal: only those facing a way, within withinDeg, 30 by default) to every scan vertex inside it, as scan.fit_surface takes them. The element keeps the marking as its recipe. Returns the element, and with box how many points it took. One undo step.',
+    'Fit a plane, sphere, cylinder, cone or torus to exactly the scan vertices given, with no search for the surface — vertices, or marked: true for the points the last element.fit { mark: true }, scan.segment { mark } or scan.query { mark: true } left marked, or box (with normal: only those facing a way) for every vertex inside it. The element keeps the marking as its recipe. Returns the element, and with box how many points it took. One undo step.',
   input: obj(
     {
       kind: enumOf(SURFACE_KINDS, 'What to fit.'),
       vertices: arr(int(undefined, { minimum: 0 }), 'The scan vertices of the surface.', { minItems: 3 }),
       marked: bool('The points left marked, in place of vertices.'),
-      box: obj({ min: vec3('The lowest corner, mm.'), max: vec3('The highest corner, mm.') }, ['min', 'max'], 'The scan inside a box, in place of vertices.'),
-      normal: obj({ dir: vec3('The direction, any length.'), withinDeg: num('Degrees; 30 by default.', { exclusiveMinimum: 0, maximum: 180 }) }, ['dir'], 'With box: only the vertices facing this way.'),
+      box: obj({ min: vec3('Lowest corner, mm.'), max: vec3('Highest corner, mm.') }, ['min', 'max'], 'The scan inside a box, in place of vertices.'),
+      normal: obj({ dir: vec3('A direction, any length.'), withinDeg: num('Degrees; 30 by default.', { exclusiveMinimum: 0, maximum: 180 }) }, ['dir'], 'With box: only the vertices facing this way.'),
       ...finishing,
     },
     ['kind'],
@@ -524,21 +547,21 @@ const construct: Command<{
   name: 'construct',
   title: 'Construct an element',
   description:
-    'Construct an element from others and typed-in numbers, as the panel’s creation methods do — by kind: point (point-coords, point-centroid, point-midpoint, point-line-plane), line (line-two-points, line-axis, line-plane-plane), plane (plane-three-points, plane-offset, plane-midplane, plane-coords, plane-symmetry), circle (circle-plane-cylinder, circle-plane-sphere, circle-coords). refs fill the method’s slots in order, by element id or name — a section, by its id or name, stands in a plane’s slot as the plane it was cut on (a midplane between two cuts, a line where a cut meets a face); a coordinate plane "XY", "YZ" or "XZ" in a plane’s slot is made a plane element through the origin first (one made so before is taken again) and listed under made; params are its numbers in order (or by key: x, y, z; offset; nx, ny, nz, px, py, pz; d, cx, cy, cz). point-centroid and plane-symmetry measure the scan themselves: vertices confines them to a marked surface, seed starts the symmetry search from a plane. plane-symmetry finds the scan’s own mirror plane as an element, the alignment left as it is (align.symmetry re-poses the part on it instead), and answers with the search’s residual: symmetry { rms, matched, sampled } and a note. Returns the element. One undo step.',
+    'Construct an element from others and typed-in numbers, as the panel’s creation methods do — point: point-coords, point-centroid, point-midpoint, point-line-plane; line: line-two-points, line-axis, line-plane-plane; plane: plane-three-points, plane-offset, plane-midplane, plane-coords, plane-symmetry; circle: circle-plane-cylinder, circle-plane-sphere, circle-coords. refs fill the slots in order, by id or name (a section stands in a plane’s slot as its cut plane; "XY", "YZ", "XZ" become plane elements, listed under made); params are the numbers in order or by key. point-centroid and plane-symmetry measure the scan (vertices confines them, seed starts the symmetry search), plane-symmetry answering symmetry { rms, matched, sampled }. Returns the element. One undo step.',
   input: obj(
     {
       kind: enumOf(ALL_KINDS, 'What to construct.'),
       method: str('The creation method — see the description.', { minLength: 1 }),
-      refs: arr(elementRefSchema('A source element — or, in a plane’s slot, a section or a coordinate plane "XY", "YZ", "XZ".'), 'The method’s source elements, slot by slot.'),
+      refs: arr(elementRefSchema('A source element; in a plane’s slot also a section or "XY", "YZ", "XZ".'), 'The method’s source elements, slot by slot.'),
       params: oneOf(
         [
           arr(num(), 'The numbers in the method’s order.'),
-          anyObject('The numbers by key.', { additionalProperties: true }),
+          anyObject('The numbers by key (x, y, z; offset; nx, ny, nz, px, py, pz; d, cx, cy, cz).', { additionalProperties: true }),
         ],
-        'The method’s typed-in numbers, in millimetres.',
+        'The method’s typed-in numbers, mm.',
       ),
-      seed: elementRefSchema('plane-symmetry: the plane the search starts from — a plane element, a section or "XY", "YZ", "XZ".'),
-      vertices: arr(int(undefined, { minimum: 0 }), 'point-centroid, plane-symmetry: confine the search to these scan vertices.', { minItems: 3 }),
+      seed: elementRefSchema('plane-symmetry: the plane the search starts from.'),
+      vertices: arr(int(undefined, { minimum: 0 }), 'point-centroid, plane-symmetry: only these scan vertices.', { minItems: 3 }),
       assumed: finishing.assumed,
       orient: orientSchema,
       name: finishing.name,
@@ -653,7 +676,7 @@ const remove: Command<{ element: ElementRef }> = {
   name: 'remove',
   title: 'Delete an element',
   description:
-    'Delete an element, as its row’s delete key does — and with it every construction built on it and every dimension that refers to any of them. Returns what went. One undo step.',
+    'Delete an element — and with it every construction built on it and every dimension on any of them. Returns what went. One undo step.',
   input: obj({ element: elementRefSchema('The element.') }, ['element']),
   label: () => 'delete element',
   run: async ({ element }) => {

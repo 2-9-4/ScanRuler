@@ -8,6 +8,8 @@ import { useStore } from '../state/store'
 import { useThickness } from '../state/thicknessStore'
 import { buildThicknessReport } from '../core/thickness/report'
 import type { ThicknessStats } from '../core/thickness/thickness'
+import { usePrefs } from '../state/prefsStore'
+import type { DisplayUnits } from '../core/units'
 
 export function thicknessWorkspace({
   clientRef,
@@ -45,12 +47,13 @@ export function thicknessWorkspace({
   }
 
   /** The report the panel copies, on the figures given — the legend's, by
-   *  default. Null with nothing measured. */
-  const reportText = (stats: ThicknessStats | null = useThickness.getState().stats): string | null =>
-    stats ? buildThicknessReport(useStore.getState().fileName ?? '', stats, useThickness.getState()) : null
+   *  default — its lengths in `units`: the screen's for the copy, millimetres
+   *  for the agent. Null with nothing measured. */
+  const reportText = (stats: ThicknessStats | null = useThickness.getState().stats, units: DisplayUnits = 'mm'): string | null =>
+    stats ? buildThicknessReport(useStore.getState().fileName ?? '', stats, useThickness.getState(), units) : null
 
   const handleCopyThicknessReport = () => {
-    const text = reportText()
+    const text = reportText(undefined, usePrefs.getState().units)
     if (text) void navigator.clipboard?.writeText(text)
   }
 

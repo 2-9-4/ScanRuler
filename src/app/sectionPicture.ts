@@ -282,7 +282,7 @@ export function drawSectionPicture(ctx: Ctx, input: SectionPictureInput, model: 
   // with the reading at the top right, broken into lines to fit — a tile
   // of several is narrow — and the scale bar at the bottom left.
   const g = model.gap
-  const heading = `${title} — ±${input.tolerance} mm: ${g.over} of ${g.read} points over (red)${g.over > 0 ? `, up to ${g.max.toFixed(3)} mm` : ''}`
+  const heading = `${title} — ±${input.tolerance} mm: ${g.over} of ${g.read} points over (red)${g.over > 0 ? `, up to ${g.max.toFixed(3)} mm` : ''}` // units-ok: a picture drawn for the agent, which reads mm
   ctx.font = `${fontPx}px ${FONT}`
   const head = wrapText(ctx, heading, W - 24)
   const headW = Math.max(...head.map((l) => ctx.measureText(l).width))
@@ -290,7 +290,7 @@ export function drawSectionPicture(ctx: Ctx, input: SectionPictureInput, model: 
   const step = pictureGridStep(model.frame)
   const bx = 14
   const by = H - 14
-  const barLabel = `${step} mm`
+  const barLabel = `${step} mm` // units-ok: a picture drawn for the agent, which reads mm
   const barW = Math.max(step / u, ctx.measureText(barLabel).width)
   const barTop = by - fontPx - 9
   // The top margin's values: under the title where it reaches across most
@@ -337,11 +337,16 @@ export function drawSectionPicture(ctx: Ctx, input: SectionPictureInput, model: 
   // goes under the title where the title reaches across to it, across
   // above the scale bar where the two would meet.
   if (input.axes) {
-    const name = (a: SheetAxis) => (a.offDeg === 0 ? `${a.axis[1]} (world)` : `≈ ${a.axis}, ${a.offDeg}° off — sheet mm`)
-    const across = `→ ${input.axes.u.offDeg === 0 ? input.axes.u.axis : name(input.axes.u)}${input.axes.u.offDeg === 0 ? ` — values are ${input.axes.u.axis[1]}` : ''}`
-    const up = `↑ ${input.axes.v.offDeg === 0 ? input.axes.v.axis : name(input.axes.v)}${input.axes.v.offDeg === 0 ? ` — values are ${input.axes.v.axis[1]}` : ''}`
+    const name = (a: SheetAxis) => (a.offDeg === 0 ? `${a.axis[1]} (world)` : `≈ ${a.axis}, ${a.offDeg}° off — sheet mm`) // units-ok: a picture drawn for the agent, which reads mm
     ctx.font = `bold ${fontPx}px ${FONT}`
     const upX = 8 * fontPx
+    // A tile too narrow for all of it leaves out what the grid's values are.
+    const caption = (mark: string, a: SheetAxis, room: number) => {
+      const whole = `${mark} ${a.offDeg === 0 ? a.axis : name(a)}${a.offDeg === 0 ? ` — values are ${a.axis[1]}` : ''}`
+      return ctx.measureText(whole).width <= room ? whole : `${mark} ${a.offDeg === 0 ? a.axis : `≈ ${a.axis}`}`
+    }
+    const across = caption('→', input.axes.u, W - 16)
+    const up = caption('↑', input.axes.v, W - upX - 8)
     const upY = wideHead ? rowY + 2 * fontPx + 10 : upX + ctx.measureText(up).width + 8 > headLeft ? headH + fontPx + 10 : 2 * fontPx + 12
     const acrossW = ctx.measureText(across).width
     const acrossY = W - 8 - acrossW - 4 < bx + barW + 8 ? barTop - 6 : H - 8

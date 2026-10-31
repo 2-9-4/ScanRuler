@@ -199,7 +199,7 @@ export function TopBar({
 
   return (
     <header className="top" ref={barRef}>
-      <div className="brandmark">SR</div>
+      <img className="brandmark" src="/scanruler-mark.svg" alt="" />
       {/* The version rides in the caption, and in the tooltip for the narrow
           layouts that drop the caption: a bug report needs the number, and
           the imprint carries it too. */}

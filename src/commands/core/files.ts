@@ -4,6 +4,8 @@
 
 import { buildElementsStep, buildScanMesh, buildScanPointCloud, type BuiltFile } from '../../app/exports'
 import { buildFlatCsvFile } from '../../app/flatReport'
+import { sessionHolds } from '../../app/project'
+import { projectSections } from '../../app/projectSections'
 import { MESH_FORMATS, type MeshFormat } from '../../core/exportMesh'
 import type { CloudFormat } from '../../core/exportPointCloud'
 import type { StepStyle } from '../../core/exportStep'
@@ -41,7 +43,7 @@ const step: Command<{ style?: StepStyle }> = {
   name: 'step',
   title: 'Export the elements as STEP',
   description:
-    'The measured elements as analytic STEP geometry for CAD — as drawn, extensions and assumed diameters included — and, in a group per section, what was measured on the sections. style: solids (the default the panel starts on: solids and faces) or surfaces (construction surfaces); it is remembered as the panel’s choice. Returns the file’s bytes and the name the panel would save it under.',
+    'The measured elements as analytic STEP geometry for CAD — as drawn, extensions and assumed diameters included — and, in a group per section, what was measured on the sections. style: solids (the default: solids and faces) or surfaces (construction surfaces), remembered as the panel’s choice. Returns the file’s bytes and the name the panel would save it under.',
   input: obj({ style: enumOf(['solids', 'surfaces'] as StepStyle[], 'solids or surfaces.') }),
   readOnly: true,
   returnsFile: true,
@@ -116,7 +118,7 @@ const save: Command = {
   name: 'save',
   title: 'Save the project',
   description:
-    'The session as a .scanruler project file, as Save Project downloads it: the scan, the reference, the image and every measurement, each rebuilt when it is opened. Needs the browser. Returns the file’s bytes and its name.',
+    'The session as a .scanruler project file, as Save Project downloads it: the scan, the reference, the image and every measurement, each rebuilt when it is opened. Needs the browser. Returns the file’s bytes and its name, holds (what is in it, counted — read it before calling the file a revision: a page reset holds no model), aligned (whether the scan stands in an aligned frame) and says (what a workspace wants said of the work saved).',
   input: obj({}),
   readOnly: true,
   returnsFile: true,
@@ -125,7 +127,14 @@ const save: Command = {
     if (!project) throw new CommandError('unavailable', 'Saving a project needs the browser.')
     const packed = await project.save()
     if ('error' in packed) throw new CommandError('failed', packed.error)
-    return { file: { name: packed.name, mimeType: 'application/zip', bytes: packed.bytes }, status: useStore.getState().statusText }
+    const says = projectSections().flatMap((p) => p.saveSays?.() ?? [])
+    return {
+      file: { name: packed.name, mimeType: 'application/zip', bytes: packed.bytes },
+      status: useStore.getState().statusText,
+      holds: sessionHolds(),
+      aligned: useStore.getState().appliedAlignment !== null,
+      ...(says.length > 0 ? { says } : {}),
+    }
   },
 }
 
@@ -133,7 +142,7 @@ const load: Command<{ bytes: Uint8Array; name?: string; discard?: boolean }> = {
   name: 'load',
   title: 'Open a project',
   description:
-    'Open a .scanruler project in place of the session — its models, then every measurement in it, refitted and remeasured. Refuses while the session holds measurements unless discard is true. Needs the browser. Returns the session. Not undoable: an opened project starts a new history.',
+    'Open a .scanruler project in place of the session — its models, then every measurement in it, remeasured, each fit as it was saved. Refuses while the session holds measurements unless discard is true. Needs the browser. Returns the session. Not undoable: an opened project starts a new history.',
   input: obj({ bytes: bytes('The project file’s contents.'), name: str('Its name, for the status line.', { minLength: 1 }), discard: discardSchema }, ['bytes']),
   history: false,
   discards: ({ discard }) => discard === true,

@@ -14,8 +14,8 @@ licensor — holds the right to license the whole codebase.
 So every contribution needs the [Contributor License Agreement](CLA.md)
 signed once. You keep the copyright to what you wrote; you grant the licensor
 a perpetual, irrevocable, worldwide right to license it under any terms,
-including commercial ones, and you promise it is your own work and contains
-no copyleft code. The document is two screens long; please read it.
+including commercial ones, and you promise it is your own work and brings in
+nothing the dependency policy below rules out. The document is two screens long; please read it.
 
 Signing is a comment on your first pull request. A bot posts the request and
 the exact sentence to reply with, marks the check green once you have, and

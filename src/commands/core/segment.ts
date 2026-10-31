@@ -2,13 +2,15 @@
 // The scan's flat faces found all at once: scan.segment grows planar regions
 // over it in the mesh worker (core/fit/segment) and answers each region's
 // plane, σ, area, box and neighbours — no vertex lists, which cost more to
-// read than they say. One region's points, or several regions' together,
-// can be left marked for element.fit_marked instead; the answer is then the
-// marked region, not the list again. Mirror twins are paired across a
-// plane given.
+// read than they say. A round surface comes out as strips that read as
+// facets: each strip says it is curved, each edge whether it is smooth, and
+// the runs of strips that are one surface are answered with what that
+// surface is. One region's points, or several regions' together, can be
+// left marked for element.fit_marked instead; the answer is then the marked
+// region, not the list again. Mirror twins are paired across a plane given.
 
 import { worldAxisDir } from '../../core/section/frame'
-import type { Segmentation, SegmentedPlane } from '../../core/fit/segment'
+import { SMOOTH_DEG, type CurvedRun, type Segmentation, type SegmentedPlane } from '../../core/fit/segment'
 import { roundTo } from '../../core/round'
 import type { Vec3 } from '../../core/types'
 import { useStore } from '../../state/store'
@@ -116,21 +118,47 @@ function pairMirrors(regions: SegmentedPlane[], plane: { point: Vec3; normal: Ve
   })
 }
 
+/** A curved run as answered: its regions, area, what it holds as, and a
+ *  note saying what to model it as. */
+function runRow(r: CurvedRun, i: number, maxRms: number) {
+  const v = (p: readonly number[], places: number) => p.map((x) => roundTo(x, places))
+  const range = (a: number, b: number, places: number, unit = '') => {
+    const lo = roundTo(a, places), hi = roundTo(b, places)
+    return lo === hi ? `${lo}${unit}` : `${lo}–${hi}${unit}`
+  }
+  const cylinder = r.cylinder ? { radius: roundTo(r.cylinder.radius, 2), axis: v(r.cylinder.axis, 3), sigma: roundTo(r.cylinder.sigma, 3) } : null
+  const one = `one curved surface cut into ${r.regions.length} strips — smooth joins ${range(r.joins[0], r.joins[1], 0, '°')}, planes’ σ ${range(r.planeSigma[0], r.planeSigma[1], 3)} against maxRms ${maxRms}`
+  let note: string
+  if (r.kind === 'cylinder' && cylinder)
+    note = `${one}; one cylinder R${roundTo(cylinder.radius, 1)} σ ${cylinder.sigma}: mark its regions and fit a cylinder (element.fit_marked)`
+  else if (r.along)
+    note = `${one}; normals square to along within ${roundTo(r.along.leanDeg, 1)}°: an extruded profile — section square to along and extrude it${cylinder ? `; not one arc (a cylinder leaves σ ${cylinder.sigma} at R${roundTo(cylinder.radius, 1)})` : ''}`
+  else note = `${one}; no one direction or cylinder: freeform — section across and sweep or loft`
+  return {
+    id: i + 1,
+    regions: r.regions,
+    area: roundTo(r.area, 1),
+    ...(r.along ? { along: v(r.along.direction, 3) } : {}),
+    ...(r.kind === 'cylinder' && cylinder ? { cylinder } : {}),
+    note,
+  }
+}
+
 const segment: Command<SegmentIn> = {
   name: 'segment',
   title: 'Find the scan’s flat regions',
   description:
-    `The scan’s planar regions, found all at once: grown from the flattest places outward, a vertex joining while its normal lies within maxDeg of the region’s plane (${SEGMENT_DEG}° by default) and it lies inside the region’s noise band; each vertex goes to one region; a region rougher than maxRms off its plane (mm, ${SEGMENT_RMS} by default) or smaller than minArea (mm², by default a square 2 % of the scan’s diagonal on a side) is given back. box: only the scan inside it. The largest first, at most limit (${SEGMENT_LIMIT}); each with id (1 is the largest), normal (out of the part), point (its centroid, on the plane), sigma (RMS off the plane, mm), area (mm²), box, vertices (a count) and neighbours: the regions it meets across an edge or its rounding, each { id, deg } with the angle between their normals. symmetric: a plane element, or "XY", "YZ", "XZ" — each region gets mirror { id, deg, mm }: its twin across that plane ("self" when it straddles it), how far their planes differ in angle once mirrored and in place. mark: a region’s id, or several (their points together), leaves its points marked — element.fit_marked { marked: true } fits to them; with the same options it reuses the last run, and answers marked { points, from } and region, the marked region (a list of them for several), without the list of regions unless list: true. Returns found (regions in all), considered and claimed (vertices looked at and held by regions). Changes nothing.`,
+    `The scan’s planar regions, found all at once: grown from the flattest places outward within maxDeg (${SEGMENT_DEG}°) and maxRms (${SEGMENT_RMS} mm), those smaller than minArea given back. Returns found, considered, claimed, noise and the regions, largest first, at most limit (${SEGMENT_LIMIT}): id, normal, point, sigma, area (mm²), box, vertices, neighbours { id, deg, smooth } and, with symmetric, mirror (its twin across that plane). Trap: a round surface comes out as strips that look like facets — such a region says curved { sagitta } and run, and curvedRuns joins them into surfaces with a note saying what to model each as; read the runs before taking regions for faces. mark: a region’s id, or several, leaves their points marked for element.fit_marked { marked: true }. Changes nothing.`,
   input: obj({
     kind: enumOf(['plane'], 'What to find; plane, the default and for now the only one.'),
-    box: obj({ min: vec3('The lowest corner, mm.'), max: vec3('The highest corner, mm.') }, ['min', 'max'], 'Only the scan inside this box.'),
-    minArea: num('mm².', { minimum: 0 }),
-    maxRms: num('mm.', { exclusiveMinimum: 0 }),
-    maxDeg: num('Degrees.', { exclusiveMinimum: 0, maximum: 60 }),
+    box: obj({ min: vec3('Lowest corner, mm.'), max: vec3('Highest corner, mm.') }, ['min', 'max'], 'Only the scan inside this box.'),
+    minArea: num('mm²; by default a square 2 % of the scan’s diagonal on a side.', { minimum: 0 }),
+    maxRms: num(`mm; ${SEGMENT_RMS} by default.`, { exclusiveMinimum: 0 }),
+    maxDeg: num(`Degrees; ${SEGMENT_DEG} by default.`, { exclusiveMinimum: 0, maximum: 60 }),
     limit: int(`How many regions are listed; ${SEGMENT_LIMIT} by default.`, { minimum: 1, maximum: SEGMENT_LIMIT_MAX }),
     symmetric: elementRefSchema('Pair regions mirrored across this plane: a plane element, or "XY", "YZ", "XZ".'),
-    mark: oneOf([int('A region’s id.', { minimum: 1 }), arr(int(undefined, { minimum: 1 }), 'Several regions’ ids: their points together.', { minItems: 1 })], 'Leave this region’s points marked, by its id — or several regions’.'),
-    list: bool('With mark: the list of regions too, as without it.'),
+    mark: oneOf([int('A region’s id.', { minimum: 1 }), arr(int(undefined, { minimum: 1 }), 'Several regions’ ids, their points together.', { minItems: 1 })], 'Leave this region’s points marked, or several regions’.'),
+    list: bool('With mark: the list of regions too.'),
   }),
   readOnly: true,
   run: async ({ box, minArea, maxRms = SEGMENT_RMS, maxDeg = SEGMENT_DEG, limit = SEGMENT_LIMIT, symmetric, mark, list }, ctx) => {
@@ -179,10 +207,14 @@ const segment: Command<SegmentIn> = {
         area: roundTo(r.area, 1),
         box: { min: v(r.min, 2), max: v(r.max, 2) },
         vertices: r.count,
-        neighbours: r.neighbours.filter((n) => n.id <= shown).map((n) => ({ id: n.id, deg: roundTo(n.deg, 1) })),
+        ...(r.curved && r.curve ? { curved: { sagitta: roundTo(r.curve.sagitta, 3) } } : {}),
+        ...(r.run !== undefined ? { run: r.run + 1 } : {}),
+        // Past the regions listed, the neighbours a run could run through.
+        neighbours: r.neighbours.filter((n) => n.id <= shown || n.deg <= SMOOTH_DEG).map((n) => ({ id: n.id, deg: roundTo(n.deg, 1), smooth: n.smooth })),
         ...(twins?.[i] ? { mirror: twins[i] } : {}),
       }
     }
+    const runsShown = Math.min(limit, result.runs.length)
     // A mark answers the region it marked; the list, which a mark follows
     // and need not repeat, only when asked for.
     const listed = !marked || list === true
@@ -191,8 +223,12 @@ const segment: Command<SegmentIn> = {
       ...(listed && shown < regions.length ? { shown } : {}),
       considered: result.considered,
       claimed: result.claimed,
+      maxRms,
+      noise: roundTo(result.noise, 4),
       ...(marked ? { marked, region: ids.length === 1 ? row(ids[0] - 1) : ids.map((id) => row(id - 1)) } : {}),
       ...(listed ? { regions: regions.slice(0, shown).map((_, i) => row(i)) } : {}),
+      ...(listed && result.runs.length ? { curvedRuns: result.runs.slice(0, runsShown).map((r, i) => runRow(r, i, maxRms)) } : {}),
+      ...(listed && runsShown < result.runs.length ? { runsFound: result.runs.length } : {}),
     }
   },
 }

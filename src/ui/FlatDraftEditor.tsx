@@ -14,12 +14,14 @@ import { flatBlockedRefs, flatDraftColorOf, useFlat } from '../state/flatStore'
 import { DroValue } from './DroValue'
 import { NameField, RefSelect } from './RefSelect'
 import { tintStyle } from './tint'
+import { useUnits } from '../app/useUnits'
 
 export function FlatDraftEditor() {
   const elements = useFlat((s) => s.elements)
   const draft = useFlat((s) => s.draft)
   const draftColor = useFlat(flatDraftColorOf)
   const pxPerMm = useFlat((s) => s.pxPerMm)
+  const units = useUnits()
   const datum = useFlat((s) => s.datum)
   const mirror = useFlat((s) => s.mirror)
   const setDraftMethod = useFlat((s) => s.setDraftMethod)
@@ -40,7 +42,7 @@ export function FlatDraftEditor() {
   const noun = FLAT_KIND_LABELS[draft.kind].toLowerCase()
   const edited = draft.editId !== undefined ? elements.find((e) => e.id === draft.editId) : undefined
   const blocked = flatBlockedRefs(draft.editId, elements)
-  const unit = pxPerMm ? 'mm' : 'px'
+  const unit = pxPerMm ? 'mm' : 'px' // units-ok: the sheet's document unit, an id
   const frame = datum ? datumFrame(datum, pxPerMm, mirror) : null
   const minPicks = flatPicksNeeded(draft.method, draft.closed)
   const picks = draft.picks.length
@@ -88,7 +90,7 @@ export function FlatDraftEditor() {
   const slotRows = Array.from({ length: slotCount }, (_, i) => i)
 
   const status = draft.fit ? 'ready' : draft.error ? 'failed' : 'empty'
-  const primary = draft.fit ? formatFlatPrimary(fitInFrame(draft.fit, frame), unit) : ''
+  const primary = draft.fit ? formatFlatPrimary(fitInFrame(draft.fit, frame), unit, units) : ''
 
   return (
     <div className="draftbox" style={{ borderLeftColor: draftColor }}>
@@ -200,8 +202,8 @@ export function FlatDraftEditor() {
               </b>
             ))}
         </div>
-        {status === 'ready' && formatFlatDetail(draft.fit!, unit) && (
-          <div className="dro-note">{formatFlatDetail(draft.fit!, unit)}</div>
+        {status === 'ready' && formatFlatDetail(draft.fit!, unit, units) && (
+          <div className="dro-note">{formatFlatDetail(draft.fit!, unit, units)}</div>
         )}
       </div>
 

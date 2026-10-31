@@ -15,7 +15,8 @@ import type { FlatElement } from '../core/flat/elements'
 import type { FlatDatum } from '../core/flat/datum'
 import type { PixelsPerMm } from '../core/flat/image'
 import { splineHandles, type SplineHandle } from '../core/flat/spline'
-import { formatFlatPrimary } from '../core/flat/summary'
+import { formatFlatPrimary, sheetUnits } from '../core/flat/summary'
+import type { DisplayUnits } from '../core/units'
 import type { FlatFit, Vec2 } from '../core/flat/types'
 import {
   flatCountColor,
@@ -130,9 +131,10 @@ export function sheetCounts(
 }
 
 /** The measured dimensions, drawn where they were taken — values are
- *  rigid-invariant, so the datum never moves them. */
-export function sheetDimensions(s: Pick<SheetSource, 'dimensions' | 'elements'>): SheetDimension[] {
-  return evaluateFlatDimensions(s.dimensions, s.elements)
+ *  rigid-invariant, so the datum never moves them. Written in `units` on a
+ *  sheet in millimetres; a sheet in pixels stays in pixels. */
+export function sheetDimensions(s: Pick<SheetSource, 'dimensions' | 'elements' | 'pxPerMm'>, units: DisplayUnits = 'mm'): SheetDimension[] {
+  return evaluateFlatDimensions(s.dimensions, s.elements, sheetUnits(s.pxPerMm ? 'mm' : 'px', units)) // units-ok: the document unit, an id
     .filter((d) => d.dim.visible && d.value.value !== undefined)
     .map((d) => ({ title: d.dim.name, value: d.value.value!, segment: d.value.segment, arc: d.value.arc }))
 }
@@ -187,11 +189,14 @@ export function sheetDatumPreview(
 }
 
 /** The measured elements with their headline values — read in the datum
- *  frame when one is set, drawn where they were measured. An element open
- *  for editing is drawn by its draft instead. */
+ *  frame when one is set, drawn where they were measured, the values in
+ *  `units` on a sheet in millimetres. An element open for editing is drawn
+ *  by its draft instead. */
 export function sheetElements(
   s: Pick<SheetSource, 'pxPerMm' | 'elements' | 'draft' | 'datum' | 'mirror'>,
+  units: DisplayUnits = 'mm',
 ): SheetElement[] {
+  // units-ok: the sheet's document unit, an id formatFlatPrimary takes
   const unit = s.pxPerMm ? 'mm' : 'px'
   const frame = sheetFrame(s)
   return s.elements
@@ -200,7 +205,7 @@ export function sheetElements(
       fit: e.fit!,
       color: e.color,
       name: e.name,
-      value: formatFlatPrimary(fitInFrame(e.fit!, frame), unit),
+      value: formatFlatPrimary(fitInFrame(e.fit!, frame), unit, units),
     }))
 }
 

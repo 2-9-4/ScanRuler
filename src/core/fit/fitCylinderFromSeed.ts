@@ -124,7 +124,7 @@ interface TurnedDown {
 /** What a surface turned down was, in the words a refusal lists it with —
  *  the numbers first, then what they suggest. */
 function turnedDownAs(s: TurnedDown): string {
-  const over = `σ ${s.sigma.toFixed(2)} over ${s.length.toFixed(1)} mm along the axis`
+  const over = `σ ${s.sigma.toFixed(2)} over ${s.length.toFixed(1)} mm along the axis` // units-ok: built in the worker, which holds no display units
   if (s.why === 'noise') return `${over} — two surfaces? give within, or seed nearer one end`
   if (s.why === 'arc') return `${over}, ${Math.round(s.coverage)}° of arc — too little of the round to pin it; seed where more of it was scanned`
   return 'out of scale with the part — a flat, not a round'
@@ -209,9 +209,9 @@ export function fitCylinderFromSeed(
       const second = { radius: part.farFit.cylinder.r, band: [ends.minT, ends.maxT] as [number, number], share: part.far.length / wide.length }
       r.told = {
         note:
-          `Grown freely the surface read σ ${first.sigma.toFixed(2)} over ${first.length.toFixed(1)} mm — two surfaces along the axis. ` +
-          `Parted where two cylinders fit it best: R${r.radius.toFixed(3)} over ${r.length.toFixed(1)} mm where the seed is (σ ${r.sigma.toFixed(3)}); ` +
-          `R${second.radius.toFixed(3)} from ${second.band[0].toFixed(1)} to ${second.band[1].toFixed(1)} mm along the axis from its centre (second). Give within to fit the other.`,
+          `Grown freely the surface read σ ${first.sigma.toFixed(2)} over ${first.length.toFixed(1)} mm — two surfaces along the axis. ` + // units-ok: built in the worker, which holds no display units
+          `Parted where two cylinders fit it best: R${r.radius.toFixed(3)} over ${r.length.toFixed(1)} mm where the seed is (σ ${r.sigma.toFixed(3)}); ` + // units-ok: built in the worker, which holds no display units
+          `R${second.radius.toFixed(3)} from ${second.band[0].toFixed(1)} to ${second.band[1].toFixed(1)} mm along the axis from its centre (second). Give within to fit the other.`, // units-ok: built in the worker, which holds no display units
         second,
       }
       return r

@@ -33,7 +33,7 @@ describe('command input schemas', () => {
     const schema = obj({ kind: enumOf(['plane', 'sphere']), at: obj({ point: vec3('p') }, ['point']) }, ['kind'])
     expect(validate(schema, { kind: 'plane' })).toEqual([])
     expect(validate(schema, {})).toEqual(['input.kind: required'])
-    expect(validate(schema, { kind: 'plane', knd: 1 })).toEqual(['input.knd: not a known field'])
+    expect(validate(schema, { kind: 'plane', knd: 1 })).toEqual(['input.knd: not a known field — the fields here: kind, at'])
     expect(validate(schema, { kind: 'plane', at: { point: [0, 0] } })).toEqual(['input.at.point: expected at least 3 items'])
     expect(validate(schema, [1])).toEqual(['input: expected an object'])
     // An absent optional field is no field at all.
@@ -58,10 +58,10 @@ describe('command input schemas', () => {
     // An object as far from the query as an integer is from a number: the query says why.
     expect(validate(pick, { where: { sides: {} } }, 'input.edges[0]')).toEqual([
       'input.edges[0]: expected one of integer, fingerprint, query',
-      'input.edges[0].where: not a known field',
+      'input.edges[0].where: not a known field — the fields here: kind, sides',
     ])
     // Further off the query than any number is: still the query, as an object.
-    expect(validate(pick, { where: 1, more: 2 }).slice(1)).toEqual(['input.where: not a known field', 'input.more: not a known field'])
+    expect(validate(pick, { where: 1, more: 2 }).slice(1)).toEqual(['input.where: not a known field — the fields here: kind, sides', 'input.more: not a known field — the fields here: kind, sides'])
     expect(validate(pick, -1).slice(1)).toEqual(['input: must be at least 0'])
     // A value no branch's type fits: the nearest, as before.
     expect(validate(oneOf([int(), str()]), true)).toEqual(['input: expected one of integer, string', 'input: expected a finite number'])

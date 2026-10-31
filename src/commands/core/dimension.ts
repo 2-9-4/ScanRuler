@@ -41,22 +41,22 @@ export function measureRef(given: ElementRef): MeasureRef {
 
 const limitSchema: JsonSchema = oneOf(
   [
-    obj({ kind: enumOf(['max'], 'A ceiling.'), max: num('The value may be this and no more — a tolerance zone’s width, mm or degrees.') }, ['kind', 'max']),
+    obj({ kind: enumOf(['max'], 'A ceiling.'), max: num('The most the value may be, mm or degrees.') }, ['kind', 'max']),
     obj(
       {
         kind: enumOf(['band'], 'A nominal with an allowance either side.'),
         nominal: num('The nominal value, mm or degrees.'),
-        plus: num('How far above it is allowed.', { minimum: 0 }),
-        minus: num('How far below it is allowed (a positive number).', { minimum: 0 }),
+        plus: num('Allowed above it.', { minimum: 0 }),
+        minus: num('Allowed below it (positive).', { minimum: 0 }),
       },
       ['kind', 'nominal', 'plus', 'minus'],
     ),
   ],
-  'What the value is checked against; the readout and the report then carry a pass or fail verdict.',
+  'What the value is checked against, for a pass or fail verdict.',
 )
 
 const dimensionRefSchema = (description: string): JsonSchema =>
-  oneOf([int('The dimension’s id.', { minimum: 1 }), str('Its name — "Distance 1".', { minLength: 1 })], description)
+  oneOf([int('Its id.', { minimum: 1 }), str('Its name — "Distance 1".', { minLength: 1 })], description)
 
 /** The dimension an id or a name stands for. */
 function findDimension(given: number | string): Dimension {
@@ -105,19 +105,19 @@ const add: Command<{
   name: 'add',
   title: 'Add a dimension',
   description:
-    'Measure between elements, or a size or tolerance of one, as the panel’s dimension box does. refs are the elements by id or name — a section by its id or name counts as the plane it was cut on. Without type, the type follows the elements as clicking them in the viewport does — two spheres or points give their centre distance, two planes their distance, a plane and an axis their distance, and so on. With type, it is one of: ' +
+    'Measure between elements, or a size or tolerance of one, as the panel’s dimension box does. refs are the elements by id or name, in slot order (a section counts as the plane it was cut on). Without type, the type follows the elements as clicking them does — two planes their distance, a plane and an axis theirs, and so on; with type, one of ' +
     dimensionTypes()
-      .map((t) => `${t.id} (${t.slots.map((s) => s.label).join(', ')})`)
-      .join('; ') +
-    '. anchor, for two spheres: center (default), gap or span. limit holds the value to a ceiling or a nominal ± band. Returns the dimension with its value (mm or degrees, finer than the panel shows it), the formatted value the panel shows, and the verdict. One undo step.',
+      .map((t) => t.id)
+      .join(', ') +
+    ' (the measure-reference guide lists each one’s slots). anchor, for two spheres: center (default), gap or span; limit holds the value to a ceiling or a nominal ± band. Returns the dimension with its value (mm or degrees, finer than the panel shows), the formatted value and the verdict. One undo step.',
   input: obj(
     {
       refs: arr(elementRefSchema('An element.'), 'The elements, in slot order.', { minItems: 1, maxItems: 3 }),
-      type: str('The dimension type — see the description. Optional.', { minLength: 1 }),
-      anchor: enumOf(['center', 'gap', 'span'] as SphereAnchor[], 'Between two spheres: centre to centre (default), the gap between their surfaces, or the span across them.'),
+      type: str('The dimension type — see the description.', { minLength: 1 }),
+      anchor: enumOf(['center', 'gap', 'span'] as SphereAnchor[], 'Two spheres: centre to centre (the default), the gap between them, or the span across them.'),
       limit: limitSchema,
       basic: num('An angularity’s basic angle, degrees.'),
-      name: str('A name for it; otherwise it is numbered — "Distance 2".', { minLength: 1 }),
+      name: str('A name; otherwise numbered — "Distance 2".', { minLength: 1 }),
     },
     ['refs'],
   ),

@@ -8,6 +8,7 @@ import { useEffect, type MutableRefObject } from 'react'
 import type { EdgeChains } from '../core/flat/edges'
 import type { Vec2 } from '../core/flat/types'
 import { useFlat } from '../state/flatStore'
+import { usePrefs } from '../state/prefsStore'
 import { useStore } from '../state/store'
 import type { FlatScene } from '../viewer/FlatScene'
 import {
@@ -42,6 +43,8 @@ export function useFlatSceneSync({
   sheetOf: () => SheetView | null
 }) {
   const scene = () => sceneRef.current
+  // The values on the stage are written in the units shown.
+  const units = usePrefs((s) => s.units)
 
   const pushCalibration = () => scene()?.setCalibrationPicks(sheetCalibrationPicks(useFlat.getState()))
   const pushEdges = () => {
@@ -50,7 +53,7 @@ export function useFlatSceneSync({
   }
   const pushNotes = () => scene()?.setNotes(sheetNotes(useFlat.getState()))
   const pushCounts = () => scene()?.setCounts(sheetCounts(useFlat.getState()))
-  const pushDimensions = () => scene()?.setFlatDimensions(sheetDimensions(useFlat.getState()))
+  const pushDimensions = () => scene()?.setFlatDimensions(sheetDimensions(useFlat.getState(), units))
   const pushGrid = () => {
     const grid = sheetGrid(useFlat.getState())
     if (grid !== undefined) scene()?.setGrid(grid)
@@ -59,7 +62,7 @@ export function useFlatSceneSync({
     const s = useFlat.getState()
     const view = scene()
     if (!view) return
-    view.setFlatElements(sheetElements(s))
+    view.setFlatElements(sheetElements(s, units))
     const draft = sheetDraft(s)
     view.setDraftMarks(draft.pins, draft.fit, draft.cloud, draft.color, draft.handles)
     view.setRegionMode(draft.regionMode)
@@ -122,7 +125,7 @@ export function useFlatSceneSync({
 
   const dimensions = useFlat((s) => s.dimensions)
   const elements = useFlat((s) => s.elements)
-  useEffect(pushDimensions, [dimensions, elements])
+  useEffect(pushDimensions, [dimensions, elements, units])
 
   const datum = useFlat((s) => s.datum)
   const showGrid = useFlat((s) => s.showGrid)
@@ -132,7 +135,7 @@ export function useFlatSceneSync({
   // follows the mirror.
   const draft = useFlat((s) => s.draft)
   const mirror = useFlat((s) => s.mirror)
-  useEffect(pushElements, [elements, draft, scale, datum, mirror])
+  useEffect(pushElements, [elements, draft, scale, datum, mirror, units])
 
   // The sheet aligned to the part, mirrored, or turned on the stage — the
   // camera moves, nothing is redrawn. The alignment's direction is read at

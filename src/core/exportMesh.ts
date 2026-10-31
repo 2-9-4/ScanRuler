@@ -2,22 +2,34 @@
 // A mesh out of the tool in the format asked for: a binary STL (exportStl),
 // which every program reads but which says nothing of its units, or a 3MF
 // (export3mf), which says millimetres and keeps a part's colours and its
-// parts apart.
+// parts apart. Because an STL cannot say its unit, it comes two ways: in
+// millimetres, as everything here is held, or in inches — the same mesh
+// with every vertex divided by 25.4 — for a program that reads an STL as
+// inches.
 
 import { build3mf, type MeshPart } from './export3mf'
 import { buildBinaryStl } from './exportStl'
-import type { Rigid } from './deviation/rigid'
+import { rigidApplyToPoints, type Rigid } from './deviation/rigid'
+import { MM_PER_INCH } from './units'
 
-export type MeshFormat = 'stl' | '3mf'
+/** What a mesh is written as. 'stl-in' is an STL in inches; the other two
+ *  are in millimetres. */
+export type MeshFormat = 'stl' | 'stl-in' | '3mf'
+
+/** The formats the agent's commands take: the two in millimetres, which is
+ *  what every command answers in. */
 export const MESH_FORMATS: readonly MeshFormat[] = ['stl', '3mf']
 
-export const MESH_FORMAT_LABEL: Record<MeshFormat, string> = { stl: 'STL', '3mf': '3MF' }
+/** Every format the export button offers. */
+export const MESH_EXPORT_FORMATS: readonly MeshFormat[] = ['stl', 'stl-in', '3mf']
+
+export const MESH_FORMAT_LABEL: Record<MeshFormat, string> = { stl: 'STL', 'stl-in': 'STL in inches', '3mf': '3MF' }
 
 export interface MeshFile {
   bytes: Uint8Array
   mimeType: string
   /** The file name's ending, without the dot. */
-  extension: MeshFormat
+  extension: 'stl' | '3mf'
   triangles: number
 }
 
@@ -33,8 +45,19 @@ export function buildMeshFile(format: MeshFormat, parts: readonly MeshPart[], tr
   const one = parts.length === 1 ? parts[0] : mergeParts(parts)
   const triangles = Math.floor((one.indices ? one.indices.length : one.positions.length / 3) / 3)
   if (triangles === 0) return null
+  // In inches the pose is applied first, in the millimetres it is given in,
+  // and the result divided down: scaled first, the move would be 25.4 times
+  // too long.
+  let positions = one.positions
+  let pose = transform
+  if (format === 'stl-in') {
+    positions = new Float32Array(one.positions)
+    if (transform) rigidApplyToPoints(transform, positions)
+    for (let i = 0; i < positions.length; i++) positions[i] /= MM_PER_INCH
+    pose = null
+  }
   return {
-    bytes: new Uint8Array(buildBinaryStl(one.positions, one.indices, transform, title)),
+    bytes: new Uint8Array(buildBinaryStl(positions, one.indices, pose, title)),
     mimeType: 'model/stl',
     extension: 'stl',
     triangles,

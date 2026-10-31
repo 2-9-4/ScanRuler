@@ -9,12 +9,17 @@
 import { useRef } from 'react'
 import { InfoDot } from './InfoDot'
 import { useStore } from '../state/store'
+import { useLength, type BoundLength } from '../app/useUnits'
+import { useFieldUnits } from './NumberField'
 
 export function KnownDiameterField({ busy, onChange }: { busy: boolean; onChange: (mm: number | undefined) => void }) {
   const known = useStore((s) => s.draft?.settings.knownDiameter)
   const fit = useStore((s) => s.draft?.fit)
   const ref = useRef<HTMLInputElement>(null)
-  const shown = known === undefined ? '' : String(known)
+  // Held in millimetres, typed in the display units.
+  const len = useLength()
+  const u = useFieldUnits('length', undefined)
+  const shown = known === undefined ? '' : u.text(known)
   const held = fit?.kind === 'sphere' ? fit.held : undefined
 
   const commit = (text: string) => {
@@ -22,7 +27,9 @@ export function KnownDiameterField({ busy, onChange }: { busy: boolean; onChange
       if (known !== undefined) onChange(undefined)
       return
     }
-    const v = Number(text)
+    // Text left as it was shown commits nothing: in inches it is rounded.
+    if (text === shown) return
+    const v = u.read(Number(text))
     if (Number.isFinite(v) && v > 0 && v !== known) onChange(v)
   }
 
@@ -56,8 +63,8 @@ export function KnownDiameterField({ busy, onChange }: { busy: boolean; onChange
             ref={ref}
             type="number"
             data-test="known-diameter"
-            step={0.001}
-            min={0.001}
+            step={u.step(0.001)}
+            min={u.min(0.001)}
             placeholder="free"
             disabled={busy}
             defaultValue={shown}
@@ -70,20 +77,23 @@ export function KnownDiameterField({ busy, onChange }: { busy: boolean; onChange
               if (e.key === 'Enter') ref.current?.blur()
             }}
           />
-          <i>mm</i>
+          <i>{u.word}</i>
         </span>
       </label>
       {held && known !== undefined && (
         <p className="dro-note" data-test="known-diameter-free">
-          Free fit Ø {held.freeDiameter.toFixed(4)} mm ({signedUm(held.freeDiameter - known)}) · centre moved{' '}
-          {(held.shift * 1000).toFixed(1)} µm by holding it
+          Free fit Ø {len.fmt(held.freeDiameter, 4)} ({fine(held.freeDiameter - known, len, true)}) · centre moved{' '}
+          {fine(held.shift, len, false)} by holding it
         </p>
       )}
     </>
   )
 }
 
-function signedUm(mm: number): string {
-  const um = mm * 1000
-  return `${um < 0 ? '−' : '+'}${Math.abs(um).toFixed(1)} µm`
+/** A small length: in micrometres beside millimetres, in inches to five
+ *  decimals beside inches — no metric figure on an inch screen. */
+function fine(mm: number, len: BoundLength, signed: boolean): string {
+  const sign = signed ? (mm < 0 ? '−' : '+') : ''
+  if (len.units === 'in') return `${sign}${len.fmt(Math.abs(mm), 4)}`
+  return `${sign}${(Math.abs(mm) * 1000).toFixed(1)} µm`
 }

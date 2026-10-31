@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Answers that fit an agent's context: one past the cap written whole to a
-// file and named — in the folder the scan open now came from, else the
-// server's own — in a call, a batch and a job's wait, the notes for the
+// file and named — in scanruler-work in the folder the scan open now came
+// from, else the server's own — in a call, a batch and a job's wait, the notes for the
 // agent kept in its brief; the status listing the jobs running and the
 // newest few, however many were kept, and the time here; and a scan path
 // that is not there answered with the names near it.
 import assert from 'node:assert/strict'
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { after, before, test } from 'node:test'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
@@ -112,6 +112,34 @@ test('an answer within the cap comes whole; one past it is written to a file and
   // A second one is not written over the first.
   const again = await call('demo_points', { n: 5000 })
   assert.notEqual(again.json.file, big.json.file)
+})
+
+test('scanruler_read gives a spilled answer back in parts, each within the cap — from the server’s own folder, with no scan’s folder known', async () => {
+  const big = await call('demo_points', { n: 5000 })
+  assert.match(big.json.note, /scanruler_read \{ path: file \}/)
+  let whole = ''
+  let offset = 0
+  let parts = 0
+  for (;;) {
+    const part = await call('scanruler_read', { path: big.json.file, offset })
+    assert.equal(part.error, false, part.text)
+    assert.ok(part.text.length <= ANSWER_CAP, `${part.text.length} characters`)
+    assert.equal(part.json.offset, offset)
+    assert.equal(part.json.size, big.json.bytes)
+    whole += part.json.text
+    parts++
+    if (part.json.nextOffset === undefined) break
+    assert.ok(part.json.nextOffset > offset)
+    offset = part.json.nextOffset
+  }
+  assert.ok(parts > 1, `${parts} parts`)
+  assert.equal(whole, await readFile(big.json.file, 'utf8'))
+  assert.equal(JSON.parse(whole).points.length, 5000)
+  // Any other file there is not read: the server's folder is no scan's.
+  await writeFile(join(dir, 'beside-the-spill.json'), '{}')
+  const other = await call('scanruler_read', { path: join(dir, 'beside-the-spill.json') })
+  assert.equal(other.error, true)
+  assert.match(other.text, /^invalid_state: .*scan_open/)
 })
 
 test('a batch caps each result, and the whole when many together are past the cap', async () => {
@@ -245,27 +273,106 @@ test('the status says the time here, local, with its offset', async () => {
   assert.equal(Date.parse(localTime(winter)), winter.getTime())
 })
 
-test('once a scan is opened from a folder, a spilled answer and a batch’s picture go there, and the note says so', async () => {
+test('once a scan is opened from a folder, a spilled answer and a batch’s picture go into scanruler-work there, and the answer says so', async () => {
   const folder = join(dir, 'reverseengineer', '13_rumblePack')
+  const work = join(folder, 'scanruler-work')
   await mkdir(folder, { recursive: true })
   await writeFile(join(folder, 'pak.stl'), Buffer.alloc(84))
   const opened = await call('scan_open', { path: join(folder, 'pak.stl') })
   assert.equal(opened.error, false, opened.text)
   const big = await call('demo_points', { n: 5000 })
   assert.equal(big.json.truncated, true)
-  assert.equal(dirname(big.json.file), folder)
-  assert.ok(big.json.note.endsWith(`It is in ${folder}, the folder the scan open now was opened from.`), big.json.note)
+  assert.equal(dirname(big.json.file), work)
+  assert.ok(big.json.note.endsWith(`It is in ${work}, scanruler-work in the folder the scan open now was opened from.`), big.json.note)
   assert.equal(JSON.parse(await readFile(big.json.file, 'utf8')).points.length, 5000)
-  // In a batch, the same; and a picture without a path is written there.
+  // In a batch, the same; and a picture without a path is written there,
+  // the result naming the folder — not among the person's files beside
+  // the scan.
   const batch = await call('scanruler_batch', { calls: [{ tool: 'demo_points', arguments: { n: 5000 } }, { tool: 'view_render', arguments: { view: 'top' } }] })
-  assert.equal(dirname(batch.json.results[0].result.file), folder)
+  assert.equal(dirname(batch.json.results[0].result.file), work)
   const picture = batch.json.results[1].result.file.path
-  assert.equal(dirname(picture), folder)
+  assert.equal(dirname(picture), work)
+  assert.equal(batch.json.results[1].result.file.folder, work)
   assert.deepEqual([...(await readFile(picture))], VIEWS.top)
+  // scanruler_files lists it under the scan's folder.
+  const listed = await call('scanruler_files', { path: 'scanruler-work' })
+  assert.equal(listed.error, false, listed.text)
+  assert.ok(JSON.stringify(listed.json).includes(basename(picture)), listed.text)
   // A path given still wins.
   const shots = join(dir, 'shots-asked')
   const asked = await call('scanruler_batch', { calls: [{ tool: 'view_render', arguments: { view: 'front', path: `${shots}/` } }] })
   assert.equal(dirname(asked.json.results[0].result.file.path), shots)
+})
+
+test('scanruler_read reads text under the scan’s folder, by the rule scanruler_files keeps, cut on a character and within the cap however its text escapes', async () => {
+  const folder = join(dir, 'reverseengineer', '14_reader')
+  await mkdir(join(folder, 'report'), { recursive: true })
+  await writeFile(join(folder, 'reader.stl'), Buffer.alloc(84))
+  assert.equal((await call('scan_open', { path: join(folder, 'reader.stl') })).error, false)
+  const read = async (args) => (await call('scanruler_read', args))
+  await writeFile(join(folder, 'report', 'notes.md'), '# Sigma\n\nRMS 0.067 mm\n')
+  // Relative and absolute, a folder under it; a whole small file has no nextOffset.
+  assert.deepEqual((await read({ path: 'report/notes.md' })).json, { text: '# Sigma\n\nRMS 0.067 mm\n', offset: 0, size: 22 })
+  assert.equal((await read({ path: join(folder, 'report', 'notes.md') })).json.size, 22)
+  // In parts, by limit; past its end, nothing.
+  assert.deepEqual((await read({ path: 'report/notes.md', limit: 7 })).json, { text: '# Sigma', offset: 0, nextOffset: 7, size: 22 })
+  assert.deepEqual((await read({ path: 'report/notes.md', offset: 9, limit: 3 })).json, { text: 'RMS', offset: 9, nextOffset: 12, size: 22 })
+  assert.deepEqual((await read({ path: 'report/notes.md', offset: 100 })).json, { text: '', offset: 22, size: 22 })
+  // Another folder scanruler_status lists is read too; one it does not, not.
+  const earlier = (await call('scanruler_status')).json.folders.find((f) => f !== folder)
+  await writeFile(join(earlier, 'earlier.txt'), 'kept')
+  assert.equal((await read({ path: join(earlier, 'earlier.txt') })).json.text, 'kept')
+  for (const [path, why] of [
+    ['../escape.md', /^invalid_input: path: "\.\."/],
+    [join(tmpdir(), 'elsewhere.md'), /^invalid_input: path: .* is outside the folders/],
+    ['reader.stl', /^invalid_input: path: only \.md, \.txt, \.csv, \.json, \.jsonl files are read, as text — not "\.stl"/],
+    ['shot.png', /not "\.png"/],
+    ['part.step', /not "\.step"/],
+    ['LICENSE', /not "no extension"/],
+    ['missing.md', /^not_found: .*there is no such file/],
+  ]) {
+    const refused = await read({ path })
+    assert.equal(refused.error, true, path)
+    assert.match(refused.text, why)
+  }
+  for (const args of [{ path: 'report/notes.md', offset: -1 }, { path: 'report/notes.md', limit: 0 }, {}]) assert.equal((await read(args)).error, true, JSON.stringify(args))
+  // A name that says text over bytes that are not.
+  await writeFile(join(folder, 'pretend.txt'), Buffer.from([0x48, 0xff, 0xfe, 0x00]))
+  assert.match((await read({ path: 'pretend.txt' })).text, /^invalid_input: .*does not read as UTF-8 text/)
+
+  // One, two, three and four bytes a character, and every read of them cut
+  // somewhere: nothing lost, nothing split, whatever the limit or the offset.
+  const mixed = 'aé€😀'.repeat(50)
+  await writeFile(join(folder, 'mixed.txt'), mixed)
+  const size = Buffer.byteLength(mixed, 'utf8')
+  for (const limit of [1, 2, 3, 5, 7, 64]) {
+    let whole = ''
+    let offset = 0
+    for (;;) {
+      const part = (await read({ path: 'mixed.txt', offset, limit })).json
+      whole += part.text
+      if (part.nextOffset === undefined) break
+      assert.ok(part.nextOffset > offset, `limit ${limit} at ${offset}`)
+      offset = part.nextOffset
+    }
+    assert.equal(whole, mixed, `limit ${limit}`)
+  }
+  // An offset inside a character starts at the next: é is at 1 and 2.
+  assert.deepEqual((await read({ path: 'mixed.txt', offset: 2, limit: 3 })).json, { text: '€', offset: 3, nextOffset: 6, size })
+
+  // Text that doubles as JSON, past the cap: the answer, not the text, is what fits.
+  const quoted = '"\\'.repeat(ANSWER_CAP)
+  await writeFile(join(folder, 'quoted.json'), quoted)
+  let whole = ''
+  let offset = 0
+  for (;;) {
+    const part = await read({ path: 'quoted.json', offset })
+    assert.ok(part.text.length <= ANSWER_CAP, `${part.text.length} characters`)
+    whole += part.json.text
+    if (part.json.nextOffset === undefined) break
+    offset = part.json.nextOffset
+  }
+  assert.equal(whole, quoted)
 })
 
 test('a spilled answer goes to the folder of the scan open now — never to the one the replaced session was saved into, nor one a scan opened by hand has left', async () => {
@@ -291,8 +398,8 @@ test('a spilled answer goes to the folder of the scan open now — never to the 
   const big = await call('demo_points', { n: 5000 })
   assert.equal(dirname(big.json.file), dir)
   assert.match(big.json.note, /the scan open now was not opened from a folder through this server\.$/)
-  // The part's scan opened from its folder: there.
+  // The part's scan opened from its folder: there, in scanruler-work.
   const opened = await call('scan_open', { path: join(part, 'Mesh.stl') })
   assert.equal(opened.error, false, opened.text)
-  assert.equal(await spillFolder(), part)
+  assert.equal(await spillFolder(), join(part, 'scanruler-work'))
 })

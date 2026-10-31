@@ -11,7 +11,7 @@ import { commandHost } from '../host'
 import { reportJson, reportText, REPORT_WORKSPACES, type ReportWorkspace } from '../report'
 import { RECENT_KEPT, RECENT_RESULT_CHARS, recentOutcomes } from '../registry'
 import { enumOf, int, obj, str } from '../schema'
-import { internalWorkspace, publicWorkspace, sessionState, workspaceNames } from '../state'
+import { internalWorkspace, publicWorkspace, sessionAfterStep, sessionState, workspaceNames } from '../state'
 import { CommandError, type Command } from '../types'
 import { discardSchema, requireDiscardable, waitFor } from './common'
 
@@ -19,7 +19,7 @@ const state: Command = {
   name: 'state',
   title: 'Read the session',
   description:
-    'The whole session as JSON: the app and its plugins, the project (its name; unsaved — whether it has changes not saved since it was last saved or opened, as the top bar’s "Unsaved changes" says, null with no page; holds — the work a new scan or project would replace, counted by what it is), the workspace on screen, whether it is busy, the scan (file, units, vertex and triangle counts, bounding box, centre, size, applied alignment), every element with its fit, every dimension with its value, limit and verdict, the sections, what is open in the panels, the deviation, wall thickness and 2D Measure state with their statistics, the guided hint for the next step, and the undo history. Lengths in millimetres, angles in degrees. Read it before acting and after.',
+    'The whole session as JSON: the app and its plugins, the project (name, unsaved, holds), the workspace on screen, busy, the scan (file, units, counts, bounding box, centre, size, alignment), every element with its fit, every dimension with value, limit and verdict, the sections, what is open in the panels, the deviation, wall thickness and 2D state with their statistics, the guided hint, the undo history and ui.units. Trap: the screen may show inches; every answer here is in millimetres, angles in degrees. Read it before acting and after.',
   input: obj({}),
   readOnly: true,
   headless: true,
@@ -67,7 +67,7 @@ const report: Command<{ format?: 'json' | 'text'; workspace?: ReportWorkspace }>
   name: 'get',
   title: 'Get the report',
   description:
-    'The measurement report. format "text" is word for word what the workspace’s Copy report button puts on the clipboard — measure (elements and dimensions with verdicts), deviation, thickness or flat (2D). format "json" (the default) is the whole session’s report structured: what the numbers rest on (units, scale, frame, applied alignment, fit method and each element’s outlier cut-off), every element with its fit, every dimension with value, unit, limit and pass/fail verdict, the tally of checks, the sections, and the deviation, thickness and 2D results with their settings.',
+    'The measurement report. format "text" is word for word what the workspace’s Copy report button gives — measure (elements and dimensions with verdicts), deviation, thickness or flat (2D). format "json" (the default) is the whole session’s report structured: what the numbers rest on (units, scale, frame, alignment, fit method, outlier cut-offs), every element with its fit, every dimension with value, unit, limit and verdict, the tally of checks, the sections, and the deviation, thickness and 2D results with their settings.',
   input: obj({
     format: enumOf(['json', 'text'], 'json (the default) or text.'),
     workspace: enumOf(REPORT_WORKSPACES, 'For text: whose report — measure (the default), deviation, thickness or flat.'),
@@ -77,8 +77,22 @@ const report: Command<{ format?: 'json' | 'text'; workspace?: ReportWorkspace }>
     format === 'text' ? { format, workspace: w, text: reportText(w) } : { format, report: reportJson() },
 }
 
+/** What a step of the history answers with: the session in brief, or the
+ *  whole of it. */
+type StepDetail = 'brief' | 'full'
+/** How long a step's answer waits for its rebuild, ms. */
+const STEP_SETTLE_MS = 90_000
+const stepDetail = enumOf(['brief', 'full'], 'brief (the default): what the steps change, in brief, as after; full: the whole session, as state.')
+const afterStep = async (detail: StepDetail) => {
+  // The rebuild a step sets off holds the history until it lands: what the
+  // answer says of the part is the part after the step. Past the wait, after
+  // says it is still held.
+  await waitFor(() => !historyBlocked() && !useHistory.getState().restoring, 'the step to settle', STEP_SETTLE_MS).catch(() => undefined)
+  return detail === 'full' ? { state: await sessionState() } : { after: sessionAfterStep() }
+}
+
 /** Walk the history one step, as the undo keys do. */
-async function travel(back: boolean) {
+async function travel(back: boolean, detail: StepDetail) {
   const h = useHistory.getState()
   const entry = (back ? h.past : h.future).at(-1)
   if (!entry) throw new CommandError('invalid_state', `There is nothing to ${back ? 'undo' : 'redo'}.`)
@@ -90,27 +104,27 @@ async function travel(back: boolean) {
   if ((back ? after.future : after.past).at(-1) !== entry) {
     throw new CommandError('failed', `The step "${entry.label}" could not be ${back ? 'undone' : 'redone'}.`)
   }
-  return { [back ? 'undone' : 'redone']: entry.label, workspace: publicWorkspace(entry.workspace), state: await sessionState() }
+  return { [back ? 'undone' : 'redone']: entry.label, workspace: publicWorkspace(entry.workspace), ...(await afterStep(detail)) }
 }
 
-const undoCommand: Command = {
+const undoCommand: Command<{ detail?: StepDetail }> = {
   name: 'undo',
   title: 'Undo',
-  description: 'Undo the last step — one of the person’s or one of these commands, each of which is one step. Returns the step’s name and the session afterwards.',
-  input: obj({}),
+  description: 'Undo the last step — one of the person’s or one of these commands, each of which is one step. Returns the step’s name and the session afterwards in brief (detail "full": the whole of it).',
+  input: obj({ detail: stepDetail }),
   history: false,
   headless: true,
-  run: () => travel(true),
+  run: ({ detail = 'brief' }) => travel(true, detail),
 }
 
-const redoCommand: Command = {
+const redoCommand: Command<{ detail?: StepDetail }> = {
   name: 'redo',
   title: 'Redo',
-  description: 'Redo the step undone last. Returns the step’s name and the session afterwards.',
-  input: obj({}),
+  description: 'Redo the step undone last. Returns the step’s name and the session afterwards in brief (detail "full": the whole of it).',
+  input: obj({ detail: stepDetail }),
   history: false,
   headless: true,
-  run: () => travel(false),
+  run: ({ detail = 'brief' }) => travel(false, detail),
 }
 
 const recent: Command<{ job?: string; limit?: number }> = {
@@ -156,15 +170,15 @@ const checkpointCommand: Command = {
   },
 }
 
-const restoreCommand: Command<{ checkpoint: string }> = {
+const restoreCommand: Command<{ checkpoint: string; detail?: StepDetail }> = {
   name: 'restore',
   title: 'Back to a mark in the history',
   description:
-    'Undo every step made since history.checkpoint gave this checkpoint, newest first, as the undo key would one by one — so a run of changes that went wrong in the middle is taken back whole. Refused, undoing nothing, when the mark is no longer under the steps on top — undone past it, or the history started afresh (a scan or a project opened). Returns the steps undone, newest first, and the session afterwards.',
-  input: obj({ checkpoint: str('What history.checkpoint returned.', { minLength: 1 }) }, ['checkpoint']),
+    'Undo every step made since history.checkpoint gave this checkpoint, newest first — a run of changes that went wrong in the middle taken back whole. Refused, undoing nothing, when the mark is gone: undone past it, or the history started afresh (a scan or project opened). Returns the steps undone, newest first, and the session afterwards.',
+  input: obj({ checkpoint: str('What history.checkpoint returned.', { minLength: 1 }), detail: stepDetail }, ['checkpoint']),
   history: false,
   headless: true,
-  run: async ({ checkpoint }) => {
+  run: async ({ checkpoint, detail = 'brief' }) => {
     const mark = checkpoints.get(checkpoint)
     if (!mark) throw new CommandError('not_found', `There is no checkpoint "${checkpoint}" — history.checkpoint gives one.`)
     const past = useHistory.getState().past
@@ -182,7 +196,7 @@ const restoreCommand: Command<{ checkpoint: string }> = {
       if (useHistory.getState().future.at(-1) !== entry) throw new CommandError('failed', `The step "${entry.label}" could not be undone; ${undone.length} were.`)
       undone.push(entry.label)
     }
-    return { undone, state: await sessionState() }
+    return { undone, ...(await afterStep(detail)) }
   },
 }
 

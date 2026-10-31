@@ -64,8 +64,8 @@ test('the status says the tools the client holds are stale until it lists them a
   try {
     const s = await status()
     assert.equal(s.tools.stale, true)
-    assert.equal(s.tools.listed, 8)
-    assert.equal(s.tools.now, 9)
+    assert.equal(s.tools.listed, 9)
+    assert.equal(s.tools.now, 10)
     assert.deepEqual(s.tools.added, ['demo_added'])
     assert.equal(s.tools.removed, undefined)
     assert.equal(s.tools.changed, undefined)

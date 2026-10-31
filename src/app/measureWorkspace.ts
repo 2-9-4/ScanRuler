@@ -21,6 +21,8 @@ import { useMark } from '../state/markStore'
 import { dimensionRefsOf } from '../state/sectionModel'
 import type { SceneManager } from '../viewer/SceneManager'
 import { forgetSurface, rememberSurface } from './surfaces'
+import { usePrefs } from '../state/prefsStore'
+import { boundLength } from './useUnits'
 
 export interface MeasureDeps {
   clientRef: RefObject<MeshWorkerClient | null>
@@ -284,9 +286,10 @@ export function measureWorkspace({ clientRef, sceneRef }: MeasureDeps) {
       const loose = r.rms > 0.1
       useStore.getState().setDraftParams(
         [...r.normal, ...r.point, r.rms, r.matched, r.sampled],
-        `The mirror image fits the ${marked ? 'marked surface' : 'scan'} to σ ${r.rms.toFixed(
+        `The mirror image fits the ${marked ? 'marked surface' : 'scan'} to σ ${boundLength(usePrefs.getState().units).fmt(
+          r.rms,
           4,
-        )} mm over ${r.matched.toLocaleString('en-US')} of ${r.sampled.toLocaleString(
+        )} over ${r.matched.toLocaleString('en-US')} of ${r.sampled.toLocaleString(
           'en-US',
         )} samples, ${
           seedName
@@ -322,7 +325,7 @@ export function measureWorkspace({ clientRef, sceneRef }: MeasureDeps) {
           marked
             ? `The centroid of the ${marked.length.toLocaleString('en-US')} marked points' surface — of its area, not of a volume.`
             : c.closed
-              ? `The centroid of the enclosed volume, ${(c.volumeMm3 / 1000).toFixed(2)} cm³.`
+              ? `The centroid of the enclosed volume, ${volumeText(c.volumeMm3)}.`
               : 'The scan is open — this is the centroid of its surface, not of a volume.',
         )
       },
@@ -369,4 +372,11 @@ export function measureWorkspace({ clientRef, sceneRef }: MeasureDeps) {
     measureCentroid,
     watch,
   }
+}
+
+/** A volume as the centroid's note gives it: cubic centimetres beside
+ *  millimetres, cubic inches beside inches. */
+function volumeText(mm3: number): string {
+  const len = boundLength(usePrefs.getState().units)
+  return len.units === 'in' ? len.vol(mm3, 1) : `${(mm3 / 1000).toFixed(2)} cm³`
 }

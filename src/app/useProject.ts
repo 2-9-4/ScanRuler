@@ -60,7 +60,7 @@ export function useProject({
   commitNominal: (nominal: PreparedNominal | null) => void
   commitImage: (image: PreparedImage | null) => void
   runEdgeDetect: () => Promise<void>
-  runFit: (id: number, kind: ElementKind, seeds: number[], selection?: Uint32Array) => Promise<void>
+  runFit: (id: number, kind: ElementKind, seeds: number[], selection?: Uint32Array, regionsOnly?: boolean) => Promise<void>
   runDeviation: () => Promise<void>
   runThickness: () => Promise<void>
 }) {
@@ -133,8 +133,8 @@ export function useProject({
       // the worker's current scan/reference. Any member may still fail here.
       // A member saved in other units is read in millimetres from them again,
       // the way it was when it came in; the manifest checked the value.
-      if (scanFile) scan = await prepareScan(meshClient, sceneRef.current!, bundleFiles([scanFile, ...companions])!, creaseSetting(useStore.getState()), alignment ?? undefined, meshUnitsOf(manifest.scan?.units) ?? 'mm')
-      if (nominalFile) nominal = await prepareNominal(meshClient, sceneRef.current!, nominalFile, meshUnitsOf(ref?.units) ?? 'mm')
+      if (scanFile) scan = await prepareScan(meshClient, sceneRef.current!, bundleFiles([scanFile, ...companions])!, creaseSetting(useStore.getState()), alignment ?? undefined, meshUnitsOf(manifest.scan?.units) ?? 'mm') // units-ok: the file's own units, an id
+      if (nominalFile) nominal = await prepareNominal(meshClient, sceneRef.current!, nominalFile, meshUnitsOf(ref?.units) ?? 'mm') // units-ok: the file's own units, an id
       if (imageFile) image = await prepareImage(imageFile)
 
       await meshClient.commitImport({ scan: scan?.id ?? null, nominal: nominal?.id ?? null })
@@ -161,7 +161,10 @@ export function useProject({
       const jobs: Promise<void>[] = []
       for (const el of useStore.getState().elements) {
         if (el.source.type !== 'fitted') continue
-        jobs.push(runFit(el.id, el.kind, el.source.seeds, el.source.selection))
+        // The fit as saved stands: only the surface it was measured on is
+        // read again. Fitted anew it can land elsewhere, and what was built
+        // on it moves with no edit (one without a saved fit is fitted).
+        jobs.push(runFit(el.id, el.kind, el.source.seeds, el.source.selection, true))
       }
       await Promise.all(jobs)
       if (manifest.scan && manifest.deviation.align && useDeviation.getState().nominalName) {

@@ -23,6 +23,7 @@ import { MarkTools } from './MarkTools'
 import { OrientFields } from './OrientFields'
 import { NameField, providersFor, RefSelect } from './RefSelect'
 import { tintStyle } from './tint'
+import { useLength } from '../app/useUnits'
 
 export function DraftEditor({
   onSelectMode,
@@ -59,6 +60,9 @@ export function DraftEditor({
   const setDraftRef = useStore((s) => s.setDraftRef)
   const beginDraftPick = useStore((s) => s.beginDraftPick)
   const setDraftParam = useStore((s) => s.setDraftParam)
+  // Readings and typed lengths in the units shown; the draft holds
+  // millimetres.
+  const len = useLength()
   const setDraftSeed = useStore((s) => s.setDraftSeed)
   const selectMode = useStore((s) => s.selectMode)
   // The marking itself is the shared tool set (markStore / MarkTools); the
@@ -261,25 +265,31 @@ export function DraftEditor({
                   }
                 />
               ))}
-              {method.params.map((p, i) =>
-                p.hidden ? null : (
+              {method.params.map((p, i) => {
+                if (p.hidden) return null
+                // A length is typed in the units shown, rounded far below
+                // anything shown so the text reads back as typed.
+                const length = p.unit === 'mm'
+                const held = draft.params[i]
+                return (
                   <label className="field" key={p.key}>
                     <span>
                       {p.label}
-                      {p.unit ? ` (${p.unit})` : ''}
+                      {length ? ` (${len.word()})` : ''}
                     </span>
                     <input
                       type="number"
                       step="any"
                       data-test={`draft-param-${p.key}`}
-                      value={Number.isFinite(draft.params[i]) ? draft.params[i] : ''}
-                      onChange={(e) =>
-                        setDraftParam(i, e.target.value === '' ? NaN : Number(e.target.value))
-                      }
+                      value={Number.isFinite(held) ? (length ? Number(len.toDisplay(held).toFixed(6)) : held) : ''}
+                      onChange={(e) => {
+                        const v = e.target.value === '' ? NaN : Number(e.target.value)
+                        setDraftParam(i, length ? len.fromDisplay(v) : v)
+                      }}
                     />
                   </label>
-                ),
-              )}
+                )
+              })}
             </>
           ) : (
             <p className="hint">{pickHint}</p>
@@ -334,7 +344,7 @@ export function DraftEditor({
               {draft.status === 'failed' && <b>{draft.message ?? 'Failed'}</b>}
               {draft.status === 'ready' &&
                 (() => {
-                  const primary = formatPrimary(shownFit!)
+                  const primary = formatPrimary(shownFit!, len.units)
                   if (shownFit!.kind === 'point' || shownFit!.kind === 'line' || primary === '') {
                     return (
                       <b className="tinted" style={tintStyle(draftColor)}>
@@ -345,7 +355,7 @@ export function DraftEditor({
                   return <DroValue value={primary} color={draftColor} />
                 })()}
             </div>
-            {draft.status === 'ready' && <div className="dro-note">{formatDetail(shownFit!)}</div>}
+            {draft.status === 'ready' && <div className="dro-note">{formatDetail(shownFit!, len.units)}</div>}
           </div>
 
           {/* The design value behind the measurement, for the kinds defined by

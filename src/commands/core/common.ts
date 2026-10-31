@@ -62,7 +62,7 @@ export const lastError = (fallback: string): string => useStore.getState().error
 
 /** The `discard` switch commands that replace the session take. */
 export const discardSchema: JsonSchema = bool(
-  'Replace the session even though it holds measurements — they are lost (a project file saved before keeps them). Without it the command refuses when there is work to lose.',
+  'true: replace the session though it holds measurements (lost unless saved as a project first). Refused otherwise when there is work to lose.',
 )
 
 /** Refuse to replace a session holding work unless told to — naming the
@@ -84,7 +84,7 @@ export function requireDiscardable(discard: boolean | undefined, what: string): 
 
 /** A file's name, which says what it is. */
 export const fileNameSchema = (examples: string): JsonSchema =>
-  str(`The file's name with its extension — ${examples}. It is what the session calls the model.`, { minLength: 1 })
+  str(`The file's name with its extension — ${examples}.`, { minLength: 1 })
 
 /** Bytes handed in, as the File the panels' inputs give. */
 export const fileOf = (bytes: Uint8Array, name: string): File => new File([bytes as BlobPart], name)

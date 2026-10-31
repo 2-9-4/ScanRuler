@@ -24,7 +24,7 @@ import { elementRefSchema, findElement, parsePlaneName, type ElementRef } from '
 import { arr, bool, enumOf, int, num, obj, oneOf, vec3, type JsonSchema } from '../schema'
 import { publicWorkspace } from '../state'
 import { CommandError, type Command } from '../types'
-import { applyShow, viewToggles, whyNotShown, type ShowApplied, type ViewToggle } from '../viewToggles'
+import { applyShow, settleShown, viewToggles, whyNotShown, type ShowApplied, type ViewToggle } from '../viewToggles'
 import { nextFrame, waitFor } from './common'
 
 const VIEWS: readonly StandardView[] = ['iso', 'iso-front-left', 'iso-rear-left', 'iso-rear-right', 'top', 'bottom', 'front', 'rear', 'left', 'right']
@@ -36,11 +36,16 @@ const VIEWS: readonly StandardView[] = ['iso', 'iso-front-left', 'iso-rear-left'
 const DEFAULT_LONG_SIDE = 800
 const MAX_SIDE = 2048
 
+/** How long a picture, from its start, waits for what its `show` asks for to
+ *  be read, ms: view.render answers on the spot and is no job, so it has to
+ *  answer inside the agent server's 45 s, the picture itself included. */
+const SHOW_WAIT_MS = 35_000
+
 const viewSchema = enumOf(
   VIEWS,
-  'A standard view, the camera turned about the middle of the screen: iso (from the front, right and above), iso-front-left, iso-rear-left and iso-rear-right (the other corners, as high up), top (down the Z axis, Y up the screen), bottom, front (from −Y, Z up), rear (from +Y), left (from −X), right (from +X).',
+  'A standard view: iso (front, right, above) and the other iso corners, top (down Z, Y up), bottom, front (from −Y, Z up), rear, left (from −X), right.',
 )
-const fitSchema = bool('Bring everything shown into the frame, keeping the direction looked from.')
+const fitSchema = bool('Fit everything shown into the frame, keeping the direction.')
 
 // ---- what is shown ----------------------------------------------------------------
 
@@ -73,16 +78,16 @@ const BASE_KEYS = ['scan', 'reference', 'sections', 'elements', 'labels']
 const showSchema = (): JsonSchema => ({
   type: 'object',
   description:
-    'What to show or put away, by key, true or false: scan, reference (the Deviation workspace’s reference part), sections, elements (the measured elements and dimensions), labels — and the keys a workspace adds (view.set answers with every key standing now and whether it is shown). { scan: false } pictures what was built on the scan on its own. false on a workspace’s key not on screen now does nothing and is answered under absent.',
+    'Keys to show (true) or put away (false): scan, reference, sections, elements (with dimensions), labels, and a workspace’s own (view.set lists every key standing now).',
   properties: Object.fromEntries(BASE_KEYS.map((k) => [k, bool()])),
 })
 
 const frameSchema = oneOf(
   [
-    obj({ min: vec3('The lowest corner, mm.'), max: vec3('The highest corner, mm.') }, ['min', 'max'], 'A box, in the frame the part is measured in now, framed whole as seen from the view’s direction.'),
-    obj({ at: vec3('The centre, mm.'), size: num('The side of the square the picture is fitted round, mm — its shorter side, in any view, the iso too: 40 in an 800 × 450 picture is 40 tall and 71 wide (mmAcross in the answer).', { exclusiveMinimum: 0 }) }, ['at', 'size'], 'A place in the middle of a view, a square `size` mm on a side fitted in it.'),
+    obj({ min: vec3('Lowest corner, mm.'), max: vec3('Highest corner, mm.') }, ['min', 'max'], 'A box in the current frame, framed whole.'),
+    obj({ at: vec3('The centre, mm.'), size: num('The side of the square fitted in the picture’s shorter side, mm.', { exclusiveMinimum: 0 }) }, ['at', 'size'], 'A place, a square size mm on a side fitted round it.'),
   ],
-  'Frame a box or a place instead of everything shown — a corner or a fillet looked at closely; the direction looked from stays, and fit is left alone.',
+  'Frame a box or a place instead of everything shown; the direction stays, fit is left alone.',
 )
 
 type Frame = { min: Vec3; max: Vec3 } | { at: Vec3; size: number }
@@ -93,17 +98,17 @@ type SectionAsk = boolean | { across: ElementRef; offset?: number; flip?: boolea
 
 const sectionSchema = oneOf(
   [
-    bool('true opens it as the Section key does — square to the view, through the part’s middle; false puts it away.'),
+    bool('true: cut square to the view through the part’s middle; false: put it away.'),
     obj(
       {
-        across: elementRefSchema('A coordinate plane "XY", "YZ", "XZ", or an element with a direction.'),
-        offset: num('Where along its normal, mm: for a coordinate plane the coordinate, for an element from its centre.'),
-        flip: bool('Take away the half away from the camera instead.'),
+        across: elementRefSchema('"XY", "YZ", "XZ", or an element with a direction.'),
+        offset: num('Along its normal, mm: a coordinate plane’s coordinate, or from an element’s centre.'),
+        flip: bool('Take away the far half instead.'),
       },
       ['across'],
     ),
   ],
-  'The section view: everything cut open at a plane, the half toward the camera taken away, closed parts capped — to see inside. Set after any turn.',
+  'The section view: cut open at a plane, the near half taken away, closed parts capped. Set after any turn.',
 )
 
 /** What a section is laid across, by name: a coordinate plane or an element
@@ -252,7 +257,7 @@ const set: Command<{ view?: StandardView; fit?: boolean; show?: Record<string, b
   name: 'set',
   title: 'Turn the view',
   description:
-    'Turn the 3D view to a standard view and/or fit everything shown into the frame — with neither given, it fits — or frame a box or a place (frame); the zoom a frame leaves stays for what comes after it, a standard view without fit included. show puts the scan, the reference, the sections, the elements or the labels on screen or away, by key, and leaves them so — { scan: false } to look at what was built on the scan without it. section cuts everything open at a plane to look inside, and leaves it so. It waits for the session to settle first (a fit, a map, a rebuild), so what was just made is in the frame. Not a step of the history. Needs the viewport. Returns the view, fitted (whether it fitted), framed (the frame asked), framedEarlier (the frame of an earlier call the camera still stands on, not fitted since), mmAcross ([width, height], mm the viewport spans), the section view (null when off) and, under shown, every key that can be shown now and whether it is — a workspace’s key that is off, and not put away by show, may say why and what shows it under <key>Why.',
+    'Turn the 3D view to a standard view and/or fit everything shown — with neither, it fits — or frame a box or a place; the zoom a frame leaves stays for what comes after. show puts keys on screen or away and leaves them so; section cuts everything open at a plane and leaves it so. Waits for the session to settle first. Not a step of the history. Needs the viewport. Returns view, fitted, framed, framedEarlier, mmAcross ([width, height] mm), section (null when off) and shown: every key and whether it is, with <key>Why for a workspace key that is off.',
   input: obj({ view: viewSchema, fit: fitSchema, show: showSchema(), frame: frameSchema, section: sectionSchema }),
   readOnly: true,
   scene: true,
@@ -271,12 +276,12 @@ const render: Command<{ width?: number; height?: number; view?: StandardView; vi
   name: 'render',
   title: 'Picture the view',
   description:
-    'A picture of the 3D view as a PNG — what the person sees in the viewport, without the HTML labels over it (dimension values, names), and lit from a little above and left of the camera with more fill than the screen, so a face square to the camera keeps its shading. Give view and/or fit to turn the view first, as view.set does, or frame to frame a box or a place — a place’s size is the side of a square fitted in the picture, its shorter side, and the answer’s mmAcross: [width, height] says what the picture spans, mm. Only fit: true fits: a view alone turns and keeps the zoom, and a frame stays for the pictures after it — the answer says fitted, and framedEarlier: { box | at, size } while the camera still stands on an earlier frame (fit: true pictures it whole). show puts the scan, the reference, the sections, the elements or the labels — or what a workspace adds — on screen or away for the picture alone, by key, and back as they were after it — { scan: false } pictures what was built on the scan on its own; view.set lists the keys. section cuts everything open for the picture alone, as view.set does. width and height in pixels: the viewport’s own shape at most 800 pixels on its long side by default, enough to check a step by — ask for more (up to 2048) for a picture to keep; one of them alone keeps the viewport’s shape. views: two to six standard views in one picture, side by side, each fitted and named in its corner — iso, top, bottom and a side as one picture to look at instead of four (width and height are then the whole sheet’s; 1200 px across by default); the view stays at the last. In the Deviation workspace the answer says which map the picture shows — map: { on: "scan" | "reference", colormap, range } — or map: null and mapWhy, why none is painted (the map switch off, no map measured, the surface it is on put away) and what puts it there. With the scan shown, a reference shown with it is drawn over it as a ghost and dulls the colours (mapNote says so): show: { reference: false } gives the clean map. In another workspace, with a deviation map measured, map: null and mapWhy say it paints in the Deviation workspace alone (workspace.set deviation); a workspace that colours the part its own way answers map or mapWhy for its own. A workspace’s key that is off in the picture, and not put away by show, may say why and what shows it under <key>Why. Waits for the session to settle first — a map being measured, on the scan or on the reference, too. Pictures and view.set take the viewport one at a time: two asked for together come back as two, one after the other. Needs the viewport.',
+    `A picture of the 3D view as a PNG — what the viewport shows, without the HTML labels (dimension values, names). view and/or fit turn the view first, as view.set does; frame frames a box or a place (mmAcross says what the picture spans). Trap: only fit: true fits — a view alone keeps the zoom, and a frame stays for the pictures after it (fitted and framedEarlier say so). show puts keys on screen or away for the picture alone ({ scan: false } pictures what was built on the scan); a key that has to be read, a workspace’s map, is waited for up to ${SHOW_WAIT_MS / 1000} s, and the answer says how far it got if not; section cuts it open for the picture alone. 800 px on the long side by default, up to 2048; views: two to six standard views in one picture. In the Deviation workspace the answer says which map is painted (map) or why none (mapWhy; mapNote when the reference ghost dulls the colours). Waits for the session to settle. Needs the viewport.`,
   input: obj({
     width: int('Pixels across, 64 to 2048.', { minimum: 64, maximum: MAX_SIDE }),
     height: int('Pixels down, 64 to 2048.', { minimum: 64, maximum: MAX_SIDE }),
     view: viewSchema,
-    views: arr(viewSchema, 'Several standard views in one picture, each fitted, in this order.', { minItems: 2, maxItems: 6 }),
+    views: arr(viewSchema, 'Several standard views in one picture, each fitted.', { minItems: 2, maxItems: 6 }),
     fit: fitSchema,
     show: showSchema(),
     frame: frameSchema,
@@ -294,6 +299,7 @@ const render: Command<{ width?: number; height?: number; view?: StandardView; vi
     if (useShell.getState().workspace === 'flat') {
       throw new CommandError('invalid_state', 'The 2D workspace is on screen, where the 3D view is not drawn — flat.render pictures the 2D sheet; workspace.set measure brings the 3D view back.')
     }
+    const started = Date.now()
     const scene = await settledScene('A picture of the view')
     const { on, ref, axis, refDir, offset, flipped } = useSectionView.getState()
     // Set inside the try: a key refused halfway has put back those before
@@ -301,6 +307,7 @@ const render: Command<{ width?: number; height?: number; view?: StandardView; vi
     let done: ShowApplied | null = null
     try {
       done = await shown(scene, show)
+      await settleShown(toggles(scene), show, SHOW_WAIT_MS - (Date.now() - started))
       if (view || fit || frame) {
         aim(scene, view, fit, frame)
         await nextFrame(scene)

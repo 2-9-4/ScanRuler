@@ -35,6 +35,9 @@ import { schemeById } from '../viewer/navSchemes'
 import { usePrefs } from '../state/prefsStore'
 import { sceneTheme } from '../viewer/viewThemes'
 import { formatSigned } from '../ui/format'
+import { pinValue } from '../viewer/pinLabel'
+import { fmtLen, unitWord } from '../core/units'
+import { useUnits } from './useUnits'
 import { providersFor } from '../ui/RefSelect'
 import { MARK_COLOR, useDeviation } from '../state/deviationStore'
 import { sectionElementsOf, useFlat } from '../state/flatStore'
@@ -307,6 +310,8 @@ export function useSceneSync({
   // itself, so the old geometry does not sit inside the new one.
   const editingElementId = draft?.editId
   const editingDimensionId = dimDraft?.editId
+  // The pins' figures are written in the units shown.
+  const units = useUnits()
   useEffect(() => {
     const items: OverlayElement[] = elements
       .filter((e) =>
@@ -322,11 +327,14 @@ export function useSceneSync({
       // everything that reports a number goes on reading that. For the
       // element a map is measured against, that drawn length is also exactly
       // the region the map covers.
-      .map((e) => ({
+      .map((e) => ({ e, fit: drawnFit(e.fit!, e.assumed, e.extend) }))
+      .map(({ e, fit }) => ({
         id: e.id,
         name: e.name,
         color: e.color,
-        fit: drawnFit(e.fit!, e.assumed, e.extend),
+        fit,
+        // The figure on its pin, in the units shown.
+        value: pinValue(fit, units),
         // On bare scan every element is a body. Over a map the one being
         // measured against is reduced to its border, and the others stay bodies
         // so there is something to aim a click at — until the map itself is
@@ -344,6 +352,7 @@ export function useSceneSync({
       dimensions.filter((d) => d.visible !== false && d.id !== editingDimensionId),
       dimensionRefsOf(elements, sections),
       surfaceSource,
+      units,
     ).filter((r) => !r.value.invalid)
     const verdictOf = (r: EvaluatedDimension) => ({
       notes: pinNotes(r),
@@ -423,6 +432,7 @@ export function useSceneSync({
     bareSurface,
     editingElementId,
     editingDimensionId,
+    units,
   ])
 
   useEffect(() => {
@@ -913,14 +923,14 @@ export function useSceneSync({
   useEffect(() => {
     const shown =
       workspace === 'deviation'
-        ? probes.map((p) => ({ ...p, title: 'DEV', label: `${formatSigned(p.value)} mm` }))
+        ? probes.map((p) => ({ ...p, title: 'DEV', label: `${formatSigned(p.value, units)} ${unitWord(units)}` }))
         : workspace === 'thickness'
-          ? thickProbes.map((p) => ({ ...p, title: 'WALL', label: `${p.value.toFixed(3)} mm` }))
+          ? thickProbes.map((p) => ({ ...p, title: 'WALL', label: fmtLen(p.value, units, 3) }))
           : []
     sceneRef.current?.setProbes(
       shown.map((p) => ({ id: p.id, point: p.point, title: p.title, label: p.label })),
     )
-  }, [workspace, probes, thickProbes])
+  }, [workspace, probes, thickProbes, units])
 
   // Whether the pins on the far side of the part are put away or show through
   // it — the operator's, like the line widths, and kept across sessions.

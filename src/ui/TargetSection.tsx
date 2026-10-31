@@ -9,6 +9,7 @@ import { describeTarget, isDeviationTarget } from '../core/deviation/elementFiel
 import { elementKindInfo } from '../core/elements/kinds'
 import type { Element } from '../state/store'
 import { usePulse } from '../app/useHints'
+import { useUnits } from '../app/useUnits'
 import { InfoDot } from './InfoDot'
 import { MarkTools } from './MarkTools'
 
@@ -71,6 +72,7 @@ export function TargetSection({
   // measured against.
   const options = elements.filter((e) => isDeviationTarget(e.fit))
   const pulseGo = usePulse('target-goto-measure')
+  const units = useUnits()
   // A dropdown is a poor thing to ring on its own, so the whole row wears it —
   // label included, which is also what says what is being chosen.
   const pulseSelect = usePulse('target-select')
@@ -162,7 +164,7 @@ export function TargetSection({
           {target && (
             <>
               <p className="hint" data-test="target-detail">
-                {describeTarget(target)}
+                {describeTarget(target, units)}
               </p>
 
               <label className="field">

@@ -49,6 +49,9 @@ export interface OverlayElement {
   style?: 'shell' | 'outline'
   /** Faded back: an element on offer rather than the one in use. */
   muted?: boolean
+  /** The figure its pin carries, written by the caller in the units shown —
+   *  the diameter in millimetres when left out. */
+  value?: string
 }
 
 export interface OverlayPair extends PinVerdict {
@@ -318,7 +321,7 @@ export class Overlays {
         this.overlayCleanup.push(guide.dispose)
       }
 
-      const label = pinLabel('element-label', el.name, pinValue(el.fit), el.color)
+      const label = pinLabel('element-label', el.name, el.value ?? pinValue(el.fit), el.color)
       const off = this.labelOffset(el.fit)
       label.position.set(
         el.fit.center[0] + off[0],

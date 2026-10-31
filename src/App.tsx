@@ -75,6 +75,8 @@ import { HoverReadout, type HoverReading } from './ui/HoverReadout'
 import { SplitPicker } from './ui/SplitPicker'
 import { MARK_COLOR, useDeviation } from './state/deviationStore'
 import { usePrefs } from './state/prefsStore'
+import { boundLength, useLength } from './app/useUnits'
+import { lengthInputText, unitWord, type DisplayUnits } from './core/units'
 import { useShell } from './state/shellStore'
 import { useMark } from './state/markStore'
 import { useThickness } from './state/thicknessStore'
@@ -428,12 +430,13 @@ export default function App() {
   // itself — see app/sectionCuts and app/measureWorkspace.
   useEffect(() => session.watch(), [session])
 
+  // The report and the CSV are written in the units shown.
   const handleFlatCopyReport = () => {
-    void navigator.clipboard.writeText(buildFlatReport(flatReportInput()))
+    void navigator.clipboard.writeText(buildFlatReport(flatReportInput(usePrefs.getState().units)))
     useStore.getState().setStatus('2D measurement report copied to the clipboard.')
   }
 
-  const handleFlatExportCsv = () => saveBuilt(buildFlatCsvFile())
+  const handleFlatExportCsv = () => saveBuilt(buildFlatCsvFile(usePrefs.getState().units))
 
   /** The sheet gathered for a drawing export — see core/flat/drawing. What
    *  is on the sheet is what is exported: the edges while they are shown,
@@ -455,7 +458,9 @@ export default function App() {
     }
   }
 
-  const flatDrawingInput = (): FlatDrawingInput | null => {
+  /** The sheet as a drawing, its values written in `units` — millimetres for
+   *  the SVG, which declares them, and for the agent. */
+  const flatDrawingInput = (units: DisplayUnits = 'mm'): FlatDrawingInput | null => {
     const s = useFlat.getState()
     const sheet = flatSheetView()
     if (!sheet) return null
@@ -468,12 +473,12 @@ export default function App() {
       chains: s.showEdges ? sheet.chains : null,
       chainUnit: sheetScale(s),
       ...(shadow ? { edgePieces: s.showEdges ? shadowFlatFits(shadow) : null } : {}),
-      elements: sheetElements(s),
+      elements: sheetElements(s, units),
       notes: sheetNotes(s).filter((n) => n.text.trim() !== ''),
       alignDir: sheetAlignment(s),
       turns: s.turns,
       mirror: s.mirror,
-      unit: s.pxPerMm ? 'mm' : 'px',
+      unit: s.pxPerMm ? 'mm' : 'px', // units-ok: the sheet's document unit, an id
       title: titleLine(report),
       scaleNote: scaleLine(report),
     }
@@ -491,30 +496,34 @@ export default function App() {
   }
   const handleFlatExportSvg = () => runExport(async () => saveBuilt(await buildFlatSvgFile()))
 
-  /** The sheet as a DXF — for CAD: millimetres by declaration, y up, the
+  /** The sheet as a DXF — for CAD: in `units` by declaration (the person's
+   *  display units from the button, millimetres for the agent), y up, the
    *  origin on the alignment, the edges thinned to a sketch's worth. Null
    *  with nothing on the stage. */
-  const buildFlatDxfFile = async (): Promise<BuiltFile | null> => {
-    const input = flatDrawingInput()
+  const buildFlatDxfFile = async (units: DisplayUnits = 'mm'): Promise<BuiltFile | null> => {
+    const input = flatDrawingInput(units)
     if (!input) return null
     const s = useFlat.getState()
     const origin = sheetFrame(s)?.origin ?? null
     const name = `${flatExportStem()}-sheet.dxf`
     const { buildFlatDxf, DXF_EDGE_TOLERANCE } = await import('./core/flat/dxf')
     const tolerance = DXF_EDGE_TOLERANCE[input.unit]
+    // The thinning said in the file's units on a sheet in millimetres.
+    const thinned = input.unit === 'px' ? `${tolerance} px` : `${lengthInputText(tolerance, units)} ${unitWord(units)}`
     const dxf = buildFlatDxf({
       ...input,
       origin,
       edgeTolerance: tolerance,
+      units,
     })
     return {
       name,
       mimeType: 'application/dxf',
       bytes: textBytes(dxf),
-      status: `Drawing exported to ${name} — ${drawnSummary(input, input.edgePieces ? '' : `thinned to ${tolerance} ${input.unit}`, s.showEdges)}.`,
+      status: `Drawing exported to ${name} — ${drawnSummary(input, input.edgePieces ? '' : `thinned to ${thinned}`, s.showEdges)}.`,
     }
   }
-  const handleFlatExportDxf = () => runExport(async () => saveBuilt(await buildFlatDxfFile()))
+  const handleFlatExportDxf = () => runExport(async () => saveBuilt(await buildFlatDxfFile(usePrefs.getState().units)))
 
 
   /** A marking gesture ended: re-fit on what is marked now, or fall back to an
@@ -684,12 +693,14 @@ export default function App() {
     const value = values[a] * wa + values[b] * wb + values[c] * wc
     if (!Number.isFinite(value)) return null
     const at = { value, x: hit.clientX, y: hit.clientY }
-    if (onThickness) return { ...at, text: `${value.toFixed(3)} mm`, muted: false }
+    // Written in the units shown at the moment of the reading.
+    const len = boundLength(usePrefs.getState().units)
+    if (onThickness) return { ...at, text: len.fmt(value, 3), muted: false }
     const matched = Math.abs(value) <= dev.maxDistance
     return {
       ...at,
       text: matched
-        ? `${formatSigned(value)} mm`
+        ? `${formatSigned(value, len.units)} ${len.word()}`
         : dev.source === 'element'
           ? 'too far off the element'
           : 'no reference in range',
@@ -1230,8 +1241,10 @@ export default function App() {
   // How each map writes a number, wherever one is shown — on the scale, in the
   // hover label, on a pin. A deviation is signed against a zero that is the
   // whole point of it; a wall thickness is a plain positive length.
-  const mm = formatSigned
-  const wall = (v: number): string => v.toFixed(3)
+  // In the units shown, bare: the legend's head carries the unit word.
+  const len = useLength()
+  const mm = (v: number): string => formatSigned(v, len.units)
+  const wall = (v: number): string => len.fmt(v, 3, { bare: true })
   const align = useDeviation((s) => s.align)
   const nominalName = useDeviation((s) => s.nominalName)
   const picking = useDeviation((s) => s.picking)
@@ -1375,11 +1388,14 @@ export default function App() {
 
   const handleCopy = () => {
     const store = useStore.getState()
+    // Copied in the units shown; the agent's report is in millimetres.
+    const units = usePrefs.getState().units
     const text = buildSummary(
       store.fileName ?? '',
       store.elements,
-      evaluateDimensions(store.dimensions, dimensionRefsOf(store.elements, store.sections), surfaceSource),
+      evaluateDimensions(store.dimensions, dimensionRefsOf(store.elements, store.sections), surfaceSource, units),
       store.sections,
+      units,
     )
     void navigator.clipboard?.writeText(text)
   }
@@ -1439,10 +1455,10 @@ export default function App() {
       { label: 'min', value: mm(stats.min) },
       { label: 'max', value: mm(stats.max) },
       { label: 'mean', value: mm(stats.mean) },
-      { label: 'RMS', value: stats.rms.toFixed(3) },
-      { label: 'sigma', value: stats.sigma.toFixed(3) },
+      { label: 'RMS', value: wall(stats.rms) },
+      { label: 'sigma', value: wall(stats.sigma) },
       {
-        label: `±${stats.tolerance.toFixed(3)}`,
+        label: `±${wall(stats.tolerance)}`,
         value: stats.measured
           ? `${((stats.withinTolerance / stats.measured) * 100).toFixed(1)} %`
           : '—',
@@ -1462,9 +1478,9 @@ export default function App() {
       { label: 'min', value: wall(thickStats.min) },
       { label: 'max', value: wall(thickStats.max) },
       { label: 'mean', value: wall(thickStats.mean) },
-      { label: 'sigma', value: thickStats.sigma.toFixed(3) },
+      { label: 'sigma', value: wall(thickStats.sigma) },
       {
-        label: `under ${thickStats.limit}`,
+        label: `under ${lengthInputText(thickStats.limit, len.units)}`,
         value: thickStats.measured
           ? `${((thickStats.belowLimit / thickStats.measured) * 100).toFixed(1)} %`
           : '—',
@@ -1691,7 +1707,7 @@ export default function App() {
           {!picking && onDeviation && mapReady && showMap && (
             <MapLegend
               id="deviation"
-              unit="mm"
+              kind="length"
               scale={deviationLegend.scale}
               stats={deviationLegend.stats}
               format={mm}
@@ -1713,7 +1729,8 @@ export default function App() {
           {!picking && onThickness && hasThicknessMap && (
             <MapLegend
               id="thickness"
-              unit="mm wall"
+              kind="length"
+              unit="wall"
               scale={thickScale}
               stats={thicknessLegend.stats}
               format={wall}

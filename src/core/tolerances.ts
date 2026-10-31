@@ -18,6 +18,7 @@ import type { DimensionTypeInfo, DimensionValue } from './dimensions'
 import type { ElementKind, FitData, PlaneFit, Vec3 } from './types'
 import { EXTENT_MARGIN, refAxis, refPoint, type AxisRef } from './elements/refs'
 import { orthoBasis } from './fit/linalg'
+import { fmtLen, type DisplayUnits } from './units'
 import {
   acuteAngle,
   addScaled,
@@ -38,7 +39,7 @@ export const TOLERANCE_TYPES: readonly DimensionTypeInfo[] = [
     group: 'form',
     label: 'Flatness',
     stem: 'Flatness',
-    unit: 'mm',
+    unit: 'mm', // units-ok: the value's kind, an id — printed through unitWord
     hint: 'How far the measured face strays from a perfect plane: the peak-to-peak deviation of its points.',
     slots: [{ roles: ['plane'], label: 'Plane' }],
   },
@@ -48,7 +49,7 @@ export const TOLERANCE_TYPES: readonly DimensionTypeInfo[] = [
     group: 'form',
     label: 'Cylindricity',
     stem: 'Cylindricity',
-    unit: 'mm',
+    unit: 'mm', // units-ok: the value's kind, an id — printed through unitWord
     hint: 'How far the measured wall strays from a perfect cylinder, peak to peak.',
     slots: [{ roles: ['axis'], kinds: ['cylinder'], label: 'Cylinder' }],
   },
@@ -58,7 +59,7 @@ export const TOLERANCE_TYPES: readonly DimensionTypeInfo[] = [
     group: 'form',
     label: 'Circularity',
     stem: 'Circularity',
-    unit: 'mm',
+    unit: 'mm', // units-ok: the value's kind, an id — printed through unitWord
     hint: 'How far the picked points stray from a perfect circle, radially, peak to peak.',
     slots: [{ roles: ['point'], kinds: ['circle'], label: 'Circle' }],
   },
@@ -68,7 +69,7 @@ export const TOLERANCE_TYPES: readonly DimensionTypeInfo[] = [
     group: 'form',
     label: 'Sphericity',
     stem: 'Sphericity',
-    unit: 'mm',
+    unit: 'mm', // units-ok: the value's kind, an id — printed through unitWord
     hint: 'How far the measured surface strays from a perfect sphere, peak to peak.',
     slots: [{ roles: ['point'], kinds: ['sphere'], label: 'Sphere' }],
   },
@@ -78,7 +79,7 @@ export const TOLERANCE_TYPES: readonly DimensionTypeInfo[] = [
     group: 'orientation',
     label: 'Parallelism',
     stem: 'Parallelism',
-    unit: 'mm',
+    unit: 'mm', // units-ok: the value's kind, an id — printed through unitWord
     hint: 'The width of the narrowest zone parallel to the datum that holds the feature — a face by its measured surface, a cylinder by its axis.',
     slots: [
       { roles: ['plane', 'axis'], label: 'Feature' },
@@ -91,7 +92,7 @@ export const TOLERANCE_TYPES: readonly DimensionTypeInfo[] = [
     group: 'orientation',
     label: 'Perpendicularity',
     stem: 'Perpendicularity',
-    unit: 'mm',
+    unit: 'mm', // units-ok: the value's kind, an id — printed through unitWord
     hint: 'The width of the narrowest zone square to the datum that holds the feature — a face by its measured surface, a cylinder by its axis.',
     slots: [
       { roles: ['plane', 'axis'], label: 'Feature' },
@@ -104,7 +105,7 @@ export const TOLERANCE_TYPES: readonly DimensionTypeInfo[] = [
     group: 'orientation',
     label: 'Angularity',
     stem: 'Angularity',
-    unit: 'mm',
+    unit: 'mm', // units-ok: the value's kind, an id — printed through unitWord
     hint: 'The width of the narrowest zone at the basic angle to the datum that holds the feature — a face by its measured surface, a cylinder by its axis.',
     slots: [
       { roles: ['plane', 'axis'], label: 'Feature' },
@@ -117,7 +118,7 @@ export const TOLERANCE_TYPES: readonly DimensionTypeInfo[] = [
     group: 'location',
     label: 'Coaxiality',
     stem: 'Coaxiality',
-    unit: 'mm',
+    unit: 'mm', // units-ok: the value's kind, an id — printed through unitWord
     hint: 'The diameter of the narrowest zone about the datum axis that holds the feature axis — or, for a sphere or a circle, its centre: twice the furthest it strays.',
     slots: [
       {
@@ -137,6 +138,9 @@ export interface ToleranceOptions {
    *  the frame the elements are in — or null where there are none. Only a
    *  plane feature reads them. */
   surfaces?: readonly (Float32Array | null)[]
+  /** What the value and its detail are written in — millimetres unless the
+   *  screen asks otherwise. */
+  units?: DisplayUnits
 }
 
 const DEG = Math.PI / 180
@@ -144,7 +148,7 @@ const DEG = Math.PI / 180
  *  threshold the element panel warns at. */
 const WEAK_ARC_DEG = 90
 
-const mm = (v: number): string => `${v.toFixed(3)} mm`
+const lengthIn = (units: DisplayUnits) => (v: number): string => fmtLen(v, units, 3)
 const deg = (v: number): string => `${v.toFixed(3)}°`
 const invalid = (label: string, why: string): DimensionValue => ({ label, invalid: why })
 
@@ -199,7 +203,7 @@ const FORM_KIND: Record<string, ElementKind> = {
   Sphericity: 'sphere',
 }
 
-function formValue(label: string, fit: FitData | undefined): DimensionValue {
+function formValue(label: string, fit: FitData | undefined, units: DisplayUnits): DimensionValue {
   if (!fit) return invalid(label, 'A reference is missing.')
   if (fit.kind !== FORM_KIND[label])
     return invalid(label, `${label} is a property of a ${FORM_KIND[label]}.`)
@@ -210,7 +214,7 @@ function formValue(label: string, fit: FitData | undefined): DimensionValue {
     )
   return {
     label,
-    value: mm(fit.formError),
+    value: fmtLen(fit.formError, units, 3),
     raw: fit.formError,
     anchor: fit.center,
     detail: `Peak to peak about the best fit · ${fit.usedPoints.toLocaleString('en-US')} points`,
@@ -245,6 +249,7 @@ function orientation(
   basic: number,
   fits: readonly FitData[],
   surfaces: ToleranceOptions['surfaces'],
+  units: DisplayUnits,
 ): DimensionValue {
   const feature = orientedOf(fits[0])
   const datum = orientedOf(fits[1])
@@ -289,7 +294,7 @@ function orientation(
         : `${deg(off)} off the basic ${basic.toFixed(2)}°`
   return {
     label,
-    value: mm(raw),
+    value: fmtLen(raw, units, 3),
     raw,
     anchor: feature.kind === 'plane' ? feature.plane.center : feature.axis.origin,
     detail,
@@ -300,7 +305,8 @@ function orientation(
 /** Twice the furthest the feature strays from the datum axis: a sphere or a
  *  circle by its centre, anything with an axis by the two ends of its fitted
  *  length — a tilted axis strays most at an end. */
-function coaxiality(fits: readonly FitData[]): DimensionValue {
+function coaxiality(fits: readonly FitData[], units: DisplayUnits): DimensionValue {
+  const mm = lengthIn(units)
   const feature = fits[0]
   const datum = fits[1] ? refAxis(fits[1]) : null
   if (!feature || !datum) return invalid('Coaxiality', 'A reference is missing.')
@@ -353,25 +359,26 @@ export function evaluateTolerance(
   fits: readonly FitData[],
   opts: ToleranceOptions = {},
 ): DimensionValue {
+  const units = opts.units ?? 'mm' // units-ok: the default units, an id
   switch (type) {
     case 'form-flatness':
-      return formValue('Flatness', fits[0])
+      return formValue('Flatness', fits[0], units)
     case 'form-cylindricity':
-      return formValue('Cylindricity', fits[0])
+      return formValue('Cylindricity', fits[0], units)
     case 'form-circularity':
-      return formValue('Circularity', fits[0])
+      return formValue('Circularity', fits[0], units)
     case 'form-sphericity':
-      return formValue('Sphericity', fits[0])
+      return formValue('Sphericity', fits[0], units)
     case 'orient-parallelism':
-      return orientation('Parallelism', 0, fits, opts.surfaces)
+      return orientation('Parallelism', 0, fits, opts.surfaces, units)
     case 'orient-perpendicularity':
-      return orientation('Perpendicularity', 90, fits, opts.surfaces)
+      return orientation('Perpendicularity', 90, fits, opts.surfaces, units)
     case 'orient-angularity':
       if (opts.basic === undefined || !Number.isFinite(opts.basic))
         return invalid('Angularity', 'Type the basic angle the feature is drawn at.')
-      return orientation('Angularity', opts.basic, fits, opts.surfaces)
+      return orientation('Angularity', opts.basic, fits, opts.surfaces, units)
     case 'loc-coaxiality':
-      return coaxiality(fits)
+      return coaxiality(fits, units)
     default:
       return invalid('Tolerance', `Unknown tolerance type "${type}".`)
   }

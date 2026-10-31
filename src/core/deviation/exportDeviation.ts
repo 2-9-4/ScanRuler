@@ -42,9 +42,9 @@ function plyBytes({ positions, values, searchDistance, what }: DeviationReadings
   const header =
     'ply\n' +
     'format binary_little_endian 1.0\n' +
-    `comment ScanRuler deviation: ${what}, mm\n` +
+    `comment ScanRuler deviation: ${what}, mm\n` + // units-ok: the file's readings are in millimetres, as its header says
     'comment deviation is NaN where there is no reading\n' +
-    `comment measured is 1 within the search distance (${searchDistance} mm), as the statistics count\n` +
+    `comment measured is 1 within the search distance (${searchDistance} mm), as the statistics count\n` + // units-ok: the file's readings are in millimetres, as its header says
     `element vertex ${n}\n` +
     'property float x\n' +
     'property float y\n' +

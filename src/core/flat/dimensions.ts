@@ -8,6 +8,7 @@
 import { flatRefLine, flatRefPoint, type FlatRefRole } from './refs'
 import type { FlatFit, Vec2 } from './types'
 import { acuteAngle2, dot2, footOnLine2, len2, scale2, sub2 } from './vec2'
+import { sheetLength, sheetWord, type SheetUnits } from './summary'
 
 export type FlatDimensionGroup = 'distance' | 'angle'
 
@@ -108,25 +109,26 @@ const FLAT_PARALLEL_WARN_DEG = 0.5
  *  the dimension warns that it left the measured edge. */
 const EXTENT_MARGIN = 1.3
 
-const mm = (v: number): string => `${v.toFixed(3)} mm`
 const deg = (v: number): string => `${v.toFixed(2)}°`
 
 const invalid = (label: string, why: string): FlatDimensionValue => ({ label, invalid: why })
 
-function deltaDetail(a: Vec2, b: Vec2): string {
+function deltaDetail(a: Vec2, b: Vec2, su: SheetUnits): string {
   const f = (v: number) => {
-    const s = v.toFixed(3)
+    const s = sheetLength(v, su, 3, { bare: true })
     // A delta a hair under zero must not print as "-0.000".
-    return s === '-0.000' ? '+0.000' : v >= 0 ? `+${s}` : s
+    return Number(s) === 0 ? `+${s.replace('-', '')}` : v >= 0 ? `+${s}` : s
   }
-  return `ΔX ${f(b[0] - a[0])} · ΔY ${f(b[1] - a[1])} mm`
+  return `ΔX ${f(b[0] - a[0])} · ΔY ${f(b[1] - a[1])} ${sheetWord(su)}`
 }
 
 /**
  * Compute a flat dimension's value from the already-resolved geometries of
- * its references, in slot order.
+ * its references, in slot order. Lengths are written in `units`: the
+ * display units on a sheet in millimetres, 'px' on one with no scale.
  */
-export function evaluateFlatDimension(type: string, fits: readonly FlatFit[]): FlatDimensionValue {
+export function evaluateFlatDimension(type: string, fits: readonly FlatFit[], units: SheetUnits = 'mm'): FlatDimensionValue {
+  const mm = (v: number): string => sheetLength(v, units)
   switch (type) {
     case 'flat-dist-point-point': {
       const a = flatRefPoint(fits[0])
@@ -138,7 +140,7 @@ export function evaluateFlatDimension(type: string, fits: readonly FlatFit[]): F
         value: mm(d),
         raw: d,
         segment: [a, b],
-        detail: deltaDetail(a, b),
+        detail: deltaDetail(a, b, units),
       }
     }
 
@@ -243,13 +245,15 @@ export interface EvaluatedFlat {
 export function evaluateFlatDimensions(
   dims: readonly FlatDimension[],
   elements: readonly FlatNamedGeometry[],
+  /** What lengths are written in — see evaluateFlatDimension. */
+  units: SheetUnits = 'mm',
 ): EvaluatedFlat[] {
   return dims.map((dim) => {
     const els = dim.refs.map((id) => elements.find((e) => e.id === id))
     const title = els.map((e) => e?.name ?? '?').join(' → ')
     const fits = els.map((e) => e?.fit)
     const value = fits.every((f): f is FlatFit => f !== undefined && f !== null)
-      ? evaluateFlatDimension(dim.type, fits)
+      ? evaluateFlatDimension(dim.type, fits, units)
       : {
           label: flatDimensionTypeInfo(dim.type).label,
           invalid: 'A referenced element is unavailable.',

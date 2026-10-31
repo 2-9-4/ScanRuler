@@ -3,10 +3,15 @@
 // a call at a minute. A change, a batch or a long read still running there
 // answers with its job; scanruler_wait waits no longer than it either; and
 // a copy of the server started afresh reads a job of the copy before it from
-// the page's record (session.recent). A fake page that keeps that record as
+// the page's record (session.recent). A long export queued still writes its
+// file, a queued picture comes with its job's answer, and the note at the
+// limit says when the tab is hidden. A fake page that keeps that record as
 // the app does, behind a real MCP client, with a limit of a fraction of a
 // second.
 import assert from 'node:assert/strict'
+import { mkdtemp, readFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { after, test } from 'node:test'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
@@ -23,9 +28,15 @@ const COMMANDS = [
   { name: 'session.recent', title: 'What recent jobs did', description: 'The record.', input: obj({ job: { type: 'string' }, limit: { type: 'integer' } }), readOnly: true, returnsFile: false, returnsImage: false },
   { name: 'demo.update', title: 'Update', description: 'Updates.', input: obj({ n: { type: 'number' }, ms: { type: 'number' } }), readOnly: false, returnsFile: false, returnsImage: false },
   { name: 'demo.compare', title: 'Compare', description: 'Compares, slowly.', input: obj({ ms: { type: 'number' } }), readOnly: true, long: true, returnsFile: false, returnsImage: false },
+  { name: 'demo.export', title: 'Export', description: 'Exports, slowly.', input: obj({ ms: { type: 'number' } }), readOnly: true, long: true, returnsFile: true, returnsImage: false },
+  { name: 'demo.review', title: 'Review', description: 'Reviews, slowly.', input: obj({ ms: { type: 'number' } }), readOnly: true, long: true, returnsFile: false, returnsImage: true },
   { name: 'history.checkpoint', title: 'Mark the history', description: 'Marks.', input: obj(), readOnly: true, returnsFile: false, returnsImage: false },
   { name: 'history.restore', title: 'Back to a mark', description: 'Restores.', input: obj({ checkpoint: { type: 'string' } }), readOnly: false, returnsFile: false, returnsImage: false },
 ]
+
+/** The file demo.export hands back, and the picture demo.review does. */
+const EXPORTED = 'ISO-10303-21;'
+const PICTURE = [0x89, 0x50, 0x4e, 0x47]
 
 /** The page's record of the runs made under a job, oldest first — the
  *  page outlives the server copies, so it is the test's, not a copy's. */
@@ -47,6 +58,13 @@ const answer = async (name, input, _progress, message) => {
     await new Promise((r) => setTimeout(r, input.ms ?? 30))
     running--
     return done(name === 'demo.update' ? { n: input.n } : { rms: 0.1 })
+  }
+  if (name === 'demo.export' || name === 'demo.review') {
+    await new Promise((r) => setTimeout(r, input.ms ?? 30))
+    if (entry) Object.assign(entry, { state: 'done', ms: Date.now() - since, result: { file: { bytes: '4 bytes' }, of: name } })
+    return name === 'demo.export'
+      ? { file: { name: 'part-body.step', mimeType: 'model/step', bytes: new TextEncoder().encode(EXPORTED) }, status: 'One body.' }
+      : { file: { name: 'part-review.png', mimeType: 'image/png', bytes: new Uint8Array(PICTURE) }, rms: 0.1 }
   }
   throw { code: 'unknown_command', message: name }
 }
@@ -80,7 +98,7 @@ async function copy({ answerWithinMs = LIMIT_MS } = {}) {
   const call = async (name, args = {}) => {
     const r = await client.callTool({ name, arguments: args })
     const text = r.content[0].text
-    return { error: r.isError === true, text, json: r.isError ? null : JSON.parse(text) }
+    return { error: r.isError === true, text, json: r.isError ? null : JSON.parse(text), images: r.content.filter((c) => c.type === 'image') }
   }
   return { client, call, page, close }
 }
@@ -182,6 +200,80 @@ test('a long read takes wait and runs as a job; the idle wait is held to the lim
   assert.equal(later.json.state, 'idle')
   // Past the limit without wait: false, queued all the same.
   assert.equal((await one.call('demo_compare', { ms: 500 })).json.queued, true)
+  await one.close()
+})
+
+test('a long export takes wait, answers queued at once or at the limit, and still writes its file to path', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'scanruler-mcp-limit-'))
+  const one = await copy()
+  const schema = (await one.client.listTools()).tools.find((t) => t.name === 'demo_export').inputSchema
+  assert.ok(schema.properties.wait, 'a long export takes wait')
+  assert.ok(schema.properties.path, 'and its path as before')
+  const queued = await one.call('demo_export', { ms: 400, path: join(dir, 'asked.step'), wait: false })
+  assert.deepEqual(Object.keys(queued.json).sort(), ['job', 'queued', 'tool'])
+  assert.equal(queued.json.queued, true)
+  const done = await waitFor(one.call, queued.json.job)
+  assert.equal(done.json.state, 'done')
+  assert.equal(done.json.result.file.path, join(dir, 'asked.step'))
+  assert.equal(done.json.result.status, 'One body.')
+  assert.equal(await readFile(join(dir, 'asked.step'), 'utf8'), EXPORTED)
+  assert.deepEqual(one.page.runs.find((m) => m.name === 'demo.export').input, { ms: 400 }, 'path and wait are the server’s')
+  // Past the limit without wait: false, the same, into a folder.
+  const late = await one.call('demo_export', { ms: LIMIT_MS + 200, path: `${dir}/late/` })
+  assert.equal(late.json.queued, true)
+  assert.equal(late.json.after, LIMIT_MS / 1000)
+  const landed = await waitFor(one.call, late.json.job)
+  assert.equal(landed.json.result.file.path, join(dir, 'late', 'part-body.step'))
+  assert.equal(await readFile(landed.json.result.file.path, 'utf8'), EXPORTED)
+  // Quick, it answers as it did.
+  assert.equal((await one.call('demo_export', { ms: 5, path: join(dir, 'quick.step') })).json.file.path, join(dir, 'quick.step'))
+  await one.close()
+})
+
+test('a job’s picture comes with its answer through scanruler_wait, but not with idle, and a copy started afresh says it has none', async () => {
+  const first = await copy()
+  // Called directly, as the job's answer is to match.
+  const direct = await first.call('demo_review', { ms: 5 })
+  assert.deepEqual([...Buffer.from(direct.images[0].data, 'base64')], PICTURE)
+  const queued = await first.call('demo_review', { ms: LIMIT_MS + 150 })
+  assert.equal(queued.json.queued, true)
+  assert.deepEqual(queued.images, [])
+  const done = await waitFor(first.call, queued.json.job)
+  assert.equal(done.json.state, 'done')
+  assert.equal(done.json.result.rms, direct.json.rms)
+  assert.deepEqual(done.json.result.file, direct.json.file)
+  assert.equal(done.images.length, 1)
+  assert.equal(done.images[0].mimeType, 'image/png')
+  assert.deepEqual([...Buffer.from(done.images[0].data, 'base64')], PICTURE)
+  // Still running, none; and idle lists the job without it.
+  const again = await first.call('demo_review', { ms: 200, wait: false })
+  const running = await first.call('scanruler_wait', { for: 'job', job: again.json.job, timeoutSeconds: 0.02 })
+  assert.equal(running.json.state, 'running')
+  assert.deepEqual(running.images, [])
+  const idle = await first.call('scanruler_wait', { for: 'idle', timeoutSeconds: 5 })
+  assert.deepEqual(idle.images, [])
+  assert.ok(idle.json.finished.some((j) => j.job === again.json.job))
+  await first.close()
+
+  const second = await copy()
+  const kept = await second.call('scanruler_wait', { for: 'job', job: queued.json.job })
+  assert.equal(kept.json.state, 'done')
+  assert.deepEqual(kept.images, [])
+  assert.match(kept.json.from, /no picture or file it gave\.$/)
+  await second.close()
+})
+
+test('the note at the limit says the tab is hidden, while it is, and no more', async () => {
+  const one = await copy()
+  const shown = await one.call('demo_compare', { ms: LIMIT_MS + 100 })
+  assert.match(shown.json.note, /^Still running after 0\.25 s, and running on\. scanruler_wait/)
+  one.page.ws.send(JSON.stringify({ event: 'visibility', hidden: true }))
+  for (let i = 0; i < 100 && !(await one.call('scanruler_status')).json.page.hidden; i++) await new Promise((r) => setTimeout(r, 10))
+  const hidden = await one.call('demo_compare', { ms: LIMIT_MS + 100 })
+  assert.match(hidden.json.note, /^Still running after 0\.25 s, and running on; the ScanRuler tab is hidden\. scanruler_wait/)
+  // Only on the slow path: a queued answer and a quick one say nothing of it.
+  assert.equal((await one.call('demo_compare', { ms: 5, wait: false })).json.note, undefined)
+  assert.equal((await one.call('demo_compare', { ms: 5 })).json.note, undefined)
   await one.close()
 })
 

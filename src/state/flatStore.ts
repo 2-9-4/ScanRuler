@@ -1108,7 +1108,7 @@ export const useFlat = create<FlatState>()((set, get) => ({
     const s = get()
     const t = toolOf(s, 'calibrate')
     if (!t) return 'The calibration tool is not collecting.'
-    if (s.subject.kind !== 'image') return 'A section is millimetres already — there is nothing to calibrate.'
+    if (s.subject.kind !== 'image') return 'A section is at true size already — there is nothing to calibrate.'
     try {
       const pxPerMm =
         t.mode === 'distance'

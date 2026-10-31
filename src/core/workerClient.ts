@@ -153,18 +153,18 @@ export class MeshWorkerClient {
       if (state?.scan) {
         const { name, bytes, crease, transform, units } = state.scan
         const buffer = bytes.slice().buffer
-        await this.rpc.request({ type: 'load', requestId: this.nextId++, name, buffer, crease, transform: transform ?? undefined, scale: mmPerUnit(units ?? 'mm') } as Request, [buffer])
+        await this.rpc.request({ type: 'load', requestId: this.nextId++, name, buffer, crease, transform: transform ?? undefined, scale: mmPerUnit(units ?? 'mm') } as Request, [buffer]) // units-ok: the file's own units, an id
       }
       if (state?.nominal) {
         const { name, bytes, units } = state.nominal
         const buffer = bytes.slice().buffer
-        await this.rpc.request({ type: 'load-nominal', requestId: this.nextId++, name, buffer, scale: mmPerUnit(units ?? 'mm') } as Request, [buffer])
+        await this.rpc.request({ type: 'load-nominal', requestId: this.nextId++, name, buffer, scale: mmPerUnit(units ?? 'mm') } as Request, [buffer]) // units-ok: the file's own units, an id
       }
       const channel: RestoreChannel = {
         loadStaged: async (name, bytes, crease, transform, units) => {
           const buffer = bytes.slice().buffer
           const id = this.nextId++
-          await this.rpc.request({ type: 'load', requestId: id, name, buffer, crease, staged: true, transform: transform ?? undefined, scale: mmPerUnit(units ?? 'mm') } as Request, [buffer])
+          await this.rpc.request({ type: 'load', requestId: id, name, buffer, crease, staged: true, transform: transform ?? undefined, scale: mmPerUnit(units ?? 'mm') } as Request, [buffer]) // units-ok: the file's own units, an id
           return id
         },
         call: async (plugin, op, payload) =>

@@ -22,6 +22,7 @@ import {
   sub,
 } from '../vec'
 import { orthoBasis } from '../fit/linalg'
+import { fmtLen, type DisplayUnits } from '../units'
 import type { RefRole } from './refs'
 import { refAxis, refPlane, refPoint } from './refs'
 
@@ -39,7 +40,8 @@ export interface SlotSpec {
 export interface ParamSpec {
   key: string
   label: string
-  unit?: 'mm'
+  /** A length: held in millimetres, typed and shown in the display units. */
+  unit?: 'mm' // units-ok: an id, the field writes unitWord
   /** Not offered for typing: the number is found from the scan and carried
    *  in the params so the element rebuilds, moves and saves like any typed
    *  one — a centroid, a symmetry plane. */
@@ -74,9 +76,9 @@ export function takesSurface(m: CreationMethod): boolean {
 }
 
 const XYZ: ParamSpec[] = [
-  { key: 'x', label: 'X', unit: 'mm' },
-  { key: 'y', label: 'Y', unit: 'mm' },
-  { key: 'z', label: 'Z', unit: 'mm' },
+  { key: 'x', label: 'X', unit: 'mm' }, // units-ok: an id
+  { key: 'y', label: 'Y', unit: 'mm' }, // units-ok: an id
+  { key: 'z', label: 'Z', unit: 'mm' }, // units-ok: an id
 ]
 
 export const CREATION_METHODS: readonly CreationMethod[] = [
@@ -197,7 +199,7 @@ export const CREATION_METHODS: readonly CreationMethod[] = [
     label: 'Offset from plane',
     hint: 'A parallel plane, shifted along the source normal.',
     slots: [{ role: 'plane', label: 'Plane' }],
-    params: [{ key: 'offset', label: 'Offset', unit: 'mm' }],
+    params: [{ key: 'offset', label: 'Offset', unit: 'mm' }], // units-ok: an id
   },
   {
     id: 'plane-midplane',
@@ -237,7 +239,7 @@ export const CREATION_METHODS: readonly CreationMethod[] = [
       found({ key: 'ny', label: 'Normal Y' }),
       found({ key: 'nz', label: 'Normal Z' }),
       ...XYZ.map((p) => found({ ...p, key: 'p' + p.key, label: 'Point ' + p.label })),
-      found({ key: 'rms', label: 'Mirror RMS', unit: 'mm' }),
+      found({ key: 'rms', label: 'Mirror RMS', unit: 'mm' }), // units-ok: an id
       found({ key: 'matched', label: 'Matched samples' }),
       found({ key: 'sampled', label: 'Samples' }),
     ],
@@ -323,7 +325,7 @@ export const CREATION_METHODS: readonly CreationMethod[] = [
     hint: 'A fixed reference circle: its diameter, the normal of its plane and its center.',
     slots: [],
     params: [
-      { key: 'd', label: 'Diameter', unit: 'mm' },
+      { key: 'd', label: 'Diameter', unit: 'mm' }, // units-ok: an id
       { key: 'nx', label: 'Normal X' },
       { key: 'ny', label: 'Normal Y' },
       { key: 'nz', label: 'Normal Z' },
@@ -644,18 +646,22 @@ export function evaluateConstruction(
   }
 }
 
-/** "Midpoint of Sphere 1 and Point 2" — for the panel and the text report. */
+/** "Midpoint of Sphere 1 and Point 2" — for the panel and the text report,
+ *  its lengths in `units` (a position's coordinates bare). */
 export function describeConstruction(
   method: string,
   refNames: string[],
   params: number[],
+  units: DisplayUnits = 'mm',
 ): string {
   const [a, b, c] = refNames
+  const bare = (v: number): string => fmtLen(v, units, 3, { bare: true })
+  const at = (vs: number[]): string => `(${vs.map(bare).join(', ')})`
   switch (method) {
     case 'point-coords':
-      return `at (${params.map((v) => v.toFixed(3)).join(', ')})`
+      return `at ${at(params)}`
     case 'point-centroid':
-      return `centroid of the scan, at (${params.map((v) => v.toFixed(3)).join(', ')})`
+      return `centroid of the scan, at ${at(params)}`
     case 'point-midpoint':
       return `midpoint of ${a} and ${b}`
     case 'point-line-plane':
@@ -669,19 +675,16 @@ export function describeConstruction(
     case 'plane-three-points':
       return `through ${a}, ${b} and ${c}`
     case 'plane-offset':
-      return `${params[0]?.toFixed(3)} mm offset from ${a}`
+      return `${fmtLen(params[0], units, 3)} offset from ${a}`
     case 'plane-midplane':
       return `midplane of ${a} and ${b}`
     case 'plane-coords':
-      return `normal (${params.slice(0, 3).map((v) => v.toFixed(3)).join(', ')}) through (${params
-        .slice(3)
-        .map((v) => v.toFixed(3))
-        .join(', ')})`
+      return `normal (${params.slice(0, 3).map((v) => v.toFixed(3)).join(', ')}) through ${at(params.slice(3))}`
     case 'plane-symmetry': {
       const [, , , , , , rms, matched, sampled] = params
       const fit =
         Number.isFinite(rms) && Number.isFinite(matched)
-          ? `, mirror image within ${rms.toFixed(4)} mm RMS over ${matched} of ${sampled} samples`
+          ? `, mirror image within ${fmtLen(rms, units, 4)} RMS over ${matched} of ${sampled} samples`
           : ''
       return `symmetry plane of the scan${fit}`
     }
@@ -689,10 +692,10 @@ export function describeConstruction(
     case 'circle-plane-sphere':
       return `where ${b} crosses ${a}`
     case 'circle-coords':
-      return `Ø ${params[0]?.toFixed(3)} mm, normal (${params
+      return `Ø ${fmtLen(params[0], units, 3)}, normal (${params
         .slice(1, 4)
         .map((v) => v.toFixed(3))
-        .join(', ')}) at (${params.slice(4).map((v) => v.toFixed(3)).join(', ')})`
+        .join(', ')}) at ${at(params.slice(4))}`
     default:
       return method
   }

@@ -6,10 +6,12 @@
 // and the reference has not (missing) — so many cubic millimetres, so deep,
 // wherever they sit, behind a wall or inside a cavity alike.
 //
-// Inside the reference is exact: it is closed, and a column of cells along Z
-// counts the crossings below each cell, in through down-facing triangles and
-// out through up-facing ones. Inside the scan is its winding number (see
-// winding.ts): about 1 inside and 0 outside, easing towards ½ near holes.
+// Inside the reference is exact where it is closed: a column of cells along
+// Z counts the crossings below each cell, in through down-facing triangles
+// and out through up-facing ones. A column whose crossings do not cancel
+// runs through a hole in the reference, and is read from the closed columns
+// beside it. Inside the scan is its winding number (see winding.ts): about 1
+// inside and 0 outside, easing towards ½ near holes.
 // Where nothing was scanned the reference's own triangles stand in — the
 // readings of the map on the reference with no scan behind them — so the
 // scan is closed by the reference where it says nothing, and the two
@@ -32,7 +34,8 @@ export interface VolumeMesh {
 export type VolumeKind = 'excess' | 'missing' | 'unsure'
 
 export interface VolumeDeviationOptions {
-  /** Closed, in the reference's frame. */
+  /** In the reference's frame. Closed, or the answer's `referenceOpen` says
+   *  where it is not. */
   reference: VolumeMesh
   /** In the scan's frame. */
   scan: VolumeMesh
@@ -127,6 +130,10 @@ export interface VolumeDeviation {
   grid: { min: Vec3; dims: [number, number, number] }
   /** The reference's volume on the grid, mm³. */
   modelVolume: number
+  /** The columns of cells through a hole in the reference, read from the
+   *  closed columns beside them (see openColumns): how many and the box of
+   *  their crossings. Null where it is closed over the grid. */
+  referenceOpen: { columns: number; box: { min: Vec3; max: Vec3 } } | null
   totals: Record<VolumeKind, VolumeTotal>
   /** Disagreeing volume in regions too small to keep (under
    *  MIN_REGION_CELLS), mm³. */
@@ -321,7 +328,7 @@ export function volumeDeviation(o: VolumeDeviationOptions): VolumeDeviation {
   // Inside the reference.
   t = performance.now()
   progress('Finding the inside of the reference…', 0.05)
-  const model = modelInside(o.reference, ox, oy, oz, h, nx, ny, nz)
+  const { inside: model, referenceOpen } = modelInside(o.reference, ox, oy, oz, h, nx, ny, nz)
   let modelCells = 0
   for (let i = 0; i < n; i++) modelCells += model[i]
   timings.model = performance.now() - t
@@ -734,6 +741,7 @@ export function volumeDeviation(o: VolumeDeviationOptions): VolumeDeviation {
     smallestSeen: 2 * h,
     grid: { min: [ox, oy, oz], dims: [nx, ny, nz] },
     modelVolume,
+    referenceOpen,
     totals,
     specks,
     regions,
@@ -1122,9 +1130,11 @@ function boxOf(positions: Float32Array, transform: Rigid | null): { min: Vec3; m
  * it faces up; a cell is inside where the sum below its centre is above 0 —
  * where bodies overlap the sum is 2, still inside. The columns stand a
  * hair off the cell centres so a column through a shared edge or corner is
- * not counted twice.
+ * not counted twice. Over a hole the sum never comes back to 0, and the
+ * column would read inside up to the grid's top or from its bottom: a lump
+ * of material nothing stands for. See openColumns.
  */
-function modelInside(ref: VolumeMesh, ox: number, oy: number, oz: number, h: number, nx: number, ny: number, nz: number): Uint8Array {
+function modelInside(ref: VolumeMesh, ox: number, oy: number, oz: number, h: number, nx: number, ny: number, nz: number): { inside: Uint8Array; referenceOpen: VolumeDeviation['referenceOpen'] } {
   const { positions: P, indices: I } = ref
   const ex = h * 1.37e-5, ey = h * 2.71e-5
   const columns = nx * ny
@@ -1170,9 +1180,22 @@ function modelInside(ref: VolumeMesh, ox: number, oy: number, oz: number, h: num
     signs[at] = sign
   })
   const inside = new Uint8Array(columns * nz)
+  const open = new Uint8Array(columns)
+  const openList: number[] = []
+  let zLo = Infinity, zHi = -Infinity
   for (let col = 0; col < columns; col++) {
     const s = counts[col], e = counts[col + 1]
     if (e === s) continue
+    let total = 0
+    for (let q = s; q < e; q++) total += signs[q]
+    if (total !== 0) {
+      open[col] = 1
+      openList.push(col)
+      for (let q = s; q < e; q++) {
+        if (zs[q] < zLo) zLo = zs[q]
+        if (zs[q] > zHi) zHi = zs[q]
+      }
+    }
     // Insertion sort: a column crosses a few surfaces.
     for (let q = s + 1; q < e; q++) {
       const z = zs[q], g = signs[q]
@@ -1186,14 +1209,58 @@ function modelInside(ref: VolumeMesh, ox: number, oy: number, oz: number, h: num
       signs[r + 1] = g
     }
     let q = s
-    let sum = 0
+    // Crossings gone from it, the column may be inside from its first one
+    // up where they are exits, and up to its last where they are entries.
+    let sum = total < 0 ? -total : 0
     for (let k = 0; k < nz; k++) {
       const z = oz + (k + 0.5) * h
       while (q < e && zs[q] < z) sum += signs[q++]
       if (sum > 0) inside[col + k * columns] = 1
     }
   }
-  return inside
+  if (openList.length === 0) return { inside, referenceOpen: null }
+  openColumns(inside, open, counts, openList, nx, ny, nz)
+  let iLo = nx, iHi = -1, jLo = ny, jHi = -1
+  for (const col of openList) {
+    const i = col % nx, j = (col / nx) | 0
+    if (i < iLo) iLo = i
+    if (i > iHi) iHi = i
+    if (j < jLo) jLo = j
+    if (j > jHi) jHi = j
+  }
+  return { inside, referenceOpen: { columns: openList.length, box: { min: [ox + iLo * h, oy + jLo * h, zLo], max: [ox + (iHi + 1) * h, oy + (jHi + 1) * h, zHi] } } }
+}
+
+/**
+ * The columns through a hole in the reference read from those beside them:
+ * a cell its own crossings leave inside stays so where most of the closed
+ * columns with any material, in the nearest ring round it that has one, say
+ * so. Those with none do not count: a face missing at the rim of the part
+ * has the air on one side, and its column goes on with the wall on the
+ * other. With nothing to go by the column has no material.
+ */
+function openColumns(inside: Uint8Array, open: Uint8Array, counts: Uint32Array, list: readonly number[], nx: number, ny: number, nz: number): void {
+  const columns = nx * ny
+  for (const col of list) {
+    const i = col % nx, j = (col / nx) | 0
+    const ring: number[] = []
+    for (let r = 1; ring.length === 0 && r < Math.max(nx, ny); r++) {
+      for (let dj = -r; dj <= r; dj++) {
+        for (let di = -r; di <= r; di++) {
+          if (Math.max(Math.abs(di), Math.abs(dj)) !== r) continue
+          const ii = i + di, jj = j + dj
+          if (ii < 0 || jj < 0 || ii >= nx || jj >= ny) continue
+          const c = ii + jj * nx
+          if (!open[c] && counts[c + 1] > counts[c]) ring.push(c)
+        }
+      }
+    }
+    for (let k = 0; k < nz; k++) {
+      let says = 0
+      for (const c of ring) says += inside[c + k * columns]
+      if (2 * says <= ring.length) inside[col + k * columns] = 0
+    }
+  }
 }
 
 /** 1 when the scan is wound with its normals out of the material, −1 when

@@ -2,11 +2,13 @@
 // The limit a measurement is held to, typed in beside it — optional, so the
 // fields are empty until something is asked of the value. A tolerance takes
 // one ceiling; a dimension a nominal with an allowance either side, the
-// minus side left blank for a symmetric one.
+// minus side left blank for a symmetric one. A limit on a length is held in
+// millimetres and typed in the display units.
 
 import { useRef } from 'react'
 import type { DimensionFamily, DimensionUnit, Limit } from '../core/dimensions'
 import { InfoDot } from './InfoDot'
+import { useFieldUnits } from './NumberField'
 
 /** A number that may be left out: empty commits undefined. Committed on
  *  blur or Enter like NumberField, so a half-typed "0." never judges a
@@ -17,6 +19,7 @@ export function OptionalNumber({
   step,
   min,
   unit,
+  kind,
   testId,
   onCommit,
 }: {
@@ -24,20 +27,25 @@ export function OptionalNumber({
   placeholder: string
   step: number
   min: number
-  unit: string
+  /** The unit word for a figure that is not a length — see NumberField. */
+  unit?: string
+  /** 'length': value, step and min are millimetres, shown in the display
+   *  units. */
+  kind?: 'length'
   testId: string
   onCommit: (v: number | undefined) => void
 }) {
   const ref = useRef<HTMLInputElement>(null)
-  const shown = value === undefined ? '' : String(value)
+  const u = useFieldUnits(kind, unit)
+  const shown = value === undefined ? '' : u.text(value)
   return (
     <span className="unitfield">
       <input
         ref={ref}
         type="number"
         data-test={testId}
-        step={step}
-        min={min}
+        step={u.step(step)}
+        min={u.min(min)}
         placeholder={placeholder}
         defaultValue={shown}
         key={shown}
@@ -47,8 +55,9 @@ export function OptionalNumber({
             onCommit(undefined)
             return
           }
-          const v = Number(text)
-          if (Number.isFinite(v) && v >= min) onCommit(v)
+          // Unchanged text commits nothing — see NumberField.
+          const v = u.read(Number(text))
+          if (text !== shown && Number.isFinite(v) && v >= min) onCommit(v)
           // Rejected text goes back to what is held — see NumberField.
           e.target.value = shown
         }}
@@ -56,7 +65,7 @@ export function OptionalNumber({
           if (e.key === 'Enter') ref.current?.blur()
         }}
       />
-      <i>{unit}</i>
+      <i>{u.word}</i>
     </span>
   )
 }
@@ -73,6 +82,9 @@ export function LimitFields({
   onChange: (limit: Limit | undefined) => void
 }) {
   const step = unit === '°' ? 0.01 : 0.001
+  // A limit in millimetres is a length; one in degrees keeps its unit.
+  const kind = unit === 'mm' ? ('length' as const) : undefined
+  const fieldText = useFieldUnits(kind, unit).text
   if (family === 'tolerance') {
     return (
       <label className="field">
@@ -94,6 +106,7 @@ export function LimitFields({
           placeholder="none"
           step={step}
           min={0}
+          kind={kind}
           unit={unit}
           testId="tol-limit"
           onCommit={(max) => onChange(max === undefined ? undefined : { kind: 'max', max })}
@@ -142,6 +155,7 @@ export function LimitFields({
           placeholder="none"
           step={step}
           min={-Infinity}
+          kind={kind}
           unit={unit}
           testId="dim-nominal"
           onCommit={(nominal) => set({ nominal })}
@@ -157,6 +171,7 @@ export function LimitFields({
               placeholder="0"
               step={step}
               min={0}
+              kind={kind}
               unit={unit}
               testId="dim-plus"
               onCommit={(plus) => set({ plus: plus ?? 0 })}
@@ -164,9 +179,10 @@ export function LimitFields({
             <b>−</b>
             <OptionalNumber
               value={band.minus === band.plus ? undefined : band.minus}
-              placeholder={String(band.plus)}
+              placeholder={fieldText(band.plus)}
               step={step}
               min={0}
+              kind={kind}
               unit={unit}
               testId="dim-minus"
               onCommit={(minus) => set({ minus })}

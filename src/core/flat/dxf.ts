@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // The sheet as a DXF — the drawing format CAD was built around, and the one
-// to hand a sketch: millimetres by declaration rather than by convention, y
+// to hand a sketch: millimetres (or inches, with the display units in
+// inches) by declaration rather than by convention, y
 // up like the sheet itself, the origin on the alignment when there is one so
 // the part lands in CAD in its own frame, and every fit as the entity CAD
 // has for it — LINE, CIRCLE, ARC by centre and angles, POINT, and the spline
@@ -16,9 +17,11 @@
 // drawn from, plus the origin and the thinning tolerance.
 
 import { poseMap, sheetPose } from './datum'
+import { MM_PER_INCH, type DisplayUnits } from '../units'
 import {
   describeRoll,
   DRAWING_EDGE_COLOR,
+  drawingFileUnit,
   labelSpot,
   num,
   type FlatDrawingInput,
@@ -40,6 +43,11 @@ export interface FlatDxfInput extends FlatDrawingInput {
   /** How far a thinned edge chain may stray, in document units; zero keeps
    *  every point. */
   edgeTolerance: number
+  /** The display units. With inches a millimetre sheet is written in
+   *  inches — every coordinate divided by 25.4, declared so — and a pixel
+   *  sheet ignores them. Millimetres when not given, which is what the
+   *  agent's export writes. */
+  units?: DisplayUnits
 }
 
 const DXF_LAYERS = { edges: 'edges', elements: 'elements', labels: 'labels' } as const
@@ -181,8 +189,16 @@ export function buildFlatDxf(r: FlatDxfInput): string {
   const pose = sheetPose(r.alignDir, r.turns, r.mirror)
   const rot = poseMap(pose)
   const o = r.origin ?? [0, 0]
-  const at = (p: Vec2): Vec2 => rot([p[0] - o[0], p[1] - o[1]])
-  const dec = r.unit === 'mm' ? 4 : 3
+  // The file's unit, and its length per document unit: the input is in the
+  // sheet's own units, and an inch file divides on the way out, after the
+  // pose.
+  const unit = drawingFileUnit(r.unit, r.units)
+  const k = unit === 'in' ? 1 / MM_PER_INCH : 1
+  const at = (p: Vec2): Vec2 => {
+    const q = rot([p[0] - o[0], p[1] - o[1]])
+    return k === 1 ? q : [q[0] * k, q[1] * k]
+  }
+  const dec = unit === 'in' ? 5 : unit === 'mm' ? 4 : 3
   const n = (v: number) => num(v, dec)
   /** An angle on the sheet as the drawing has it: turned round by the mirror
    *  and rolled with the sheet, in degrees, wrapped to a turn. */
@@ -257,14 +273,14 @@ export function buildFlatDxf(r: FlatDxfInput): string {
         ]
       }
       case 'circle':
-        return [{ type: 'CIRCLE', body: [group(100, 'AcDbCircle'), ...xyz(10, at(fit.center)), group(40, n(fit.radius))] }]
+        return [{ type: 'CIRCLE', body: [group(100, 'AcDbCircle'), ...xyz(10, at(fit.center)), group(40, n(fit.radius * k))] }]
       case 'arc': {
         // An arc that has come all the way round is a circle; an ARC with
         // equal angles is nothing. A DXF arc runs counter-clockwise from its
         // start angle to its end, and a mirror turns the sheet's sense
         // round, so a mirrored arc starts where the sheet's ended.
         if (fit.sweep >= 2 * Math.PI - 1e-6)
-          return [{ type: 'CIRCLE', body: [group(100, 'AcDbCircle'), ...xyz(10, at(fit.center)), group(40, n(fit.radius))] }]
+          return [{ type: 'CIRCLE', body: [group(100, 'AcDbCircle'), ...xyz(10, at(fit.center)), group(40, n(fit.radius * k))] }]
         const end = fit.start + fit.sweep
         return [
           {
@@ -272,7 +288,7 @@ export function buildFlatDxf(r: FlatDxfInput): string {
             body: [
               group(100, 'AcDbCircle'),
               ...xyz(10, at(fit.center)),
-              group(40, n(fit.radius)),
+              group(40, n(fit.radius * k)),
               group(100, 'AcDbArc'),
               group(50, deg(pose.mirror ? end : fit.start)),
               group(51, deg(pose.mirror ? fit.start : end)),
@@ -325,7 +341,8 @@ export function buildFlatDxf(r: FlatDxfInput): string {
     for (const s of shapes(el.fit)) entity(s.type, DXF_LAYERS.elements, rgb, s.body)
     // The name a line above the spot, the reading on it — the block sits
     // beside the feature rather than across it.
-    const [lx, ly] = at(labelSpot(el.fit, diag))
+    // The spot is found in document units, so its lift is too.
+    const [lx, ly] = at(labelSpot(el.fit, diag / k))
     text([lx, ly + 1.2 * textHeight], el.name, rgb)
     text([lx, ly], el.value, rgb)
   }
@@ -351,7 +368,7 @@ export function buildFlatDxf(r: FlatDxfInput): string {
     ...layer(DXF_LAYERS.labels, 7, null),
   ]
 
-  const unitWord = r.unit === 'mm' ? 'millimetre' : 'image pixel'
+  const unitWord = unit === 'in' ? 'inch' : unit === 'mm' ? 'millimetre' : 'image pixel'
   const header = [
     comment(r.title),
     comment(r.scaleNote),
@@ -364,7 +381,7 @@ export function buildFlatDxf(r: FlatDxfInput): string {
       `Layers: edges (${
         r.edgePieces
           ? 'the outline as lines, arcs and circles'
-          : `the detected edge chains${r.edgeTolerance > 0 ? `, thinned to ${num(r.edgeTolerance, 4)} ${r.unit}` : ''}`
+          : `the detected edge chains${r.edgeTolerance > 0 ? `, thinned to ${num(r.edgeTolerance * k, unit === 'in' ? 5 : 4)} ${unit}` : ''}`
       }), elements (the fitted geometry), labels (names, readings and notes)`,
     ),
     group(0, 'SECTION'),
@@ -374,10 +391,12 @@ export function buildFlatDxf(r: FlatDxfInput): string {
     group(9, '$INSBASE'), group(10, 0), group(20, 0), group(30, 0),
     group(9, '$EXTMIN'), group(10, n(x0)), group(20, n(y0)), group(30, 0),
     group(9, '$EXTMAX'), group(10, n(x1)), group(20, n(y1)), group(30, 0),
-    group(9, '$INSUNITS'), group(70, r.unit === 'mm' ? 4 : 0),
-    group(9, '$MEASUREMENT'), group(70, 1),
+    // $INSUNITS: 1 inches, 4 millimetres, 0 unitless. $MEASUREMENT: 0
+    // imperial, 1 metric.
+    group(9, '$INSUNITS'), group(70, unit === 'in' ? 1 : unit === 'mm' ? 4 : 0),
+    group(9, '$MEASUREMENT'), group(70, unit === 'in' ? 0 : 1),
     group(9, '$LUNITS'), group(70, 2),
-    group(9, '$LUPREC'), group(70, 4),
+    group(9, '$LUPREC'), group(70, unit === 'in' ? 5 : 4),
     group(9, '$PDMODE'), group(70, 3),
     group(9, '$PDSIZE'), group(40, n(pointSize)),
     group(9, '$HANDSEED'), group(5, seed.toString(16).toUpperCase()),

@@ -126,7 +126,7 @@ function heldTooFar(fin: HeldFit): boolean {
 function heldRefusal(fin: HeldFit): string {
   const known = 2 * fin.sphere.r
   const free = fin.free ? 2 * fin.free.r : NaN
-  return `The surface here fits a sphere of Ø ${free.toFixed(3)} mm, too far from the known Ø ${known.toFixed(3)} mm to hold it — check the diameter, or that this is the ball meant.`
+  return `The surface here fits a sphere of Ø ${free.toFixed(3)} mm, too far from the known Ø ${known.toFixed(3)} mm to hold it — check the diameter, or that this is the ball meant.` // units-ok: built in the worker, which holds no display units
 }
 
 /** The sphere fitted to `region`, as an element takes it. */

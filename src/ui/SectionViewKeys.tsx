@@ -11,9 +11,12 @@ import { useStore } from '../state/store'
 import { Icon } from './icons'
 import { providersFor } from './RefSelect'
 import { PlaneRefOptions } from './SectionEditor'
+import { useFieldUnits } from './NumberField'
 
 export function SectionViewKeys({ viewDirection }: { viewDirection: () => Vec3 }) {
   const ref = useSectionView((s) => s.ref)
+  // The offset is held in millimetres and typed in the units shown.
+  const u = useFieldUnits('length', undefined)
   const axis = useSectionView((s) => s.axis)
   const refDir = useSectionView((s) => s.refDir)
   const offset = useSectionView((s) => s.offset)
@@ -55,18 +58,20 @@ export function SectionViewKeys({ viewDirection }: { viewDirection: () => Vec3 }
           data-test="section-view-offset"
           // Re-keyed on the value, so the arrow dragged on the part types
           // itself into the field.
-          key={round(offset)}
-          defaultValue={round(offset)}
+          key={u.text(round(offset))}
+          defaultValue={u.text(round(offset))}
           onBlur={(e) => {
-            const v = Number(e.target.value)
-            if (Number.isFinite(v)) setOffset(v)
-            e.target.value = String(round(useSectionView.getState().offset))
+            // Text left as it was shown commits nothing: in inches it is
+            // rounded, and committing it back would move the plane.
+            const v = u.read(Number(e.target.value))
+            if (e.target.value !== u.text(round(offset)) && Number.isFinite(v)) setOffset(v)
+            e.target.value = u.text(round(useSectionView.getState().offset))
           }}
           onKeyDown={(e) => {
             if (e.key === 'Enter') e.currentTarget.blur()
           }}
         />
-        <span className="unit">mm</span>
+        <span className="unit">{u.word}</span>
       </label>
       {tilt > 0 && !orphan && (
         <button

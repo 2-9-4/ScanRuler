@@ -18,6 +18,7 @@ import { TOLERANCE_TYPES } from '../core/tolerances'
 import type { FitData } from '../core/types'
 import { useStore } from '../state/store'
 import { surfaceSource, useSurfaces } from '../app/surfaces'
+import { useUnits } from '../app/useUnits'
 import { ValueWindow } from './DroValue'
 import { InfoDot } from './InfoDot'
 import { NameField, providersFor, RefSelect } from './RefSelect'
@@ -63,10 +64,12 @@ export function ToleranceSection({
   // A plane's tolerance reads the plane's surface, which can arrive or move
   // without the store changing — hence the version in the dependencies.
   const surfaceVersion = useSurfaces((s) => s.version)
+  // Values and verdicts are written in the units shown.
+  const units = useUnits()
   const evaluated = useMemo(
-    () => evaluateDimensions(own, elements, surfaceSource),
+    () => evaluateDimensions(own, elements, surfaceSource, units),
     // Runs on the listed dependencies only, not on everything it reads.
-    [own, elements, surfaceVersion],
+    [own, elements, surfaceVersion, units],
   )
 
   const info = dimDraft ? dimensionTypeInfo(dimDraft.type) : null
@@ -80,12 +83,13 @@ export function ToleranceSection({
       ? evaluateDimension(dimDraft.type, fits, {
           basic: dimDraft.basic,
           surfaces: dimDraft.refs.map((id) => (id !== null ? surfaceSource(id) : null)),
+          units,
         })
       : { label: info.label, invalid: 'A referenced element is unavailable.' }
   }
   const verdict =
     preview?.raw !== undefined && !preview.invalid && dimDraft?.limit && info
-      ? judgeLimit(preview.raw, dimDraft.limit, info.unit)
+      ? judgeLimit(preview.raw, dimDraft.limit, info.unit, units)
       : undefined
   const anyFitted = elements.some((e) => e.fit)
 

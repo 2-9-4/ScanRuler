@@ -5,6 +5,8 @@
 // under.
 
 import type { ThicknessMethod, ThicknessStats } from './thickness'
+import { reportLengths, unitsHeading } from '../deviation/report'
+import { lengthInputText, type DisplayUnits } from '../units'
 
 /** How the measurement was taken and how it is being read — the settings a
  *  report has to carry, or the numbers in it mean nothing six months later. */
@@ -25,8 +27,10 @@ export function buildThicknessReport(
   scanName: string,
   stats: ThicknessStats,
   settings: ThicknessSettings,
+  /** What the lengths are written in — millimetres for the agent. */
+  units: DisplayUnits = 'mm',
 ): string {
-  const mm = (v: number): string => `${v.toFixed(4)} mm`
+  const { len: mm, setting } = reportLengths(units)
   const percent = stats.measured ? (stats.belowLimit / stats.measured) * 100 : 0
   const method =
     settings.method === 'sphere'
@@ -37,10 +41,11 @@ export function buildThicknessReport(
 
   return [
     'ScanRuler — wall thickness',
+    ...unitsHeading(units),
     `Part: ${scanName}`,
     '',
     `Method: ${method}`,
-    `  max. thickness searched  ${settings.maxThickness} mm`,
+    `  max. thickness searched  ${setting(settings.maxThickness)}`,
     `  far surface must face back within  ${
       settings.normalDeviationDeg === null ? 'not checked' : `${settings.normalDeviationDeg}°`
     }`,
@@ -50,10 +55,10 @@ export function buildThicknessReport(
     `  max             ${mm(stats.max)}`,
     `  mean            ${mm(stats.mean)}`,
     `  sigma           ${mm(stats.sigma)}`,
-    `  under ${stats.limit} mm      ${percent.toFixed(1)} %  (${stats.belowLimit} points)`,
+    `  under ${setting(stats.limit)}      ${percent.toFixed(1)} %  (${stats.belowLimit} points)`,
     `  measured        ${stats.measured} of ${stats.total} scan points`,
     '',
-    `  colour scale         ${settings.low} … ${settings.high} mm`,
+    `  colour scale         ${lengthInputText(settings.low, units)} … ${setting(settings.high)}`,
     '',
   ].join('\n')
 }

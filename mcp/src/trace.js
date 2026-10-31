@@ -3,7 +3,8 @@
 // own, for measuring a run afterwards — how long each call took, how much
 // went each way, what was refused, and whether the tab was hidden. Off
 // unless asked for (--trace <dir>, SCANRULER_MCP_TRACE); local only; an
-// argument's contents are written only with --trace-args, its size always.
+// argument's contents, and the head of each answer, are written only with
+// --trace-args, their sizes always.
 // scripts/trace-summary.mjs reads the files.
 
 import { appendFileSync, mkdirSync } from 'node:fs'
@@ -27,6 +28,16 @@ export function replyMeasure(reply) {
   const text = reply?.content?.find((c) => c.type === 'text')?.text ?? ''
   const error = reply?.isError ? (/^([a-z_]+): /.exec(text)?.[1] ?? 'failed') : null
   return { out, error, ...(images ? { images } : {}) }
+}
+
+/** How much of an answer the trace keeps, characters. */
+const HEAD_CHARS = 500
+
+/** The start of a reply's text — a refusal's message, most often whole — for
+ *  reading a run afterwards. */
+export function replyHead(reply) {
+  const text = reply?.content?.find((c) => c.type === 'text')?.text
+  return typeof text === 'string' && text.length > 0 ? text.slice(0, HEAD_CHARS) : undefined
 }
 
 /** A trace into a new file in `dir`, or null when `dir` is empty. Each

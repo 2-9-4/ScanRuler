@@ -33,6 +33,7 @@ import { Icon, type IconName } from './icons'
 import { InfoDot } from './InfoDot'
 import { ModelSlot } from './ModelSlot'
 import { NumberField } from './NumberField'
+import { useLength } from '../app/useUnits'
 import { tintStyle } from './tint'
 
 const FLAT_KINDS: FlatElementKind[] = ['point', 'line', 'circle', 'arc', 'spline']
@@ -70,7 +71,10 @@ export function FlatPanel({
   const showEdges = useFlat((s) => s.showEdges)
   const elements = useFlat((s) => s.elements)
   const draft = useFlat((s) => s.draft)
-  const unit = useFlat((s) => (s.pxPerMm ? 'mm' : 'px'))
+  const unit = useFlat((s) => (s.pxPerMm ? 'mm' : 'px')) // units-ok: the sheet's document unit, an id
+  // A sheet in millimetres is read in the units shown.
+  const len = useLength()
+  const inches = len.units === 'in'
   const datum = useFlat((s) => s.datum)
   const datumPicking = toolOf({ tool }, 'datum')
   const showGrid = useFlat((s) => s.showGrid)
@@ -99,7 +103,7 @@ export function FlatPanel({
   const onSection = subject.kind === 'section'
   const activeSection = onSection ? sections.find((x) => x.id === subject.id) : undefined
   const cutOf = (sec: (typeof sections)[number]) =>
-    describeCut(sectionRefName(sec.ref, scanElements), sec.offset, tiltOf(sec.refDir, sec.frame.normal), sec.kind)
+    describeCut(sectionRefName(sec.ref, scanElements), sec.offset, tiltOf(sec.refDir, sec.frame.normal), sec.kind, len.units)
   const hasSheet = onSection || imageName !== null
   // Anything the report and the CSV would have to say.
   const hasMeasurements =
@@ -152,7 +156,7 @@ export function FlatPanel({
             <p>Drop it anywhere in the window. Nothing is uploaded.</p>
             <p>
               Or a <b>section</b>: the 3D scan cut with a plane in the 3D Measure workspace. Its
-              edges lie on the sheet in millimetres already, so there is nothing to calibrate,
+              edges lie on the sheet at true size already, so there is nothing to calibrate,
               and they are snapped to, fitted and measured exactly like an image&apos;s. One source
               is on the sheet at a time; each keeps its own elements, dimensions and alignment, and
               finds them again when it comes back.
@@ -192,7 +196,7 @@ export function FlatPanel({
         {activeSection && (
           <p className="hint" data-test="flat-section-status">
             <b>{activeSection.name}</b>: {scanName ?? 'the scan'} cut {cutOf(activeSection)}. The sheet
-            is in millimetres of the scan, origin at the cutting plane&apos;s centre — set an
+            is at the scan&apos;s true size, origin at the cutting plane&apos;s centre — set an
             alignment to read coordinates off a feature.
           </p>
         )}
@@ -204,7 +208,7 @@ export function FlatPanel({
             Calibration
             <InfoDot title="Calibration">
               <p>
-                Every millimetre this workspace reports is pixels divided by this scale. The
+                Every length this workspace reports is pixels divided by this scale. The
                 file's own dpi is only <b>nominal</b> — scanner transports are off by real
                 fractions of a percent — so measure the scale off something true: scan a gauge
                 block, calliper-measured part or gauge pin along with the part.
@@ -224,10 +228,14 @@ export function FlatPanel({
           <p className="hint" data-test="flat-cal-status">
             {calSource === 'measured' && pxPerMm
               ? pxPerMm.x === pxPerMm.y
-                ? `Calibrated: ${pxPerMm.x.toFixed(4)} px/mm (≈${toDpi(pxPerMm.x).toFixed(1)} dpi).`
-                : `Calibrated: X ${pxPerMm.x.toFixed(4)} · Y ${pxPerMm.y.toFixed(4)} px/mm.`
+                ? inches
+                  ? `Calibrated: ${toDpi(pxPerMm.x).toFixed(2)} px/in.`
+                  : `Calibrated: ${pxPerMm.x.toFixed(4)} px/${len.word()} (≈${toDpi(pxPerMm.x).toFixed(1)} dpi).`
+                : inches
+                  ? `Calibrated: X ${toDpi(pxPerMm.x).toFixed(2)} · Y ${toDpi(pxPerMm.y).toFixed(2)} px/in.`
+                  : `Calibrated: X ${pxPerMm.x.toFixed(4)} · Y ${pxPerMm.y.toFixed(4)} px/${len.word()}.`
               : calSource === 'metadata' && meta
-                ? `Nominal, from the file: ${(meta.x * 25.4).toFixed(0)} dpi — ${(imageWidth / meta.x).toFixed(1)} × ${(imageHeight / meta.y).toFixed(1)} mm.`
+                ? `Nominal, from the file: ${(meta.x * 25.4).toFixed(0)} dpi — ${len.fmt(imageWidth / meta.x, 1, { bare: true })} × ${len.fmt(imageHeight / meta.y, 1)}.`
                 : 'The file declares no physical resolution — sizes are pixels until calibrated.'}
           </p>
 
@@ -282,7 +290,7 @@ export function FlatPanel({
                 value={trueSize}
                 step={1}
                 min={0.001}
-                unit="mm"
+                kind="length"
                 onCommit={setTrueSize}
               />
               <button
@@ -606,8 +614,8 @@ export function FlatPanel({
               visible={el.visible}
               reading={
                 el.fit ? (
-                  <b title={formatFlatDetail(el.fit, unit)}>
-                    {formatFlatPrimary(fitInFrame(el.fit, frame), unit)}
+                  <b title={formatFlatDetail(el.fit, unit, len.units)}>
+                    {formatFlatPrimary(fitInFrame(el.fit, frame), unit, len.units)}
                   </b>
                 ) : (
                   <b className="warn" title={el.error ?? undefined}>
@@ -677,7 +685,9 @@ export function FlatPanel({
               data-test="flat-export-dxf"
               disabled={!drawable}
               onClick={onExportDxf}
-              title="Save the sheet as a DXF for CAD — millimetres, y up, the origin on the alignment; every fit as its own entity, the edges while they are shown as polylines thinned to 0.01 mm"
+              title={`Save the sheet as a DXF for CAD — ${
+                inches ? 'inches' : 'millimetres'
+              } on a sheet with a scale, y up, the origin on the alignment; every fit as its own entity, the edges while they are shown as polylines thinned to a sketch's worth`}
             >
               Export DXF
             </button>
@@ -831,7 +841,8 @@ export function FlatPanel({
               </p>
               <p>
                 The chains are as fine as the scan&apos;s triangles: coarse on a decimated mesh,
-                subpixel-dense on a fine one. Chains shorter than a millimetre are dropped.
+                subpixel-dense on a fine one. Chains shorter than{' '}
+                {inches ? '0.04 in' : 'a millimetre'} are dropped.
               </p>
             </InfoDot>
           </div>

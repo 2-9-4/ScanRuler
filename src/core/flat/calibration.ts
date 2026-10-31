@@ -33,7 +33,7 @@ export function distanceCalibration(
   trueMm: number,
   opts: { current: PixelsPerMm | null; splitAxes: boolean },
 ): PixelsPerMm {
-  if (!(trueMm > 0)) throw new FitError('The true distance must be a positive length in mm.')
+  if (!(trueMm > 0)) throw new FitError('The true distance must be a positive length.')
   const dx = Math.abs(b[0] - a[0])
   const dy = Math.abs(b[1] - a[1])
   const lengthPx = Math.hypot(dx, dy)
@@ -55,7 +55,7 @@ export function distanceCalibration(
  * two-point references instead when that matters.
  */
 export function diameterCalibration(picks: readonly Vec2[], trueMm: number): PixelsPerMm {
-  if (!(trueMm > 0)) throw new FitError('The true diameter must be a positive length in mm.')
+  if (!(trueMm > 0)) throw new FitError('The true diameter must be a positive length.')
   if (picks.length < 3) throw new FitError('A circle needs at least three points around its edge.')
   const pu = new Float64Array(picks.length)
   const pv = new Float64Array(picks.length)

@@ -24,6 +24,9 @@ import { detectMaterialSide } from '../core/deviation/elementField'
 import { targetFitOf } from './useElementField'
 import type { SourceFiles } from './project'
 import type { Vec3 } from '../core/types'
+import { usePrefs } from '../state/prefsStore'
+import { lengthInputText, type DisplayUnits } from '../core/units'
+import { boundLength } from './useUnits'
 
 /** What the status strip says the moment the marking tools come out — the
  *  same tools, and so the same instruction, whichever workspace offered them. */
@@ -110,8 +113,9 @@ export function deviationWorkspace({
         // conversion breaks the sign of every reading, so it gets the toast; a
         // clean one just says what it cost.
         const step = mesh.step
+        const len = boundLength(usePrefs.getState().units)
         const converted = step
-          ? ` Tessellated from STEP at ${step.surfaceDeviation} mm chord tolerance${
+          ? ` Tessellated from STEP at ${lengthInputText(step.surfaceDeviation, len.units)} ${len.word()} chord tolerance${
               step.units && step.units !== 'mm' ? `, converted from ${step.units}` : ''
             }.`
           : read !== 'mm'
@@ -336,7 +340,7 @@ export function deviationWorkspace({
       useStore
         .getState()
         .setStatus(
-          `Aligned — ${result.rms.toFixed(4)} mm RMS over ${result.matched.toLocaleString('en-US')} points. Measure the deviation next.`,
+          `Aligned — ${boundLength(usePrefs.getState().units).fmt(result.rms, 4)} RMS over ${result.matched.toLocaleString('en-US')} points. Measure the deviation next.`,
         )
       await runDeviation()
     } catch (e) {
@@ -403,7 +407,7 @@ export function deviationWorkspace({
       useStore
         .getState()
         .setStatus(
-          `Fine fitted — ${result.rms.toFixed(4)} mm RMS over ${result.matched.toLocaleString('en-US')} marked points. Re-measuring the deviation.`,
+          `Fine fitted — ${boundLength(usePrefs.getState().units).fmt(result.rms, 4)} RMS over ${result.matched.toLocaleString('en-US')} marked points. Re-measuring the deviation.`,
         )
       await runDeviation()
     } catch (e) {
@@ -453,8 +457,9 @@ export function deviationWorkspace({
   }
 
   /** The report the panel copies, on the figures given — the legend's, by
-   *  default. Null with no map to report on. */
-  const reportText = (stats: DeviationStats | null = useDeviation.getState().stats): string | null => {
+   *  default — its lengths in `units`: the screen's for the copy, millimetres
+   *  for the agent. Null with no map to report on. */
+  const reportText = (stats: DeviationStats | null = useDeviation.getState().stats, units: DisplayUnits = 'mm'): string | null => {
     const dev = useDeviation.getState()
     if (!stats) return null
     if (dev.source === 'element') {
@@ -471,6 +476,7 @@ export function deviationWorkspace({
         dev.maxDistance,
         dev.targetFacingDeg,
         dev.targetScope === 'marked' ? dev.scopeCount : null,
+        units,
       )
     }
     if (!dev.align) return null
@@ -482,11 +488,12 @@ export function deviationWorkspace({
       dev.range,
       dev.maxDistance,
       dev.mapFacingDeg,
+      units,
     )
   }
 
   const handleCopyReport = () => {
-    const text = reportText()
+    const text = reportText(undefined, usePrefs.getState().units)
     if (text) void navigator.clipboard?.writeText(text)
   }
 

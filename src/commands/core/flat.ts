@@ -169,7 +169,7 @@ const calibrate: Command<{ mode: CalMode; points: Vec2[]; mm: number }> = {
   name: 'calibrate',
   title: 'Calibrate the image',
   description:
-    'Set the image’s scale against a known length, as the Calibrate tool does: distance takes two places a known distance apart, diameter three or more on a circle of known diameter; mm is that length. Every measurement on the image follows the new scale, and the edges are found again (their chain numbers change). Returns the calibration. One undo step.',
+    'Set the image’s scale against a known length, as the Calibrate tool does: distance takes two places a known distance apart, diameter three or more on a circle of known diameter; mm is that length. Every measurement follows the new scale, and the edges are found again (their chain numbers change). Returns the calibration. One undo step.',
   input: obj(
     {
       mode: enumOf(['distance', 'diameter'] as CalMode[], 'distance (two places) or diameter (three or more on a circle).'),
@@ -265,18 +265,18 @@ const fit: Command<{
   description:
     'Make a 2D element on the sheet as its tool does — kind point, line, circle, arc or spline, by a method of that kind: ' +
     KINDS.map((k) => `${k}: ${flatMethodsForKind(k).map((m) => `${m.id} (${m.mode})`).join(', ')}`).join('; ') +
-    '. A pick method takes points, the places clicked — each snapped to the nearest detected edge within reach unless snap: false, and the answer’s picks say where each landed and on which chain. A seed method takes one place on a detected edge and grows along it; an edge method a place on an edge, taken whole. The edge methods also take chains — whole edge chains by number (flat.edges, flat.render) — and box, every edge point inside it (of those chains only, with both); the kind’s edge method is the default then. A construct method takes refs, other 2D elements by id or name. Returns the element with its fit. One undo step.',
+    '. A pick method takes points, the places clicked (snapped to the nearest edge within reach unless snap: false; picks says where each landed); a seed method one place on an edge and grows along it; an edge method a place on an edge taken whole, or chains and box; a construct method refs, other 2D elements. Returns the element with its fit. One undo step.',
   input: obj(
     {
       kind: enumOf(KINDS, 'What to make.'),
       method: str('The method — see the description; the kind’s first pick method by default.', { minLength: 1 }),
       points: spotsSchema('The places, in the sheet’s units.'),
-      chains: chainIdsSchema('Edge chains by number, taken whole — for an edge or seed method.'),
-      box: boxSchema('Edge points inside this box, in the sheet’s units — for an edge or seed method.'),
+      chains: chainIdsSchema('Edge chains by number, taken whole (edge or seed methods).'),
+      box: boxSchema('Edge points inside this box, sheet units (edge or seed methods).'),
       refs: arr(flatRefSchema('A 2D element.'), 'construct: the source elements.'),
       name: str('A name for it.', { minLength: 1 }),
-      snap: bool('Picks snap to the nearest edge within reach — true by default, as the panel’s Snap box is.'),
-      reach: num('How far a place reaches for an edge, in the sheet’s units — ten image pixels by default.', { exclusiveMinimum: 0 }),
+      snap: bool('Picks snap to the nearest edge within reach; true by default.'),
+      reach: num('How far a place reaches for an edge, sheet units; ten image pixels by default.', { exclusiveMinimum: 0 }),
     },
     ['kind'],
   ),
@@ -420,7 +420,7 @@ const noteAdd: Command<{ text: string; at: Vec2 }> = {
   name: 'note_add',
   title: 'Write a note on the sheet',
   description:
-    'Write a text note on the 2D sheet, as the Text tool does — a label beside a part, a size read elsewhere, a remark. One line, as the tool writes it: a line break is written as " / ". at is its lower-left corner, in the sheet’s units. It is drawn on the stage and in flat.render, written into the SVG and DXF exports and listed in the report. Returns the note with its id. One undo step.',
+    'Write a text note on the 2D sheet, as the Text tool does — one line, a line break written as " / "; at is its lower-left corner, sheet units. It is drawn on the stage and in flat.render, written into the SVG and DXF exports and listed in the report. Returns the note with its id. One undo step.',
   input: obj({ text: str('What it says.', { minLength: 1 }), at: spotSchema('Its lower-left corner.') }, ['text', 'at']),
   label: () => 'add 2D note',
   run: async ({ text, at }) => {
@@ -451,7 +451,7 @@ const edit: Command<{
   name: 'edit',
   title: 'Change a 2D element, dimension, note or count',
   description:
-    'Change one thing on the 2D sheet, named by its id (or name): an element, a dimension or a count takes a new name; a note new text or a new place (at, its lower-left corner); any of them visible: false to leave it out of the stage, the picture and the exports, true to bring it back. Returns the 2D state. One undo step.',
+    'Change one thing on the 2D sheet, by id or name: an element, a dimension or a count takes a new name; a note new text or a new place (at, its lower-left corner); any of them visible: false to leave it out of the stage, the picture and the exports. Returns the 2D state. One undo step.',
   input: obj({
     element: flatRefSchema('A 2D element.'),
     dimension: oneOf([int('Its id.', { minimum: 1 }), str('Its name — "Distance 1".', { minLength: 1 })], 'A 2D dimension.'),
@@ -515,7 +515,7 @@ const remove: Command<{ elements?: (number | string)[]; dimensions?: (number | s
   name: 'remove',
   title: 'Remove from the 2D sheet',
   description:
-    'Remove elements, dimensions, notes and counts from the 2D sheet, each by id or name (a note by id) — all of them or none. An element built on a removed one stays and says it has lost its source, and a dimension on one turns invalid, as in the panel; the answer names them. Returns what is left. One undo step.',
+    'Remove elements, dimensions, notes and counts from the 2D sheet, each by id or name (a note by id) — all of them or none. An element built on a removed one stays and says it has lost its source, a dimension on one turns invalid; the answer names them. Returns what is left. One undo step.',
   input: obj({
     elements: arr(flatRefSchema('A 2D element.')),
     dimensions: arr(oneOf([int(undefined, { minimum: 1 }), str(undefined, { minLength: 1 })]), 'Dimensions, by id or name.'),
@@ -576,7 +576,7 @@ const render: Command<{
   name: 'render',
   title: 'Picture the sheet',
   description:
-    'A picture of the 2D sheet as a PNG, drawn as the sheet lies in the sheet’s own units — +X right, +Y up, whatever the stage’s alignment or turns — with a grid ruled in those units and its values written along the top and left edges. map says where it lies: picture pixel (column c, row r from the top) is the sheet place [left + c·unitsPerPx, top − r·unitsPerPx], to hand straight back as a place. frame zooms in on a box. show puts layers in or out: image, edges (the detected chains — as the panel shows them by default), chains (their numbers, as flat.fit and flat.edges name them), elements (with counts and the alignment), dimensions, notes, labels (names and readings), grid. width and height in pixels: the frame’s shape at most 800 on its long side by default, up to 2048. Needs the browser.',
+    'A picture of the 2D sheet as a PNG, as the sheet lies in its own units — +X right, +Y up, whatever the alignment or turns — with a grid and its values along the top and left edges. map says where it lies: picture pixel (column c, row r from the top) is the sheet place [left + c·unitsPerPx, top − r·unitsPerPx]. frame zooms in on a box. show puts layers in or out: image, edges (the detected chains), chains (their numbers), elements (with counts and the alignment), dimensions, notes, labels, grid. 800 px on the long side by default, up to 2048. Needs the browser.',
   input: obj({
     frame: frameSchema,
     width: int('Pixels across, 64 to 2048.', { minimum: 64, maximum: 2048 }),
@@ -637,7 +637,7 @@ const edges: Command<{ box?: Box; near?: Vec2; reach?: number; minLength?: numbe
   name: 'edges',
   title: 'List the detected edges',
   description:
-    'The edge chains detected on the sheet, by number — what flat.fit takes as chains and flat.render writes beside each. Each with its length, whether it closes on itself, how many points and the box round it, in the sheet’s units; the longest first, or with near the nearest first, each with its point nearest that place and how far (within reach only, when given). box keeps the chains that enter it, minLength the long ones. tolerance adds each chain’s polyline, thinned to stray no further than that (5000 points at most over all). limit chains at most, 50 by default. The numbers hold until the edges are found again. Changes nothing.',
+    'The edge chains detected on the sheet, by number — what flat.fit takes as chains. Each with its length, whether it closes, its point count and box, in the sheet’s units; the longest first, or with near the nearest first (each with its nearest point and distance; within reach only, when given). box keeps the chains that enter it, minLength the long ones. tolerance adds each chain’s polyline thinned to that (5000 points at most over all). limit chains at most, 50 by default. Trap: the numbers change when the edges are found again. Changes nothing.',
   input: obj({
     box: boxSchema('Only chains with a point in this box.'),
     near: spotSchema('Nearest this place first.'),
@@ -704,7 +704,7 @@ const objects: Command<{ threshold?: number; dark?: boolean; minArea?: number; o
   name: 'objects',
   title: 'Find the parts on the image',
   description:
-    'The separate parts lying on the flatbed image, parted from the background by a grey level (Otsu’s, unless threshold is given; dark says the parts are darker than the background, read off the image’s border by default) and numbered in reading order — rows from the top, left to right. Each with its area (holes left out) and holes, box, centroid, equivalentDiameter (of a circle of its area), feret — the largest and smallest caliper widths and the directions they are measured along, degrees from +X — axisAngle (its long axis, degrees), and chains, the edge chains along its outline, longest first. minArea drops smaller ones: 1 mm² by default, or its pixels at 600 dpi on an image with no scale. outline adds each outline as a polygon thinned to that tolerance. flat.profile takes an object by its number. limit, 100 by default. Changes nothing.',
+    'The separate parts on the flatbed image, parted from the background by a grey level (Otsu’s unless threshold is given) and numbered in reading order — what flat.profile takes by number. Returns each with area, holes, box, centroid, equivalentDiameter, feret (largest and smallest caliper widths with their directions), axisAngle, chains (the edge chains along its outline) and, with outline, its polygon. Trap: minArea drops smaller ones, 1 mm² by default. Changes nothing.',
   input: obj({
     threshold: int('Grey level, 0 to 255.', { minimum: 0, maximum: 255 }),
     dark: bool('The parts are darker than the background.'),
@@ -825,14 +825,14 @@ const profile: Command<{
   name: 'profile',
   title: 'Profile an outline and count its peaks',
   description:
-    'An outline read against a centre or along an axis, and its peaks counted — the teeth of a knurl or a gear. The outline: an object of the last flat.objects by number, or edge chains by number (several make one). radial (the default): its radius against the angle about about — a circle, arc or point — or about the outline’s own centre: a part standing upright, seen from above. axial: its distance from about — a line — or from the outline’s own long axis, against the position along it, each side apart (left and right of the axis’ direction): a part lying on its side. A peak counts when it stands prominence above the higher of the valleys either side — by default 0.3 of the profile’s spread, never under the outline’s noise. Returns per side the count, the pitch (degrees round, or along the axis), the envelope (largest, smallest, mean peak, mean valley; radial also as diameters) and every peak’s angle or position and place; points adds the sampled profile. mark: true puts a count on the sheet with a numbered pick on every peak, to check by eye — one undo step; otherwise nothing changes.',
+    'An outline read against a centre (radial, the default: a part seen from above) or along an axis (axial: a part lying on its side, each side apart), and its peaks counted — the teeth of a knurl or a gear. The outline is an object of the last flat.objects by number, or edge chains by number; about is the element it is read about, else the outline’s own centre or long axis. Returns per side the count, pitch, envelope (max, min, mean peak, mean valley; radial also as diameters) and every peak’s position; points adds the sampled profile. Trap: a peak must stand prominence above the higher valley either side (0.3 of the profile’s spread by default). mark: true puts a count on the sheet — one undo step; otherwise nothing changes.',
   input: obj({
     object: int('An object of the last flat.objects, by number.', { minimum: 1 }),
     chains: chainIdsSchema('Edge chains by number, as one outline.'),
-    about: flatRefSchema('A circle, arc or point to read the radius about, or a line to read the distance from.'),
+    about: flatRefSchema('A circle, arc or point (radial), or a line (axial).'),
     axis: enumOf(['radial', 'axial'] as const, 'Without about: radial about the outline’s centre (the default), or axial along its long axis.'),
-    samples: int('Bins round the turn, or along the axis — from the point count by default.', { minimum: 16, maximum: 20000 }),
-    prominence: num('How far a peak must stand out, in the sheet’s units.', { exclusiveMinimum: 0 }),
+    samples: int('Bins round the turn or along the axis; from the point count by default.', { minimum: 16, maximum: 20000 }),
+    prominence: num('How far a peak must stand out, sheet units.', { exclusiveMinimum: 0 }),
     mark: bool('Put a count on every peak.'),
     points: bool('Add the sampled profile.'),
   }),

@@ -11,6 +11,7 @@ import { useState, useSyncExternalStore } from 'react'
 import { COLORMAPS, colormapById, cssRgb, legendGradient } from '../core/field/colormap'
 import { CREASE_ANGLE_DEG, CREASE_ANGLE_MAX, CREASE_ANGLE_MIN, CREASE_ANGLE_STEP, type CreaseMode } from '../core/geometry/crease'
 import { MESH_UNITS, type MeshUnits } from '../core/meshUnits'
+import { DISPLAY_UNITS } from '../core/units'
 import { AGENT_STATUS, useAgentLink } from '../commands/agentLink'
 import { betaOn, betaPlugins, pluginEnabled, plugins, setBetaOn } from '../plugins/registry'
 import { useHintPrefs } from '../state/hintStore'
@@ -102,6 +103,8 @@ export function SettingsModal() {
   const askStlUnits = usePrefs((s) => s.askStlUnits)
   const setAskStlUnits = usePrefs((s) => s.setAskStlUnits)
   const stlUnits = usePrefs((s) => s.stlUnits)
+  const units = usePrefs((s) => s.units)
+  const setUnits = usePrefs((s) => s.setUnits)
   const setStlUnits = usePrefs((s) => s.setStlUnits)
   const navScheme = useStore((s) => s.navScheme)
   const setNavScheme = useStore((s) => s.setNavScheme)
@@ -160,6 +163,28 @@ export function SettingsModal() {
           How the instrument looks and behaves. Remembered in this browser — nothing here is a
           property of the part, and none of it is saved with a project.
         </p>
+
+        <h3>Units</h3>
+        <div className="setting">
+          <span id="units-label">Lengths in</span>
+          <div className="keys" role="radiogroup" aria-labelledby="units-label">
+            {DISPLAY_UNITS.map((u) => (
+              <button
+                key={u.id}
+                role="radio"
+                aria-checked={units === u.id}
+                className={units === u.id ? 'on' : undefined}
+                data-test={`units-${u.id}`}
+                onClick={() => setUnits(u.id)}
+              >
+                {u.label}
+              </button>
+            ))}
+          </div>
+          <small>
+            What is shown and typed. Files, projects and agent answers stay in millimetres.
+          </small>
+        </div>
 
         <h3>Appearance</h3>
         <div className="setting">
@@ -357,7 +382,7 @@ export function SettingsModal() {
           </span>
         </label>
         <div className="setting">
-          <label htmlFor="stlunits">STL units</label>
+          <label htmlFor="stlunits">STL import units</label>
           <select
             id="stlunits"
             data-test="stl-units"

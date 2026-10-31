@@ -103,7 +103,7 @@ export function describeConversion(d: ImportDiagnostics, mesh?: { positions: Flo
     }
     if (d.openEdges > 0) parts.push(`${d.openEdges} open edge${d.openEdges === 1 ? '' : 's'}`)
     if (d.nonManifoldEdges > 0) parts.push(`${d.nonManifoldEdges} non-manifold edge${d.nonManifoldEdges === 1 ? '' : 's'}`)
-    const where = gaps.length > 0 ? ` The gap${gaps.length === 1 ? ' lies' : 's lie'} at ${gaps.map((g) => `${place(g.at)}, ${mm(g.size)} mm across`).join('; ')}.` : ''
+    const where = gaps.length > 0 ? ` The gap${gaps.length === 1 ? ' lies' : 's lie'} at ${gaps.map((g) => `${place(g.at)}, ${mm(g.size)} mm across`).join('; ')}.` : '' // units-ok: built in the worker, which holds no display units
     return {
       // The signed distance takes its sign from which side of the reference a
       // scan point is on, and a surface with holes in it has no reliable

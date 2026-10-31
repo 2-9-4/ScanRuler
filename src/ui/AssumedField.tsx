@@ -9,22 +9,29 @@ import { useRef } from 'react'
 import { InfoDot } from './InfoDot'
 import { useStore } from '../state/store'
 import { assumedWarning, measuredDiameter, type SizedFit } from '../core/elements/assumed'
+import { useLength } from '../app/useUnits'
+import { useFieldUnits } from './NumberField'
 
 export function AssumedField({ fit }: { fit: SizedFit }) {
   const assumed = useStore((s) => s.draft?.assumed)
   const setDraftAssumed = useStore((s) => s.setDraftAssumed)
   const ref = useRef<HTMLInputElement>(null)
+  // Held in millimetres, typed in the display units.
+  const len = useLength()
+  const u = useFieldUnits('length', undefined)
 
   const measured = measuredDiameter(fit)
-  const warning = assumed === undefined ? null : assumedWarning(measured, assumed)
-  const shown = assumed === undefined ? '' : String(assumed)
+  const warning = assumed === undefined ? null : assumedWarning(measured, assumed, len.units)
+  const shown = assumed === undefined ? '' : u.text(assumed)
 
   const commit = (text: string) => {
     if (text.trim() === '') {
       setDraftAssumed(undefined)
       return
     }
-    const v = Number(text)
+    // Text left as it was shown commits nothing: in inches it is rounded.
+    if (text === shown) return
+    const v = u.read(Number(text))
     if (Number.isFinite(v) && v > 0) setDraftAssumed(v)
   }
 
@@ -35,9 +42,9 @@ export function AssumedField({ fit }: { fit: SizedFit }) {
           Assumed Ø
           <InfoDot title="Assumed Ø">
             <p>
-              The diameter the feature was <b>designed</b> at, if you know it: what measures Ø
-              5.98 mm was probably drawn at Ø 6. Leave it empty if you don't — nothing is guessed
-              for you.
+              The diameter the feature was <b>designed</b> at, if you know it: what measures Ø{' '}
+              {len.units === 'in' ? '0.2495 in was probably drawn at Ø 0.25' : `5.98 ${len.word()} was probably drawn at Ø 6`}.
+              Leave it empty if you don't — nothing is guessed for you.
             </p>
             <p>
               The element is drawn at this diameter, and the STEP export writes it instead of the
@@ -52,9 +59,9 @@ export function AssumedField({ fit }: { fit: SizedFit }) {
             ref={ref}
             type="number"
             data-test="assumed-diameter"
-            step={0.01}
-            min={0.001}
-            placeholder={`measured ${measured.toFixed(3)}`}
+            step={u.step(0.01)}
+            min={u.min(0.001)}
+            placeholder={`measured ${len.fmt(measured, 3, { bare: true })}`}
             defaultValue={shown}
             key={shown}
             onBlur={(e) => {
@@ -67,7 +74,7 @@ export function AssumedField({ fit }: { fit: SizedFit }) {
               if (e.key === 'Enter') ref.current?.blur()
             }}
           />
-          <i>mm</i>
+          <i>{u.word}</i>
         </span>
       </label>
       {warning !== null && (

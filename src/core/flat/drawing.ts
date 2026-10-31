@@ -6,6 +6,7 @@
 // trimmed, how the roll is described. Kept here so the two files of one
 // sheet are the same drawing in two dialects.
 
+import type { DisplayUnits } from '../units'
 import { describeShown } from './datum'
 import type { EdgeChains } from './edges'
 import { splineMidpoint } from './spline'
@@ -51,6 +52,18 @@ export interface FlatDrawingInput {
   title: string
   /** The traceability line — what the scale is and where it came from. */
   scaleNote: string
+}
+
+/** The unit a drawing file's coordinates are written in. A pixel sheet
+ *  stays in pixels. A millimetre sheet is written in millimetres, or — a DXF
+ *  only, which can declare either — in inches when those are the display
+ *  units; the SVG always keeps its document units. */
+export type DrawingFileUnit = 'mm' | 'in' | 'px'
+
+/** The file unit for a sheet in `unit` with the display units `units`;
+ *  millimetres stay millimetres unless inches are asked for. */
+export function drawingFileUnit(unit: FlatDrawingInput['unit'], units: DisplayUnits = 'mm'): DrawingFileUnit {
+  return unit === 'mm' && units === 'in' ? 'in' : unit
 }
 
 /** The teal the stage draws detected edges in. */

@@ -1,7 +1,8 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
 # ScanRuler Contributor License Agreement
 
-Version 1, 24 October 2026.
+Version 1, 24 October 2026; wording of section 4.2 aligned with
+CONTRIBUTING.md on 29 October 2026, no change in substance.
 
 ScanRuler is published under the GNU AGPL-3.0-only and, for companies whose
 products that licence does not suit, under commercial licences sold by its
@@ -10,9 +11,9 @@ whole codebase if one person holds the right to license all of it. This
 agreement gives **Stefan Hermann (CNC Kitchen), the Licensor,** that right
 over what you contribute. You keep your copyright.
 
-By signing — a comment on your pull request reading
-`I have read the CLA Document and I hereby sign the CLA` — you agree to the
-following for every Contribution you have made or will make to ScanRuler.
+By signing — a comment on your pull request reading `I agree to CLA.md` —
+you agree to the following for every Contribution you have made or will make
+to ScanRuler.
 
 ## 1. Definitions
 
@@ -50,8 +51,8 @@ infringed by your Contribution alone or in combination with ScanRuler.
 2. Each Contribution is your original creation. Where it includes anything
    that is not — a third-party library, a transcribed algorithm, an asset —
    you say so in the submission, with its origin and licence. ScanRuler's
-   dependency policy ([CONTRIBUTING.md](CONTRIBUTING.md) §2) applies: no code
-   under a GPL, LGPL, AGPL or other copyleft licence, and no snippets of
+   dependency policy ([CONTRIBUTING.md](CONTRIBUTING.md) §2) applies: only
+   the licences it allows, so no GPL, LGPL or AGPL code and no snippets of
    unknown origin.
 3. You will tell the Licensor if you learn of anything that would make these
    promises untrue.

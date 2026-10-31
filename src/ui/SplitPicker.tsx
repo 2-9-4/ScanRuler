@@ -24,6 +24,7 @@ import { MIN_LOCAL_POINTS } from '../core/deviation/align'
 import type { Vec3 } from '../core/types'
 import { FitButton } from './FitButton'
 import { BrushNumber, BrushSlider } from './MarkTools'
+import { useLength } from '../app/useUnits'
 
 /** Below this the picked points are effectively on one line. */
 const MIN_CONDITIONING = 0.02
@@ -271,6 +272,7 @@ export function SplitPicker({
   } = useDeviation()
   const markCount = useMark((s) => s.count)
   const markGesture = useMark((s) => s.gesture)
+  const len = useLength()
   // Borrowed once and kept: it is the scan's mask, and the scan outlives this
   // view.
   const channel = useMemo(() => scene.markingChannel(), [scene])
@@ -367,7 +369,7 @@ export function SplitPicker({
           <span className="splitwarn">{alignMessage}</span>
         )}
         {solved && !degenerate && (
-          <span className="splitfit">picked spread {solved.rms.toFixed(2)} mm</span>
+          <span className="splitfit">picked spread {len.fmt(solved.rms, 2)}</span>
         )}
         <button disabled={running || (!pairs.length && !pendingScan)} onClick={undoPair}>
           Undo

@@ -18,6 +18,7 @@ This guide is the workflow and the judgement. **measure-reference** has every co
   - `jobs` — the running changes and the newest few, each running, done or failed.
   - `serverTooOld` — the connector is older than the page needs (the page shows the person a banner with the steps); `server.latest` — a newer one is out, which the server takes up by itself at its next start. Tell the person once: quit the app completely and open it again — while this copy relays (`server.role: "relay"`), the app to quit is the other one, holding the connection. Never install anything yourself.
 - **Read `session_state` before acting and after.** The scan's bounding box says where the part lies; the elements, dimensions and sections what is measured; the history what can be undone.
+- **Every answer is in millimetres** (angles in degrees), whatever the screen shows. The person may have it in inches — `session_state` → `ui.units` says which — so a figure you point them to on screen reads there as mm ÷ 25.4.
 - **The person can undo anything** you do in the viewport; every change is one undo step. Do not fight their edits — read the state again.
 - **Keep the context small** (measure-reference, Reply cost): `limit` on point queries, renders at the default 800 px, `report_get` once at the end, short reasoning between steps.
 - **Task list:** open and inspect → noise floor and tolerance → datums → fit and dimension → sections, deviation, thickness as asked → report and files.

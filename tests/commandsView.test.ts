@@ -10,7 +10,7 @@ import { registerBusy } from '../src/commands/activity'
 import { listCommands, registerCommands } from '../src/commands/registry'
 import { obj } from '../src/commands/schema'
 import type { Command } from '../src/commands/types'
-import { applyShow, pluginToggleKeys, registerViewToggles, viewToggles, whyNotShown, type ViewToggle } from '../src/commands/viewToggles'
+import { applyShow, pluginToggleKeys, registerViewToggles, settleShown, viewToggles, whyNotShown, type ViewToggle } from '../src/commands/viewToggles'
 import type { AlignResult } from '../src/core/deviation/align'
 import { useDeviation } from '../src/state/deviationStore'
 import { usePrefs } from '../src/state/prefsStore'
@@ -214,6 +214,26 @@ describe('a picture after a framed one', () => {
     expect(after('1 3 2', undefined, false).framedEarlier).toMatchObject({ at: [1, 2, 3], size: 6 })
     expect(after('1.5 3 2', undefined, false)).toEqual({ fitted: false })
     expect(after('1 3 2', undefined, false)).toEqual({ fitted: false })
+  })
+})
+
+describe('a key a picture waits for', () => {
+  it('is awaited when asked to show, within the time left, and not when put away', async () => {
+    const asked: number[] = []
+    const all = new Map<string, ViewToggle>([
+      ['slow', { key: 'slow', description: 'read in a worker', shown: () => true, show: () => {}, settle: async (ms) => void asked.push(ms) }],
+      ['plain', { key: 'plain', description: 'no wait', shown: () => true, show: () => {} }],
+    ])
+    await settleShown(all, { plain: true, slow: false }, 1000)
+    expect(asked).toEqual([])
+    await settleShown(all, undefined, 1000)
+    expect(asked).toEqual([])
+    await settleShown(all, { plain: true, slow: true, absent: true }, 1000)
+    expect(asked).toHaveLength(1)
+    expect(asked[0]).toBeLessThanOrEqual(1000)
+    // Past its time, it is asked for what is left: nothing.
+    await settleShown(all, { slow: true }, -5000)
+    expect(asked[1]).toBe(0)
   })
 })
 

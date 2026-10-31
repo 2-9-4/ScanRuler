@@ -9,7 +9,7 @@
 import { describe, expect, it } from 'vitest'
 import { buildMeshGraph } from '../src/core/geometry/buildGraph'
 import { fitCylinderOnSelection } from '../src/core/fit/fitCylinderFromSeed'
-import { planeRegionReport, secondCylinder } from '../src/core/fit/segment'
+import { planeRegionReport, secondCylinder, wallTaper } from '../src/core/fit/segment'
 import type { Vec3 } from '../src/core/types'
 
 const R = 40
@@ -105,5 +105,65 @@ describe('a cylinder that is two', () => {
     const cone = graphOf((out) => band([0, 0, 0], [0, 0, 1], 40, out, 9, Math.tan(Math.PI / 180)))
     const f2 = fitCylinderOnSelection(cone.graph, cone.all, SETTINGS)
     expect(secondCylinder(cone.graph, cone.all, { center: f2.center, axis: f2.axis, radius: f2.radius })).toBeNull()
+  })
+
+  // A casting's ring: 3° down and 3° up from a parting line at z 14, as a
+  // triple clamp's rings stand. A cylinder fit reads it as two cylinders; what
+  // it is has to be said.
+  const draft = Math.tan((3 * Math.PI) / 180)
+  const doubleCone = (way: 1 | -1) =>
+    graphOf((out) => {
+      band([0, 0, 0], [0, 0, 1], 14, out, 11, way * draft, 22 - way * 14 * draft)
+      band([0, 0, 14], [0, 0, 1], 14, out, 13, -way * draft, 22)
+    })
+  const taperOf = ({ graph, all }: ReturnType<typeof graphOf>) => {
+    const fit = fitCylinderOnSelection(graph, all, SETTINGS)
+    return wallTaper(graph.positions, graph.normals, all, fit.center, fit.axis)
+  }
+
+  it('names a double cone, its parting line and each part’s draft', () => {
+    const taper = taperOf(doubleCone(1))!
+    expect(taper.double).toBe(true)
+    expect(taper.parts).toHaveLength(2)
+    for (const part of taper.parts) expect(Math.abs(Math.abs(part.draftDeg) - 3)).toBeLessThan(0.4)
+    expect(Math.abs(taper.parting!.at[2] - 14)).toBeLessThan(1)
+    expect(Math.abs(taper.parting!.radius - 22)).toBeLessThan(0.2)
+    // The boxes keep to their sides of the line, for a fit to take as within.
+    const [a, b] = [...taper.parts].sort((x, y) => x.min[2] - y.min[2])
+    expect(a.max[2]).toBeLessThan(15.5)
+    expect(b.min[2]).toBeGreaterThan(12.5)
+  })
+
+  it('tells a wall waisted at its parting line from one standing proud', () => {
+    const proud = taperOf(doubleCone(1))!
+    const waisted = taperOf(doubleCone(-1))!
+    expect(waisted.double).toBe(true)
+    expect(Math.sign(waisted.parts[0].draftDeg)).toBe(-Math.sign(proud.parts[0].draftDeg))
+  })
+
+  it('reads a single taper on part of a turn, where the fit leans to take it up', () => {
+    // A third of the turn of a 3° cone: a cylinder fits it closely, tilted.
+    const out: number[] = []
+    band([0, 0, 0], [0, 0, 1], 12, out, 17, draft, 22)
+    const kept: number[] = []
+    for (let i = 0; i < out.length; i += 9) if (out[i] > 11 && out[i + 3] > 11 && out[i + 6] > 11) kept.push(...out.slice(i, i + 9))
+    const graph = buildMeshGraph({ kind: 'soup', positions: Float32Array.from(kept) })
+    const all = Uint32Array.from({ length: graph.vertexCount }, (_, i) => i)
+    const fit = fitCylinderOnSelection(graph, all, SETTINGS)
+    const taper = wallTaper(graph.positions, graph.normals, all, fit.center, fit.axis)!
+    expect(taper.parts).toHaveLength(1)
+    expect(taper.double).toBe(false)
+    expect(Math.abs(Math.abs(taper.parts[0].draftDeg) - 3)).toBeLessThan(0.4)
+    expect(Math.abs(taper.axis[2])).toBe(1)
+  })
+
+  it('reads a plain cylinder as standing square, and two tilted ones as no taper', () => {
+    expect(taperOf(graphOf((out) => band([0, 0, 0], [0, 0, 1], 40, out, 7)))).toBeNull()
+    const tilt = (22 * Math.PI) / 180
+    const twoTilted = graphOf((out) => {
+      band([0, 0, 0], [0, 0, 1], 20, out, 3)
+      band([0, 0, 20], [0, Math.sin(tilt), Math.cos(tilt)], 20, out, 5)
+    })
+    expect(taperOf(twoTilted)).toBeNull()
   })
 })

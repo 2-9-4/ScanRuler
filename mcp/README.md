@@ -224,9 +224,10 @@ that return a picture — `view_render`, `section_render`, `flat_render` and
   lets the model call a tool it was not given can call them directly too.
 - The tools that return a picture are listed so the model calls them
   directly and sees the picture. In a batch a picture is not shown: it is
-  written to a file, the call's `path` or a new file in the open scan's
-  folder (the output folder, `--out`, while no scan or project was opened
-  from one), and the call's result names it. A tab that connects with
+  written to a file, the call's `path` or a new file in `scanruler-work` in
+  the open scan's folder (the output folder, `--out`, while no scan or
+  project was opened from one), and the call's result names it and the
+  folder. A tab that connects with
   another picture tool has the client list the tools again.
 
 **LM Studio**: add `--tools` and `compact` to the server's arguments as two
@@ -252,6 +253,27 @@ codex mcp add scanruler -- npx -y scanruler-mcp@latest --tools compact
 or `args = ["-y", "scanruler-mcp@latest", "--tools", "compact"]` in
 `~/.codex/config.toml`.
 
+### Fewer tools
+
+An agent whose task stays in one or two workspaces carries the tools of
+every other in each turn. `--tools` also takes namespaces — the part of a
+tool's name before its first underscore: `scan`, `section`, `view`,
+`element`, `align`, `deviation`, `flat`, `thickness`, `dimension`, `export`,
+`session`, `guide`, `project`, `history`, `report`, `workspace`, and what a
+connected tab adds. Written with a leading `-` each, they are the namespaces
+to leave out: `--tools=-flat,-thickness,-dimension` (with the `=`: a value
+starting with a dash is refused otherwise) lists everything but the
+2D sheet, the wall thickness and the dimension tools. Written plain, they are
+the namespaces to list: `--tools scan,element,view,session,guide` and nothing
+else. The two forms do not mix, and the server's own tools (`scanruler_*`)
+are listed either way, every listed command a tool of its own as in `full`.
+The list is fixed when the server starts and never changes mid-chat, so
+give it to the agent whose work is known — in the agent's config, or
+`SCANRULER_MCP_TOOLS=-flat,-thickness,-dimension`. A tool left out is
+unknown to the client: it is not listed, and a call to it by name answers
+`unknown_command`. A namespace the tab does not have is accepted — a tab
+may add one — and the server says so on its stderr when a tab connects.
+
 ## Options
 
 | Option | |
@@ -263,7 +285,7 @@ or `args = ["-y", "scanruler-mcp@latest", "--tools", "compact"]` in
 | `--app <url>` | The ScanRuler address the pairing link opens. |
 | `--engine <file>` | Run ScanRuler headless in the server, from an engine built with `npm run build:engine` — no tab. Also `SCANRULER_ENGINE`. |
 | `--headless` | The same, with the engine built in the checkout the server is part of. |
-| `--tools <mode>` | `full`, the default: every command the tab offers is a tool. `compact`: the server's own and the tab's tools that return a picture; the rest are read through `scanruler_tools` and run through `scanruler_batch` — see *Small local models*. Also `SCANRULER_MCP_TOOLS`. |
+| `--tools <mode>` | `full`, the default: every command the tab offers is a tool. `compact`: the server's own and the tab's tools that return a picture; the rest are read through `scanruler_tools` and run through `scanruler_batch` — see *Small local models*. Or namespaces, comma-separated — the part of a tool's name before its first underscore: `scan,element,view` lists those alone, `-flat,-thickness,-dimension` all but those, the server's own tools either way — see *Fewer tools*. Also `SCANRULER_MCP_TOOLS`. |
 | `--trace <dir>` | Write a line per tool call — tool, ms, bytes each way, error, whether the tab was hidden — into a new file in `<dir>`, for measuring a run; off unless given. `scripts/trace-summary.mjs` in the ScanRuler repository sums a run up. Also `SCANRULER_MCP_TRACE`. |
 | `--trace-args` | With `--trace`, each call's arguments too; otherwise only their size. |
 | `--answer-within <s>` | Hold a call at most this many seconds, 45 unless given: a change, a batch or a long read still running then answers `{ queued: true, job, after }` and runs on, and `scanruler_wait` waits no longer either. A client, or a bridge between it and this computer, may cut a call at a minute; a cut call says nothing. `0` holds every call to its end. Also `SCANRULER_MCP_ANSWER_WITHIN`. |
@@ -285,7 +307,7 @@ with more commands lists more. Before a tab is there it is the list of the
 last tab that connected, which the server keeps in its config folder
 (`tools.json`), or, the first time, the app's own; a client that lists the
 tools once, when it starts, sees them all that way, and one that listens is
-told when the list changes. Six more are the server's: `scanruler_status`
+told when the list changes. Seven more are the server's: `scanruler_status`
 (is a tab connected, which version, how to pair one, what the tab's
 session holds — its scan, project, unsaved changes and work counted — the
 time on this computer with its offset from UTC (`server.now`), and,
@@ -298,12 +320,14 @@ of `scan_nearest` or `element_fit` calls — each answer in its place, stopped
 at the first refused unless told to go on), `scanruler_write` (a text
 file — `.md`, `.txt`, `.csv` or `.json`, a report say — written in the folder
 the server last opened a scan or a project from, and nowhere else) and
-`scanruler_files` (that folder's files — name, size, kind — newest first).
+`scanruler_files` (that folder's files — name, size, kind — newest first), `scanruler_read` (a text file there, or an answer too long to carry wherever it was written, in parts: `{ text, offset, nextOffset, size }`, in bytes).
 The folders are kept beside `tools.json` (`folders.json`), so a server
 started afresh still writes and lists there, and `scanruler_status` lists
 them. With `--tools compact` only the tab's tools that return a picture are
-listed; the rest are read through a seventh of the server's own,
-`scanruler_tools` — see *Small local models*.
+listed; the rest are read through an eighth of the server's own,
+`scanruler_tools` — see *Small local models*. With `--tools` and a list of
+namespaces, only the tab's tools of those namespaces, or all but those — see
+*Fewer tools*.
 
 - **Places on the scan** are `{ "point": [x, y, z] }` in millimetres — the
   scan vertex nearest it is taken — or `{ "vertex": n }`. `scan_query` reads
@@ -333,8 +357,9 @@ listed; the rest are read through a seventh of the server's own,
   folder is numbered past one already there (`-2`, `-3`), never written over.
 - **Long answers.** An answer past what one carries (40 k characters; a
   guide 90 k — several guides asked for together come while they fit about
-  80 k, the rest named in `next`) is written whole to a JSON file in the
-  open scan's folder, where an agent that may only read there can open it —
+  80 k, the rest named in `next`) is written whole to a JSON file in
+  `scanruler-work` in the open scan's folder — the server's own files, apart
+  from the person's, where an agent that may only read there can open it —
   in the output folder (`--out`) while the scan open now was not opened from
   a folder through this server. The answer says
   `truncated: true`, the `file`, its short fields and the person's notes,

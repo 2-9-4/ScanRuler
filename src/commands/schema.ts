@@ -202,7 +202,7 @@ export function validate(schema: JsonSchema, value: unknown, path = 'input', wit
           if (named) errors.push(named)
           else errors.push(...validate(prop, meant, `${path}.${key}`, names))
         }
-        else if (schema.additionalProperties === false) errors.push(`${path}.${key}: not a known field`)
+        else if (schema.additionalProperties === false) errors.push(`${path}.${key}: not a known field — the fields here: ${Object.keys(schema.properties ?? {}).join(', ') || 'none'}`)
       }
       return errors
     }

@@ -17,12 +17,16 @@
 // vertices may join a later one but never seed one. Regions meet across the
 // rounding of the edge between them, which no plane claims, so their
 // neighbours are found by letting each region spread a few rings into the
-// unclaimed vertices round it and seeing which fronts meet.
+// unclaimed vertices round it and seeing which fronts meet. A round surface
+// comes out as strips that read as facets; each region says whether it is
+// such a strip, each edge whether it is smooth, and the strips of one
+// surface are joined into runs (see growRuns).
 
 import type { Cylinder, MeshGraph, Plane, Vec3 } from '../types'
-import { cylinderResidual, splitTwoCylinders } from './cylinder'
+import { localNoise } from '../geometry/scanQa'
+import { cylinderResidual, fitCylinderOnAxis, refineCylinderGeometric, splitTwoCylinders } from './cylinder'
 import { fitHeight } from './heightSurface'
-import { orthoBasis, symmetricEigen3 } from './linalg'
+import { normalizeOrZ, orthoBasis, rmsOver, symmetricEigen3 } from './linalg'
 import { planeResidual, splitTwoPlanes } from './plane'
 
 const DEG = Math.PI / 180
@@ -86,6 +90,8 @@ export interface PlaneRegionReport {
   /** A cylinder's region seen as two cylinders: the one the seed is not
    *  on. Only with the cylinder given. */
   secondCylinder?: SecondCylinder
+  /** A cylinder's region whose wall tapers, once or twice. */
+  taper?: WallTaper
   /** The share of the rectangle the region spans in its plane that it
    *  fills: a face fills most of it, the crown of a bead or a round running
    *  across a part a sliver. Only with a normal to measure from. */
@@ -131,6 +137,178 @@ export interface SecondCylinder {
   /** RMS off the nearer of two cylinders, and off the one, mm. */
   rmsTwo: number
   rmsOne: number
+}
+
+export interface ConePart {
+  /** Where its points lie along the axis, from the fit's centre, mm. */
+  band: [number, number]
+  /** The wall's taper off the axis, degrees: of a single taper, positive
+   *  where it widens along the axis; of two, where it widens toward the
+   *  other part. */
+  draftDeg: number
+  min: Vec3
+  max: Vec3
+}
+
+/** A cylinder's region whose wall does not stand square to the part's axis. */
+export interface WallTaper {
+  /** The axis it was read along: the nearest of the world's where the fit
+   *  lies close to one, as a fit on part of a turn leans to take up the
+   *  taper, else the fit's own. */
+  axis: Vec3
+  /** The one taper, or the two in order along the axis. */
+  parts: [ConePart] | [ConePart, ConePart]
+  /** Where two parts meet: on the axis, and the mean radius there. */
+  parting?: { t: number; at: Vec3; radius: number }
+  /** Two parts tapering the same way from the parting: a double cone, as a
+   *  casting drafted both ways from its parting line has. */
+  double: boolean
+}
+
+/** The least taper that counts as one, degrees: a machined bore's mean lean
+ *  stays well under it, a cast wall's well over. */
+const TAPER_DEG = 0.5
+/** How much the two parts' leans have to differ to be two, degrees. */
+const TAPER_STEP_DEG = 1
+/** How far the fit's axis may lie off a world axis, degrees, for that to be
+ *  the axis meant. */
+const TAPER_AXIS_DEG = 10
+/** The bins the lean is read in along the axis, and the least share of them a
+ *  part takes: a round at an end is not a second cone. */
+const TAPER_BINS = 64
+const TAPER_LEAST_SHARE = 0.25
+/** The parts of a turn a lean is checked in: a cone leans the same way all
+ *  round, two cylinders at an angle one way on one side and the other on the
+ *  other. A part of a turn holding under the share is not read. */
+const TAPER_SECTORS = 6
+const TAPER_SECTOR_SHARE = 0.05
+
+/** A cylinder's region read as how far its wall's normals lean along the
+ *  part's axis, band by band: one lean is a cone, two a wall with a break in
+ *  its draft — a double cone where it widens or narrows both ways from the
+ *  break. By the normals, as a cylinder fitted on part of a turn takes up a
+ *  taper by tilting: its radius then shows no trend, its normals still do.
+ *  Read between the 10th and 90th percentile along the axis, so the rounds at
+ *  the ends do not count. Null where the wall stands square, leans differently
+ *  round the turn, or the region is too small to say. */
+export function wallTaper(p: Float32Array, nrm: Float32Array, region: Uint32Array, center: Vec3, axis: Vec3): WallTaper | null {
+  const al = Math.hypot(axis[0], axis[1], axis[2])
+  if (!(al > 0) || region.length < 4 * TAPER_BINS) return null
+  const fitted: Vec3 = [axis[0] / al, axis[1] / al, axis[2] / al]
+  const main = [0, 1, 2].reduce((m, k) => (Math.abs(fitted[k]) > Math.abs(fitted[m]) ? k : m), 0)
+  const a: Vec3 = [0, 0, 0]
+  if (Math.abs(fitted[main]) >= Math.cos(TAPER_AXIS_DEG * DEG)) a[main] = fitted[main] > 0 ? 1 : -1
+  else a.splice(0, 3, ...fitted)
+  const ts = new Float64Array(region.length)
+  const leans = new Float64Array(region.length)
+  const rs = new Float64Array(region.length)
+  // Whether the normals face away from the axis (a boss) or toward it (a bore).
+  let facing = 0
+  for (let i = 0; i < region.length; i++) {
+    const j = region[i] * 3
+    const x = p[j] - center[0], y = p[j + 1] - center[1], z = p[j + 2] - center[2]
+    const t = x * a[0] + y * a[1] + z * a[2]
+    const ux = x - t * a[0], uy = y - t * a[1], uz = z - t * a[2]
+    ts[i] = t
+    rs[i] = Math.hypot(ux, uy, uz)
+    leans[i] = Math.asin(Math.max(-1, Math.min(1, nrm[j] * a[0] + nrm[j + 1] * a[1] + nrm[j + 2] * a[2]))) / DEG
+    facing += nrm[j] * ux + nrm[j + 1] * uy + nrm[j + 2] * uz
+  }
+  const sorted = Float64Array.from(ts).sort()
+  const t0 = sorted[Math.floor(0.1 * sorted.length)]
+  const t1 = sorted[Math.floor(0.9 * sorted.length)]
+  if (!(t1 > t0)) return null
+  const [e1, e2] = orthoBasis(a)
+  const binT = (t1 - t0) / TAPER_BINS
+  const size = TAPER_BINS + 1
+  const n = new Float64Array(size), sum = new Float64Array(size), sq = new Float64Array(size)
+  for (let i = 0; i < ts.length; i++) {
+    if (ts[i] < t0 || ts[i] > t1) continue
+    const k = Math.min(TAPER_BINS - 1, Math.floor((ts[i] - t0) / binT)) + 1
+    n[k]++
+    sum[k] += leans[i]
+    sq[k] += leans[i] * leans[i]
+  }
+  for (const c of [n, sum, sq]) for (let k = 1; k < size; k++) c[k] += c[k - 1]
+  if (n[TAPER_BINS] === 0) return null
+  const mean = (lo: number, hi: number) => (n[hi] > n[lo] ? (sum[hi] - sum[lo]) / (n[hi] - n[lo]) : 0)
+  const left = (lo: number, hi: number) => {
+    const c = n[hi] - n[lo]
+    return c > 0 ? sq[hi] - sq[lo] - (sum[hi] - sum[lo]) ** 2 / c : 0
+  }
+  const least = Math.ceil(TAPER_LEAST_SHARE * TAPER_BINS)
+  let at = -1, atLeft = Infinity
+  for (let k = least; k <= TAPER_BINS - least; k++) {
+    const ee = left(0, k) + left(k, TAPER_BINS)
+    if (ee < atLeft) {
+      atLeft = ee
+      at = k
+    }
+  }
+  // A lean along +a on a wall facing away from the axis narrows it along +a;
+  // on one facing the axis it widens it.
+  const widens = (lean: number) => (facing >= 0 ? -lean : lean)
+  /** Whether the points between two heights lean as `lean` all round. */
+  const allRound = (lo: number, hi: number, lean: number) => {
+    const count = new Float64Array(TAPER_SECTORS), total = new Float64Array(TAPER_SECTORS)
+    let all = 0
+    for (let i = 0; i < ts.length; i++) {
+      if (ts[i] < lo || ts[i] > hi) continue
+      const j = region[i] * 3
+      const x = p[j] - center[0], y = p[j + 1] - center[1], z = p[j + 2] - center[2]
+      const q = Math.atan2(x * e2[0] + y * e2[1] + z * e2[2], x * e1[0] + y * e1[1] + z * e1[2])
+      const k = Math.min(TAPER_SECTORS - 1, Math.floor(((q + Math.PI) / (2 * Math.PI)) * TAPER_SECTORS))
+      count[k]++
+      total[k] += leans[i]
+      all++
+    }
+    for (let k = 0; k < TAPER_SECTORS; k++) if (count[k] >= TAPER_SECTOR_SHARE * all && (total[k] / count[k]) * lean <= 0) return false
+    return true
+  }
+  const boxOf = (lo: number, hi: number) => {
+    const min: Vec3 = [Infinity, Infinity, Infinity]
+    const max: Vec3 = [-Infinity, -Infinity, -Infinity]
+    for (let i = 0; i < ts.length; i++) {
+      if (ts[i] < lo || ts[i] > hi) continue
+      const j = region[i] * 3
+      for (let k = 0; k < 3; k++) {
+        const v = p[j + k]
+        if (v < min[k]) min[k] = v
+        if (v > max[k]) max[k] = v
+      }
+    }
+    return { min, max }
+  }
+  if (at >= 0) {
+    const low = widens(mean(0, at)), high = widens(mean(at, TAPER_BINS))
+    const t = t0 + at * binT
+    const round = (lo: number, hi: number, lean: number) => Math.abs(lean) < TAPER_DEG || allRound(lo, hi, lean)
+    if (Math.abs(low - high) >= TAPER_STEP_DEG && Math.max(Math.abs(low), Math.abs(high)) >= TAPER_DEG) {
+      if (!round(t0, t, mean(0, at)) || !round(t, t1, mean(at, TAPER_BINS))) return null
+      // Widening toward the other part: the lower one along the axis, the
+      // upper one against it.
+      const double = Math.min(Math.abs(low), Math.abs(high)) >= TAPER_DEG && low > 0 === -high > 0
+      let rr = 0, rc = 0
+      for (let i = 0; i < ts.length; i++) {
+        if (Math.abs(ts[i] - t) > binT) continue
+        rr += rs[i]
+        rc++
+      }
+      return {
+        axis: a,
+        parts: [
+          { band: [t0, t], draftDeg: low, ...boxOf(t0, t) },
+          { band: [t, t1], draftDeg: -high, ...boxOf(t, t1) },
+        ],
+        parting: { t, at: [center[0] + t * a[0], center[1] + t * a[1], center[2] + t * a[2]], radius: rc > 0 ? rr / rc : 0 },
+        double,
+      }
+    }
+  }
+  const lean = mean(0, TAPER_BINS)
+  const all = widens(lean)
+  if (Math.abs(all) < TAPER_DEG || !allRound(t0, t1, lean)) return null
+  return { axis: a, parts: [{ band: [t0, t1], draftDeg: all, ...boxOf(t0, t1) }], double: false }
 }
 
 /** A region a cylinder was fitted on, as two cylinders — see
@@ -208,8 +386,8 @@ const CURVE_SAMPLE = 4000
  *  curved part across the points — the spread of d·u² + e·u·v + f·v² over
  *  them, which for a strip of a round of radius R and width w is w²/8R —
  *  and the RMS it leaves. Null for too few points. */
-function curveOf(p: Float32Array, region: Uint32Array, normal: Vec3, basisU: Vec3, basisV: Vec3): { sagitta: number; sigma: number } | null {
-  const step = Math.max(1, Math.ceil(region.length / CURVE_SAMPLE))
+function curveOf(p: Float32Array, region: Uint32Array, normal: Vec3, basisU: Vec3, basisV: Vec3, sample = CURVE_SAMPLE): { sagitta: number; sigma: number } | null {
+  const step = Math.max(1, Math.ceil(region.length / sample))
   const n = Math.floor((region.length - 1) / step) + 1
   if (n < 12) return null
   const packed = new Float64Array(n * 3)
@@ -289,6 +467,8 @@ export function planeRegionReport(
   if (cylinder && region.length > 0) {
     const second = secondCylinder(g, region, cylinder)
     if (second) out.secondCylinder = second
+    const taper = wallTaper(p, nrm, region, cylinder.center, cylinder.axis)
+    if (taper) out.taper = taper
     const closed = closedAlong(g, region, cylinder)
     if (closed) out.closed = closed
   }
@@ -502,8 +682,40 @@ export interface SegmentedPlane {
   max: Vec3
   count: number
   /** The regions it meets, by id (1 is the largest), with the angle between
-   *  the two planes' outward normals. */
-  neighbours: { id: number; deg: number }[]
+   *  the two planes' outward normals, and whether the two are one smooth
+   *  surface across the edge — see SMOOTH_OWN. */
+  neighbours: { id: number; deg: number; smooth: boolean }[]
+  /** A quadric over the region (see curveOf): its sagitta and the RMS it
+   *  leaves, mm. Null for too few points. */
+  curve: { sagitta: number; sigma: number } | null
+  /** A strip of a curved surface, not a face: see isCurved. */
+  curved: boolean
+  /** The curved run it is part of, by index in Segmentation.runs. */
+  run?: number
+}
+
+/** Curved regions joined across smooth edges into the one surface they are
+ *  strips of — see growRuns. */
+export interface CurvedRun {
+  /** Its regions by id, the largest first. */
+  regions: number[]
+  area: number
+  /** The angles of the smooth edges joining its regions, degrees. */
+  joins: [number, number]
+  /** Its regions' planes' σ, the least and the most, and the RMS their
+   *  quadrics leave, pooled, mm. */
+  planeSigma: [number, number]
+  sigma: number
+  /** The direction its vertex normals lie square to, and how far they lean
+   *  off square to it (RMS, degrees): only when they lie within ALONG_DEG —
+   *  a profile extruded along it. */
+  along?: { direction: Vec3; leanDeg: number }
+  /** The best cylinder on the axis its normals give, and whether it is the
+   *  run's surface (its σ within CYLINDER_OWN × sigma). */
+  cylinder?: { point: Vec3; axis: Vec3; radius: number; sigma: number; holds: boolean }
+  /** What one surface the run holds as: a profile extruded along `along`,
+   *  one cylinder, or neither. */
+  kind: 'extruded' | 'cylinder' | 'freeform'
 }
 
 export interface Segmentation {
@@ -516,6 +728,11 @@ export interface Segmentation {
   /** Vertices looked at (inside the box), and how many the regions hold. */
   considered: number
   claimed: number
+  /** The scan's noise: the median scatter off a plane over each sampled
+   *  vertex's two rings (see localNoise), mm. */
+  noise: number
+  /** The curved runs, the largest first. */
+  runs: CurvedRun[]
 }
 
 /** The points a region starts from: the seed and its nearest neighbours that
@@ -790,7 +1007,11 @@ export function segmentPlanes(g: MeshGraph, opts: SegmentOptions): Segmentation 
     }
   }
 
-  const regions: SegmentedPlane[] = kept.map((r) => {
+  const offsets = new Uint32Array(kept.length + 1)
+  kept.forEach((r, k) => (offsets[k + 1] = offsets[k] + r.members.length))
+  const vertices = new Uint32Array(offsets[kept.length])
+  kept.forEach((r, k) => vertices.set(r.members, offsets[k]))
+  const regions: SegmentedPlane[] = kept.map((r, i) => {
     const min: Vec3 = [Infinity, Infinity, Infinity]
     const max: Vec3 = [-Infinity, -Infinity, -Infinity]
     for (const v of r.members) {
@@ -800,22 +1021,350 @@ export function segmentPlanes(g: MeshGraph, opts: SegmentOptions): Segmentation 
         if (x > max[k]) max[k] = x
       }
     }
-    return { normal: r.normal, point: r.point, sigma: r.sigma, area: r.area, min, max, count: r.members.length, neighbours: [] }
+    const [e1, e2] = orthoBasis(r.normal)
+    const curve = curveOf(P, vertices.subarray(offsets[i], offsets[i + 1]), r.normal, e1, e2, CURVE_SAMPLE_SEGMENT)
+    const region: SegmentedPlane = { normal: r.normal, point: r.point, sigma: r.sigma, area: r.area, min, max, count: r.members.length, neighbours: [], curve, curved: false }
+    region.curved = isCurved(region)
+    return region
   })
+
+  const noise = localNoise(g, NOISE_SAMPLE).median
+  const samples = regions.map((_, k) => strided(vertices.subarray(offsets[k], offsets[k + 1]), REGION_SAMPLE))
+
   for (const [key, edges] of meets) {
     if (edges < MEET_EDGES) continue
     const a = Math.floor(key / 1e6)
     const b = key - a * 1e6
-    const na = regions[a - 1].normal, nb = regions[b - 1].normal
+    const ra = regions[a - 1], rb = regions[b - 1]
+    const na = ra.normal, nb = rb.normal
     const deg = Math.acos(Math.max(-1, Math.min(1, na[0] * nb[0] + na[1] * nb[1] + na[2] * nb[2]))) / DEG
-    regions[a - 1].neighbours.push({ id: b, deg })
-    regions[b - 1].neighbours.push({ id: a, deg })
+    const smooth = deg <= SMOOTH_DEG && smoothJoin(P, [ra, rb], [samples[a - 1], samples[b - 1]], noise)
+    ra.neighbours.push({ id: b, deg, smooth })
+    rb.neighbours.push({ id: a, deg, smooth })
   }
   for (const r of regions) r.neighbours.sort((x, y) => x.id - y.id)
 
-  const offsets = new Uint32Array(kept.length + 1)
-  kept.forEach((r, k) => (offsets[k + 1] = offsets[k] + r.members.length))
-  const vertices = new Uint32Array(offsets[kept.length])
-  kept.forEach((r, k) => vertices.set(r.members, offsets[k]))
-  return { regions, vertices, offsets, considered, claimed: vertices.length }
+  const runs = growRuns(g, regions, vertices, offsets, samples, noise)
+  return { regions, vertices, offsets, considered, claimed: vertices.length, noise, runs }
+}
+
+// ---- Curved strips, and the surface they are strips of -----------------------
+//
+// A plane grows round a curve until its points lie maxRms off it: on a round
+// surface segmentPlanes cuts strips whose σ sits just under maxRms and whose
+// neighbours meet at the few degrees one strip's band spans — the angle is
+// the band's, not the part's. A quadric over such a strip leaves a fraction
+// of the plane's σ; over two strips of one surface it leaves about what it
+// leaves over each, while across a crease it leaves far more. Runs of such
+// strips are grown, region by region, while their union stays one surface
+// that says how to model it: a profile extruded along the one direction its
+// normals lie square to, one cylinder, or a quadric (a patch of freeform).
+
+/** Points a region's quadric is fitted on when segmenting, at most. */
+const CURVE_SAMPLE_SEGMENT = 2000
+/** Points of each region kept for the tests across its edges and runs. */
+const REGION_SAMPLE = 1500
+/** Points a run's union is tested on, at most. */
+const RUN_SAMPLE = 4000
+/** Vertices the scan's noise is read at. */
+const NOISE_SAMPLE = 4000
+/** A region is curved when its plane leaves this many times what its quadric
+ *  leaves, and the quadric's sagitta is this many times that. */
+const CURVED_PLANE_OVER = 2
+const CURVED_SAGITTA_OVER = 4
+/** Two neighbours are one smooth surface when one quadric over both leaves
+ *  no more than this many times the larger of their own quadrics' σ, plus
+ *  SMOOTH_NOISE times the scan's noise; only between planes within
+ *  SMOOTH_DEG of each other. */
+const SMOOTH_OWN = 1.5
+const SMOOTH_NOISE = 2
+export const SMOOTH_DEG = 35
+/** A run's normals lie square to one direction when they lean off square to
+ *  it by no more than this, RMS, and turn round it by at least this much. */
+const ALONG_DEG = 3
+/** A run is one cylinder when the best one leaves no more than this many
+ *  times its regions' quadrics' σ, pooled. */
+const CYLINDER_OWN = 3
+/** Gauss–Newton steps the cylinder of a run is refined by. */
+const CYLINDER_STEPS = 12
+
+/** Whether a region is a strip of a curved surface: its plane leaves at least
+ *  CURVED_PLANE_OVER × what its quadric leaves, and the quadric rises across
+ *  it by CURVED_SAGITTA_OVER × that — not noise, nor relief no quadric
+ *  follows. */
+export function isCurved(r: Pick<SegmentedPlane, 'sigma' | 'curve'>): boolean {
+  return !!r.curve && r.sigma >= CURVED_PLANE_OVER * r.curve.sigma && r.curve.sagitta >= CURVED_SAGITTA_OVER * r.curve.sigma
+}
+
+/** Every k-th of the vertices, n of them at most. */
+function strided(vs: Uint32Array, n: number): Uint32Array {
+  if (vs.length <= n) return vs
+  const step = vs.length / n
+  const out = new Uint32Array(n)
+  for (let i = 0; i < n; i++) out[i] = vs[Math.floor(i * step)]
+  return out
+}
+
+/** The RMS a quadric height over the points leaves, in the frame of the
+ *  normal given — over them all, and over those from `from` on; Infinity
+ *  when it cannot be fitted. */
+function quadricSigma(p: Float32Array, vs: ArrayLike<number>, normal: Vec3, from = 0): { all: number; tail: number } {
+  const n = vs.length
+  if (n < 12) return { all: Infinity, tail: Infinity }
+  const packed = new Float64Array(n * 3)
+  const origin: Vec3 = [0, 0, 0]
+  for (let i = 0; i < n; i++) {
+    const j = vs[i] * 3
+    for (let k = 0; k < 3; k++) {
+      packed[i * 3 + k] = p[j + k]
+      origin[k] += p[j + k] / n
+    }
+  }
+  const [basisU, basisV] = orthoBasis(normal)
+  const fit = fitHeight(packed, { origin, basisU, basisV, normal }, 'quadric')
+  if (!fit) return { all: Infinity, tail: Infinity }
+  if (from <= 0) return { all: fit.rms, tail: fit.rms }
+  const { a, b, c, d, e, f } = fit.coefficients
+  let ss = 0
+  for (let i = from; i < n; i++) {
+    const x = packed[i * 3] - origin[0], y = packed[i * 3 + 1] - origin[1], z = packed[i * 3 + 2] - origin[2]
+    const u = x * basisU[0] + y * basisU[1] + z * basisU[2]
+    const v = x * basisV[0] + y * basisV[1] + z * basisV[2]
+    const h = x * normal[0] + y * normal[1] + z * normal[2]
+    ss += (h - (a + b * u + c * v + d * u * u + e * u * v + f * v * v)) ** 2
+  }
+  return { all: fit.rms, tail: n > from ? Math.sqrt(ss / (n - from)) : 0 }
+}
+
+/** The normal halfway between the regions', by area. */
+function meanNormal(rs: readonly Pick<SegmentedPlane, 'normal' | 'area'>[]): Vec3 {
+  const m: Vec3 = [0, 0, 0]
+  for (const r of rs) for (let k = 0; k < 3; k++) m[k] += r.normal[k] * r.area
+  return normalizeOrZ(m)
+}
+
+/** What a region's own quadric leaves — its plane's σ when it has none. */
+const ownSigma = (r: Pick<SegmentedPlane, 'sigma' | 'curve'>) => r.curve?.sigma ?? r.sigma
+
+/** The most one quadric may leave over regions and they still be one smooth
+ *  surface. */
+const smoothLimit = (rs: readonly Pick<SegmentedPlane, 'sigma' | 'curve'>[], noise: number) =>
+  SMOOTH_OWN * Math.max(...rs.map(ownSigma)) + SMOOTH_NOISE * noise
+
+/** Whether two neighbours are one smooth surface across their edge: one
+ *  quadric over both leaves about what each one's leaves. */
+function smoothJoin(p: Float32Array, rs: [SegmentedPlane, SegmentedPlane], samples: [Uint32Array, Uint32Array], noise: number): boolean {
+  const both = new Uint32Array(samples[0].length + samples[1].length)
+  both.set(samples[0])
+  both.set(samples[1], samples[0].length)
+  return quadricSigma(p, both, meanNormal(rs)).all <= smoothLimit(rs, noise)
+}
+
+/** What a union of regions holds as one surface, by the three tests a run
+ *  grows under. */
+interface UnionTest {
+  along: { direction: Vec3; leanDeg: number } | null
+  cylinder: { point: Vec3; axis: Vec3; radius: number; sigma: number; holds: boolean } | null
+  quadric: boolean
+}
+
+type Test = 'along' | 'cylinder' | 'quadric'
+
+/**
+ * Curved regions joined across smooth edges into runs, the largest region
+ * first. A run takes a neighbour, the largest first, while the union stays
+ * one surface by a test that has held all along — its normals square to one
+ * direction within ALONG_DEG (the least eigenvector of Σ n nᵀ), one cylinder
+ * on that axis within CYLINDER_OWN × the pooled quadric σ, or one quadric
+ * within the smooth limit — so a chain of smooth joins cannot drift from one
+ * surface onto another. A region that is not curved — a strip too narrow to
+ * show its curve — joins only as a bridge: smooth to a curved region the run
+ * does not hold yet, or to two it does, and no larger than the largest of
+ * them, so a face between two rounds stays a face.
+ */
+function growRuns(g: MeshGraph, regions: SegmentedPlane[], vertices: Uint32Array, offsets: Uint32Array, samples: Uint32Array[], noise: number): CurvedRun[] {
+  const { positions: P, normals: N } = g
+  // Each region's Σ n nᵀ over all its vertices, by the six entries.
+  const moments = regions.map((_, k) => {
+    const m = new Float64Array(6)
+    for (let i = offsets[k]; i < offsets[k + 1]; i++) {
+      const j = vertices[i] * 3
+      const x = N[j], y = N[j + 1], z = N[j + 2]
+      m[0] += x * x
+      m[1] += x * y
+      m[2] += x * z
+      m[3] += y * y
+      m[4] += y * z
+      m[5] += z * z
+    }
+    return m
+  })
+  const smoothOf = regions.map((r) => r.neighbours.filter((n) => n.smooth).map((n) => n.id - 1))
+  const inRun = new Int32Array(regions.length).fill(-1)
+  const sinAlong = Math.sin(ALONG_DEG * DEG)
+
+  // The union of the members and the regions to add, by each test that
+  // still holds — over the whole, and over what is added alone, so a small
+  // region well off the surface cannot hide in a large run's RMS.
+  const test = (members: number[], add: number[], live: ReadonlySet<Test>): UnionTest => {
+    const every = [...members, ...add]
+    const rs = every.map((k) => regions[k])
+    let along: UnionTest['along'] = null
+    let axis: Vec3 | null = null
+    if (live.has('along') || live.has('cylinder')) {
+      const m = new Float64Array(6)
+      let count = 0
+      for (const k of every) {
+        for (let e = 0; e < 6; e++) m[e] += moments[k][e]
+        count += regions[k].count
+      }
+      const { values, vectors } = symmetricEigen3([m[0], m[1], m[2], m[1], m[3], m[4], m[2], m[4], m[5]])
+      const lean = Math.sqrt(Math.max(0, values[0]) / count)
+      const turn = Math.sqrt(Math.max(0, values[1]) / count)
+      if (turn >= sinAlong) {
+        axis = vectors[0]
+        // How far the added regions' normals lean off square to it.
+        const [x, y, z] = axis
+        let ss = 0, n = 0
+        for (const k of add) {
+          const q = moments[k]
+          ss += x * x * q[0] + 2 * x * y * q[1] + 2 * x * z * q[2] + y * y * q[3] + 2 * y * z * q[4] + z * z * q[5]
+          n += regions[k].count
+        }
+        if (lean <= sinAlong && (!n || Math.sqrt(Math.max(0, ss) / n) <= sinAlong)) along = { direction: axis, leanDeg: Math.asin(lean) / DEG }
+      }
+    }
+    // The union's points, each region's share by its vertices, the added
+    // regions' last.
+    const total = rs.reduce((s, r) => s + r.count, 0)
+    const parts = every.map((k) => strided(samples[k], Math.max(12, Math.round((RUN_SAMPLE * regions[k].count) / total))))
+    const union = new Uint32Array(parts.reduce((s, x) => s + x.length, 0))
+    let at = 0
+    let from = 0
+    parts.forEach((x, i) => {
+      if (i === members.length) from = at
+      union.set(x, at)
+      at += x.length
+    })
+    if (!add.length) from = union.length
+    const tail = union.subarray(from)
+    let cylinder: UnionTest['cylinder'] = null
+    if (live.has('cylinder') && axis) {
+      const start = fitCylinderOnAxis(P, union, axis)
+      if (start) {
+        const c = refineCylinderGeometric(P, union, start, CYLINDER_STEPS)
+        const off = (x: number, y: number, z: number) => cylinderResidual(c, x, y, z)
+        const sigma = rmsOver(P, union, off)
+        const limit = CYLINDER_OWN * Math.sqrt(rs.reduce((s, r) => s + r.count * ownSigma(r) ** 2, 0) / total)
+        if (Number.isFinite(sigma) && c.r > 0 && c.r < CYLINDER_MAX_OF_DIAG * g.bboxDiag)
+          cylinder = { point: [c.px, c.py, c.pz], axis: [c.ax, c.ay, c.az], radius: c.r, sigma, holds: sigma <= limit && (!tail.length || rmsOver(P, tail, off) <= limit) }
+      }
+    }
+    let quadric = false
+    if (live.has('quadric')) {
+      const q = quadricSigma(P, union, meanNormal(rs), from)
+      const limit = smoothLimit(rs, noise)
+      quadric = q.all <= limit && q.tail <= limit
+    }
+    return { along, cylinder, quadric }
+  }
+  const holding = (t: UnionTest): Set<Test> => {
+    const out = new Set<Test>()
+    if (t.along) out.add('along')
+    if (t.cylinder?.holds) out.add('cylinder')
+    if (t.quadric) out.add('quadric')
+    return out
+  }
+
+  const order = regions.map((_, k) => k).filter((k) => regions[k].curved).sort((a, b) => regions[b].area - regions[a].area)
+  const grown: number[][] = []
+  for (const seed of order) {
+    if (inRun[seed] >= 0) continue
+    const id = grown.length
+    const members = [seed]
+    const mine = new Set([seed])
+    let live = new Set<Test>(['along', 'cylinder', 'quadric'])
+    const tried = new Set<number>()
+    const free = (k: number) => inRun[k] < 0 && !mine.has(k)
+    for (;;) {
+      // The neighbours across smooth edges not tried yet, the largest first.
+      const next = new Set<number>()
+      for (const k of members) for (const w of smoothOf[k]) if (free(w) && !tried.has(w)) next.add(w)
+      if (!next.size) break
+      const c = [...next].sort((a, b) => regions[b].area - regions[a].area)[0]
+      tried.add(c)
+      // What joins with it: itself, when curved; a bridge, with the curved
+      // region beyond it.
+      const tries: number[][] = []
+      if (regions[c].curved) tries.push([c])
+      else {
+        const inside = smoothOf[c].filter((w) => mine.has(w))
+        if (inside.length >= 2 && regions[c].area <= Math.max(...inside.map((w) => regions[w].area))) tries.push([c])
+        const largest = Math.max(...inside.map((w) => regions[w].area))
+        for (const d of smoothOf[c].filter((w) => free(w) && regions[w].curved).sort((a, b) => regions[b].area - regions[a].area))
+          if (regions[c].area <= Math.max(largest, regions[d].area)) tries.push([c, d])
+      }
+      for (const add of tries.slice(0, BRIDGE_TRIES)) {
+        const t = test(members, add, live)
+        const holds = holding(t)
+        const kept = new Set([...live].filter((x) => holds.has(x)))
+        if (!kept.size) continue
+        for (const k of add) {
+          members.push(k)
+          mine.add(k)
+          tried.add(k)
+        }
+        live = kept
+        break
+      }
+    }
+    if (members.length < 2) continue
+    for (const k of members) inRun[k] = id
+    grown.push(members)
+  }
+
+  const all = new Set<Test>(['along', 'cylinder', 'quadric'])
+  const runs = grown.map((members) => {
+    const rs = members.map((k) => regions[k])
+    const total = rs.reduce((s, r) => s + r.count, 0)
+    let lo = Infinity, hi = -Infinity
+    for (const k of members)
+      for (const n of regions[k].neighbours)
+        if (n.smooth && inRun[n.id - 1] === inRun[k]) {
+          lo = Math.min(lo, n.deg)
+          hi = Math.max(hi, n.deg)
+        }
+    // What the whole run holds as, by every test — the cylinder too when it
+    // fails, so an extruded run says how far one arc is from its profile.
+    const { along, cylinder } = test(members, [], all)
+    const run: CurvedRun = {
+      regions: [...members].sort((a, b) => a - b).map((k) => k + 1),
+      area: rs.reduce((s, r) => s + r.area, 0),
+      joins: [lo, hi],
+      planeSigma: [Math.min(...rs.map((r) => r.sigma)), Math.max(...rs.map((r) => r.sigma))],
+      sigma: Math.sqrt(rs.reduce((s, r) => s + r.count * ownSigma(r) ** 2, 0) / total),
+      ...(along ? { along: { direction: upright(along.direction), leanDeg: along.leanDeg } } : {}),
+      ...(cylinder ? { cylinder: { ...cylinder, axis: upright(cylinder.axis) } } : {}),
+      kind: cylinder?.holds ? 'cylinder' : along ? 'extruded' : 'freeform',
+    }
+    return run
+  })
+  const byArea = runs.map((_, i) => i).sort((a, b) => runs[b].area - runs[a].area)
+  const sorted = byArea.map((i) => runs[i])
+  byArea.forEach((i, rank) => {
+    for (const id of runs[i].regions) regions[id - 1].run = rank
+  })
+  return sorted
+}
+
+/** A cylinder whose radius passes this many times the scan's diagonal is a
+ *  plane, as far as a run goes. */
+const CYLINDER_MAX_OF_DIAG = 5
+/** How many ways a region that is not curved is tried as a bridge. */
+const BRIDGE_TRIES = 3
+
+/** A direction turned so its largest component is positive. */
+function upright(d: Vec3): Vec3 {
+  const k = [0, 1, 2].reduce((a, b) => (Math.abs(d[b]) > Math.abs(d[a]) ? b : a), 0)
+  return d[k] < 0 ? [-d[0], -d[1], -d[2]] : [d[0], d[1], d[2]]
 }

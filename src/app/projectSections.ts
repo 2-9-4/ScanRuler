@@ -56,6 +56,9 @@ export interface ProjectSection<J = unknown> {
   /** Whether the session holds work of the section's worth a warning before
    *  it is replaced. */
   holdsWork?(): boolean
+  /** What this section wants said in the answer to a save — work left open,
+   *  say — in a sentence each. */
+  saveSays?(): string[]
   /** That work counted by what it is — { features: 12 } — for the session's
    *  readout and a refusal to replace it to name; a count of none is left
    *  out. */

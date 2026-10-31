@@ -17,6 +17,8 @@ import { targetFitOf } from '../app/useElementField'
 import { usePulse } from '../app/useHints'
 import { CopyButton } from './CopyButton'
 import { formatSigned } from './format'
+import { useLength } from '../app/useUnits'
+import { lengthInputText } from '../core/units'
 import { InfoDot } from './InfoDot'
 import { MarkTools } from './MarkTools'
 import { ModelSlot } from './ModelSlot'
@@ -102,6 +104,10 @@ export function DeviationPanel({
   // Only the slice this panel actually reads: the store is also written on
   // every map repaint and probe, and re-rendering the whole panel for fields
   // it never shows would be paid on every one of them.
+  // Every length here is held in millimetres and shown in the units shown.
+  const len = useLength()
+  const inches = len.units === 'in'
+  const setting = (mm: number): string => `${lengthInputText(mm, len.units)} ${len.word()}`
   const d = useDeviation(
     useShallow((s) => ({
       align: s.align,
@@ -184,7 +190,7 @@ export function DeviationPanel({
           Measure against
           <InfoDot title="What the deviation is measured from">
             <p>
-              Both choices paint the same map onto the scan — signed millimetres, warm where there
+              Both choices paint the same map onto the scan — a signed distance, warm where there
               is too much material and cool where there is too little. They differ in what the zero
               of that scale is.
             </p>
@@ -256,7 +262,7 @@ export function DeviationPanel({
             name={d.nominalName}
             detail={
               d.nominalStep
-                ? `${d.nominalTriangles.toLocaleString('en-US')} triangles · STEP at ${d.nominalStep.surfaceDeviation} mm`
+                ? `${d.nominalTriangles.toLocaleString('en-US')} triangles · STEP at ${setting(d.nominalStep.surfaceDeviation)}`
                 : `${d.nominalTriangles.toLocaleString('en-US')} triangles`
             }
             dotColor="#7f8ba0"
@@ -449,7 +455,7 @@ export function DeviationPanel({
                 value={d.localMaxDistance}
                 step={0.1}
                 min={0.0001}
-                unit="mm"
+                kind="length"
                 onCommit={d.setLocalMaxDistance}
                 hint={
                   <>
@@ -458,9 +464,10 @@ export function DeviationPanel({
                       runs.
                     </p>
                     <p>
-                      Keep it tight: the global fit already has the part within a few tenths, so a
-                      millimetre is generous. Raising it lets the marked surface reach a
-                      neighbouring feature and settle onto that instead.
+                      Keep it tight: the global fit already has the part within{' '}
+                      {inches ? 'a few thousandths, so 0.04 in' : 'a few tenths, so a millimetre'} is
+                      generous. Raising it lets the marked surface reach a neighbouring feature and
+                      settle onto that instead.
                     </p>
                   </>
                 }
@@ -542,7 +549,8 @@ export function DeviationPanel({
                   scan does not, painted cool. Both ends of the scale say so beside the map.
                 </p>
                 <p>
-                  The slider is logarithmic, so the same control serves a 0.02 mm print and a 5 mm
+                  The slider is logarithmic, so the same control serves{' '}
+                  {inches ? 'a 0.001 in print and a 0.2 in' : `a 0.02 ${len.word()} print and a 5 ${len.word()}`}{' '}
                   warp. <b>Bands</b> replaces the continuous ramp with discrete steps, which is
                   easier to read off a screenshot or a printed report.
                 </p>
@@ -556,13 +564,14 @@ export function DeviationPanel({
               className="slider"
               type="range"
               data-test="range-slider"
-              min={-3}
-              max={1.4}
+              min={Math.log10(len.toDisplay(10 ** -3))}
+              max={Math.log10(len.toDisplay(10 ** 1.4))}
               step={0.01}
               // Logarithmic: a scale that has to serve both a 0.02 mm print and
-              // a 5 mm warp cannot be linear without one end being unusable.
-              value={Math.log10(d.range)}
-              onChange={(e) => d.setRange(Number((10 ** Number(e.target.value)).toPrecision(2)))}
+              // a 5 mm warp cannot be linear without one end being unusable. It
+              // runs in the units shown, so it settles on figures round in them.
+              value={Math.log10(len.toDisplay(d.range))}
+              onChange={(e) => d.setRange(len.fromDisplay(Number((10 ** Number(e.target.value)).toPrecision(2))))}
             />
             <NumberField
               label="Range ±"
@@ -570,7 +579,7 @@ export function DeviationPanel({
               value={d.range}
               step={0.01}
               min={0.0001}
-              unit="mm"
+              kind="length"
               onCommit={d.setRange}
               hint="Half-width of the colour scale. Zero always sits at the centre, on green; positive is outside the reference, negative inside it, and anything past either end is drawn in a dark cap."
             />
@@ -652,7 +661,9 @@ export function DeviationPanel({
               min={MIN_DEFLECTION_SCALE}
               unit="×"
               onCommit={(v) => d.setAnimScale(Math.min(v, MAX_DEFLECTION_SCALE))}
-              hint="How many times the deviation is exaggerated at the far end of the loop. 1× is the part as measured; 20× moves a 0.1 mm deviation by 2 mm."
+              hint={`How many times the deviation is exaggerated at the far end of the loop. 1× is the part as measured; 20× moves a ${
+                inches ? '0.005 in deviation by 0.1 in' : `0.1 ${len.word()} deviation by 2 ${len.word()}`
+              }.`}
             />
             {d.animate && !d.showScan && (
               <p className="hint">
@@ -670,7 +681,7 @@ export function DeviationPanel({
               value={d.maxDistance}
               step={0.1}
               min={0.0001}
-              unit="mm"
+              kind="length"
               onCommit={d.setMaxDistance}
               hint={
                 onElement ? (
@@ -713,9 +724,10 @@ export function DeviationPanel({
                   <InfoDot title="Surface must face the element">
                     <p>
                       An element is a surface with a side to it, and only the scan surface lying on
-                      that side is the surface being measured. A plane fitted on the top of a 10 mm
-                      plate reaches the underside of it too — and would report it as ten
-                      millimetres of missing material.
+                      that side is the surface being measured. A plane fitted on the top of a{' '}
+                      {inches ? '0.4 in' : `10 ${len.word()}`} plate reaches the underside of it too
+                      — and would report it as {inches ? '0.4 in' : 'ten millimetres'} of missing
+                      material.
                     </p>
                     <p>
                       With this on, a scan point whose own normal points away from the element's is
@@ -787,12 +799,12 @@ export function DeviationPanel({
               value={d.tolerance}
               step={0.01}
               min={0.0001}
-              unit="mm"
+              kind="length"
               onCommit={d.setTolerance}
               hint={
                 <>
                   <p>
-                    The band the <b>within ±{d.tolerance} mm</b> figure under the scale counts.
+                    The band the <b>within ±{setting(d.tolerance)}</b> figure under the scale counts.
                   </p>
                   <p>
                     It is a tally, not a filter: it does not change the colours or what was
@@ -808,7 +820,7 @@ export function DeviationPanel({
             className={aside}
             probes={d.probes}
             rowTestId="probe-row"
-            format={formatSigned}
+            format={(v) => formatSigned(v, len.units)}
             onRemove={d.removeProbe}
             onClear={d.clearProbes}
           />

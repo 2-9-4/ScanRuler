@@ -13,7 +13,7 @@ import { openInBrowser } from './browser.js'
 import { configDir, loadConfig, loadFolders, loadLastProject, loadRemembered, saveFolders, saveLastProject, saveRemembered } from './config.js'
 import { CHECKOUT_ENGINE, EngineLink, loadEngine } from './engine.js'
 import { originAllowed } from './link.js'
-import { ANSWER_WITHIN_MS, createMcpServer, TOOL_MODES } from './mcp.js'
+import { ANSWER_WITHIN_MS, createMcpServer, parseToolMode } from './mcp.js'
 import { SharedLink } from './relay.js'
 import { createTrace } from './trace.js'
 import { httpServer } from './serve.js'
@@ -42,12 +42,17 @@ Usage: scanruler-mcp [options]
   --tools <mode>         full (the default) lists each of ScanRuler's commands as a tool;
                          compact lists the server's own and the commands that return a
                          picture, the rest read through scanruler_tools and run through
-                         scanruler_batch — for a small context window
+                         scanruler_batch — for a small context window; or namespaces,
+                         comma-separated — the part of a tool's name before its first
+                         underscore — to list alone (scan,element,view) or, each with a
+                         leading -, to leave out (-flat,-thickness,-dimension): the
+                         server's own tools either way, the rest as full lists them,
+                         for an agent whose task stays in one or two workspaces
   --trace <dir>          write a line per tool call — tool, ms, bytes each way, error,
                          whether the tab was hidden — to a new file in <dir>, for
                          measuring a run (scripts/trace-summary.mjs in the ScanRuler
                          repository sums it up); off by default
-  --trace-args           with --trace, also write each call's arguments (otherwise
+  --trace-args           with --trace, also write each call's arguments and the head of its answer (otherwise
                          only their size)
   --answer-within <s>    hold a call at most this many seconds (default ${ANSWER_WITHIN_MS / 1000}): a change,
                          a batch or a long read still running then answers with its job
@@ -95,6 +100,7 @@ async function headless(file, { cwd, outDir, tools, trace, answerWithinMs, updat
     serverInfo: () => ({ name: 'scanruler-mcp', version: VERSION, ...updates.info(), backend: 'headless', engine: file, tools, outDir, ...(trace ? { trace: trace.file } : {}) }),
     remembered: null,
     tools,
+    log,
     trace,
     answerWithinMs,
   })
@@ -144,10 +150,9 @@ export async function main(argv = process.argv.slice(2)) {
   }
   const port = Number(values.port ?? process.env.SCANRULER_MCP_PORT ?? DEFAULT_PORT)
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`--port ${values.port} is not a port.`)
-  const tools = values.tools ?? (process.env.SCANRULER_MCP_TOOLS || 'full')
-  if (!TOOL_MODES.includes(tools)) {
-    throw new Error(`${values.tools === undefined ? 'SCANRULER_MCP_TOOLS' : '--tools'} ${tools} is not one of ${TOOL_MODES.join(', ')}.`)
-  }
+  // full, compact, or namespaces; refused here when mixed or empty, kept
+  // as given for the status to report.
+  const tools = parseToolMode(values.tools ?? (process.env.SCANRULER_MCP_TOOLS || 'full'), values.tools === undefined ? 'SCANRULER_MCP_TOOLS' : '--tools').text
   const within = values['answer-within'] ?? process.env.SCANRULER_MCP_ANSWER_WITHIN
   const answerWithinMs = within === undefined || within === '' ? ANSWER_WITHIN_MS : Number(within) * 1000
   if (!Number.isFinite(answerWithinMs) || answerWithinMs < 0) {
@@ -197,6 +202,7 @@ export async function main(argv = process.argv.slice(2)) {
     folderStore: { load: () => loadFolders(), save: (folders) => saveFolders(folders), loadProject: () => loadLastProject(), saveProject: (project) => saveLastProject(project) },
     openPage: () => openInBrowser(pairing),
     tools,
+    log,
     trace,
     answerWithinMs,
   })

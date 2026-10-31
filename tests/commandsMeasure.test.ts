@@ -602,7 +602,7 @@ describe('session, report, files and history', () => {
     expect((await refused('history.undo')).code).toBe('invalid_state')
     expect((await refused('history.redo')).code).toBe('invalid_state')
     await fitFace([0, 0, 20])
-    const u = await run<{ undone: string; state: { elements: unknown[] } }>('history.undo')
+    const u = await run<{ undone: string; state: { elements: unknown[] } }>('history.undo', { detail: 'full' })
     expect(u).toMatchObject({ undone: 'Agent: fit plane', state: { elements: [] } })
     const r = await run<{ redone: string }>('history.redo')
     expect(r.redone).toBe('Agent: fit plane')

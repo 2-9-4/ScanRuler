@@ -11,6 +11,7 @@ import { useEffect, useRef, useState } from 'react'
 import { colormapById, cssRgb, legendGradient, scaleCaps, type FieldScale } from '../core/field/colormap'
 import type { FieldHistogram } from '../core/field/stats'
 import { usePrefs } from '../state/prefsStore'
+import { useLength } from '../app/useUnits'
 
 const TICKS = 9
 
@@ -46,6 +47,7 @@ export interface LegendEnds {
 export function MapLegend({
   id,
   scale,
+  kind,
   unit,
   format,
   histogram,
@@ -59,7 +61,14 @@ export function MapLegend({
   /** Names this legend's test hooks — one map's legend per workspace. */
   id: string
   scale: FieldScale
-  unit: string
+  /** 'length': the map reads lengths — the scale, the marks and the ends
+   *  typed at it are millimetres held and shown in the display units. The
+   *  head then writes the unit word itself, with `unit` after it ("wall"),
+   *  and `format` is handed millimetres to write in the units shown. */
+  kind?: 'length'
+  /** The head of the scale: the unit the figures are in — for a length,
+   *  what follows the unit word, if anything. */
+  unit?: string
   format: (v: number) => string
   histogram: FieldHistogram | null
   stats: LegendStat[] | null
@@ -82,6 +91,9 @@ export function MapLegend({
   // Drawn in the same ramp as the map it stands beside — the one chosen in
   // the settings.
   const map = colormapById(usePrefs((s) => s.colormap))
+  const len = useLength()
+  const length = kind === 'length'
+  const head = length ? [len.word(), unit].filter(Boolean).join(' ') : (unit ?? '')
   const caps = scaleCaps(scale, map)
   const ticks = Array.from({ length: TICKS }, (_, i) => {
     const fraction = i / (TICKS - 1)
@@ -94,7 +106,7 @@ export function MapLegend({
 
   return (
     <div className="devlegend" data-test={`${id}-legend`}>
-      <div className="devlegend-unit">{unit}</div>
+      <div className="devlegend-unit">{head}</div>
       {ends && (
         <div className="devlegend-end high" data-test={`${id}-end-high`}>
           <b>+</b> {ends.high}
@@ -134,7 +146,18 @@ export function MapLegend({
           {ticks.map((t, i) => {
             const end = onLimit && (i === TICKS - 1 ? 'high' : i === 0 ? 'low' : null)
             return end ? (
-              <LimitTick key={t.fraction} id={id} end={end} value={t.value} fraction={t.fraction} format={format} onCommit={(v) => onLimit(end, v)} />
+              <LimitTick
+                key={t.fraction}
+                id={id}
+                end={end}
+                value={t.value}
+                fraction={t.fraction}
+                format={format}
+                // A length is typed in the units shown and handed back held.
+                toTyped={length ? len.toDisplay : undefined}
+                fromTyped={length ? len.fromDisplay : undefined}
+                onCommit={(v) => onLimit(end, v)}
+              />
             ) : (
               <span
                 key={t.fraction}
@@ -243,6 +266,8 @@ function LimitTick({
   value,
   fraction,
   format,
+  toTyped = (v) => v,
+  fromTyped = (v) => v,
   onCommit,
 }: {
   id: string
@@ -250,6 +275,10 @@ function LimitTick({
   value: number
   fraction: number
   format: (v: number) => string
+  /** What the box shows for a value held, and what a typed figure is held
+   *  as — a length's conversion, or none. */
+  toTyped?: (v: number) => number
+  fromTyped?: (v: number) => number
   onCommit: (magnitude: number) => void
 }) {
   const [editing, setEditing] = useState(false)
@@ -257,6 +286,8 @@ function LimitTick({
   // Closing the box takes the focus with it, and the blur that follows must
   // not commit what Escape threw away or Enter already took.
   const closed = useRef(false)
+  // The magnitude as typed: no float noise left from a conversion.
+  const shown = String(Number(Math.abs(toTyped(value)).toFixed(6)))
   useEffect(() => {
     if (editing) {
       closed.current = false
@@ -266,9 +297,11 @@ function LimitTick({
   const close = (commit: boolean) => {
     if (closed.current) return
     closed.current = true
-    const v = Math.abs(Number(ref.current?.value))
+    const typed = ref.current?.value ?? ''
+    const v = fromTyped(Math.abs(Number(typed)))
     setEditing(false)
-    if (commit && Number.isFinite(v) && v > 0 && v !== Math.abs(value)) onCommit(v)
+    // Text left as it was shown commits nothing: in inches it is rounded.
+    if (commit && typed !== shown && Number.isFinite(v) && v > 0 && v !== Math.abs(value)) onCommit(v)
   }
   return editing ? (
     <input
@@ -278,7 +311,7 @@ function LimitTick({
       type="number"
       step="any"
       min={0}
-      defaultValue={Math.abs(value)}
+      defaultValue={shown}
       style={{ bottom: `${fraction * 100}%` }}
       autoFocus
       onBlur={() => close(true)}

@@ -20,6 +20,7 @@
 
 import type { CircleFit, CylinderFit, FitData, SphereFit } from '../types'
 import { applyExtension, type Extension } from './extend'
+import { lengthDecimals, toDisplay, unitWord, type DisplayUnits } from '../units'
 
 /** The kinds whose defining size is a diameter — the ones an assumed
  *  dimension exists for. */
@@ -42,14 +43,13 @@ function typoLimit(measured: number): number {
 }
 
 /** The sanity check on a typed-in assumed dimension: null when the value is
- *  believable, otherwise one sentence saying how far off it is. */
-export function assumedWarning(measured: number, assumed: number): string | null {
+ *  believable, otherwise one sentence saying how far off it is, in `units`. */
+export function assumedWarning(measured: number, assumed: number, units: DisplayUnits = 'mm'): string | null {
   if (!Number.isFinite(assumed) || assumed <= 0) return null
   const off = Math.abs(assumed - measured)
   if (off <= typoLimit(measured)) return null
-  return `Assumed Ø ${fmt(assumed)} mm is ${fmt(off)} mm away from the measured Ø ${fmt(
-    measured,
-  )} mm — check for a typo.`
+  const len = (v: number): string => `${fmt(v, units)} ${unitWord(units)}`
+  return `Assumed Ø ${len(assumed)} is ${len(off)} away from the measured Ø ${len(measured)} — check for a typo.`
 }
 
 /** The geometry an assumed-dimension export writes: the same center, axis and
@@ -69,6 +69,7 @@ export function drawnFit(fit: FitData, assumed: number | undefined, extend: Exte
   return applyExtension(applyAssumed(fit, assumed), extend)
 }
 
-function fmt(v: number): string {
-  return v.toFixed(3).replace(/0+$/, '').replace(/\.$/, '')
+/** Three decimals in millimetres (four in inches), trailing zeros dropped. */
+function fmt(v: number, units: DisplayUnits): string {
+  return toDisplay(v, units).toFixed(lengthDecimals(3, units)).replace(/0+$/, '').replace(/\.$/, '')
 }

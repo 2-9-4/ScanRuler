@@ -44,11 +44,39 @@ export function guideById(id: string): Guide | undefined {
   return guides.get(id)
 }
 
+/** A heading as a name means it: lower case, without its number ("datums"
+ *  for "2. Datums", "by archetype" for "4a. By archetype"). */
+export const bareHeading = (heading: string): string => heading.toLowerCase().replace(/^[0-9]+[a-z]?\.\s*/, '').trim()
+
+/** What was read, per guide: the headings of the sections served, whole or
+ *  by name, as bareHeading has them. */
+const reads = new Map<string, Set<string>>()
 let read = false
 
 /** Whether an agent has read a guide since the page started — until one
  *  has, the session's readout says where they are. */
 export const guideRead = (): boolean => read
-export const markGuideRead = (): void => {
+
+/** Record a read: of `sections` (their headings) of the guide `topic` —
+ *  every section a whole read served, or the one a section read gave with
+ *  its parts — or, with no arguments, only that something was read. */
+export function markGuideRead(topic?: string, sections: string[] = []): void {
   read = true
+  if (topic === undefined) return
+  const had = reads.get(topic) ?? new Set<string>()
+  for (const h of sections) had.add(bareHeading(h))
+  reads.set(topic, had)
+}
+
+/** Whether `section` of the guide `topic` was read: in a whole read that
+ *  included it, or by name — the heading with or without its number, as
+ *  guide.read's section takes it. */
+export function guideSectionRead(topic: string, section: string): boolean {
+  return reads.get(topic)?.has(bareHeading(section)) ?? false
+}
+
+/** Forget every read — for tests. */
+export function resetGuideReads(): void {
+  reads.clear()
+  read = false
 }

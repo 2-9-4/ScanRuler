@@ -282,14 +282,7 @@ body {
 .brandmark {
   width: 30px;
   height: 30px;
-  border-radius: var(--r);
-  background: var(--accent);
-  display: grid;
-  place-items: center;
-  color: #fff;
-  font-weight: 700;
-  font-size: 13px;
-  font-family: var(--cond);
+  display: block;
   flex: none;
 }
 

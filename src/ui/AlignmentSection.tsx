@@ -20,6 +20,7 @@ import {
 } from '../state/store'
 import { InfoDot } from './InfoDot'
 import { providersFor } from './RefSelect'
+import { useLength } from '../app/useUnits'
 
 /** What the levelled direction becomes, said the way a person holds a part:
  *  which side of it the picked face is. The face's outward direction maps onto
@@ -57,11 +58,11 @@ function StepHead({ n, text, optional }: { n: number; text: string; optional?: b
 }
 
 /** The six inputs of the manual move / rotate box, in the order the values
- *  are stored. */
+ *  are stored. A move is a length, typed in the units shown. */
 const MANUAL_FIELDS = [
-  { key: 'mx', label: 'Move X', unit: 'mm' },
-  { key: 'my', label: 'Move Y', unit: 'mm' },
-  { key: 'mz', label: 'Move Z', unit: 'mm' },
+  { key: 'mx', label: 'Move X', unit: 'length' },
+  { key: 'my', label: 'Move Y', unit: 'length' },
+  { key: 'mz', label: 'Move Z', unit: 'length' },
   { key: 'rx', label: 'Rotate about X', unit: '°' },
   { key: 'ry', label: 'Rotate about Y', unit: '°' },
   { key: 'rz', label: 'Rotate about Z', unit: '°' },
@@ -168,7 +169,10 @@ export function AlignmentSection({
 
   // The manual move / rotate box: six typed-in numbers, NaN while a field is
   // empty. Purely local — it needs no viewport interaction.
+  // Held as typed — the moves in the units shown — and turned into
+  // millimetres when applied.
   const [manual, setManual] = useState<number[] | null>(null)
+  const len = useLength()
   const manualNums = manual?.map((v) => (Number.isFinite(v) ? v : 0)) ?? null
   const manualIdentity = manualNums === null || manualNums.every((v) => v === 0)
 
@@ -230,7 +234,7 @@ export function AlignmentSection({
             Move / rotate part
             <InfoDot title="Move / rotate part">
               <p>
-                How far to move the part (mm) and how far to turn it (°) along the global axes.
+                How far to move the part ({len.word()}) and how far to turn it (°) along the global axes.
               </p>
               <p>
                 It turns about the zero point first — about X, then Y, then Z — and moves after
@@ -241,7 +245,7 @@ export function AlignmentSection({
           {MANUAL_FIELDS.map((f, i) => (
             <label className="field" key={f.key}>
               <span>
-                {f.label} ({f.unit})
+                {f.label} ({f.unit === 'length' ? len.word() : f.unit})
               </span>
               <input
                 type="number"
@@ -266,7 +270,7 @@ export function AlignmentSection({
               if (!manualNums) return
               onApplyManual(
                 manualRigid(
-                  [manualNums[0], manualNums[1], manualNums[2]],
+                  [len.fromDisplay(manualNums[0]), len.fromDisplay(manualNums[1]), len.fromDisplay(manualNums[2])],
                   [manualNums[3], manualNums[4], manualNums[5]],
                 ),
               )

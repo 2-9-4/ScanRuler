@@ -62,7 +62,7 @@ export function scanSwap({
       source.bytes.slice().buffer,
       creaseSetting(useStore.getState()),
       transform ?? undefined,
-      source.units ?? 'mm',
+      source.units ?? 'mm', // units-ok: the file's own units, an id
       // An edit is a mesh of its own, colourless; the scan before it, on
       // undo, comes back with whatever came with it.
       await scanCompanions(source.name, source.bytes, source.companions ?? []),
