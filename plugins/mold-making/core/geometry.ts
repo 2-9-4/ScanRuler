@@ -203,7 +203,7 @@ function addKeys(
   if(axis==='z'){
     const cy=center(base.min[1],base.max[1]),cx=center(base.min[0],base.max[0])
     const radius=(plan.cylinder?.outerR??(base.max[0]-base.min[0])/2)
-    const rx=radius-s.keyDiameter/2-s.keyClearance-0.35
+    const rx=radius-s.keyDiameter/2-s.keyClearance-1.2
     if(rx<s.keyDiameter)throw new Error('Not enough exterior wall for Z-parting registration.')
     locations.push([cx-rx,cy,split],[cx+rx,cy,split])
   }else{
