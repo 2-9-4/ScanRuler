@@ -35,7 +35,7 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    // Each plugin keeps its tests beside it; the open-source tree has none.
+    // Each plugin keeps its tests beside it.
     include: ['tests/**/*.test.ts', 'plugins/*/tests/**/*.test.ts'],
     // Long enough for any test that is not slow by nature, short enough that a
     // hang is found quickly. The files whose tests build solids in the kernel

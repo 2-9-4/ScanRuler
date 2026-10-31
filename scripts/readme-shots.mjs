@@ -2,9 +2,9 @@
 // The pictures in the README, taken again: the app driven through the agent
 // commands (the scanruler-mcp server, as an agent drives it) and each
 // workspace photographed with its panel, into docs/images/. Runs the build
-// without plugins, as the open-source edition has it. Each picture gets a
-// session of its own — a fresh server, browser and page; `session` is
-// exported for a plugin's pictures to be taken the same way.
+// without plugins, so only the app's own workspaces show in these pictures.
+// Each picture gets a session of its own — a fresh server, browser and page;
+// `session` is exported for a plugin's pictures to be taken the same way.
 //
 // Prereqs: dev server running (npm run dev), Chrome, the server's
 // dependencies (npm --prefix mcp ci), the local scan pair at the repository
@@ -28,8 +28,8 @@ const OUT = repoFile('docs/images')
 
 /** A server, a browser paired with it, and the helpers a picture is taken
  *  with; `shot` runs on them, the window is written to docs/images/<name>.png
- *  and everything is closed after. `plugins: false` runs the app as the
- *  open-source edition has it. */
+ *  and everything is closed after. `plugins: false` runs the app with only
+ *  its own workspaces. */
 export async function session(name, shot, { plugins = false, idleSeconds = 300 } = {}) {
   if (!existsSync(repoFile('mcp/node_modules/@modelcontextprotocol/sdk/package.json'))) {
     console.error('FATAL: the MCP server has no dependencies yet — run npm --prefix mcp ci.')

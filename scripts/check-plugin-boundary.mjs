@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// The one rule the plugin split rests on: nothing outside plugins/ reaches
-// into it. The app finds its plugins by a glob that matches nothing when the
-// folder is absent — which is how the open-source tree builds — so any other
-// path into plugins/ is a file the open-source build would fail to find, or,
-// worse, code of a plugin that would have to be published to make it build.
+// The one rule plugins rest on: nothing outside plugins/ reaches into it. The
+// app finds its plugins by a glob that matches whichever a build has, so a
+// build stands with any of them or none. Any other path into plugins/ is a
+// file a build without that plugin would fail to find.
 //
 // Every import-like reference is checked: static and dynamic imports,
 // re-exports, `new URL(…, import.meta.url)` (workers, wasm, assets), CSS
@@ -88,7 +87,7 @@ for (const file of walk(root)) {
 if (violations.size > 0) {
   console.error(`Code outside plugins/ reaches into it (${violations.size}):\n`)
   for (const v of violations) console.error(`  ${v}`)
-  console.error('\nThe open-source tree has no plugins/ folder. Go through the plugin registry instead — see plugins/README.md.')
+  console.error('\nA build may not have that plugin. Go through the plugin registry instead — see plugins/README.md.')
   process.exit(1)
 }
 console.log('Plugin boundary holds: nothing outside plugins/ imports from it.')

@@ -1,0 +1,1389 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+/* The Reverse engineer workspace's own rules, on top of the app's stylesheet
+   (src/styles.css), whose tokens and base rules they use. */
+
+/* The key beside a picker's count that lets every pick go. */
+.picked .clearpicks {
+  margin-left: 8px;
+  padding: 1px 7px;
+  font-size: 11px;
+  line-height: 16px;
+  vertical-align: baseline;
+}
+
+/* An edge a fillet rounds at a varying radius: what the edge is, the key
+   that swaps its radii, and the radius at its start and at its end. */
+.varyedge {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-left: 8px;
+  border-left: 2px solid var(--accent);
+}
+
+.varyedge-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.varyedge-head span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.varyedge-head button {
+  padding: 1px 8px;
+  line-height: 16px;
+}
+
+/* The Start and End of an edge rounded at a varying radius, named on the
+   part (viewer/varyingEnds): the chip in a frame whose corner is on the
+   end, so it stands a few pixels off the dot there. */
+.varying-end-frame {
+  padding: 6px;
+  pointer-events: none;
+}
+
+.viewport-label.varying-end .label-title {
+  color: var(--accent-d);
+}
+
+/* A row of keys that are pictures only — the sketch's tools, relations and
+   edits, each saying what it is in its tooltip. */
+.iconrow {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(36px, 1fr));
+  gap: 6px;
+}
+
+/* The eight relations stay one row. */
+.iconrow.eight {
+  grid-template-columns: repeat(8, 1fr);
+  gap: 4px;
+}
+
+/* So do the Dimension key and the nine relations after it. */
+.iconrow.ten {
+  grid-template-columns: repeat(10, 1fr);
+  gap: 2px;
+}
+
+.iconrow button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 0;
+  background: var(--well);
+  box-shadow: var(--inset);
+}
+
+.iconrow button:hover:not(:disabled) {
+  color: var(--accent-d);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.iconrow button.on {
+  color: var(--accent-d);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* A shape tool's key and the ways it draws: the key fills its cell, a small
+   corner mark says it has more ways, and the strip of them opens under it,
+   over the keys beneath — three for the rectangle and the circle, two for
+   the arc. */
+.toolfly {
+  position: relative;
+  display: grid;
+}
+
+.toolfly > button {
+  position: relative;
+}
+
+.toolfly > button::after {
+  content: '';
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  border: 2.5px solid transparent;
+  border-right-color: currentColor;
+  border-bottom-color: currentColor;
+  opacity: 0.45;
+}
+
+.toolfly .flyout {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 25;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: rgba(var(--glass), 0.98);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+
+/* The gap between the key and the strip is part of the strip for the
+   cursor, so it does not fall out of the key on the way down. */
+.toolfly .flyout::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -6px;
+  height: 6px;
+}
+
+.toolfly .flyout button {
+  width: 44px;
+}
+
+.chipbar button {
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+/* The rollback bar of the feature list: a rule across the list with a grip
+   to take hold of, dragged between the rows. While it is dragged it stays
+   where it is and a mark shows where it would land. */
+.rollbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 14px;
+  margin: 1px 0;
+  cursor: ns-resize;
+  touch-action: none;
+  user-select: none;
+}
+
+.rollbar .grip {
+  flex: 1;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+  opacity: 0.55;
+}
+
+.rollbar:hover .grip,
+.rollbar.dragging .grip {
+  opacity: 1;
+}
+
+.rollbar.off {
+  cursor: default;
+}
+
+.rollbar.off .grip {
+  background: var(--faint);
+}
+
+.rollbar button {
+  padding: 1px 8px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.rollmark {
+  height: 3px;
+  margin: 2px 0;
+  border-radius: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+/* The feature list's playback: the key in the list's heading that starts
+   it, the row of keys that runs it under the heading, and the caption the
+   viewport carries for the recording — top left, the one corner of the
+   stage nothing else holds. */
+.g-label button.playkey {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.playbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin: 6px 0 4px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--well);
+}
+
+.playkeys {
+  display: flex;
+  gap: 3px;
+}
+
+.playkeys button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 6px;
+}
+
+.playhold,
+.playcaption {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.playhold select {
+  padding: 2px 4px;
+}
+
+/* The build under way, on the stage: a hint chip with the spinner the
+   feature list's heading shows. */
+.buildchip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.playcaption-card {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 4;
+  max-width: min(360px, calc(100% - 28px));
+  padding: 10px 16px 11px;
+  background: rgba(var(--glass), 0.94);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--r);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.12);
+  pointer-events: none;
+}
+
+.playstep {
+  font-family: var(--cond);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.playname {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 3px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.playname span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.playreading {
+  margin-top: 3px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--dim);
+  overflow-wrap: anywhere;
+}
+
+.playreading.warn {
+  color: var(--amber);
+}
+
+/* A sketch being drawn: the sheet laid over the 3D viewport as a see-through
+   layer, taking the pointer — the part underneath follows its view. Not
+   quite see-through: a veil of the stage's own colour lies between the two,
+   so the part, its cut face and the bodies fall back towards the stage and
+   what is drawn on the sheet — the pieces, the dimensions — stands in front
+   at full strength. */
+.viewslot.sketch {
+  z-index: 2;
+  background: color-mix(in srgb, var(--stage) 58%, transparent);
+}
+
+/* A sketch relation's glyph: lifted up and to the right of the point it
+   marks — a line's middle, a corner — in screen pixels, at every zoom, so
+   the piece under it can still be taken hold of there. */
+.viewport-label.note-label.glyph {
+  margin: -7px 0 0 6px;
+  padding: 1px 5px;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+/* A glyph under the cursor stands out as what a click takes; the pieces it
+   holds are lit on the sheet with it (useSketchSceneSync). */
+.viewport-label.note-label.glyph:hover {
+  color: var(--accent-d);
+  background: var(--accent-soft);
+  outline: 2px solid var(--accent-d);
+  outline-offset: 0;
+}
+
+/* A sketch's dimension on the sheet, as a drawing carries it: the bare
+   number written along its dimension line, in the gap the line leaves for
+   it — no plate, only a halo of the stage so it reads over the part. It is
+   dragged to where it reads best; a click opens it for typing. */
+.viewport-label.distance-label.sketch-dim {
+  padding: 0;
+  background: none;
+  border: 0;
+  box-shadow: none;
+}
+
+.viewport-label.distance-label.sketch-dim .label-value {
+  padding: 1px 3px;
+  border-radius: 2px;
+  font-size: 12.5px;
+  color: var(--ink);
+  text-shadow:
+    0 0 3px rgb(var(--glass)),
+    0 0 3px rgb(var(--glass)),
+    0 0 6px rgb(var(--glass));
+}
+
+.viewport-label.distance-label.sketch-dim.editable {
+  pointer-events: auto;
+  cursor: move;
+}
+
+.viewport-label.distance-label.sketch-dim.editable:hover .label-value {
+  color: var(--accent-d);
+  background: var(--accent-soft);
+  outline: 2px solid var(--accent-d);
+  text-shadow: none;
+}
+
+.viewport-label.distance-label.sketch-dim input {
+  width: 72px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 0 3px;
+  text-align: center;
+}
+
+/* The relations and dimensions of a sketch, as rows: a dimension carries its
+   typed value in a narrow field, and every row has its cross. */
+.relations {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.relations .kv .name {
+  cursor: pointer;
+}
+
+.relations .kv input[type='number'] {
+  width: 78px;
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 2px 4px;
+}
+
+/* The chips of the Reverse engineer workspace: a nominal value offered
+   beside a measured one, a relation inferred while drawing, the verbs by a
+   click on the part. Small and round, so they read as offers, not fields. */
+.chip.nominal {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.4;
+  padding: 1px 7px;
+  border-radius: 10px;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  background: transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  flex: none;
+}
+
+.chip.nominal:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+.chiprow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* A patch network's patches, a row each: picked, the row is lit. */
+.netpatch {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font-size: 11px;
+  padding: 2px 6px;
+  margin: 1px 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.netpatch:hover {
+  border-color: var(--line);
+}
+
+.netpatch.on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+/* The trim's surfaces: a short list of checks, scrolling past a dozen. */
+.checklist {
+  max-height: 180px;
+  overflow-y: auto;
+  margin: 2px 0 6px;
+}
+
+.relchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+  padding: 1px 3px 1px 8px;
+  border-radius: 10px;
+  border: 1px dashed var(--line);
+  color: var(--dim);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.relchip.sel {
+  border-color: var(--accent);
+  border-style: solid;
+  color: var(--ink);
+}
+
+.relchip.warn {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+
+.relchip .x {
+  padding: 0 4px;
+}
+
+/* The chip bar by a click on the part: what the thing clicked can become. */
+.chipbar {
+  position: fixed;
+  z-index: 30;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: rgba(var(--glass), 0.96);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+
+.chipbar button {
+  font-size: 12px;
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+
+/* With readings of what was picked, the bar is a small card: the readings
+   on top, the verbs in a row beneath them. */
+.chipbar.withinfo {
+  flex-wrap: wrap;
+  max-width: 300px;
+}
+
+.chipinfo {
+  flex: 1 0 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 3px 6px 5px;
+  font-size: 12px;
+}
+
+.chipinfo b {
+  font-size: 11.5px;
+  color: var(--dim);
+  font-weight: 600;
+  padding-bottom: 1px;
+}
+
+.chipinfo-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.chipinfo-row span:first-child {
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.chipinfo-value {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  text-align: right;
+  user-select: text;
+}
+
+.chipinfo-tip {
+  padding-top: 3px;
+  font-size: 10.5px;
+  color: var(--faint);
+}
+
+/* The selection window dragged over the bodies with Shift held: solid when
+   dragged to the right — what lies wholly inside — dashed when dragged to
+   the left — what it touches too. */
+.bodywindow {
+  position: absolute;
+  z-index: 5;
+  pointer-events: none;
+  border: 1px solid #3cb371;
+  background: rgba(60, 179, 113, 0.12);
+}
+
+.bodywindow.crossing {
+  border-style: dashed;
+  border-color: #4db8ff;
+  background: rgba(77, 184, 255, 0.12);
+}
+
+/* Why a feature failed, under its row: a sentence, wrapped inside the panel
+   whatever the kernel wrote — its messages have no spaces to break at. */
+.hint.rowerror {
+  margin: 0 0 4px 17px;
+  overflow-wrap: anywhere;
+}
+
+/* A window beside the panel, not over the page: no backdrop, because the
+   sketch behind it is what its slider is watched on. Dragged by its head. */
+.modal.fitoptions {
+  position: fixed;
+  left: 352px;
+  top: 96px;
+  width: 400px;
+  z-index: 40;
+  gap: 6px;
+}
+
+.modal.fitoptions .draghead {
+  cursor: move;
+  user-select: none;
+  touch-action: none;
+}
+
+.modal.fitoptions .setting {
+  grid-template-columns: 96px minmax(0, 1fr);
+}
+
+.modal.fitoptions .checkrow.indent {
+  margin-left: 22px;
+}
+
+.modal.fitoptions .setting.indent {
+  margin-left: 22px;
+  grid-template-columns: 74px minmax(0, 1fr);
+  padding: 0;
+}
+
+.modal.fitoptions > small {
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+.modal.fitoptions .modalfoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+/* A coordinate plane's row in the body list: its swatch a square leaning
+   like a plane seen in perspective, where a body's is a dot. */
+.kv.planerow .dot.plane {
+  border-radius: 1px;
+  transform: skewX(-20deg);
+}
+
+/* ---- parameters and expressions ------------------------------------------------- */
+
+/* The parameters section folds: its heading is the key that opens it. */
+.parameters .sec-head .fold {
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.parameters .sec-head .fold span {
+  font-size: 10px;
+  color: var(--dim);
+}
+
+.parameters .sec-head > button:not(.fold) {
+  font-size: 11px;
+  padding: 1px 7px;
+}
+
+/* A parameter's row, two lines: its name, its kind and the value it comes
+   to, with the note and remove keys; under them the expression it is
+   given, the full width; a refused edit says why on a line under that. */
+.kv.parameter {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto auto;
+  align-items: center;
+  gap: 3px 6px;
+  padding: 4px 1px;
+  border-bottom: 1px solid var(--line);
+}
+
+.kv.parameter input[data-test='parameter-expression'],
+.kv.parameter .note-row,
+.kv.parameter .hint.rowerror {
+  grid-column: 1 / -1;
+}
+
+.kv.parameter input[type='text'] {
+  font-family: var(--ui);
+  font-size: 12px;
+  color: var(--ink);
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 2px 5px;
+  box-shadow: var(--inset);
+  min-width: 0;
+}
+
+.kv.parameter input.mono {
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.kv.parameter input[data-test='parameter-name'] {
+  width: 100%;
+}
+
+.kv.parameter input[data-test='parameter-expression'] {
+  width: 100%;
+}
+
+.kv.parameter select {
+  font-size: 11px;
+  padding: 1px 2px;
+}
+
+.kv.parameter .value {
+  min-width: 44px;
+}
+
+.kv.parameter.bad .value {
+  color: var(--warn, #c0392b);
+}
+
+.kv.parameter .note-row {
+  display: flex;
+}
+
+.kv.parameter .note-row input {
+  flex: 1;
+}
+
+.kv.parameter .x.note[aria-pressed='true'] {
+  color: var(--accent);
+}
+
+.kv.parameter .hint.rowerror {
+  margin: 0;
+}
+
+/* A number field driven by an expression shows the expression, with the
+   value it comes to written where the unit was. */
+.unitfield input[type='text'] {
+  width: 100%;
+  padding-right: 30px;
+}
+
+.unitfield.expr input[type='text'] {
+  padding-right: 74px;
+  color: var(--accent);
+}
+
+.unitfield.expr i {
+  font-family: var(--mono);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--dim);
+  max-width: 68px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Why an expression could not be read, under its field. */
+.exprerror {
+  display: block;
+  flex-basis: 100%;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* A sketch dimension's field in its row: narrow, as the number field was,
+   and wider when an expression has to fit beside its value. */
+.relations .kv .unitfield {
+  width: 104px;
+  flex: none;
+  min-width: 0;
+}
+
+.relations .kv .unitfield.expr {
+  width: 160px;
+}
+
+.relations .kv .unitfield input[type='text'] {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 2px 4px;
+  padding-right: 26px;
+}
+
+.relations .kv .unitfield.expr input[type='text'] {
+  padding-right: 54px;
+}
+
+.relations .kv .unitfield i {
+  right: 5px;
+  font-size: 10px;
+  max-width: 50px;
+}
+
+/* A box of settings opened inside the sketch's own — the Pattern box on the
+   pieces selected: framed apart from the keys around it. */
+.subbox {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--well);
+}
+
+.subbox .moderow button.on,
+.subbox .moderow button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+/* A body's colour dot is its key: a click opens the swatches under the
+   row. */
+.dot.swatchkey {
+  width: 11px;
+  height: 11px;
+  padding: 0;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+}
+
+.dot.swatchkey:hover {
+  outline: 2px solid var(--accent-soft);
+}
+
+.kv input.name.rename {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  padding: 1px 4px;
+}
+
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 0 6px 18px;
+}
+
+.swatches button {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.swatches button.on {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.swatches button.auto {
+  width: auto;
+  padding: 0 6px;
+  font-size: 11px;
+  background: var(--well);
+  color: var(--dim);
+}
+
+/* The body list's rows: under the pointer, they light the body in the
+   viewport; filled while picked in the list; ringed where the cursor is on
+   the body in the viewport; marked at the edge while a face or an edge of
+   it is selected there. */
+.kv.bodyrow,
+.kv.folderrow {
+  border-radius: 3px;
+  padding-right: 1px;
+  user-select: none;
+}
+
+.kv.bodyrow:hover,
+.kv.folderrow:hover {
+  background: var(--well);
+}
+
+.kv.bodyrow.selected,
+.kv.folderrow.selected {
+  background: var(--accent-soft);
+}
+
+.kv.bodyrow.lit,
+.kv.folderrow.lit {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.kv.bodyrow.picked,
+.kv.folderrow.picked {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.kv.bodyrow.lit.picked,
+.kv.folderrow.lit.picked {
+  box-shadow:
+    inset 2px 0 0 var(--accent),
+    inset 0 0 0 1px var(--accent);
+}
+
+/* What is picked in the list, and the keys for all of it, under the rows —
+   where they do not push a row from under the next click. */
+.bodysel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 5px 6px;
+  border-radius: 3px;
+  background: var(--accent-soft);
+  font-size: 12px;
+}
+
+.bodysel > span {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.bodysel > button:not(.x) {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 11.5px;
+}
+
+/* The picture several rows are dragged as: how many. */
+.bodydrag {
+  position: fixed;
+  top: -100px;
+  left: -100px;
+  padding: 4px 10px;
+  border-radius: var(--r);
+  background: var(--accent);
+  color: #fff;
+  font: 600 12px var(--ui);
+  white-space: nowrap;
+}
+
+.kv.bodyrow.picked .name,
+.kv.folderrow.picked .name {
+  font-weight: 600;
+}
+
+/* A component's row: its fold, its picture in the ink of the list, how
+   many bodies it holds. Where a drag would put something into it, dashed. */
+.kv.folderrow {
+  gap: 6px;
+}
+
+.kv.folderrow .kind {
+  color: var(--dim);
+}
+
+.kv.folderrow .name {
+  font-weight: 500;
+}
+
+.kv.folderrow b {
+  color: var(--dim);
+}
+
+.kv.folderrow button.x.fold {
+  width: 14px;
+  padding: 0;
+  font-size: 10px;
+  color: var(--dim);
+}
+
+.kv.folderrow button.x.fold:hover {
+  color: var(--accent-d);
+}
+
+.kv.folderrow.drop,
+.bodydrop.on {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* Under the list while a body or a component is dragged out of one. */
+.bodydrop {
+  margin-top: 4px;
+  padding: 5px 8px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 3px;
+  font-size: 11px;
+  color: var(--dim);
+  text-align: center;
+}
+
+/* The label row's key for a new component: read like the label, as the
+   eye beside it is. */
+.g-label button.x.newfolder {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--cond);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 16px;
+}
+
+.g-label button.x.newfolder:hover:not(:disabled) {
+  color: var(--accent-d);
+}
+
+/* The part a pick in the viewport is on, over the pick's readings: its
+   colour and name, the components it is in, and its eye. */
+.chipbody {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  padding-bottom: 4px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--line);
+}
+
+.chipbody .dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.chipbody-name {
+  flex: 1 1 90px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  font-weight: 600;
+}
+
+.chipbody-name > span,
+.chipbody-name small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chipbody-name small {
+  font-size: 10.5px;
+  font-weight: 400;
+  color: var(--dim);
+}
+
+.chipbody-keys {
+  flex: none;
+  display: flex;
+  gap: 3px;
+  margin-left: auto;
+}
+
+.chipbar .chipbody-keys button {
+  padding: 1px 7px;
+  font-size: 11px;
+}
+
+/* A suppressed feature: left out of the build, kept in the list — greyed
+   and struck through, its suppress key too. */
+.kv.suppressed .name {
+  text-decoration: line-through;
+  text-decoration-color: var(--faint);
+}
+
+.kv.suppressed b {
+  font-weight: 400;
+  color: var(--faint);
+}
+
+/* A feature row's menu, opened by a right click where the pointer is. */
+.re-menu {
+  position: fixed;
+  z-index: 50;
+  min-width: 200px;
+  max-width: 260px;
+  padding: 4px 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r);
+  background: var(--panel);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.17);
+}
+
+.re-menu-head {
+  padding: 3px 12px 5px;
+  font-family: var(--cond);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.re-menu button {
+  display: block;
+  width: 100%;
+  padding: 5px 12px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--ink);
+  text-align: left;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.re-menu button:hover {
+  background: var(--well);
+  color: var(--accent-d);
+}
+
+/* An extrude's direction typed: x, y and z sharing one control's width. */
+.field .re-xyz {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  flex: 0 1 172px;
+  width: 172px;
+  min-width: 108px;
+}
+
+.field .re-xyz .unitfield {
+  width: auto;
+  min-width: 0;
+}
+
+.field .re-xyz input[type='text'] {
+  min-width: 0;
+  padding: 5px 4px;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+/* A Move's distances and angles: each of x, y and z underlined in its
+   axis's colour, as the gizmo's arrow and ring for it are. */
+.field .re-xyz.re-axes .re-axis {
+  display: block;
+  min-width: 0;
+  border-bottom: 2px solid;
+  border-radius: 0 0 3px 3px;
+}
+
+.field .re-xyz.re-axes .re-axis .unitfield {
+  display: block;
+  flex: none;
+  width: auto;
+  min-width: 0;
+}
+
+.field .re-xyz.re-axes .re-axis input[type='text'] {
+  width: 100%;
+}
+
+.field .re-xyz.re-axes .unitfield i:empty {
+  display: none;
+}
+
+/* ---------------- notes for the agent ---------------- */
+
+/* The Note key in hand: a crosshair over the part, whatever lights under it. */
+.noteplacing canvas {
+  cursor: crosshair !important;
+}
+
+/* A note's number, as its pin in the viewport wears it: amber while open,
+   grey once handled. */
+.notebadge {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: #f2a516;
+  border: 1.5px solid #1d2026;
+  color: #1d2026;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.notebadge.agent {
+  background: #1877c0;
+  color: #fff;
+}
+
+.notebadge.done {
+  background: #9aa1ab;
+  color: #1d2026;
+}
+
+.noterow {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 3px 1px;
+}
+
+.noterow > .notebadge {
+  margin-top: 2px;
+}
+
+/* The note itself, a key that opens its box. */
+.noterow .notebody {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.noterow .notebody:hover,
+.noterow.editing .notebody {
+  border-color: var(--line);
+  background: var(--well);
+}
+
+.noterow .notetext {
+  font-size: 12px;
+  color: var(--ink);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.noterow small {
+  font-size: 10.5px;
+  color: var(--dim);
+}
+
+.noterow .notereply,
+.noterow .noteask {
+  color: var(--accent-d);
+}
+
+.noterow .noteask {
+  font-weight: 600;
+}
+
+.noterow.done .notetext {
+  color: var(--dim);
+  text-decoration: line-through;
+}
+
+.noterow .notekeys {
+  flex: none;
+  display: flex;
+}
+
+.noterow button.x.notedone.on,
+.noterow button.x.notedone:hover:not(:disabled) {
+  color: var(--green);
+}
+
+/* The box a note is written in, by its pin or its row. */
+.chipbar.notecard {
+  flex-direction: column;
+  gap: 6px;
+  width: 280px;
+  padding: 8px;
+}
+
+.notecard-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--dim);
+  min-width: 0;
+}
+
+.notecard-head span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notecard textarea {
+  font-family: var(--ui);
+  font-size: 12.5px;
+  color: var(--ink);
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  box-shadow: var(--inset);
+  padding: 5px 7px;
+  resize: vertical;
+  min-height: 52px;
+}
+
+/* The agent's question over the box its answer is written in. */
+.notecard-question {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.notecard-reply {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--accent-d);
+}
+
+.notecard-keys {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+/* A note's text beside its pin in the viewport, right of the badge; the
+   whole of it under the cursor, the start of it otherwise. */
+.note-label {
+  margin: -17px 0 0 34px;
+  max-width: 220px;
+  padding: 2px 7px;
+  border-radius: 2px;
+  background: rgba(var(--glass), 0.92);
+  border: 1px solid var(--line);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14);
+  color: var(--ink);
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.note-label:empty,
+.nolabels .note-label {
+  display: none;
+}
+
+.note-label.lit {
+  max-width: 300px;
+  white-space: normal;
+}
+
+.note-label.agent {
+  border-left: 3px solid #1877c0;
+}
+
+.note-label.done {
+  color: var(--dim);
+  text-decoration: line-through;
+}
+
+.note-label.away {
+  opacity: 0.5;
+}
+
+/* A feature row whose number an agent had fitted to the scan: a quiet tag,
+   the reading in its tooltip. */
+.kv b.fitted {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 0 4px;
+  border-radius: 3px;
+  color: var(--accent);
+  border: 1px solid currentColor;
+  opacity: 0.85;
+}

@@ -21,6 +21,11 @@
 # upgrade has to be made deliberately in both places — which is what we want
 # for the component that decides how CAD surfaces become triangles. It must
 # never be widened to a package we do not own.
+#
+# This check cannot see Open CASCADE: `occt-wasm` declares its wrapper's MIT /
+# Apache-2.0, so it passes, while the kernel inside it is LGPL-2.1 with the
+# Open CASCADE exception. CONTRIBUTING.md §2 records that one exception and why
+# it holds.
 name: License check
 
 on:

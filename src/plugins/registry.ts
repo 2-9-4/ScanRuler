@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Where the app finds its plugins: every plugins/<id>/plugin.ts, by a glob
-// that matches nothing when the folder is absent. That is how the
-// open-source tree builds — it has no plugins/ at all — and it is the one
-// place outside plugins/ allowed to name the folder (see
+// that matches whichever a build has, so it stands with any of them or none.
+// This is the one place outside plugins/ allowed to name the folder (see
 // scripts/check-plugin-boundary.mjs).
 //
 // A plugin found is not yet a plugin in use: installPlugins() asks
@@ -61,8 +60,8 @@ export function betaPlugins(): ScanRulerPlugin[] {
 /**
  * Whether a plugin found in the build is to be used. Every one is, but a
  * beta one only once switched on in Settings; this is where a licence or a
- * sign-in will decide it. For a look at the app as the open-source build
- * has it, `?plugins=none` in the address leaves them all out.
+ * sign-in will decide it. For a look at the app without any,
+ * `?plugins=none` in the address leaves them all out.
  */
 export function pluginEnabled(plugin: ScanRulerPlugin): boolean {
   const query = typeof location === 'undefined' ? null : new URLSearchParams(location.search).get('plugins')

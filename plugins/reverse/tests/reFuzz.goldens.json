@@ -1,0 +1,394 @@
+{
+  "seed 1": {
+    "note": "First goldens, occt-wasm 5.7.1 (2026-10-18).",
+    "steps": [
+      "revolve",
+      "joinCyl",
+      "hole",
+      "cutBox",
+      "cutBox",
+      "cutBox",
+      "hole",
+      "cutBox",
+      "cutBox"
+    ],
+    "outcome": [
+      "ok+ok",
+      "ok+ok",
+      "failed",
+      "ok+ok",
+      "ok+ok",
+      "ok+ok",
+      "ok",
+      "ok+ok",
+      "ok+ok"
+    ],
+    "volume": 19679.50096266722,
+    "area": 4643.61369768116,
+    "faces": 26,
+    "edges": 60
+  },
+  "seed 2": {
+    "note": "First goldens, occt-wasm 5.7.1 (2026-10-18).",
+    "steps": [
+      "revolve",
+      "round",
+      "cutCyl",
+      "cutCyl",
+      "cutCyl",
+      "cutBox",
+      "joinCyl",
+      "joinBox",
+      "joinBox",
+      "pattern"
+    ],
+    "outcome": [
+      "ok+ok",
+      "ok",
+      "ok+ok",
+      "ok+ok",
+      "ok+ok",
+      "ok+ok",
+      "ok+ok",
+      "ok+ok",
+      "ok+ok",
+      "ok"
+    ],
+    "volume": 18553.807320465858,
+    "area": 6118.555847497459,
+    "faces": 54,
+    "edges": 128
+  },
+  "seed 3": {
+    "note": "First goldens, occt-wasm 5.7.1 (2026-10-18).",
+    "steps": [
+      "revolve",
+      "hole",
+      "cutBox",
+      "joinCyl",
+      "pattern",
+      "hole",
+      "cutCyl",
+      "joinBox"
+    ],
+    "outcome": [
+      "ok+ok",
+      "ok",
+      "ok+ok",
+      "ok+ok",
+      "ok",
+      "ok",
+      "ok+ok",
+      "ok+ok"
+    ],
+    "volume": 15942.27042041676,
+    "area": 6167.690723210342,
+    "faces": 38,
+    "edges": 89
+  },
+  "seed 4": {
+    "note": "First goldens, occt-wasm 5.7.1 (2026-10-18).",
+    "steps": [
+      "revolve",
+      "hole",
+      "chamfer",
+      "pattern",
+      "hole"
+    ],
+    "outcome": [
+      "ok+ok",
+      "ok",
+      "ok",
+      "ok",
+      "ok"
+    ],
+    "volume": 9849.040241631617,
+    "area": 3850.0522416940785,
+    "faces": 14,
+    "edges": 19
+  },
+  "seed 5": {
+    "note": "First goldens, occt-wasm 5.7.1 (2026-10-18).",
+    "steps": [
+      "revolve",
+      "chamfer",
+      "shell",
+      "pattern",
+      "joinBox",
+      "joinCyl"
+    ],
+    "outcome": [
+      "ok+ok",
+      "ok",
+      "ok",
+      "ok",
+      "ok+ok",
+      "ok+ok"
+    ],
+    "volume": 7123.444067245335,
+    "area": 11980.314506841602,
+    "faces": 29,
+    "edges": 47
+  },
+  "seed 6": {
+    "note": "First goldens, occt-wasm 5.7.1 (2026-10-18).",
+    "steps": [
+      "revolve",
+      "joinBox",
+      "cutCyl",
+      "hole",
+      "joinCyl"
+    ],
+    "outcome": [
+      "ok+ok",
+      "ok+ok",
+      "ok+ok",
+      "ok",
+      "ok+ok"
+    ],
+    "volume": 13508.733603143053,
+    "area": 4370.279803115852,
+    "faces": 15,
+    "edges": 24
+  },
+  "seed 7": {
+    "note": "First goldens, occt-wasm 5.7.1 (2026-10-18).",
+    "steps": [
+      "extrude",
+      "cutCyl",
+      "joinCyl",
+      "cutCyl",
+      "joinCyl",
+      "joinCyl",
+      "hole",
+      "pattern"
+    ],
+    "outcome": [
+      "ok+ok",
+      "ok+ok",
+      "ok+ok",
+      "ok+ok",
+      "ok+ok",
+      "ok+ok",
+      "ok",
+      "ok"
+    ],
+    "volume": 42969.6039260899,
+    "area": 11587.947701189421,
+    "faces": 37,
+    "edges": 79
+  },
+  "seed 8": {
+    "note": "First goldens, occt-wasm 5.7.1 (2026-10-18).",
+    "steps": [
+      "extrude",
+      "hole",
+      "hole",
+      "chamfer",
+      "cutBox",
+      "joinBox",
+      "cutBox"
+    ],
+    "outcome": [
+      "ok+ok",
+      "ok",
+      "ok",
+      "ok",
+      "ok+ok",
+      "ok+ok",
+      "ok+ok"
+    ],
+    "volume": 23445.44429695337,
+    "area": 5742.636546405846,
+    "faces": 27,
+    "edges": 64
+  },
+  "seed 9": {
+    "note": "First goldens, occt-wasm 5.7.1 (2026-10-18).",
+    "steps": [
+      "extrude",
+      "chamfer",
+      "shell",
+      "round",
+      "round",
+      "joinCyl",
+      "pattern",
+      "hole"
+    ],
+    "outcome": [
+      "ok+ok",
+      "ok",
+      "ok",
+      "ok",
+      "ok",
+      "ok+ok",
+      "ok",
+      "failed"
+    ],
+    "volume": 9112.108709769363,
+    "area": 16446.49911848942,
+    "faces": 37,
+    "edges": 83
+  },
+  "seed 10": {
+    "note": "First goldens, occt-wasm 5.7.1 (2026-10-18).",
+    "steps": [
+      "revolve",
+      "cutBox",
+      "cutCyl",
+      "pattern",
+      "cutBox",
+      "cutCyl",
+      "joinBox"
+    ],
+    "outcome": [
+      "ok+ok",
+      "ok+ok",
+      "ok+ok",
+      "ok",
+      "ok+ok",
+      "ok+failed",
+      "ok+ok"
+    ],
+    "volume": 58841.50238363769,
+    "area": 14212.031856101785,
+    "faces": 30,
+    "edges": 69
+  },
+  "seed 11": {
+    "note": "First goldens, occt-wasm 5.7.1 (2026-10-18).",
+    "steps": [
+      "revolve",
+      "joinBox",
+      "cutCyl",
+      "joinCyl",
+      "cutCyl",
+      "joinCyl"
+    ],
+    "outcome": [
+      "ok+ok",
+      "ok+ok",
+      "ok+ok",
+      "ok+ok",
+      "ok+failed",
+      "ok+ok"
+    ],
+    "volume": 30493.94813643488,
+    "area": 7018.10819541827,
+    "faces": 18,
+    "edges": 42
+  },
+  "seed 12": {
+    "note": "First goldens, occt-wasm 5.7.1 (2026-10-18).",
+    "steps": [
+      "extrude",
+      "joinBox",
+      "shell",
+      "hole",
+      "joinCyl",
+      "joinCyl"
+    ],
+    "outcome": [
+      "ok+ok",
+      "ok+ok",
+      "ok",
+      "ok",
+      "ok+ok",
+      "ok+ok"
+    ],
+    "volume": 5612.755762214913,
+    "area": 8463.355080005585,
+    "faces": 33,
+    "edges": 74
+  },
+  "seed 13": {
+    "note": "First goldens, occt-wasm 5.7.1 (2026-10-18).",
+    "steps": [
+      "revolve",
+      "joinBox",
+      "joinCyl",
+      "cutBox"
+    ],
+    "outcome": [
+      "ok+ok",
+      "ok+ok",
+      "ok+ok",
+      "ok+ok"
+    ],
+    "volume": 3511.6932444799263,
+    "area": 1599.0258889475829,
+    "faces": 14,
+    "edges": 31
+  },
+  "seed 14": {
+    "note": "First goldens, occt-wasm 5.7.1 (2026-10-18).",
+    "steps": [
+      "extrude",
+      "cutCyl",
+      "cutCyl",
+      "cutCyl",
+      "joinCyl",
+      "joinCyl"
+    ],
+    "outcome": [
+      "ok+ok",
+      "ok+ok",
+      "ok+ok",
+      "ok+ok",
+      "ok+ok",
+      "ok+ok"
+    ],
+    "volume": 18375.267450612875,
+    "area": 5472.50661024781,
+    "faces": 18,
+    "edges": 31
+  },
+  "seed 15": {
+    "note": "First goldens, occt-wasm 5.7.1 (2026-10-18).",
+    "steps": [
+      "extrude",
+      "round",
+      "joinCyl",
+      "joinBox",
+      "pattern",
+      "cutCyl",
+      "cutBox"
+    ],
+    "outcome": [
+      "ok+ok",
+      "ok",
+      "ok+ok",
+      "ok+ok",
+      "ok",
+      "ok+failed",
+      "ok+ok"
+    ],
+    "volume": 35498.37640946113,
+    "area": 9655.431501358791,
+    "faces": 32,
+    "edges": 74
+  },
+  "seed 16": {
+    "note": "First goldens, occt-wasm 5.7.1 (2026-10-18).",
+    "steps": [
+      "revolve",
+      "joinBox",
+      "joinBox",
+      "cutCyl",
+      "hole",
+      "joinBox"
+    ],
+    "outcome": [
+      "ok+ok",
+      "ok+ok",
+      "ok+ok",
+      "ok+failed",
+      "ok",
+      "ok+ok"
+    ],
+    "volume": 18567.759954394554,
+    "area": 5014.507319623552,
+    "faces": 23,
+    "edges": 52
+  }
+}

@@ -1,28 +1,26 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Build the open-source tree: this repository without plugins/, checked for
-// anything of a plugin that got out of it.
+// Build the open-source tree: this repository without what is kept private,
+// checked for anything of that which got out.
 //
-//   node scripts/oss-export.mjs <outDir> [--verify] [--link-modules]
+//   node scripts/oss-export.mjs <outDir> [--verify]
 //
 // The files are the ones git knows — tracked, plus new files not ignored —
-// so a build output or a local scan never travels. Left out: plugins/, and
-// whatever plugins/oss-export.json lists under "exclude". From package.json
-// go the plugins' own dependencies ("stripDependencies") and every script
-// that runs something under plugins/; the lockfile is then brought in line
+// so a build output or a local scan never travels. Left out: whatever
+// plugins/oss-export.json lists under "exclude". From package.json go the
+// dependencies only a private plugin uses ("stripDependencies") and every
+// script that runs something left out; the lockfile is then brought in line
 // with it.
 //
-// The tree is then read for what must not be in it: the plugins' license
+// The tree is then read for what must not be in it: the private license
 // marker, the phrases plugins/oss-export.json lists under "forbidden" (regular
 // expressions, any case) unless "allowIn" lets that file carry the phrase,
 // the names it lists under "identifiers" (exact, as whole words), and any
 // import into plugins/. A hit stops the export with every place listed.
 //
 // --verify installs, type-checks, tests and builds the tree, the proof that
-// the open-source edition stands without plugins/. --link-modules skips the
-// install and borrows this checkout's node_modules — quicker locally, but it
-// cannot notice a dependency the open-source edition no longer declares.
+// the open-source edition stands on what it has.
 import { execFileSync, execSync } from 'node:child_process'
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -30,14 +28,13 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 const args = process.argv.slice(2)
 const outArg = args.find((a) => !a.startsWith('--'))
 if (!outArg) {
-  console.error('Usage: node scripts/oss-export.mjs <outDir> [--verify] [--link-modules]')
+  console.error('Usage: node scripts/oss-export.mjs <outDir> [--verify]')
   process.exit(2)
 }
 const out = resolve(outArg)
 const verify = args.includes('--verify')
-const linkModules = args.includes('--link-modules')
 
-/** The license every plugin file carries; never in the open-source tree.
+/** The license a private file carries; never in the open-source tree.
  *  Put together here so that this file does not carry it. */
 const MARKER = ['LicenseRef', 'ScanRuler', 'Proprietary'].join('-')
 const STAMP = '.oss-export'
@@ -59,10 +56,7 @@ const forbidden = [
 const allowIn = config.allowIn ?? {}
 const allowed = (path, term) => (allowIn[path] ?? []).includes(term)
 
-const excluded = (path) =>
-  path === 'plugins' ||
-  path.startsWith('plugins/') ||
-  exclude.some((e) => (e.endsWith('/') ? path.startsWith(e) : path === e))
+const excluded = (path) => exclude.some((e) => (e.endsWith('/') ? path.startsWith(e) : path === e))
 
 // ---- Copy -------------------------------------------------------------------
 
@@ -106,7 +100,7 @@ for (const name of config.stripDependencies ?? []) {
   }
 }
 for (const [name, command] of Object.entries(pkg.scripts ?? {})) {
-  if (/(^|[\s/'"])plugins\//.test(command)) {
+  if (command.split(/\s+/).some((word) => excluded(word.replace(/^['"]|['"]$/g, '')))) {
     delete pkg.scripts[name]
     stripped.push(`script ${name}`)
   }
@@ -134,7 +128,7 @@ for (const file of walk(out)) {
   if (isBinary(buffer)) continue
   const lines = buffer.toString('utf8').split('\n')
   lines.forEach((line, i) => {
-    if (line.includes(MARKER)) leaks.push(`${rel}:${i + 1}  plugin license marker`)
+    if (line.includes(MARKER)) leaks.push(`${rel}:${i + 1}  private license marker`)
     for (const { term, re } of forbidden) if (!allowed(rel, term) && re.test(line)) leaks.push(`${rel}:${i + 1}  "${term}"`)
   })
 }
@@ -143,7 +137,7 @@ console.log(`Exported ${copied} files to ${out}`)
 if (stripped.length > 0) console.log(`Left out of package.json: ${stripped.join(', ')}`)
 
 if (leaks.length > 0) {
-  console.error(`\nThe open-source tree holds plugin material (${leaks.length}):\n`)
+  console.error(`\nThe open-source tree holds private material (${leaks.length}):\n`)
   for (const l of leaks.slice(0, 200)) console.error(`  ${l}`)
   if (leaks.length > 200) console.error(`  … and ${leaks.length - 200} more`)
   process.exit(1)
@@ -172,11 +166,10 @@ for (const name of config.stripDependencies ?? []) {
     process.exit(1)
   }
 }
-console.log('No plugin material in the open-source tree.')
+console.log('No private material in the open-source tree.')
 
 if (verify) {
-  if (linkModules) symlinkSync(join(root, 'node_modules'), join(out, 'node_modules'), 'junction')
-  else run('npm', ['ci', '--no-audit', '--no-fund'])
+  run('npm', ['ci', '--no-audit', '--no-fund'])
   run('npm', ['test', '--', '--reporter=dot'])
   run('npm', ['run', 'build'])
   console.log('The open-source tree type-checks, passes its tests and builds.')

@@ -95,10 +95,37 @@ Workspaces can be added by plugins: `plugins/<id>/plugin.ts` beside `src/`,
 found at build time and read through the interfaces in
 [src/plugins/api.ts](../src/plugins/api.ts) — a workspace's tab, panel and stage,
 its part of the project file, of the undo history, of the mesh worker and of
-the 3D viewport, and its notices in the imprint. The open-source repository has no `plugins/` folder, and nothing in
+the 3D viewport, and its notices in the imprint. Reverse engineer and Mesh Tools
+are built this way; [plugins/README.md](../plugins/README.md) has the rules and
+the extension points. A build stands with any plugin or none, so nothing in
 `src/` imports from one; `node scripts/check-plugin-boundary.mjs` checks
 that. `?plugins=none` in the address runs a build with plugins as if it had
 none.
+
+### Keeping occt-wasm current
+
+The Reverse engineer's kernel, `occt-wasm` (andymai/occt-wasm), is pinned to
+an exact version and moves fast. Check it when cutting a release, and otherwise
+about once a week:
+
+```bash
+npm view occt-wasm version                    # against the pin in package.json
+npm install occt-wasm@<x.y.z> --save-exact    # keep it pinned, no caret
+```
+
+Read what changed in its releases on GitHub first. After a bump: `npm test`
+— which runs the seeded parts of `plugins/reverse/tests/reFuzz.test.ts`
+against their goldens: a seed that comes out otherwise (another volume, a
+face more, a step that now fails) fails with what changed; when the change
+is the new kernel's and meant, write the goldens anew with
+`RE_FUZZ_BLESS="occt-wasm x.y.z → a.b.c: what changed" npx vitest run plugins/reverse/tests/reFuzz.test.ts`
+and commit them — the build benchmark on saved projects for times and
+outcomes
+(`RE_BENCH="a.scanruler;b.scanruler" npx vitest run plugins/reverse/tests/reBench.test.ts`),
+a Reverse engineer browser check, and an entry in `CHANGELOG.md` naming both
+versions and what the new one changed for us, the goldens' note with it. A new
+binding (a kernel operation we lacked) goes in
+`plugins/reverse/core/kernel.ts` or the `kernel*.ts` files beside it.
 
 ## Releases
 

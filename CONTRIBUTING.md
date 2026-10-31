@@ -70,6 +70,20 @@ upgrading it is a deliberate edit in both files — appropriate for the code
 that decides how an exact CAD surface becomes triangles a measurement is taken
 against.
 
+**The one LGPL dependency is loaded, not linked.** The CAD kernel of the Reverse
+engineer workspace is [Open CASCADE Technology](https://dev.opencascade.org/)
+(LGPL-2.1 with the Open CASCADE exception), compiled to WebAssembly by
+[`occt-wasm`](https://github.com/andymai/occt-wasm) (MIT / Apache-2.0). The
+"never LGPL" rule above assumes the bundler links everything into one file; this
+one is a separate `.wasm` asset and a separate JS chunk, fetched on demand in a
+worker and replaceable by anyone with the same build, which is exactly the
+relinking the LGPL asks to keep possible. The imprint names it and points at its
+source, and any change to OCCT itself would have to be published; we make none.
+A commercial exception does not cover it: OCCT stays LGPL in every build. CI
+cannot see this one, because `occt-wasm`'s package declares only its wrapper's
+licenses, so this paragraph is the record. That is the whole of the exemption: no
+other LGPL code, and nothing GPL, ever.
+
 Assets follow the same rule with one carve-out: the bundled fonts in
 [public/fonts/](public/fonts/) are SIL OFL 1.1, which permits bundling with
 software of any license as long as the font files keep their own license text
@@ -110,9 +124,11 @@ npx license-checker --excludePrivatePackages --summary
   scans are not to hand.
 
 - `npm run build` type-checks (`tsc --noEmit`) and builds. It must pass.
-- Numerical work belongs in `src/core/` and must be testable without a
-  browser: no Three.js scene objects, no DOM, in the fitting and deviation
-  maths. That is what makes the acceptance tests possible.
+- Numerical work belongs in `src/core/`, or a plugin's `core/`, and must be
+  testable without a browser: no Three.js scene objects, no DOM, in the fitting
+  and deviation maths. That is what makes the acceptance tests possible.
+- Reverse engineer and Mesh Tools are plugins, in `plugins/`;
+  [plugins/README.md](plugins/README.md) has the rules and the extension points.
 - New source files carry the SPDX header as their first line:
   `// SPDX-License-Identifier: AGPL-3.0-only`
 - Match the surrounding style: comments explain *why* a non-obvious approach

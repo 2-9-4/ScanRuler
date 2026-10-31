@@ -18,8 +18,7 @@ for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
 })
 
 /** The browser checks the plugins ask for — each plugin's ci.json lists its
- *  scripts, relative to its folder. None in the open-source tree, which has
- *  no plugins/. */
+ *  scripts, relative to its folder. None in a tree without plugins/. */
 function pluginChecks() {
   const dir = join(root, 'plugins')
   if (!existsSync(dir)) return []

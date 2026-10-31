@@ -2,7 +2,10 @@
 
 Everything the [README](../README.md) leaves out: each workspace's options,
 what every number means, and how it is computed. The panels' ⓘ buttons
-explain the same things where you use them.
+explain the same things where you use them. The Reverse engineer and Mesh Tools
+workspaces have references of their own, in
+[plugins/reverse/README.md](../plugins/reverse/README.md) and
+[plugins/mesh-tools/README.md](../plugins/mesh-tools/README.md).
 
 - [Undo and redo](#undo-and-redo)
 - [3D Measure: fitting and measuring features](#3d-measure-fitting-and-measuring-features)

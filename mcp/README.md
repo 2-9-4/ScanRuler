@@ -174,7 +174,7 @@ npx -y scanruler-mcp@latest --serve /path/to/scanruler/dist
 
 serves a built ScanRuler (`npm run build` in a clone) at
 `http://127.0.0.1:7317/` from the same port the tab connects to — for Safari,
-for working offline, and for the open-source build. A page from there needs
+for working offline, and for your own build. A page from there needs
 no browser permission, and `--pair` then gives a link to it.
 
 ### Without a browser (headless)
@@ -203,9 +203,8 @@ the engine's are read through `scanruler_tools` and run through
 `scanruler_batch` (see *Small local models*).
 ### Small local models
 
-Listed in full, every command the tab offers is a tool of its own: some sixty
-tools and 25k tokens of schema in the open-source build, over a hundred and
-50k tokens at scanruler.com, all read before the conversation starts. A
+Listed in full, every command the tab offers is a tool of its own: over a
+hundred tools and 50k tokens of schema, all read before the conversation starts. A
 frontier model takes that in its stride. A local model with a 128k window
 runs out of room within a few tool rounds, and picks less reliably among so
 many. For such a model, start the server with `--tools compact` (or set

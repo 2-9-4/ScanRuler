@@ -15,8 +15,8 @@
 Check a 3D scan against what it should have been, entirely in your browser:
 fit spheres, cylinders and planes to the scan and measure between them, paint
 its deviation from the CAD part, map its wall thickness, or measure a flatbed
-scan the way a measuring microscope would. On scanruler.com you can also
-model the scan into a solid STEP body and clean up or reduce the mesh.
+scan the way a measuring microscope would. You can also model the scan into a
+solid STEP body and clean up or reduce the mesh.
 
 **Everything runs locally.** Your files are processed in your browser and
 never leave your computer.
@@ -33,13 +33,13 @@ never leave your computer.
 - [License](#license)
 
 The full reference, with every option and how each measurement is computed,
-is the [manual](docs/manual.md).
+is the [manual](docs/manual.md), and for the two modelling and mesh workspaces
+[Reverse engineer](plugins/reverse/README.md) and
+[Mesh Tools](plugins/mesh-tools/README.md).
 
 ## What it does
 
-All workspaces work on the same loaded scan. The first four are in this
-repository. [Reverse engineer and Mesh Tools](#reverse-engineer-and-mesh-tools-on-scanrulercom)
-are only on scanruler.com.
+All workspaces work on the same loaded scan.
 
 ### 3D Measure
 
@@ -100,11 +100,7 @@ the glass. Its scale can be saved as a scanner profile.
 
 ![The 2D Measure workspace: a section through the bracket scan with three edge-fitted lines, two fitted holes and the dimensions between them](docs/images/section.png)
 
-### Reverse engineer and Mesh Tools, on scanruler.com
-
-These two workspaces are free to use at <https://scanruler.com/>. They are
-closed source: not part of this repository and not covered by its license.
-They also run entirely in your browser.
+### Reverse engineer
 
 **Reverse engineer** turns the scan into a **solid body** in a STEP file that
 CAD opens as a part, not just datums. Sketch on a section through the scan:
@@ -117,6 +113,8 @@ checks the bodies against the scan. No scan is needed to model: on a blank
 stage it works like a small parametric CAD tool.
 
 ![The Reverse engineer workspace: a Joy-Con modelled as a solid body over its scan, with the feature tools in the panel](docs/images/reverse-engineer.png)
+
+### Mesh Tools
 
 **Mesh Tools** works on the mesh itself:
 - **Clean it up**: remove islands, delete marked surface, flip normals, cut
@@ -190,7 +188,7 @@ Claude Code, Codex, Claude Desktop, Cursor or anything else that speaks the
 [Model Context Protocol](https://modelcontextprotocol.io). For example: *"Open
 ballbar.stl, fit both spheres, measure the centre distance and give me the
 report."* It works the panels step by step in front of you, and every step
-can be undone. On scanruler.com it can also
+can be undone. It can also
 [model a scan into a solid](#automatic-reverse-engineering) in Reverse
 engineer and clean up a scan in Mesh Tools.
 
@@ -218,7 +216,7 @@ every option are in [mcp/README.md](mcp/README.md).
 
 An AI agent can drive Reverse engineer from start to finish: give it a scan
 and it hands back a solid STEP body, an editable project and a report of how
-well the two agree. Connect an agent [as above](#agents) on scanruler.com and
+well the two agree. Connect an agent [as above](#agents) and
 ask, for example: *"Reverse engineer C:\parts\bracket.stl into a solid STEP.
 Ask me what you need to know before you start."*
 
@@ -311,18 +309,17 @@ Work down this list, cheapest first:
    by place usually beats starting over.
 5. **Take over by hand.** Everything the agent built is an ordinary feature you
    can edit, suppress or undo.
-6. **Keep what worked.** You cannot edit the guide the app serves, but your own
-   first message or agent instructions (`CLAUDE.md`, `AGENTS.md`) go on top of
-   it on every run: your part types, your tolerances, your order of work.
+6. **Keep what worked.** Your own first message or agent instructions
+   (`CLAUDE.md`, `AGENTS.md`) go on top of the guide the app serves on every
+   run: your part types, your tolerances, your order of work.
 
 ### Help improve the guide
 
 Most of the guide was written from runs that went wrong, so a part that fails
-is useful to us. The Reverse engineer guides are closed source like the
-workspace, so there is nothing here to send a pull request against. Open a
-[feature request](https://github.com/CNCKitchen/scanruler/issues/new?template=feature_request.yml)
-instead, and we write what it teaches into the guide, as a refinement or a new
-part type, in our own words. It helps to include:
+is useful to us. Open a
+[feature request](https://github.com/CNCKitchen/scanruler/issues/new?template=feature_request.yml),
+and we write what it teaches into the guide, as a refinement or a new part
+type. It helps to include:
 
 - what the part is, how it was made and how you would have modelled it
 - the report and deviation pictures, and where the run went wrong
@@ -331,9 +328,10 @@ part type, in our own words. It helps to include:
 - a trace of the run, written when the helper is started with
   `--trace <dir> --trace-args`. It holds your file paths, so read it first.
 
-Pull requests are welcome for what is in this repository: the measuring guides
-in [src/commands/guides/](src/commands/guides/), and the fits, sections and
-deviation underneath. They need the CLA, see [CONTRIBUTING.md](CONTRIBUTING.md).
+Pull requests are welcome too: the measuring guides in
+[src/commands/guides/](src/commands/guides/), the Reverse engineer guides in
+[plugins/reverse/guides/](plugins/reverse/guides/), and the code underneath.
+They need the CLA, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Development
 
@@ -347,8 +345,10 @@ npm run e2e:ci    # browser tests on generated fixtures; run after building
 
 The app is a static Vite + React + three.js build, with heavy geometry in a
 Web Worker. Tests, the browser checks, releases and deployment are described
-in [docs/development.md](docs/development.md).
-`node scripts/readme-shots.mjs` retakes the pictures above.
+in [docs/development.md](docs/development.md). Reverse engineer and Mesh Tools
+are plugins, in [plugins/](plugins/README.md).
+`node scripts/readme-shots.mjs` and `node plugins/readme-shots.mjs` retake the
+pictures above.
 
 ## Roadmap
 
@@ -373,7 +373,13 @@ policy: no third-party copyleft in the app, enforced in CI by
 [license-check.yml](.github/workflows/license-check.yml). The STEP importer
 [meshStep](https://github.com/CNCKitchen/meshStep) is AGPL and is allowed
 only because it is ours too, so a commercial exception for this app covers
-it as well.
+it as well. The one third-party exception is Reverse engineer's CAD kernel,
+[Open CASCADE Technology](https://dev.opencascade.org/) (LGPL-2.1 with the Open
+CASCADE exception): it is loaded as a separate, replaceable file, not linked,
+and keeps its own license.
+
+scanruler.com also carries a workspace in beta that is not in this repository
+and not under this license.
 
 The bundled fonts are under SIL OFL 1.1 (license files in
 [public/fonts/](public/fonts/)). The colour maps other than jet are the tables

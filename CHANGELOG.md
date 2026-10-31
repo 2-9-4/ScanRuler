@@ -5,6 +5,17 @@ bar and the imprint is the entry it belongs to; the `.scanruler` projects it
 saves carry the same number as `appVersion`. How a release is cut is in
 `docs/development.md` under "Releases".
 
+## 0.9.0 — 2026-10-31
+
+- **Reverse engineer and Mesh Tools are open source** (2026-10-31). The two
+  workspaces are now in this repository under the AGPL, in `plugins/reverse`
+  and `plugins/mesh-tools`, with their guides, tests and browser checks.
+  Nothing about using them changes. Their changes are told here from now on;
+  their history up to 0.8.7 is in each plugin's own `CHANGELOG.md`. Reverse
+  engineer's CAD kernel, Open CASCADE Technology, keeps its own license (LGPL-2.1
+  with the Open CASCADE exception), as a separate file loaded on demand;
+  `CONTRIBUTING.md` and `COMMERCIAL.md` say what that means.
+
 ## 0.8.7 — 2026-10-31
 
 - **A cylinder fit says when a wall is drafted** (2026-10-31). Fitted on part of

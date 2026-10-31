@@ -1,0 +1,49 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+/* The Mesh Tools workspace's own rules, on top of the app's stylesheet
+   (src/styles.css), whose tokens and base rules they use. */
+
+/* The question a panel asks before it changes the scan: what goes, and the
+   yes and the no side by side, in place of the key that asked. */
+.confirmbox {
+  margin-top: 8px;
+  padding: 8px 10px 10px;
+  border: 1px solid var(--line-strong);
+  border-left: 3px solid var(--amber);
+  border-radius: var(--r);
+  background: color-mix(in srgb, var(--amber) 8%, var(--panel));
+}
+
+.confirmbox p {
+  margin: 0 0 6px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.confirmbox p.hint {
+  font-size: 11.5px;
+  margin-bottom: 8px;
+}
+
+/* Select all / Unselect all, over the list they act on. */
+.toolrow.boolean-pick {
+  margin-bottom: 6px;
+}
+
+/* The solids on offer, one to a line, each ticked in or out of hand. */
+.boolean-solids {
+  display: grid;
+  gap: 5px;
+  margin-bottom: 6px;
+}
+
+.boolean-solids i {
+  font-style: normal;
+  color: var(--faint);
+}
+
+/* Boolean's three operations side by side, across the panel. */
+.moderow.boolean-ops,
+.moderow.shell-sides {
+  grid-template-columns: repeat(3, 1fr);
+  margin-bottom: 8px;
+}

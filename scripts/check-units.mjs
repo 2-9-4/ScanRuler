@@ -156,7 +156,7 @@ for (const top of ROOTS) {
   try {
     statSync(dir)
   } catch {
-    continue // The open-source tree has no plugins/.
+    continue // A tree without plugins/.
   }
   for (const file of walk(dir)) {
     const rel = relative(root, file).split(sep).join('/')
