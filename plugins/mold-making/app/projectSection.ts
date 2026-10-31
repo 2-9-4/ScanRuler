@@ -4,7 +4,7 @@ import type { ProjectSection } from '../../../src/app/projectSections'
 import { DEFAULT_MOLD_SETTINGS, MOLD_SETTING_KEYS, parseMoldSettings, type MoldSettings } from '../core/settings'
 import { moldSettings, useMold } from '../state/moldStore'
 
-function changed(a:MoldSettings,b:MoldSettings):boolean {
+function settingsChanged(a:MoldSettings,b:MoldSettings):boolean {
   return MOLD_SETTING_KEYS.some(k=>{
     if(k==='keyPositions'){
       return a.keyPositions.length!==b.keyPositions.length ||
@@ -21,15 +21,15 @@ export const moldSection: ProjectSection<MoldSettings> = {
     return () => useMold.setState({...next})
   },
   hasContent(value){
-    return changed(value, DEFAULT_MOLD_SETTINGS)
+    return settingsChanged(value, DEFAULT_MOLD_SETTINGS)
   },
   holdsWork(){
     const s=moldSettings()
-    return changed(s, DEFAULT_MOLD_SETTINGS)
+    return settingsChanged(s, DEFAULT_MOLD_SETTINGS)
   },
   watch(changed){
     return useMold.subscribe((next,prev)=>{
-      if(changed(next,prev))changed()
+      if(settingsChanged(next,prev))changed()
     })
   },
 }
