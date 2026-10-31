@@ -35,7 +35,8 @@ never leave your computer, unless you connect an [AI agent](#agents).
 The full reference, with every option and how each measurement is computed,
 is the [manual](docs/manual.md), and for the two modelling and mesh workspaces
 [Reverse engineer](plugins/reverse/README.md) and
-[Mesh Tools](plugins/mesh-tools/README.md).
+[Mesh Tools](plugins/mesh-tools/README.md). This fork also includes an
+[initial Mold Making workspace](plugins/mold-making/README.md) (not deployed at scanruler.com).
 
 ## What it does
 
