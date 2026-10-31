@@ -2,7 +2,7 @@
 import { create } from 'zustand'
 import {
   DEFAULT_MOLD_SETTINGS, MOLD_SETTING_KEYS, validMoldDimension,
-  type BoxShape, type MoldDimension, type MoldMode, type MoldSettings,
+  type BoxShape, type KeyStyle, type KeyPlacement, type MoldDimension, type MoldMode, type MoldSettings,
   type MoldSource, type PartCount, type SplitAxis,
 } from '../core/settings'
 
@@ -13,6 +13,9 @@ interface MoldState extends MoldSettings {
   setSplitAxis(splitAxis: SplitAxis): void
   setBoxShape(boxShape: BoxShape): void
   setKeys(keys: boolean): void
+  setKeyStyle(keyStyle: KeyStyle): void
+  setKeyPlacement(keyPlacement: KeyPlacement): void
+  setKeyPositions(keyPositions: number[]): void
   setDimension(key: MoldDimension, value: number): void
 }
 export const useMold = create<MoldState>()((set)=>({
@@ -23,6 +26,13 @@ export const useMold = create<MoldState>()((set)=>({
   setSplitAxis: (splitAxis) => set({splitAxis}),
   setBoxShape: (boxShape) => set({boxShape}),
   setKeys: (keys) => set({keys}),
+  setKeyStyle: (keyStyle) => set({keyStyle}),
+  setKeyPlacement: (keyPlacement) => set({keyPlacement}),
+  setKeyPositions: (keyPositions) => {
+    if (keyPositions.length>12 || keyPositions.some(x=>!Number.isFinite(x)||x<0.01||x>0.99) ||
+      new Set(keyPositions).size!==keyPositions.length) return
+    set({keyPositions:[...keyPositions]})
+  },
   setDimension: (key,value) => {
     if (!validMoldDimension(key,value)) return
     set({[key]:value} as Pick<MoldState,MoldDimension>)
@@ -30,5 +40,5 @@ export const useMold = create<MoldState>()((set)=>({
 }))
 export function moldSettings(): MoldSettings {
   const s = useMold.getState()
-  return Object.fromEntries(MOLD_SETTING_KEYS.map(key => [key,s[key]])) as unknown as MoldSettings
+  return Object.fromEntries(MOLD_SETTING_KEYS.map(key => [key,key==='keyPositions'?[...s.keyPositions]:s[key]])) as unknown as MoldSettings
 }
