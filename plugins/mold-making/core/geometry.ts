@@ -192,6 +192,7 @@ function pinSolid(
 function addKeys(
   wasm:ManifoldToplevel,negative:Manifold,positive:Manifold,
   axis:SplitAxis,split:number,s:MoldSettings,plan:MoldPlan,keep:(m:Manifold)=>Manifold,
+  seamSpan?:readonly [number,number],
 ):[Manifold,Manifold] {
   // Key geometry sits in the backing base, not against casting surfaces.
   // Metal dowel mode cuts blind clearance sockets on BOTH mating halves.
@@ -209,7 +210,8 @@ function addKeys(
   }else{
     const n:SplitAxis=axis==='x'?'y':'x',t=axisIndex(n)
     const a=negative.boundingBox(),b=positive.boundingBox()
-    const lo=Math.max(a.min[t],b.min[t]),hi=Math.min(a.max[t],b.max[t])
+    const lo=seamSpan?.[0]??Math.max(a.min[t],b.min[t])
+    const hi=seamSpan?.[1]??Math.min(a.max[t],b.max[t])
     const coords=seamPositions(lo,hi,s)
     for(const x of coords){
       const p:Vec3=[center(base.min[0],base.max[0]),center(base.min[1],base.max[1]),z]
@@ -269,12 +271,20 @@ function keyFourParts(
 ):Manifold[] {
   if(pieces.length!==4)throw new Error('Four-part registration needs four separate pieces.')
   const registered=pieces.slice()
+  // Always measure key locations on the ORIGINAL four parts. Otherwise
+  // first-seam pins extend the bounding boxes and move second-seam keys.
+  const initial=pieces.map(p=>p.boundingBox())
+  const span=(i:number,j:number,axis:SplitAxis):readonly [number,number]=>{
+    const tangent=axis==='x'?1:0
+    return [Math.max(initial[i].min[tangent],initial[j].min[tangent]),
+      Math.min(initial[i].max[tangent],initial[j].max[tangent])]
+  }
   for(const [i,j] of [[0,2],[1,3]]){
-    const [low,high]=addKeys(wasm,registered[i],registered[j],first,firstAt,s,plan,keep)
+    const [low,high]=addKeys(wasm,registered[i],registered[j],first,firstAt,s,plan,keep,span(i,j,first))
     registered[i]=low;registered[j]=high
   }
   for(const [i,j] of [[0,1],[2,3]]){
-    const [low,high]=addKeys(wasm,registered[i],registered[j],second,secondAt,s,plan,keep)
+    const [low,high]=addKeys(wasm,registered[i],registered[j],second,secondAt,s,plan,keep,span(i,j,second))
     registered[i]=low;registered[j]=high
   }
   return registered
