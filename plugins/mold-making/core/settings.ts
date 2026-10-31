@@ -35,6 +35,7 @@ export const DEFAULT_MOLD_SETTINGS: Readonly<MoldSettings> = Object.freeze({
   source: 'scan',
   mode: 'direct',
   // Do not silently smooth/delete slender model detail on first generation.
+  // A positive clearance grows the target cutter, enlarging the void.
   // Clearance is a deliberate opt-in operation.
   clearance: 0,
   sideMargin: 8,
