@@ -1,16 +1,20 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
 # Mold Making workspace
 
-A native ScanRuler plugin for designing rigid printed casting molds and printed tooling for silicone molds.
+Native ScanRuler plugin to turn a scanned part or STEP model into a printable mold component. Generated geometry is not a modified scan; it is a separate preview/export.
 
-## Current foundation scope
+## First geometry slice
 
-- A new **Mold Making** tab with an independent target and production-mode panel.
-- Import **STEP/STP directly** or a scanned **STL/PLY/OBJ/3MF** through ScanRuler's existing scan/reference loaders; no mandatory reverse engineering or external converter.
-- Choose between direct-print negative tooling, a containment box for silicone poured around a master, and a thin negative shell to cast silicone tooling. These are separate processes, not merely different wall thicknesses.
-- Edit casting clearance, tooling margins, base/wall thickness and silicone jacket settings in millimetres.
-- Save settings in `.scanruler` projects, restore them with validation, and undo/redo mode and dimension changes.
+- Use **Scan / model** to import STL, OBJ, PLY, 3MF, STEP/STP directly. Alternatively choose **Reference** to reuse a separately loaded CAD or mesh reference. Both use ScanRuler's existing parsers and unit conversions.
+- **Direct-print mold**: creates an open one-sided negative cavity in a box. It intentionally captures only the portion of a target below its midplane; this is **not** a full two-part mold.
+- **Silicone mold box**: creates a sealed-bottom, open-top container around a master, with user-set silicone space, base and printable wall thickness. The physical master still needs support/attachment; automatic fixtures are not implemented.
+- **Thin negative shell**: offsets the source geometry for a conformal negative cavity, clips it at the midplane, hollows the internal target volume. This is a *one-sided* shell, not yet general undercut/extraction tooling; complex concavities may fail the offset safety checks.
+- Preview the generated part, read material volume and warnings, export **STL (mm)** or **3MF**. Both export precisely the inspected mesh, not an unrelated CAD body.
+- Save recipe settings in `.scanruler`; source assets are already saved by core ScanRuler. Regenerate output after reopening.
+- Generation runs off the main thread via ScanRuler's mesh worker and reuses Mesh Tools' Manifold Booleans and offset code. Refuse nonwatertight or inward-wound inputs/outputs. A STEP file is tessellated through the existing STEP importer, and all operations from there are mesh-based.
 
-**Not yet implemented:** geometry generation, preview of generated parts, manifold/undercut verification or STL/3MF export. The Generate control is intentionally disabled until generation and export are safe. Target files loaded into ScanRuler are already viewable there.
+## Known limitations before production use
 
-See [issue-ready roadmap](../../docs/mold-making-issues.md) for planned phases and acceptance criteria. Use Mesh Tools to repair scans before generating; do not mutate an original mesh silently.
+Molds are currently **single-sided**, and have no parting/key system, sprues, venting, smart sealing, undercut detection, demold simulation, or print minimum-wall guarantee. Do not interpret a successful Boolean as a proof of casting manufacturability. Test on small sacrificial prints, check mesh inspection in a slicer, and account for silicone inhibition and printer tolerances.
+
+The roadmap and issue links are in [docs/mold-making-issues.md](../../docs/mold-making-issues.md). Track the generation and validation milestones through #5, #6, #7, #8, #9, and #25.
