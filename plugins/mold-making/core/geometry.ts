@@ -48,6 +48,24 @@ export function draftedBox(limits:Limits,topExpansion:number):Triangles {
 function check(mesh:Triangles,what:string):void {
   const n=mesh.positions.length/3
   if(!n||!Number.isInteger(n)||mesh.indices.length===0||mesh.indices.length%3)throw new Error(`${what}: invalid triangles.`)
+  // A mesh can be index-closed and positive-volume yet still contain NaNs,
+  // degenerate/zero-area triangles, or unreferenced collapsed walls. Reject
+  // exact slivers rather than silently dropping them in the slicer.
+  for(let i=0;i<mesh.positions.length;i++){
+    if(!Number.isFinite(mesh.positions[i]))throw new Error(`${what} contains non-finite vertices.`)
+  }
+  for(let i=0;i<mesh.indices.length;i+=3){
+    const ia=mesh.indices[i],ib=mesh.indices[i+1],ic=mesh.indices[i+2]
+    if(ia>=n||ib>=n||ic>=n||ia===ib||ib===ic||ic===ia)throw new Error(`${what} has degenerate triangle indices.`)
+    const p=mesh.positions
+    const a=ia*3,b=ib*3,c=ic*3
+    const ux=p[b]-p[a],uy=p[b+1]-p[a+1],uz=p[b+2]-p[a+2]
+    const vx=p[c]-p[a],vy=p[c+1]-p[a+1],vz=p[c+2]-p[a+2]
+    const crossX=uy*vz-uz*vy,crossY=uz*vx-ux*vz,crossZ=ux*vy-uy*vx
+    const area2=Math.hypot(crossX,crossY,crossZ)
+    const scale=Math.max(ux*ux+uy*uy+uz*uz,vx*vx+vy*vy+vz*vz)
+    if(area2<=scale*1e-11)throw new Error(`${what} contains zero-area or collapsed faces.`)
+  }
   const c=closedness(mesh.indices,n)
   if(c.open||c.bad)throw new Error(`${what} is not watertight (${c.open} boundary edges, ${c.bad} nonmanifold edges). Repair it in Mesh Tools.`)
   if(!(signedVolume(mesh.positions,mesh.indices)>EPS))throw new Error(`${what} is inside-out or zero-volume.`)
