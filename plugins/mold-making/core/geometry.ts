@@ -268,9 +268,24 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
     }else{
       if(s.clearance>0)warnings.push('Mesh offset clearance can merge gaps narrower than twice the clearance. Check fine features.')
       const positive=toManifold(wasm,offset(targetMesh,s.clearance,warnings),keep)
-      if(s.mode==='direct')solid=keep(toManifold(wasm,boxSolid(plan.outer),keep).subtract(positive))
-      else{
+      if(s.mode==='direct'){
+        // The offset cutter may move *more* than d at a sharp corner.
+        // Check its actual Manifold bounds against every outside wall, not
+        // just sideMargin > clearance. Avoid accidental through-holes.
+        const b=positive.boundingBox()
+        const minimalMaterial=0.1
+        for(let axis=0;axis<3;axis++){
+          const lower=b.min[axis]-plan.outer.min[axis]
+          const upper=plan.outer.max[axis]-b.max[axis]
+          if(Math.min(lower,upper)<minimalMaterial){
+            throw new Error(`Clearance ${s.clearance} mm breaks through the mold's ${['X','Y','Z'][axis]} wall (${Math.min(lower,upper).toFixed(3)} mm left). Increase outer margin/base thickness or decrease clearance.`)
+          }
+        }
+        solid=keep(toManifold(wasm,boxSolid(plan.outer),keep).subtract(positive))
+      }else{
         const skin=toManifold(wasm,offset(targetMesh,s.clearance+s.wallThickness,warnings),keep)
+        const outerVolume=skin.volume(),innerVolume=positive.volume()
+        if(outerVolume<=innerVolume)throw new Error('Shell offset lost its enclosing material. Increase shell thickness or fix target geometry.')
         solid=keep(skin.subtract(positive))
         warnings.push('Thin shells use normal-based surface offsets. Small features and tight concavities can fail; verify the result before printing.')
       }
