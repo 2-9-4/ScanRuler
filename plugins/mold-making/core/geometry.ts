@@ -48,9 +48,9 @@ export function draftedBox(limits:Limits,topExpansion:number):Triangles {
 function check(mesh:Triangles,what:string):void {
   const n=mesh.positions.length/3
   if(!n||!Number.isInteger(n)||mesh.indices.length===0||mesh.indices.length%3)throw new Error(`${what}: invalid triangles.`)
-  // A mesh can be index-closed and positive-volume yet still contain NaNs,
-  // degenerate/zero-area triangles, or unreferenced collapsed walls. Reject
-  // exact slivers rather than silently dropping them in the slicer.
+  // Manifold often triangulates planar intersections into very thin but
+  // NONZERO-area slivers. A tiny aspect ratio is not a collapsed face. Do
+  // not discard those triangles or erroneously block a four-piece mold.
   for(let i=0;i<mesh.positions.length;i++){
     if(!Number.isFinite(mesh.positions[i]))throw new Error(`${what} contains non-finite vertices.`)
   }
@@ -63,8 +63,7 @@ function check(mesh:Triangles,what:string):void {
     const vx=p[c]-p[a],vy=p[c+1]-p[a+1],vz=p[c+2]-p[a+2]
     const crossX=uy*vz-uz*vy,crossY=uz*vx-ux*vz,crossZ=ux*vy-uy*vx
     const area2=Math.hypot(crossX,crossY,crossZ)
-    const scale=Math.max(ux*ux+uy*uy+uz*uz,vx*vx+vy*vy+vz*vz)
-    if(area2<=scale*1e-11)throw new Error(`${what} contains zero-area or collapsed faces.`)
+    if(area2===0)throw new Error(`${what} has a zero-area triangle at face ${i/3}. No geometry was silently discarded.`)
   }
   const c=closedness(mesh.indices,n)
   if(c.open||c.bad)throw new Error(`${what} is not watertight (${c.open} boundary edges, ${c.bad} nonmanifold edges). Repair it in Mesh Tools.`)
@@ -100,6 +99,7 @@ export function planMold(target:Triangles,settings:MoldSettings):MoldPlan {
   }
   if(s.mode==='direct'){
     if(s.sideMargin<=s.clearance)throw new Error('Outer margin must exceed cavity clearance.')
+    if(s.baseThickness<=s.clearance)throw new Error('Cavity clearance must be smaller than base/top thickness, or the cutter breaks through the outside. Increase base thickness.')
     return {outer:{min:[min[0]-s.sideMargin,min[1]-s.sideMargin,min[2]-s.baseThickness],
       max:[max[0]+s.sideMargin,max[1]+s.sideMargin,max[2]+s.baseThickness]},
       innerBox:null,cylinder:null,openingZ:s.parts===1?center(min[2],max[2]):null}
@@ -130,11 +130,26 @@ function toPart(solid:Manifold,name:string):MoldPart {
   check({positions,indices},name)
   return {name,positions,indices,volumeMm3:signedVolume(positions,indices)}
 }
-function offset(mesh:Triangles,d:number):Triangles {
+function offset(mesh:Triangles,d:number,warnings:string[]):Triangles {
   if(d===0)return mesh
+  const before=signedVolume(mesh.positions,mesh.indices)
   const m=offsetMesh(mesh.positions,mesh.indices,mesh.positions.length/3,{distance:d})
+  // The existing vertex-normal offset can merge folds and delete corners.
+  // In mold tooling, this would silently erase fine casting details.
+  if(m.report.merged>0){
+    throw new Error(`Clearance ${d} mm merged ${m.report.merged} source vertices and would lose cavity details. Reduce clearance, use 0 mm, or use a simplified target. No malformed mold was exported.`)
+  }
   const result={positions:m.positions,indices:m.indices}
-  check(result,'Offset target')
+  check(result,'Clearance-offset target')
+  const after=signedVolume(result.positions,result.indices)
+  // The cutter should always enlarge for +d; the rigid cavity should
+  // therefore grow, never shrink. Compare volumes before subtracting.
+  if(!(after>before)){
+    throw new Error(`Clearance ${d} mm decreased or failed to enlarge the target volume (${before.toFixed(2)} → ${after.toFixed(2)} mm³). The mesh offset folded over; mold generation was stopped.`)
+  }
+  if(m.report.relaxed>0){
+    warnings.push(`The ${d} mm normal-based clearance offset adjusted ${m.report.relaxed} vertices to mend folds. Verify the resulting cavity against the target; the algorithm is not a true solid dilation.`)
+  }
   return result
 }
 function pinSolid(
@@ -191,16 +206,37 @@ function addKeys(
 function split(
   wasm:ManifoldToplevel,solids:Manifold[],axis:SplitAxis,at:number,
   s:MoldSettings,plan:MoldPlan,keep:(m:Manifold)=>Manifold,
+  withKeys=s.keys,
 ):Manifold[] {
   const out:Manifold[]=[]
   for(const solid of solids){
     const [pos,neg]=solid.splitByPlane(normal(axis),at)
     keep(pos);keep(neg)
     if(pos.isEmpty()||neg.isEmpty())throw new Error(`The ${axis.toUpperCase()} parting plane misses one of the mold sections. Adjust the plane.`)
-    const [a,b]=s.keys?addKeys(wasm,neg,pos,axis,at,s,plan,keep):[neg,pos]
+    const [a,b]=withKeys?addKeys(wasm,neg,pos,axis,at,s,plan,keep):[neg,pos]
     out.push(a,b)
   }
   return out
+}
+/** Four-part parts are split *before* any pins are added, so the second
+ * plane cannot shear a pre-existing pin or socket into degenerate faces.
+ * Then pin each adjacent pair on each finished mating interface. */
+function keyFourParts(
+  wasm:ManifoldToplevel,pieces:Manifold[],first:SplitAxis,firstAt:number,
+  second:SplitAxis,secondAt:number,s:MoldSettings,plan:MoldPlan,
+  keep:(m:Manifold)=>Manifold,
+):Manifold[] {
+  if(pieces.length!==4)throw new Error('Four-part registration needs four separate pieces.')
+  const registered=pieces.slice()
+  for(const [i,j] of [[0,2],[1,3]]){
+    const [low,high]=addKeys(wasm,registered[i],registered[j],first,firstAt,s,plan,keep)
+    registered[i]=low;registered[j]=high
+  }
+  for(const [i,j] of [[0,1],[2,3]]){
+    const [low,high]=addKeys(wasm,registered[i],registered[j],second,secondAt,s,plan,keep)
+    registered[i]=low;registered[j]=high
+  }
+  return registered
 }
 /** Full-height negative, then one or two exact parting operations. */
 export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:MoldSettings,onProgress?:(s:string)=>void):MoldBuild {
@@ -231,10 +267,10 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
       if(s.boxDraftDeg>0)warnings.push('Draft is applied to the silicone BOX interior, not the master/cast cavity.')
     }else{
       if(s.clearance>0)warnings.push('Mesh offset clearance can merge gaps narrower than twice the clearance. Check fine features.')
-      const positive=toManifold(wasm,offset(targetMesh,s.clearance),keep)
+      const positive=toManifold(wasm,offset(targetMesh,s.clearance,warnings),keep)
       if(s.mode==='direct')solid=keep(toManifold(wasm,boxSolid(plan.outer),keep).subtract(positive))
       else{
-        const skin=toManifold(wasm,offset(targetMesh,s.clearance+s.wallThickness),keep)
+        const skin=toManifold(wasm,offset(targetMesh,s.clearance+s.wallThickness,warnings),keep)
         solid=keep(skin.subtract(positive))
         warnings.push('Thin shells use normal-based surface offsets. Small features and tight concavities can fail; verify the result before printing.')
       }
@@ -251,10 +287,17 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
       onProgress?.('Cutting exact parting planes; applying mating pins and pockets…')
       const a=s.splitAxis,k=axisIndex(a)
       if(s.parts===4&&a==='z'&&s.keys&&s.mode!=='thin-negative-shell')throw new Error('Four-part Z-first tooling with pins is not yet supported. Choose X/Y as the primary parting axis, or disable pins.')
-      pieces=split(wasm,pieces,a,extent.min[k]+(extent.max[k]-extent.min[k])*s.splitPosition,s,plan,keep)
+      const firstAt=extent.min[k]+(extent.max[k]-extent.min[k])*s.splitPosition
+      pieces=split(wasm,pieces,a,firstAt,s,plan,keep,s.parts===2&&s.keys)
       if(s.parts===4){
         const second:SplitAxis=a==='x'?'y':'x',j=axisIndex(second)
-        pieces=split(wasm,pieces,second,center(extent.min[j],extent.max[j]),s,plan,keep)
+        const secondAt=center(extent.min[j],extent.max[j])
+        pieces=split(wasm,pieces,second,secondAt,s,plan,keep,false)
+        // Secondary split runs on the unkeyed bodies. Add interfaces once
+        // every final component exists. Prevents cuts across existing keys.
+        if(s.keys&&s.mode!=='thin-negative-shell'){
+          pieces=keyFourParts(wasm,pieces,a,firstAt,second,secondAt,s,plan,keep)
+        }
       }
       if(s.keys&&s.mode==='thin-negative-shell')warnings.push('Pins on thin conformal shells are not yet implemented; use an external clamp/jacket.')
       warnings.push('Splits do not guarantee demoldability: inspect the target for trapped undercuts and add a sprue or vent before casting.')
