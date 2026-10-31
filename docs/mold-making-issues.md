@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
 # Mold Making workspace — issue-ready backlog
 
-> GitHub Issues was disabled on this newly forked repository at planning time (GitHub API returned HTTP 410). Enable **Settings → General → Features → Issues**, then turn each heading into an issue. IDs and dependencies are stable planning handles, not live GitHub issue numbers.
+> GitHub Issues is now enabled. All 26 issues are live under [Mold Making](https://github.com/2-9-4/ScanRuler/issues?q=is%3Aissue+MOLD). The MOLD IDs are stable planning handles; GitHub assigns separate issue numbers.
 
 ## Objective and constraints
 
@@ -21,7 +21,7 @@ MoldBoxer-advertised workflows: adapted box, tray, multi-part silicone, inner co
 
 ## Issue descriptions (copy the title/body into GitHub Issues)
 
-### MOLD-001 [P0] Establish Mold Making plugin and persistent workspace
+### [MOLD-001](https://github.com/2-9-4/ScanRuler/issues/2) [P0] Establish Mold Making plugin and persistent workspace
 
 **Scope:** Dedicated plugin under plugins/mold-making with tab, own store, guided workflow, undo/project save and reload; no imports from src into plugin. Integrate scan reset and worker if needed.
 
@@ -29,7 +29,7 @@ MoldBoxer-advertised workflows: adapted box, tray, multi-part silicone, inner co
 
 **Depends on:** None.
 
-### MOLD-002 [P0] Target selection: direct STEP and imported scanned meshes
+### [MOLD-002](https://github.com/2-9-4/ScanRuler/issues/3) [P0] Target selection: direct STEP and imported scanned meshes
 
 **Scope:** One target abstraction: editable CAD STEP or scan STL/PLY/OBJ/3MF; reuse ScanRuler loaders and unit handling. Choose active scan, reference STEP, or Reverse-engineer solid. Preserve original source and tessellation provenance.
 
@@ -37,7 +37,7 @@ MoldBoxer-advertised workflows: adapted box, tray, multi-part silicone, inner co
 
 **Depends on:** MOLD-001.
 
-### MOLD-003 [P0] Mold geometry data model, print presets and validation
+### [MOLD-003](https://github.com/2-9-4/ScanRuler/issues/4) [P0] Mold geometry data model, print presets and validation
 
 **Scope:** Separate master, cavity, silicone material, containment, shell, cores, generated parts and scene preview. Parametric settings in millimetres: margin, thickness, gap, print compensation, cast shrink, unit provenance, resolution.
 
@@ -45,7 +45,7 @@ MoldBoxer-advertised workflows: adapted box, tray, multi-part silicone, inner co
 
 **Depends on:** MOLD-001, MOLD-002.
 
-### MOLD-004 [P0] Geometry services: mesh repair, robust Booleans and offsets
+### [MOLD-004](https://github.com/2-9-4/ScanRuler/issues/5) [P0] Geometry services: mesh repair, robust Booleans and offsets
 
 **Scope:** Reuse Mesh Tools fill/closedness/offset/hollow/Boolean and Reverse CAD solid meshes; evaluate watertightness, self-intersections, normals and STEP tessellation quality. Run heavy work in existing workers, do not duplicate algorithms.
 
@@ -53,7 +53,7 @@ MoldBoxer-advertised workflows: adapted box, tray, multi-part silicone, inner co
 
 **Depends on:** MOLD-002, MOLD-003.
 
-### MOLD-005 [P0] Direct-print negative mold: open one-piece block
+### [MOLD-005](https://github.com/2-9-4/ScanRuler/issues/6) [P0] Direct-print negative mold: open one-piece block
 
 **Scope:** Create an outer mold block with target subtracted and user-set casting clearance, wall/base thickness and release direction. First ship for valid watertight, demoldable, open-top geometry; no promise undercut-safe.
 
@@ -61,7 +61,7 @@ MoldBoxer-advertised workflows: adapted box, tray, multi-part silicone, inner co
 
 **Depends on:** MOLD-003, MOLD-004.
 
-### MOLD-006 [P0] Silicone mold tooling: box around physical/printed master
+### [MOLD-006](https://github.com/2-9-4/ScanRuler/issues/7) [P0] Silicone mold tooling: box around physical/printed master
 
 **Scope:** Construct print-ready containment box (optionally conformal) surrounding target/master with independently tunable silicone jacket thickness, base, seam and pour opening; not the same as subtractive direct mold.
 
@@ -69,7 +69,7 @@ MoldBoxer-advertised workflows: adapted box, tray, multi-part silicone, inner co
 
 **Depends on:** MOLD-003, MOLD-004.
 
-### MOLD-007 [P0] Thin negative cavity / offset sacrificial shell for silicone casting
+### [MOLD-007](https://github.com/2-9-4/ScanRuler/issues/8) [P0] Thin negative cavity / offset sacrificial shell for silicone casting
 
 **Scope:** Second silicone-tooling route: a thin 3D-printed shell that follows a *negative* target cavity (or matching inner/outer sections) for casting silicone tooling; explicit orientation, closed end, opening and deliberate breakaway/demold strategy. Avoid confusing with a conformal outer box.
 
@@ -77,7 +77,7 @@ MoldBoxer-advertised workflows: adapted box, tray, multi-part silicone, inner co
 
 **Depends on:** MOLD-004, MOLD-005, MOLD-006.
 
-### MOLD-008 [P0] Part preview, component list, validation and STL/3MF batch export
+### [MOLD-008](https://github.com/2-9-4/ScanRuler/issues/9) [P0] Part preview, component list, validation and STL/3MF batch export
 
 **Scope:** Reuse ScanRuler scene layer, material transparency, sectional view, STL/3MF writers, project archive; show master, negative, box, shell, splits and channels as independent toggles.
 
@@ -85,7 +85,7 @@ MoldBoxer-advertised workflows: adapted box, tray, multi-part silicone, inner co
 
 **Depends on:** MOLD-003, MOLD-005, MOLD-006.
 
-### MOLD-009 [P1] Parting plane workflow and two-piece direct/silicone molds
+### [MOLD-009](https://github.com/2-9-4/ScanRuler/issues/10) [P1] Parting plane workflow and two-piece direct/silicone molds
 
 **Scope:** Interactive move/rotate split plane, choose which mold parts to keep; produce independent closed halves; alignment, parting gap and seam coverage; support reference datums.
 
@@ -93,7 +93,7 @@ MoldBoxer-advertised workflows: adapted box, tray, multi-part silicone, inner co
 
 **Depends on:** MOLD-005, MOLD-006, MOLD-008.
 
-### MOLD-010 [P1] Multi-plane and non-planar splits, 3+/4+ parts
+### [MOLD-010](https://github.com/2-9-4/ScanRuler/issues/11) [P1] Multi-plane and non-planar splits, 3+/4+ parts
 
 **Scope:** Arbitrary and multiple splitting planes and eventually nonplanar user-drawn seam curves to accommodate shape/undercuts; reorder segments and validate intersections.
 
@@ -101,7 +101,7 @@ MoldBoxer-advertised workflows: adapted box, tray, multi-part silicone, inner co
 
 **Depends on:** MOLD-009.
 
-### MOLD-011 [P1] Registration keys, lock barriers, clamps and hardware
+### [MOLD-011](https://github.com/2-9-4/ScanRuler/issues/12) [P1] Registration keys, lock barriers, clamps and hardware
 
 **Scope:** Auto/manual pin-and-socket, cone/sphere keys, perimeter tongue-and-groove barriers, clamp wings/snap fits and screw holes; calibrated clearances by print process.
 
@@ -109,7 +109,7 @@ MoldBoxer-advertised workflows: adapted box, tray, multi-part silicone, inner co
 
 **Depends on:** MOLD-009.
 
-### MOLD-012 [P1] Funnels, pour sprues, gates, vents, and horizontal channels
+### [MOLD-012](https://github.com/2-9-4/ScanRuler/issues/13) [P1] Funnels, pour sprues, gates, vents, and horizontal channels
 
 **Scope:** Auto defaults plus manual route and edit positions/diameters, tapered funnels, risers, bleed vents, horizontal ties, printable supports; route channels through selected mold halves.
 
@@ -117,7 +117,7 @@ MoldBoxer-advertised workflows: adapted box, tray, multi-part silicone, inner co
 
 **Depends on:** MOLD-005, MOLD-006, MOLD-009.
 
-### MOLD-013 [P1] Undercut/draft analysis and clear extraction
+### [MOLD-013](https://github.com/2-9-4/ScanRuler/issues/14) [P1] Undercut/draft analysis and clear extraction
 
 **Scope:** Heatmap by extraction vector, identify trapped surfaces; choose release direction, relief/clear extraction and splits where allowed; preserve target surface within tolerance.
 
@@ -125,7 +125,7 @@ MoldBoxer-advertised workflows: adapted box, tray, multi-part silicone, inner co
 
 **Depends on:** MOLD-004, MOLD-009.
 
-### MOLD-014 [P1] Manufacturability calculator: materials, volume and cost
+### [MOLD-014](https://github.com/2-9-4/ScanRuler/issues/15) [P1] Manufacturability calculator: materials, volume and cost
 
 **Scope:** Exact/estimated cavity volume, silicone quantity, casting volume/mass from density, print volume, cost, tolerance and shrinkage; show uncertainty from scan/STEP tessellation.
 
@@ -133,7 +133,7 @@ MoldBoxer-advertised workflows: adapted box, tray, multi-part silicone, inner co
 
 **Depends on:** MOLD-005, MOLD-006, MOLD-007.
 
-### MOLD-015 [P1] Shape-adaptive boxes, bases, reusable jackets and efficient packing
+### [MOLD-015](https://github.com/2-9-4/ScanRuler/issues/16) [P1] Shape-adaptive boxes, bases, reusable jackets and efficient packing
 
 **Scope:** Conformal outer envelopes with uniform clearance, rounded/rectangular/tray options, print-saving lattice/brace, stable base, sealing lips, assembly feet and reusable jacket.
 
@@ -141,7 +141,7 @@ MoldBoxer-advertised workflows: adapted box, tray, multi-part silicone, inner co
 
 **Depends on:** MOLD-006, MOLD-008, MOLD-011.
 
-### MOLD-016 [P1] Smart sealing, auto foundation, support islands and core mounts
+### [MOLD-016](https://github.com/2-9-4/ScanRuler/issues/17) [P1] Smart sealing, auto foundation, support islands and core mounts
 
 **Scope:** Seal master-to-base intersections/gaps, build foundation at set reference and threshold angle, automatically pin free-floating masters or islands and stabilize thin cores.
 
@@ -149,7 +149,7 @@ MoldBoxer-advertised workflows: adapted box, tray, multi-part silicone, inner co
 
 **Depends on:** MOLD-006, MOLD-013, MOLD-015.
 
-### MOLD-017 [P2] Hollow castings: inner cavity cores and core retention
+### [MOLD-017](https://github.com/2-9-4/ScanRuler/issues/18) [P2] Hollow castings: inner cavity cores and core retention
 
 **Scope:** Generate negative mold plus positive core with wall thickness, extraction path, core keys, supports and drain/pour paths; reuse signed-distance hollowing.
 
@@ -157,7 +157,7 @@ MoldBoxer-advertised workflows: adapted box, tray, multi-part silicone, inner co
 
 **Depends on:** MOLD-009, MOLD-012, MOLD-013.
 
-### MOLD-018 [P2] Flexible skin / mask molds and matched core
+### [MOLD-018](https://github.com/2-9-4/ScanRuler/issues/19) [P2] Flexible skin / mask molds and matched core
 
 **Scope:** Direct-print mold + shaped core with controlled membrane thickness for silicone/latex skins; options for inlets, supports, split and release.
 
@@ -165,7 +165,7 @@ MoldBoxer-advertised workflows: adapted box, tray, multi-part silicone, inner co
 
 **Depends on:** MOLD-017.
 
-### MOLD-019 [P2] Ceramic slip-casting and plaster mold presets
+### [MOLD-019](https://github.com/2-9-4/ScanRuler/issues/20) [P2] Ceramic slip-casting and plaster mold presets
 
 **Scope:** Plaster/silicone/direct tooling, feet, shaped funnels, trimming plane, casting thickness, drainage, release undercuts; document material-specific allowances.
 
@@ -173,7 +173,7 @@ MoldBoxer-advertised workflows: adapted box, tray, multi-part silicone, inner co
 
 **Depends on:** MOLD-010, MOLD-012, MOLD-017.
 
-### MOLD-020 [P2] Tray, open-base, top-funnel and automatic box presets
+### [MOLD-020](https://github.com/2-9-4/ScanRuler/issues/21) [P2] Tray, open-base, top-funnel and automatic box presets
 
 **Scope:** Guided presets like Moldboxer's adapted/tray/multi-part/inner-cavity/direct-open-base/direct-top-funnel with safe defaults but all tunable; avoid duplicated generation code.
 
@@ -181,7 +181,7 @@ MoldBoxer-advertised workflows: adapted box, tray, multi-part silicone, inner co
 
 **Depends on:** MOLD-005, MOLD-006, MOLD-009, MOLD-012, MOLD-015.
 
-### MOLD-021 [P2] Grid nesting / batch duplicate tooling and multi-cavity molds
+### [MOLD-021](https://github.com/2-9-4/ScanRuler/issues/22) [P2] Grid nesting / batch duplicate tooling and multi-cavity molds
 
 **Scope:** Array identical or mixed targets with gates, mold walls, vents, clearance and box packing; coordinate with existing 2D measurement/placement tools.
 
@@ -189,7 +189,7 @@ MoldBoxer-advertised workflows: adapted box, tray, multi-part silicone, inner co
 
 **Depends on:** MOLD-012, MOLD-015.
 
-### MOLD-022 [P2] Branding, surface labels and embedded volume metadata
+### [MOLD-022](https://github.com/2-9-4/ScanRuler/issues/23) [P2] Branding, surface labels and embedded volume metadata
 
 **Scope:** Emboss/deboss text/logo, orientation/part number, cavities, casting material and volume; reuse existing CAD/mesh text capabilities where practical.
 
@@ -197,7 +197,7 @@ MoldBoxer-advertised workflows: adapted box, tray, multi-part silicone, inner co
 
 **Depends on:** MOLD-008, MOLD-014.
 
-### MOLD-023 [P2] Fixture and protective-shell companion workflows
+### [MOLD-023](https://github.com/2-9-4/ScanRuler/issues/24) [P2] Fixture and protective-shell companion workflows
 
 **Scope:** Master-derived fixtures for holding, spray/paint/engraving and conformal protective cases, separate from casting mold logic but same geometry services.
 
@@ -205,7 +205,7 @@ MoldBoxer-advertised workflows: adapted box, tray, multi-part silicone, inner co
 
 **Depends on:** MOLD-004, MOLD-015.
 
-### MOLD-024 [P0] Testing, benchmark fixtures and generated-mold safety checks
+### [MOLD-024](https://github.com/2-9-4/ScanRuler/issues/25) [P0] Testing, benchmark fixtures and generated-mold safety checks
 
 **Scope:** Build fixture corpus (cube, sphere, tray, overhang, deep bore, open scan, concave vessel, perforated mesh, STEP). Automate watertightness, connected components, norm/volume, cavity dimensions, clearance, assembly tests; visual e2e.
 
@@ -213,7 +213,7 @@ MoldBoxer-advertised workflows: adapted box, tray, multi-part silicone, inner co
 
 **Depends on:** MOLD-001, MOLD-004.
 
-### MOLD-025 [P1] MCP commands and automation workflow
+### [MOLD-025](https://github.com/2-9-4/ScanRuler/issues/26) [P1] MCP commands and automation workflow
 
 **Scope:** Expose mold source/select/mode/settings/build/readout/export through existing command registry, bounded asynchronous worker progress and cancel. Provide guide.read instructions and state section.
 
@@ -221,7 +221,7 @@ MoldBoxer-advertised workflows: adapted box, tray, multi-part silicone, inner co
 
 **Depends on:** MOLD-003, MOLD-008.
 
-### MOLD-026 [P1] History, failure recovery and real-world mold QA
+### [MOLD-026](https://github.com/2-9-4/ScanRuler/issues/27) [P1] History, failure recovery and real-world mold QA
 
 **Scope:** Parametric edit undo/redo, project/recovery persistence, cancellable jobs, memory budget, error cases and documentation on print orientation, FDM bleed, resin curing, draft and silicone chemistry.
 
