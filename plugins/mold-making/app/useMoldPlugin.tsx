@@ -12,6 +12,7 @@ import { buildMeshFile, type MeshFormat } from '../../../src/core/exportMesh'
 import { exportStem, saveBuilt } from '../../../src/app/exports'
 import { fileSafe } from '../../../src/core/project/manifest'
 import { moldSettings, useMold } from '../state/moldStore'
+import { MOLD_SETTING_KEYS } from '../core/settings'
 import type { MoldBuild } from '../core/geometry'
 import { MoldPreview } from '../viewer/moldPreview'
 import { MoldPanel } from '../ui/MoldPanel'
@@ -41,10 +42,8 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
 
   useEffect(() => {
     const offMold = useMold.subscribe((s, prev) => {
-      if (s.source !== prev.source || s.mode !== prev.mode ||
-        s.clearance !== prev.clearance || s.sideMargin !== prev.sideMargin ||
-        s.baseThickness !== prev.baseThickness || s.wallThickness !== prev.wallThickness ||
-        s.siliconeThickness !== prev.siliconeThickness) invalidate()
+      if (MOLD_SETTING_KEYS.some(k => k !== 'previewGap' && s[k] !== prev[k])) invalidate()
+      else if (s.previewGap !== prev.previewGap) preview.current?.setGap(s.previewGap)
     })
     const offScan = onScan({ loaded: invalidate, swapped: invalidate })
     return () => { offMold(); offScan() }
@@ -94,7 +93,7 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
       if (!preview.current && host.sceneRef.current) {
         preview.current = new MoldPreview(host.sceneRef.current, invalidate)
       }
-      preview.current?.set(made, settings.source)
+      preview.current?.set(made, settings.source, settings.previewGap)
       generatedVersion.current = selectedVersion
       setGenerated(made)
       host.sceneRef.current?.frameAll()
@@ -112,7 +111,7 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
     }
   }
 
-  const exportPart = (format: Extract<MeshFormat, 'stl' | '3mf'>) => {
+  const exportPart = (format: Extract<MeshFormat, 'stl' | '3mf'>, index?: number) => {
     if (!generated || generating) return
     const client = host.clientRef.current
     if (!client || generatedVersion.current !== (source === 'scan' ? client.scanVersion : client.nominalVersion)) {
@@ -120,26 +119,47 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
       setError('Target geometry changed. Regenerate the mold before exporting.')
       return
     }
-    const made = buildMeshFile(format, [{
-      name: 'Mold component',
-      positions: generated.positions,
-      indices: generated.indices,
-    }], null, 'ScanRuler Mold Making')
-    if (!made) { setError('There are no printable triangles to export.'); return }
-    const master = source === 'reference' ? (referenceName ?? 'mold') : exportStem('mold')
-    const stem = fileSafe(master.replace(/\.[^.]+$/, '')) || 'mold'
+    // STLs are ONE printable part each; joining parts with touching mating
+    // faces creates a non-manifold STL. 3MF positions each part separately.
+    const parts = generated.parts
+    if (format === 'stl' && (index === undefined || !parts[index])) {
+      setError('Select the STL of an individual mold component.')
+      return
+    }
+    const chosen = format === 'stl' ? [parts[index!]] : parts
+    let cursor = 0
+    const printable = chosen.map(part => {
+      const p = part.positions
+      const min = [Infinity,Infinity,Infinity],max=[-Infinity,-Infinity,-Infinity]
+      for (let i=0;i<p.length;i+=3) for(let axis=0;axis<3;axis++) {
+        min[axis]=Math.min(min[axis],p[i+axis])
+        max[axis]=Math.max(max[axis],p[i+axis])
+      }
+      const translated = new Float32Array(p.length)
+      for (let i=0;i<p.length;i+=3) {
+        translated[i]=p[i]-min[0]+cursor
+        translated[i+1]=p[i+1]-min[1]
+        translated[i+2]=p[i+2]-min[2]
+      }
+      cursor+=max[0]-min[0]+5
+      return {name:part.name,positions:translated,indices:part.indices}
+    })
+    const made=buildMeshFile(format,printable,null,'ScanRuler Mold Making')
+    if(!made){setError('There are no printable triangles to export.');return}
+    const master=source==='reference' ? (referenceName??'mold') : exportStem('mold')
+    const stem=fileSafe(master.replace(/\\.[^.]+$/,''))||'mold'
+    const suffix=format==='stl' ? `-part-${index!+1}` : '-all-parts'
     saveBuilt({
-      name: `${stem}-${generated.kind}.${made.extension}`,
-      mimeType: made.mimeType,
-      bytes: made.bytes,
-      status: `Exported ${generated.kind} tooling with ${made.triangles} triangles; review mold warnings before printing.`,
+      name:`${stem}-${generated.kind}${suffix}.${made.extension}`,
+      mimeType:made.mimeType,bytes:made.bytes,
+      status:`Exported ${printable.length} separate printable mold part(s), ${made.triangles} triangles.`,
     })
   }
 
   return {
     startPane: source === 'reference' && referenceName ? null : {
       title: 'Mold Making',
-      blurb: 'Import STEP directly or a scanned STL, OBJ, PLY or 3MF. Make a single-sided rigid negative, a silicone casting box, or a thin conformal negative shell with printable STL/3MF output.',
+      blurb: 'Import a STEP or scanned model, split direct molds into 2 or 4 parts, or build rectangular/cylindrical silicone boxes with keys and drafted interior walls.',
     },
     hideScan: !!generated && source === 'scan' && inWorkspace,
     canSave: !!referenceName && source === 'reference',

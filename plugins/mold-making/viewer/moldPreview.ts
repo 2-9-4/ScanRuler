@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// A generated component in ScanRuler's existing viewport. The preview is
-// explicitly separate from the imported scan/reference and never mutates it.
+// OPAQUE solid parts, separate draw calls and separate geometry buffers.
+// Never draw overlapping semi-transparent front/back faces: those look
+// ghosted, show z-fighting and falsely suggest an invalid surface.
 import * as THREE from 'three'
 import type { SceneManager } from '../../../src/viewer/SceneManager'
 import type { SceneLayer } from '../../../src/viewer/sceneLayers'
@@ -8,68 +9,99 @@ import type { MoldBuild } from '../core/geometry'
 import type { MoldSource } from '../core/settings'
 
 export class MoldPreview {
-  private scene: SceneManager
-  private mesh: THREE.Mesh | null = null
-  private remove: () => void
-  private source: MoldSource = 'scan'
-  private changed: () => void
-  constructor(scene: SceneManager, changed: () => void) {
-    this.scene = scene
-    this.changed = changed
-    const layer: SceneLayer = {
-      order: 80,
-      clippingChanged: (planes) => {
-        const material = this.mesh?.material
-        if (material instanceof THREE.MeshStandardMaterial) {
-          material.clippingPlanes = planes ?? []
-          material.needsUpdate = true
+  private host: ReturnType<SceneManager['layerHost']>
+  private group = new THREE.Group()
+  private meshes:THREE.Mesh[]=[]
+  private parts:THREE.Group[]=[]
+  private remove:()=>void
+  private source:MoldSource='scan'
+  private priorNominal:boolean|null=null
+  private gap=3
+  private extent=0
+  constructor(private scene:SceneManager,private changed:()=>void) {
+    this.host=scene.layerHost()
+    const layer:SceneLayer={
+      order:80,
+      clippingChanged:(planes)=>{
+        for(const mesh of this.meshes){
+          const m=mesh.material as THREE.MeshStandardMaterial
+          m.clippingPlanes=planes??[]
+          m.needsUpdate=true
         }
       },
-      partMoved: () => this.changed(),
-      scanReplaced: () => { if (this.source === 'scan') this.changed() },
-      frameBox: () => this.mesh ? new THREE.Box3().setFromObject(this.mesh) : null,
-      dispose: () => this.clear(),
+      partMoved:()=>this.changed(),
+      scanReplaced:()=>{if(this.source==='scan')this.changed()},
+      frameBox:()=>this.group.visible&&this.meshes.length?new THREE.Box3().setFromObject(this.group):null,
+      dispose:()=>this.clear(),
     }
-    this.remove = scene.addLayer(layer)
+    this.group.name='Mold Making — print components'
+    this.remove=scene.addLayer(layer)
   }
-
-  set(mold: MoldBuild, source: MoldSource): void {
+  set(build:MoldBuild,source:MoldSource,gap:number):void {
     this.clear()
-    this.source = source
-    const host = this.scene.layerHost()
-    const geometry = new THREE.BufferGeometry()
-    geometry.setAttribute('position', new THREE.BufferAttribute(mold.positions, 3))
-    geometry.setIndex(new THREE.BufferAttribute(mold.indices, 1))
-    geometry.computeVertexNormals()
-    const material = new THREE.MeshStandardMaterial({
-      color: 0x48a9a0, roughness: 0.55, metalness: 0,
-      transparent: true, opacity: 0.88, side: THREE.DoubleSide,
-      clippingPlanes: host.clipPlanes() ?? [],
-    })
-    this.mesh = new THREE.Mesh(geometry, material)
-    this.mesh.name = 'Generated mold preview'
-    if (source === 'scan') host.partGroup.add(this.mesh)
-    else host.scene.add(this.mesh)
-    host.invalidate()
-  }
-
-  setVisible(visible: boolean): void {
-    if (this.mesh) {
-      this.mesh.visible = visible
-      this.scene.layerHost().invalidate()
+    this.source=source
+    this.gap=gap
+    this.extent=0
+    this.group.visible=true
+    if(source==='reference'){
+      this.priorNominal=this.scene.nominalShown()
+      this.scene.setNominalVisible(false)
+      this.host.scene.add(this.group)
+    }else this.host.partGroup.add(this.group)
+    // MeshNormalMaterial/transparency was NOT intentional here. Real opaque
+    // finish and correct depth writing make the part surface visible.
+    for(const p of build.parts){
+      const geo=new THREE.BufferGeometry()
+      geo.setAttribute('position',new THREE.BufferAttribute(p.positions,3))
+      geo.setIndex(new THREE.BufferAttribute(p.indices,1))
+      geo.computeVertexNormals()
+      geo.computeBoundingBox()
+      this.extent=Math.max(this.extent,(geo.boundingBox?.max.x??0)-(geo.boundingBox?.min.x??0))
+      const material=new THREE.MeshStandardMaterial({
+        color:0x57a99d,roughness:0.68,metalness:0,flatShading:true,
+        transparent:false,opacity:1,depthWrite:true,side:THREE.FrontSide,
+        clippingPlanes:this.host.clipPlanes()??[],
+      })
+      const mesh=new THREE.Mesh(geo,material)
+      mesh.name=p.name
+      this.meshes.push(mesh)
+      const part=new THREE.Group()
+      part.name=p.name
+      part.add(mesh)
+      this.parts.push(part)
+      this.group.add(part)
     }
+    this.setGap(gap)
   }
-
-  clear(): void {
-    if (!this.mesh) return
-    this.mesh.parent?.remove(this.mesh)
-    this.mesh.geometry.dispose()
-    const material = this.mesh.material
-    if (Array.isArray(material)) material.forEach((x) => x.dispose())
-    else material.dispose()
-    this.mesh = null
-    this.scene.layerHost().invalidate()
+  setGap(gap:number):void {
+    if(!Number.isFinite(gap)||gap<0)return
+    this.gap=gap
+    this.parts.forEach((p,i)=>{
+      // At zero the assembly is closed. Positive gap means a separated parts
+      // layout, with no coplanar face clashes in the viewport.
+      p.position.x=gap>0?(i-(this.parts.length-1)/2)*(this.extent+gap):0
+    })
+    this.host.invalidate()
   }
-
-  dispose(): void { this.remove() }
+  setVisible(visible:boolean):void {
+    this.group.visible=visible
+    this.host.invalidate()
+  }
+  clear():void {
+    this.group.parent?.remove(this.group)
+    for(const mesh of this.meshes){
+      mesh.geometry.dispose()
+      if(Array.isArray(mesh.material))mesh.material.forEach(x=>x.dispose())
+      else mesh.material.dispose()
+    }
+    this.meshes=[]
+    this.parts=[]
+    this.group.clear()
+    if(this.priorNominal!==null){
+      this.scene.setNominalVisible(this.priorNominal)
+      this.priorNominal=null
+    }
+    this.host.invalidate()
+  }
+  dispose():void{this.remove()}
 }

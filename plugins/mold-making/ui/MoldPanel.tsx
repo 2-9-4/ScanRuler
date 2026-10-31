@@ -1,138 +1,158 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Native ScanRuler target, mold controls, generated-component QA and export.
-import { SCAN_ACCEPT, REFERENCE_ACCEPT, REFERENCE_FORMATS } from '../../../src/core/formats'
+// Explicit tooling choices and per-part export; no hidden mid-height cut.
+import { SCAN_ACCEPT,REFERENCE_ACCEPT,REFERENCE_FORMATS } from '../../../src/core/formats'
 import { ModelSlot } from '../../../src/ui/ModelSlot'
 import { useStore } from '../../../src/state/store'
 import { useDeviation } from '../../../src/state/deviationStore'
-import { MOLD_MODE_LABELS, MOLD_MODES, type MoldDimension } from '../core/settings'
+import { MOLD_MODES,MOLD_MODE_LABELS,type MoldDimension,type PartCount,type SplitAxis,type BoxShape } from '../core/settings'
 import { useMold } from '../state/moldStore'
 import type { MoldBuild } from '../core/geometry'
 
-const DIMENSIONS: readonly { key: MoldDimension; name: string; detail: string }[] = [
-  { key: 'clearance', name: 'Casting clearance', detail: 'Offset between the finished casting and target' },
-  { key: 'sideMargin', name: 'Outer margin', detail: 'Clearance outside the target to the tooling wall' },
-  { key: 'baseThickness', name: 'Base thickness', detail: 'Solid backing under the cavity' },
-  { key: 'wallThickness', name: 'Printed wall', detail: 'Tooling wall thickness, including thin shells' },
-  { key: 'siliconeThickness', name: 'Silicone jacket', detail: 'Space around the master to pour silicone' },
+const FIELDS:readonly {key:MoldDimension;label:string;help:string}[]=[
+  {key:'clearance',label:'Cavity clearance',help:'Optional model offset. Zero retains the imported facets and finest details.'},
+  {key:'sideMargin',label:'Outer margin',help:'Material beyond the target in X and Y, millimetres'},
+  {key:'baseThickness',label:'Base / top material',help:'Solid material outside the target bounds'},
+  {key:'wallThickness',label:'Printed wall',help:'Wall thickness of the silicone box or conformal shell'},
+  {key:'siliconeThickness',label:'Silicone space',help:'Distance between master and containment walls'},
+  {key:'splitPosition',label:'Split location (0–1)',help:'Fraction of model bounds along selected X/Y/Z axis'},
+  {key:'keyDiameter',label:'Pin diameter',help:'Round registration pin diameter, millimetres'},
+  {key:'keyDepth',label:'Pin depth',help:'Mating cylindrical pin length'},
+  {key:'keyClearance',label:'Pin fit clearance',help:'Radial clearance around mating pocket'},
+  {key:'boxDraftDeg',label:'Interior wall draft (°)',help:'Silicone containment-box wall taper; does not change the master cavity'},
+  {key:'previewGap',label:'Exploded view gap',help:'Spacing between parts in the viewport. Zero shows assembled geometry.'},
 ]
-
-export function MoldPanel({ onOpenScan, onOpenReference, onGenerate, onExport, generated, generating, error }: {
-  onOpenScan: (file: File) => void
-  onOpenReference: (file: File) => void
-  onGenerate: () => void
-  onExport: (format: 'stl' | '3mf') => void
-  generated: MoldBuild | null
-  generating: boolean
-  error: string | null
+export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,generated,generating,error}:{
+  onOpenScan:(file:File)=>void
+  onOpenReference:(file:File)=>void
+  onGenerate:()=>void
+  onExport:(format:'stl'|'3mf',index?:number)=>void
+  generated:MoldBuild|null
+  generating:boolean
+  error:string|null
 }) {
-  const scanName = useStore((s) => s.fileName)
-  const scanTriangles = useStore((s) => s.triangleCount)
-  const referenceName = useDeviation((s) => s.nominalName)
-  const busy = useStore((s) => s.busy)
-  const source = useMold((s) => s.source)
-  const mode = useMold((s) => s.mode)
-  const setSource = useMold((s) => s.setSource)
-  const setMode = useMold((s) => s.setMode)
-  const setDimension = useMold((s) => s.setDimension)
-  // Zustand 5 selectors must return stable values, not a new array each render.
-  const clearance = useMold((s) => s.clearance)
-  const sideMargin = useMold((s) => s.sideMargin)
-  const baseThickness = useMold((s) => s.baseThickness)
-  const wallThickness = useMold((s) => s.wallThickness)
-  const siliconeThickness = useMold((s) => s.siliconeThickness)
-  const settings = { clearance, sideMargin, baseThickness, wallThickness, siliconeThickness }
-  const activeName = source === 'scan' ? scanName : referenceName
-
-  return (
-    <aside className="panel" data-test="mold-making-panel">
-      <div className="group">
-        <div className="sec-head">1. Target</div>
-        <p className="hint">Use a scan mesh or load STEP/STP directly. ScanRuler's existing imports handle units and tessellation; no CAD reconstruction is required.</p>
-        <div className="kindrow featurekeys" role="radiogroup" aria-label="Mold target source">
-          <button type="button" role="radio" aria-checked={source === 'scan'}
-            className={source === 'scan' ? 'on' : undefined}
-            data-test="mold-source-scan" onClick={() => setSource('scan')}>Scan / model</button>
-          <button type="button" role="radio" aria-checked={source === 'reference'}
-            className={source === 'reference' ? 'on' : undefined}
-            data-test="mold-source-reference" onClick={() => setSource('reference')}>Reference</button>
-        </div>
-        {source === 'scan' ? (
-          <ModelSlot role="Target" name={scanName}
-            detail={`${scanTriangles.toLocaleString('en-US')} triangles · imported as working scan`}
-            dotColor="#8b9099" busy={busy} accept={SCAN_ACCEPT}
-            formats={REFERENCE_FORMATS} onOpen={onOpenScan} />
-        ) : (
-          <ModelSlot role="Target reference" name={referenceName} detail="CAD or mesh reference"
-            dotColor="#8b9099" busy={busy} accept={REFERENCE_ACCEPT}
-            formats={REFERENCE_FORMATS} onOpen={onOpenReference} />
-        )}
-        {source === 'reference' && (
-          <p className="hint">Reference coordinates are distinct from the aligned scan. Generation must use the selected source's own geometry, not whichever happens to be visible.</p>
-        )}
+  const scanName=useStore(s=>s.fileName)
+  const tris=useStore(s=>s.triangleCount)
+  const refName=useDeviation(s=>s.nominalName)
+  const busy=useStore(s=>s.busy)
+  const source=useMold(s=>s.source),mode=useMold(s=>s.mode)
+  const parts=useMold(s=>s.parts),splitAxis=useMold(s=>s.splitAxis)
+  const boxShape=useMold(s=>s.boxShape),keys=useMold(s=>s.keys)
+  const clearance=useMold(s=>s.clearance)
+  const sideMargin=useMold(s=>s.sideMargin)
+  const baseThickness=useMold(s=>s.baseThickness)
+  const wallThickness=useMold(s=>s.wallThickness)
+  const siliconeThickness=useMold(s=>s.siliconeThickness)
+  const splitPosition=useMold(s=>s.splitPosition)
+  const keyDiameter=useMold(s=>s.keyDiameter)
+  const keyDepth=useMold(s=>s.keyDepth)
+  const keyClearance=useMold(s=>s.keyClearance)
+  const boxDraftDeg=useMold(s=>s.boxDraftDeg)
+  const previewGap=useMold(s=>s.previewGap)
+  const values={clearance,sideMargin,baseThickness,wallThickness,siliconeThickness,splitPosition,
+    keyDiameter,keyDepth,keyClearance,boxDraftDeg,previewGap}
+  const setSource=useMold(s=>s.setSource),setMode=useMold(s=>s.setMode)
+  const setParts=useMold(s=>s.setParts),setSplitAxis=useMold(s=>s.setSplitAxis)
+  const setBoxShape=useMold(s=>s.setBoxShape),setKeys=useMold(s=>s.setKeys)
+  const setDimension=useMold(s=>s.setDimension)
+  const active=source==='scan'?scanName:refName
+  const multi=parts>1
+  const fields=FIELDS.filter(({key})=>{
+    if(key==='previewGap')return true
+    if(key==='splitPosition')return multi
+    if(['keyDiameter','keyDepth','keyClearance'].includes(key))return multi&&keys&&mode!=='thin-negative-shell'
+    if(key==='boxDraftDeg')return mode==='silicone-box'
+    if(mode==='direct')return ['clearance','sideMargin','baseThickness'].includes(key)
+    if(mode==='silicone-box')return ['siliconeThickness','wallThickness','baseThickness'].includes(key)
+    return ['clearance','wallThickness'].includes(key)
+  })
+  return <aside className="panel" data-test="mold-making-panel">
+    <div className="group">
+      <div className="sec-head">1. Target</div>
+      <p className="hint">Import STEP/STP directly, or use an existing scanned watertight mesh. The original model is never modified.</p>
+      <div className="kindrow featurekeys" role="radiogroup" aria-label="Target source">
+        <button type="button" role="radio" aria-checked={source==='scan'} className={source==='scan'?'on':undefined}
+          onClick={()=>setSource('scan')}>Scan / model</button>
+        <button type="button" role="radio" aria-checked={source==='reference'} className={source==='reference'?'on':undefined}
+          onClick={()=>setSource('reference')}>Reference STEP / mesh</button>
       </div>
-      <div className="group">
-        <div className="sec-head">2. Tooling method</div>
-        <div className="kindrow featurekeys" role="radiogroup" aria-label="Mold production mode">
-          {MOLD_MODES.map((choice) => (
-            <button key={choice} type="button" role="radio" aria-checked={mode === choice}
-              data-test={`mold-mode-${choice}`}
-              className={mode === choice ? 'on' : undefined}
-              onClick={() => setMode(choice)}>{MOLD_MODE_LABELS[choice]}</button>
-          ))}
-        </div>
-        <p className="hint">
-          {mode === 'direct'
-            ? 'Print a rigid negative cavity directly. The mold must release from its target, or use multiple parts.'
-            : mode === 'silicone-box'
-              ? 'Print a containment box around the positive master; pour silicone into the surrounding space.'
-              : 'Print a thin negative cavity shell for casting silicone tooling, with an opening and planned removal.'}
-        </p>
+      {source==='scan'?
+        <ModelSlot role="Target" name={scanName} detail={`${tris.toLocaleString('en-US')} triangles`}
+          dotColor="#8b9099" busy={busy} accept={SCAN_ACCEPT}
+          formats={REFERENCE_FORMATS} onOpen={onOpenScan}/>:
+        <ModelSlot role="Target reference" name={refName} detail="CAD or mesh reference"
+          dotColor="#8b9099" busy={busy} accept={REFERENCE_ACCEPT}
+          formats={REFERENCE_FORMATS} onOpen={onOpenReference}/>}
+    </div>
+    <div className="group">
+      <div className="sec-head">2. Mold type</div>
+      <div className="kindrow featurekeys" role="radiogroup" aria-label="Tooling method">
+        {MOLD_MODES.map(x=><button key={x} type="button" role="radio" aria-checked={mode===x}
+          className={mode===x?'on':undefined} onClick={()=>setMode(x)}>{MOLD_MODE_LABELS[x]}</button>)}
       </div>
-      <div className="group">
-        <div className="sec-head">3. Dimensions · mm</div>
-        {DIMENSIONS.filter((d) =>
-          mode === 'direct' ? ['clearance', 'sideMargin', 'baseThickness'].includes(d.key) :
-          mode === 'silicone-box' ? ['siliconeThickness', 'wallThickness', 'baseThickness'].includes(d.key) :
-          ['clearance', 'wallThickness'].includes(d.key)
-        ).map((d) => {
-          const val = settings[d.key]
-          return (
-            <label key={d.key} className="kv" title={d.detail}>
-              <span className="name">{d.name}</span>
-              <input data-test={`mold-${d.key}`} type="number"
-                min={d.key === 'clearance' || d.key === 'sideMargin' ? 0 : 0.01}
-                max={100000} step={0.1} value={val}
-                onChange={(e) => {
-                  if (e.target.value === '') return
-                  setDimension(d.key, Number(e.target.value))
-                }} />
-            </label>
-          )
-        })}
-      </div>
-      <div className="group">
-        <div className="sec-head">4. Generate &amp; export</div>
-        <p className="hint" data-test="mold-generation-note">
-          {mode === 'silicone-box'
-            ? 'Open-top casting box: place and support your physical master before pouring. Supports, sealing and keys are not automated yet.'
-            : 'One-sided impression only: the cavity ends at the target midplane. It cannot reproduce the entire target. Under-cut and release validation are not yet available.'}
-        </p>
-        <button type="button" disabled={busy || generating || !activeName}
-          data-test="mold-generate" onClick={onGenerate}>{generating ? 'Generating…' : 'Generate mold'}</button>
-        {error && <p className="hint" role="alert" data-test="mold-error">{error}</p>}
-        {generated && (
-          <div data-test="mold-result">
-            <div className="kv"><span className="name">Mold triangles</span><b>{(generated.indices.length/3).toLocaleString('en-US')}</b></div>
-            <div className="kv"><span className="name">Printed material</span><b>{(generated.volumeMm3/1000).toFixed(1)} cm³</b></div>
-            <p className="hint">Preview is the exported solid. Verify orientation, fit, supports, and releases in your slicer before printing.</p>
-            {generated.warnings.map((warning, index) => <p className="hint" key={index}>{warning}</p>)}
-            <div className="kindrow featurekeys">
-              <button type="button" data-test="mold-export-stl" onClick={() => onExport('stl')}>Export STL · mm</button>
-              <button type="button" data-test="mold-export-3mf" onClick={() => onExport('3mf')}>Export 3MF</button>
-            </div>
-          </div>
-        )}
-      </div>
-    </aside>
-  )
+      {mode==='silicone-box'&&
+        <label className="kv"><span className="name">Box outline</span>
+          <select data-test="mold-box-shape" value={boxShape}
+            onChange={e=>setBoxShape(e.target.value as BoxShape)}>
+            <option value="rectangular">Rectangular</option>
+            <option value="cylindrical">Cylindrical</option>
+          </select></label>}
+    </div>
+    <div className="group">
+      <div className="sec-head">3. Parting and registration</div>
+      <label className="kv"><span className="name">Printed components</span>
+        <select data-test="mold-part-count" value={parts}
+          onChange={e=>setParts(Number(e.target.value) as PartCount)}>
+          <option value={1}>One-sided / one piece</option>
+          <option value={2}>Two split parts</option>
+          <option value={4}>Four split parts</option>
+        </select></label>
+      {multi&&<>
+        <label className="kv"><span className="name">Primary parting axis</span>
+          <select data-test="mold-split-axis" value={splitAxis}
+            onChange={e=>setSplitAxis(e.target.value as SplitAxis)}>
+            <option value="x">X (left/right)</option>
+            <option value="y">Y (front/back)</option>
+            <option value="z">Z (top/bottom)</option>
+          </select></label>
+        {parts===4&&<p className="hint">The second split is perpendicular: X→Y, Y→X, or Z→X.</p>}
+        <label className="kv"><span className="name">Registration pins</span>
+          <input data-test="mold-keys" type="checkbox" checked={keys&&mode!=='thin-negative-shell'}
+            disabled={mode==='thin-negative-shell'} onChange={e=>setKeys(e.target.checked)}/></label>
+      </>}
+      {mode==='thin-negative-shell'&&multi&&<p className="hint">Conformal shell pins are not implemented yet. Use an outer jacket or clamps.</p>}
+    </div>
+    <div className="group">
+      <div className="sec-head">4. Dimensions (mm)</div>
+      {fields.map(f=><label key={f.key} className="kv" title={f.help}>
+        <span className="name">{f.label}</span>
+        <input type="number" data-test={`mold-${f.key}`}
+          min={f.key==='splitPosition'?0.1:0}
+          max={f.key==='splitPosition'?0.9:f.key==='boxDraftDeg'?12:100000}
+          step={f.key==='splitPosition'?0.05:0.1} value={values[f.key]}
+          onChange={e=>{if(e.target.value!=='')setDimension(f.key,Number(e.target.value))}}/>
+      </label>)}
+    </div>
+    <div className="group">
+      <div className="sec-head">5. Generate, inspect &amp; export</div>
+      <p className="hint">
+        {mode==='silicone-box'?'Printable containment box; you still must mount and seal the master. Draft applies to the box interior only.':
+          parts===1?'Only one-piece molds cut the target at mid-height. Choose 2 or 4 to capture the whole model.':
+          'Two/four-part tooling captures the full target. Verify removal, orientation, thin clearances and casting undercuts before printing.'}
+      </p>
+      <button type="button" data-test="mold-generate" disabled={busy||generating||!active}
+        onClick={onGenerate}>{generating?'Generating…':'Generate tooling'}</button>
+      {error&&<p className="hint" role="alert" data-test="mold-error">{error}</p>}
+      {generated&&<div data-test="mold-result">
+        <div className="kv"><span className="name">Printed parts</span><b>{generated.parts.length}</b></div>
+        <div className="kv"><span className="name">Total material</span><b>{(generated.volumeMm3/1000).toFixed(1)} cm³</b></div>
+        {generated.parts.map((p,i)=><div key={i} className="kv">
+          <span className="name">{p.name} · {Math.round(p.indices.length/3).toLocaleString('en-US')} faces</span>
+          <button type="button" data-test={`mold-export-part-${i+1}`}
+            onClick={()=>onExport('stl',i)}>STL</button>
+        </div>)}
+        <button type="button" data-test="mold-export-3mf" onClick={()=>onExport('3mf')}>Export all parts · 3MF</button>
+        {generated.warnings.map((w,i)=><p key={i} className="hint">{w}</p>)}
+      </div>}
+    </div>
+  </aside>
 }

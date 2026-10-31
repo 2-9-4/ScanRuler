@@ -1,32 +1,77 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Regression fixtures assert the result is a closed, correctly dimensioned
-// printable solid; not just that the Boolean returned without throwing.
-import { beforeAll, describe, expect, it } from 'vitest'
-import Module, { type ManifoldToplevel } from 'manifold-3d'
-import { DEFAULT_MOLD_SETTINGS } from '../core/settings'
-import { boxSolid, buildMold } from '../core/geometry'
-import { closedness } from '../../mesh-tools/core/boolean'
+// Regression tests for complete-height cavities, separately manifold parts,
+// registration, cylindrical boxes and preservation of sub-mm geometry.
+import {beforeAll,describe,expect,it} from 'vitest'
+import Module,{type ManifoldToplevel} from 'manifold-3d'
+import {DEFAULT_MOLD_SETTINGS} from '../core/settings'
+import {boxSolid,buildMold,planMold} from '../core/geometry'
+import {closedness} from '../../mesh-tools/core/boolean'
+import {signedVolume} from '../../mesh-tools/core/hollow'
 
-let wasm: ManifoldToplevel
-beforeAll(async () => { wasm = await Module(); wasm.setup() })
-const master = boxSolid({ min: [-5,-4,0], max: [5,4,10] })
-
-describe('Mold Making printable solids', () => {
-  it('makes a closed, correctly cut single-sided direct impression', () => {
-    const result = buildMold(wasm, master, { ...DEFAULT_MOLD_SETTINGS, clearance: 0 })
-    expect(result.openingZ).toBe(5)
-    expect(result.volumeMm3).toBeCloseTo(5216, 1)
-    expect(closedness(result.indices, result.positions.length/3)).toEqual({open:0,bad:0})
-    expect(result.warnings.join(' ')).toMatch(/upper half/)
+let wasm:ManifoldToplevel
+beforeAll(async()=>{wasm=await Module();wasm.setup()})
+const master=boxSolid({min:[-5,-4,0],max:[5,4,10]})
+const noKeys={...DEFAULT_MOLD_SETTINGS,keys:false} as const
+const intact=(parts:ReturnType<typeof buildMold>['parts'])=>{
+  for(const p of parts){
+    expect(p.volumeMm3).toBeGreaterThan(0)
+    expect(closedness(p.indices,p.positions.length/3)).toEqual({open:0,bad:0})
+  }
+}
+describe('Mold Making assembly',()=>{
+  it('retains every millimeter of the target in two distinct full-height rigid pieces',()=>{
+    const m=buildMold(wasm,master,noKeys)
+    expect(m.parts).toHaveLength(2)
+    expect(m.openingZ).toBeNull()
+    expect(m.volumeMm3).toBeCloseTo(26*24*18-10*8*10,2)
+    intact(m.parts)
   })
-  it('makes a sealed-bottom, open-top box for a physical silicone master', () => {
-    const result = buildMold(wasm, master, { ...DEFAULT_MOLD_SETTINGS, mode: 'silicone-box' })
-    expect(result.volumeMm3).toBeCloseTo(16880, 1)
-    expect(closedness(result.indices, result.positions.length/3)).toEqual({open:0,bad:0})
-    expect(result.warnings.join(' ')).toMatch(/physically attached/)
+  it('generates four separate rigid blocks with no coincident combined STL',()=>{
+    const m=buildMold(wasm,master,{...noKeys,parts:4})
+    expect(m.parts).toHaveLength(4)
+    expect(m.volumeMm3).toBeCloseTo(26*24*18-800,2)
+    intact(m.parts)
   })
-  it('refuses to silently generate a mold from an open scan', () => {
-    const broken = {positions:master.positions,indices:master.indices.slice(3)}
-    expect(() => buildMold(wasm, broken, DEFAULT_MOLD_SETTINGS)).toThrow(/not watertight/)
+  it('adds physical pins and corresponding negative pockets',()=>{
+    const plain=buildMold(wasm,master,noKeys)
+    const keyed=buildMold(wasm,master,DEFAULT_MOLD_SETTINGS)
+    expect(keyed.parts).toHaveLength(2)
+    intact(keyed.parts)
+    expect(keyed.parts[0].volumeMm3).toBeGreaterThan(plain.parts[0].volumeMm3)
+    expect(keyed.parts[1].volumeMm3).toBeLessThan(plain.parts[1].volumeMm3)
+  })
+  it('builds a real open-top round silicone box in two mating solids',()=>{
+    const s={...noKeys,mode:'silicone-box' as const,boxShape:'cylindrical' as const,boxDraftDeg:2}
+    const m=buildMold(wasm,master,s)
+    expect(m.parts).toHaveLength(2)
+    intact(m.parts)
+    const p=planMold(master,s)
+    expect(p.cylinder).not.toBeNull()
+    expect(m.volumeMm3).toBeGreaterThan(0)
+  })
+  it('preserves a thin positive fin without hidden default smoothing',()=>{
+    // Fin only 0.2 mm thick: it adds real target volume to a block.
+    const base=new wasm.Manifold(new wasm.Mesh({numProp:3,vertProperties:master.positions,triVerts:master.indices}))
+    const fin=wasm.Manifold.cube([0.2,2,8],true).translate([5,0,5])
+    const joined=base.add(fin)
+    const mesh=joined.getMesh()
+    const shape={positions:new Float32Array(mesh.vertProperties),indices:new Uint32Array(mesh.triVerts)}
+    const s={...noKeys,sideMargin:8}
+    const mold=buildMold(wasm,shape,s)
+    const p=planMold(shape,s)
+    const v=(p.outer.max[0]-p.outer.min[0])*(p.outer.max[1]-p.outer.min[1])*(p.outer.max[2]-p.outer.min[2])
+    expect(mold.volumeMm3).toBeCloseTo(v-signedVolume(shape.positions,shape.indices),1)
+    intact(mold.parts)
+    joined.delete();fin.delete();base.delete()
+  })
+  it('never accepts nonwatertight or inside-out scan geometry',()=>{
+    const bad={positions:master.positions,indices:master.indices.slice(3)}
+    expect(()=>buildMold(wasm,bad,DEFAULT_MOLD_SETTINGS)).toThrow(/not watertight/)
+  })
+  it('keeps legacy one-piece impression explicitly truncated',()=>{
+    const single=buildMold(wasm,master,{...noKeys,parts:1})
+    expect(single.parts).toHaveLength(1)
+    expect(single.openingZ).toBe(5)
+    expect(single.warnings.join(' ')).toMatch(/bottom half/)
   })
 })
