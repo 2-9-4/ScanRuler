@@ -7,6 +7,8 @@ saves carry the same number as `appVersion`. How a release is cut is in
 
 ## Unreleased
 
+- **Mold Making workspace (initial vertical slice, fork only)** (2026-10-31). A new plugin accepts STEP/STP models or scanned meshes through the existing importers and generates one-sided rigid negative molds, printable silicone containment boxes, and thin conformal negative shells. Preview and export to STL/3MF reuse the same validated mesh. It does not yet make two-part molds, add keys, gates or vents, or validate demolding; testing and first-slice limitations are in `plugins/mold-making/README.md`.
+
 - **Ask your agent to update its connector** (2026-10-31). The banner that says
   your ScanRuler connector is out of date now starts with a sentence to copy and
   paste into your AI agent's chat, and the agent changes the setting for you. All
