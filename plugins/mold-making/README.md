@@ -49,3 +49,22 @@ Full feature tracking: [docs/mold-making-issues.md](../../docs/mold-making-issue
 
 **Disconnected output artifacts are not equivalent to malformed imported sources.** Manifold may report a positive-volume detached component whose Float32 exported mesh has negligible or negative signed volume. Export checking now uses an origin-relative volume calculation to avoid catastrophic cancellation on small parts far from the coordinate origin; fully valid detached islands are exported separately, reversible-winding islands are corrected and revalidated, and truly invalid detached pieces are omitted with a highlighted warning of the kernel-reported volume. Main mold pieces remain strictly validated, and no invalid island is included in printable export. If significant detached material was omitted, review all cavities and mating features before manufacturing.
 
+
+
+### Spherical clearance integrity
+
+The signed-distance field uses angle-weighted vertex pseudonormals and
+two-face edge pseudonormals to classify interior/exterior points at sharp
+features. Using a single nearest triangle normal at those locations can
+invert the distance sign, produce disconnected SDF islands, and corrupt molds
+even with Fine sampling. Increasing resolution alone does **not** fix a
+wrong sign. The offset generator now rejects a result that contains more
+connected components than the source (a true outward dilation cannot split
+source components).
+
+Output meshes with nontrivial disconnected solids, or excluded invalid
+Boolean fragments, are explicitly **preview-only**. Exporting their STL or
+3MF is blocked rather than implying the largest resulting piece is a valid
+mold. Tiny numerical dust below the existing strict budget may still be
+filtered. If the tool remains preview-only, inspect the model and provide a
+reproduction mesh; do not print the fragmented output.
