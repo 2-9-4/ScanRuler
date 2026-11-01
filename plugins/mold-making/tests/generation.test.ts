@@ -4,7 +4,7 @@
 import {beforeAll,describe,expect,it} from 'vitest'
 import Module,{type ManifoldToplevel} from 'manifold-3d'
 import {DEFAULT_MOLD_SETTINGS} from '../core/settings'
-import {boxSolid,buildMold,planMold,seamPositions} from '../core/geometry'
+import {boxSolid,buildMold,planMold,seamPositions,toPart} from '../core/geometry'
 import {closedness} from '../../mesh-tools/core/boolean'
 import {signedVolume} from '../../mesh-tools/core/hollow'
 
@@ -45,6 +45,29 @@ describe('Mold Making assembly',()=>{
     intact(repaired.parts)
     expect(repaired.warnings.join(' ')).toMatch(/removed 1 exactly zero-area/)
     expect(malformed.indices.length).toBe(master.indices.length+3)
+  })
+  it('reports and removes only microscopic disconnected Boolean dust',()=>{
+    const base=wasm.Manifold.cube([8,8,8])
+    const fleck=wasm.Manifold.cube([0.05,0.05,0.05]).translate([15,0,0])
+    const combined=base.add(fleck)
+    try{
+      const warnings:string[]=[]
+      const part=toPart(combined,'Mold part 1',warnings)
+      intact([part])
+      expect(part.volumeMm3).toBeCloseTo(512,2)
+      expect(warnings.join(' ')).toMatch(/microscopic detached Boolean artifacts/)
+    }finally{combined.delete();fleck.delete();base.delete()}
+  })
+  it('rejects meaningful disconnected mold islands with volumes instead of exporting them',()=>{
+    const base=wasm.Manifold.cube([8,8,8])
+    const island=wasm.Manifold.cube([1,1,1]).translate([15,0,0])
+    const combined=base.add(island)
+    try{
+      const warnings:string[]=[]
+      expect(()=>toPart(combined,'Mold part 1',warnings))
+        .toThrow(/2 disconnected solids \(volumes: .* mm³\)/)
+      expect(warnings).toEqual([])
+    }finally{combined.delete();island.delete();base.delete()}
   })
   it('retains every millimeter of the target in two distinct full-height rigid pieces',()=>{
     const m=buildMold(wasm,master,noKeys)
