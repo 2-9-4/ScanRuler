@@ -56,6 +56,16 @@ export interface MoldSettings {
   clampTabWidth: number
   clampTabProjection: number
   clampTabThickness: number
+  /** Additional ears on the top and bottom outside edges of a parting plane. */
+  topBottomTabs: boolean
+  topBottomTabCount: number
+  /** Drilled through each registered pair of tabs, along the separation axis. */
+  tabBoltHoles: boolean
+  tabBoltDiameter: number
+  /** A six-sided recess on the underside of each negative-half tab. */
+  tabCapturedNuts: boolean
+  tabNutAcrossFlats: number
+  tabNutDepth: number
   /** Silicone box *interior wall* draft, degrees, widening at the opening. */
   boxDraftDeg: number
   /** Display-only gap between printed components; not applied to STL parts. */
@@ -96,6 +106,13 @@ export const DEFAULT_MOLD_SETTINGS: Readonly<MoldSettings> = Object.freeze({
   clampTabWidth: 16,
   clampTabProjection: 12,
   clampTabThickness: 8,
+  topBottomTabs: false,
+  topBottomTabCount: 2,
+  tabBoltHoles: false,
+  tabBoltDiameter: 4.3,
+  tabCapturedNuts: false,
+  tabNutAcrossFlats: 7.2,
+  tabNutDepth: 3.5,
   boxDraftDeg: 1,
   previewGap: 3,
 })
@@ -108,16 +125,18 @@ export const MOLD_DIMENSIONS: readonly MoldDimension[] = [
   'splitPosition', 'keyDiameter', 'keyDepth', 'keyClearance',
   'vSeamWidth', 'vSeamHeight', 'vSeamSpacing', 'vSeamClearance',
   'clampTabCount', 'clampTabWidth', 'clampTabProjection', 'clampTabThickness',
+  'topBottomTabCount', 'tabBoltDiameter', 'tabNutAcrossFlats', 'tabNutDepth',
   'boxDraftDeg', 'previewGap',
 ]
 export const MOLD_SETTING_KEYS: readonly (keyof MoldSettings)[] = [
   'source', 'mode', ...MOLD_DIMENSIONS, 'offsetQuality', 'repairTarget', 'parts', 'splitAxis', 'boxShape', 'keys',
   'keyStyle', 'keyPlacement', 'keyPositions', 'keyPoints',
+  'topBottomTabs','tabBoltHoles','tabCapturedNuts',
 ]
 export function validMoldDimension(key: MoldDimension, value: number): boolean {
   if (!Number.isFinite(value)) return false
   if (key === 'splitPosition') return value >= 0.1 && value <= 0.9
-  if (key === 'clampTabCount') return Number.isInteger(value) && value>=0 && value<=12
+  if (key === 'clampTabCount' || key==='topBottomTabCount') return Number.isInteger(value) && value>=0 && value<=12
   if (key === 'boxDraftDeg') return value >= 0 && value <= 12
   if (key === 'previewGap' || key === 'clearance' || key === 'sideMargin' || key === 'baseThickness' ||
       key === 'wallThickness' || key === 'keyClearance' || key === 'vSeamClearance' || key === 'vSeamSpacing') {
@@ -140,6 +159,7 @@ export function parseMoldSettings(value: unknown): MoldSettings {
   if (parsed.boxShape !== 'rectangular' && parsed.boxShape !== 'cylindrical') throw new Error('Invalid box shape.')
   if (typeof parsed.repairTarget !== 'boolean') throw new Error('Invalid mesh repair setting.')
   if (typeof parsed.keys !== 'boolean') throw new Error('Invalid alignment keys setting.')
+  if (typeof parsed.topBottomTabs !== 'boolean' || typeof parsed.tabBoltHoles !== 'boolean' || typeof parsed.tabCapturedNuts !== 'boolean') throw new Error('Invalid clamp-fastener options.')
   if (!(['v-seam','printed-pin', 'tapered-key', 'metal-dowel'] as const).includes(parsed.keyStyle)) throw new Error('Invalid registration feature shape.')
   if (parsed.keyPlacement !== 'auto' && parsed.keyPlacement !== 'manual') throw new Error('Invalid registration placement mode.')
   if (!Array.isArray(parsed.keyPositions) || parsed.keyPositions.length>12 ||
