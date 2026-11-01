@@ -601,7 +601,7 @@ function addContourVSeam(
       const lo:Vec3=[...outer.min],hi:Vec3=[...outer.max]
       lo[k]=upper?split:split-thickness
       hi[k]=upper?split+thickness:split
-      const overlap=Math.max(1.5,Math.min(3,s.clampTabProjection*0.25))
+      const overlap=Math.max(2.5,Math.min(6,s.clampTabThickness*0.6))
       lo[sideTangent]=sign<0?edge-s.clampTabProjection:edge-overlap
       hi[sideTangent]=sign<0?edge+overlap:edge+s.clampTabProjection
       if(axis==='z'){
