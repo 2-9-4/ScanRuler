@@ -37,7 +37,7 @@ function collapsed(p:Float32Array,ia:number,ib:number,ic:number):boolean {
  * don't silently carve a hole in a previously watertight source.
  */
 export function liftCollapsedClosedMesh(input:SolidMesh):{mesh:SolidMesh;adjustedVertices:number}|null {
-  const original=input.positions,idx=input.indices,n=original.length/3
+  const original=input.positions,idx=input.indices
   const badFaces:number[]=[]
   for(let t=0;t<idx.length;t+=3){
     const a=idx[t],b=idx[t+1],c=idx[t+2]
