@@ -254,8 +254,9 @@ describe('Mold Making assembly',()=>{
       .toThrow(/Registration height.*too close/)
   })
   it('creates four keyed halves without splitting through a pre-existing registration pin',()=>{
-    const plain=buildMold(wasm,master,{...noKeys,parts:4})
-    const keyed=buildMold(wasm,master,{...DEFAULT_MOLD_SETTINGS,parts:4})
+    const settings={...DEFAULT_MOLD_SETTINGS,parts:4 as const}
+    const plain=buildMold(wasm,master,matchedBlank(master,settings))
+    const keyed=buildMold(wasm,master,settings)
     expect(keyed.parts).toHaveLength(4)
     intact(keyed.parts)
     const netMaterialDelta=Math.abs(keyed.volumeMm3-plain.volumeMm3)
@@ -271,8 +272,15 @@ describe('Mold Making assembly',()=>{
   })
   it('increases cavity volume (reduces printed block volume) for positive clearance',()=>{
     const common={...DEFAULT_MOLD_SETTINGS,keys:false}
-    const zero=buildMold(wasm,master,common)
-    const clearance=buildMold(wasm,master,{...common,clearance:0.1})
+    const grown={...common,clearance:0.1}
+    const zeroPlan=planMold(master,common)
+    const expanded=planMold(master,grown)
+    // The new automatic mold material enlarges the block WITH the cavity;
+    // compare two cavity sizes only after making the external blocks equal.
+    const zero=buildMold(wasm,master,{...common,
+      sideMargin:expanded.material.side-zeroPlan.material.side,
+      baseThickness:expanded.material.base-zeroPlan.material.base})
+    const clearance=buildMold(wasm,master,grown)
     expect(clearance.volumeMm3).toBeLessThan(zero.volumeMm3)
     expect(clearance.openingZ).toBeNull()
     intact(clearance.parts)
