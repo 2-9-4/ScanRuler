@@ -215,8 +215,10 @@ export function triangularContourTube(
       const ux=b[0]-a[0],uy=b[1]-a[1],vx=c[0]-b[0],vy=c[1]-b[1]
       const la=Math.hypot(ux,uy),lb=Math.hypot(vx,vy)
       const cosine=la>0&&lb>0?(ux*vx+uy*vy)/(la*lb):1
-      if(cosine<0.5&&la>1.5&&lb>1.5){
-        const trim=Math.min(1,la*0.2,lb*0.2)
+      // Reserve sufficient run for the full-width sidewalls. A tiny
+      // corner bevel shorter than the V half-width can fold the inner face.
+      if(cosine<0.5&&la>2.5*halfWidth&&lb>2.5*halfWidth){
+        const trim=Math.min(halfWidth+0.8,la*0.35,lb*0.35)
         beveled.push([b[0]-ux/la*trim,b[1]-uy/la*trim],
           [b[0]+vx/lb*trim,b[1]+vy/lb*trim])
       }else beveled.push(b)
