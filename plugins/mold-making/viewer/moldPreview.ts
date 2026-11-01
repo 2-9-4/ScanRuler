@@ -107,7 +107,7 @@ export class MoldPreview {
   }
   setGap(gap:number):void {
     if(!Number.isFinite(gap)||gap<0)return
-    this.explodeGap=gap
+    if(gap>0||this.viewMode==='exploded')this.explodeGap=gap
     const displayed=this.viewMode==='section'?0:Math.max(gap,1)
     this.parts.forEach((p,i)=>{
       // At zero the assembly is closed. Positive gap means a separated parts
@@ -118,7 +118,7 @@ export class MoldPreview {
   }
   setVisible(visible:boolean):void {
     this.group.visible=visible
-    if(!visible){
+    if(!visible&&this.bounds){
       // A section view belongs to the mold workspace, not to whichever
       // workspace is opened next.
       this.scene.setSectionView(null)
