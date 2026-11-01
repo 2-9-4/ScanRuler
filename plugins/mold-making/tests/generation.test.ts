@@ -286,6 +286,20 @@ describe('Mold Making assembly',()=>{
     }
     expect(made.warnings.join(' ')).not.toMatch(/source repair was OFF/i)
   })
+  it('does not silently export fragmented parts from an offset with registration',()=>{
+    const created=buildMold(wasm,master,{
+      ...DEFAULT_MOLD_SETTINGS,clearance:0.5,offsetQuality:'balanced',
+    })
+    expect(created.parts).toHaveLength(2)
+    expect(created.printable).toBe(true)
+    intact(created.parts)
+    expect(created.warnings.join(' ')).not.toMatch(/NOT PRINTABLE|disconnected printable islands/)
+  })
+  it('marks sound zero-clearance tooling as printable',()=>{
+    const created=buildMold(wasm,master,noKeys)
+    expect(created.printable).toBe(true)
+    expect(created.parts).toHaveLength(2)
+  })
   it('rejects a cavity offset that would puncture top or bottom of the mold',()=>{
     expect(()=>buildMold(wasm,master,{...noKeys,clearance:4.2}))
       .toThrow(/base\/top thickness|breaks through/)
