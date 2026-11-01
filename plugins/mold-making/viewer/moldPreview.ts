@@ -7,7 +7,7 @@ import type { SceneManager } from '../../../src/viewer/SceneManager'
 import type { SceneLayer } from '../../../src/viewer/sceneLayers'
 import { CapSet, CAP_SLOT, cutColor } from '../../../src/viewer/sliceCap'
 import type { MoldBuild } from '../core/geometry'
-import type { MoldSource } from '../core/settings'
+import type { MoldSource, PartCount, SplitAxis } from '../core/settings'
 
 export type MoldPreviewMode = 'section' | 'exploded'
 
@@ -25,7 +25,9 @@ export class MoldPreview {
   private viewMode:MoldPreviewMode='section'
   private bounds:MoldBuild['targetBounds']|null=null
   private explodeGap=3
-  private extent=0
+  private partCount:PartCount=2
+  private splitAxis:SplitAxis='x'
+  private readonly assembledBounds=new THREE.Box3()
   constructor(private scene:SceneManager,private changed:()=>void) {
     this.host=scene.layerHost()
     const layer:SceneLayer={
@@ -54,13 +56,16 @@ export class MoldPreview {
         mesh,slot:CAP_SLOT.layers+i,color:cutColor(CAP_SLOT.layers+i),
       })),this.host.theme())
   }
-  set(build:MoldBuild,source:MoldSource,gap:number,mode:MoldPreviewMode='section'):void {
+  set(build:MoldBuild,source:MoldSource,gap:number,mode:MoldPreviewMode='section',
+    parts:PartCount=2,splitAxis:SplitAxis='x'):void {
     this.clear()
     this.source=source
     this.bounds=build.targetBounds
     this.explodeGap=gap
     this.viewMode=mode
-    this.extent=0
+    this.partCount=parts
+    this.splitAxis=splitAxis
+    this.assembledBounds.makeEmpty()
     this.group.visible=true
     if(source==='reference'){
       this.priorNominal=this.scene.nominalShown()
@@ -77,7 +82,7 @@ export class MoldPreview {
       geo.setIndex(new THREE.BufferAttribute(p.indices,1))
       geo.computeVertexNormals()
       geo.computeBoundingBox()
-      this.extent=Math.max(this.extent,(geo.boundingBox?.max.x??0)-(geo.boundingBox?.min.x??0))
+      if(geo.boundingBox)this.assembledBounds.union(geo.boundingBox)
       const material=new THREE.MeshStandardMaterial({
         color:0x57a99d,roughness:0.68,metalness:0,flatShading:true,
         transparent:false,opacity:1,depthWrite:true,side:THREE.FrontSide,
@@ -106,10 +111,36 @@ export class MoldPreview {
     if(!Number.isFinite(gap)||gap<0)return
     if(gap>0||this.viewMode==='exploded')this.explodeGap=gap
     const displayed=this.viewMode==='section'?0:Math.max(gap,1)
+    const origin=this.assembledBounds.getCenter(new THREE.Vector3())
+    const size=this.assembledBounds.getSize(new THREE.Vector3())
+    const travel=displayed+Math.max(size.x,size.y,size.z)*0.18
     this.parts.forEach((p,i)=>{
-      // At zero the assembly is closed. Positive gap means a separated parts
-      // layout, with no coplanar face clashes in the viewport.
-      p.position.x=displayed>0?(i-(this.parts.length-1)/2)*(this.extent+displayed):0
+      p.position.set(0,0,0)
+      if(!displayed)return
+      let direction:THREE.Vector3
+      if(this.partCount===3){
+        // The sectors are laid out CCW around Z. Never translate all
+        // three parts along X; each moves out from its own radial bisector.
+        const a=(i+0.5)*2*Math.PI/3
+        direction=new THREE.Vector3(Math.cos(a),Math.sin(a),0)
+      }else{
+        const box=this.meshes[i]?.geometry.boundingBox
+        const c=box?box.getCenter(new THREE.Vector3()):origin.clone()
+        const first=this.splitAxis==='x'?0:this.splitAxis==='y'?1:2
+        const second=this.splitAxis==='x'?1:0
+        const components:[number,number,number]=[0,0,0]
+        const sample=(axis:number)=>{
+          // Parts split by exactly planar faces can share bounding-box
+          // centre on unrelated axes; use only the known parting axes.
+          const a=axis===0?c.x:axis===1?c.y:c.z
+          const o=axis===0?origin.x:axis===1?origin.y:origin.z
+          components[axis]=a>=o?1:-1
+        }
+        sample(first)
+        if(this.partCount===4)sample(second)
+        direction=new THREE.Vector3(...components).normalize()
+      }
+      p.position.copy(direction.multiplyScalar(travel))
     })
     this.host.invalidate()
   }
