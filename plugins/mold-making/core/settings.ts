@@ -50,7 +50,7 @@ export const DEFAULT_MOLD_SETTINGS: Readonly<MoldSettings> = Object.freeze({
   // Clearance is a deliberate opt-in operation.
   clearance: 0,
   repairTarget: true,
-  repairHoleSize: 1,
+  repairHoleSize: 2,
   sideMargin: 8,
   baseThickness: 4,
   wallThickness: 3,
