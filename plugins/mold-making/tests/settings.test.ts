@@ -50,10 +50,14 @@ describe('Mold Making configuration',()=>{
     useMold.setState({...DEFAULT_MOLD_SETTINGS})
     expect(moldSection.holdsWork!()).toBe(false)
   })
-  it('rejects invalid or duplicate manual key fractions',()=>{
+  it('rejects invalid registration coordinates and empty manual coordinates for the active mode',()=>{
     expect(()=>parseMoldSettings({...DEFAULT_MOLD_SETTINGS,keyPositions:[0.3,0.3]})).toThrow(/distinct/)
     expect(()=>parseMoldSettings({...DEFAULT_MOLD_SETTINGS,keyPositions:[-1]})).toThrow(/1–99/)
-    expect(()=>parseMoldSettings({...DEFAULT_MOLD_SETTINGS,keyPlacement:'manual',keyPositions:[]})).toThrow(/manual/)
+    // Direct molds use 2D keyPoints; silicone boxes use 1D height keyPositions.
+    expect(()=>parseMoldSettings({...DEFAULT_MOLD_SETTINGS,mode:'direct',keyPlacement:'manual',keyPoints:[]})).toThrow(/manual/)
+    expect(()=>parseMoldSettings({...DEFAULT_MOLD_SETTINGS,mode:'silicone-box',keyPlacement:'manual',keyPositions:[]})).toThrow(/manual/)
+    expect(()=>parseMoldSettings({...DEFAULT_MOLD_SETTINGS,mode:'direct',keyPlacement:'manual',keyPositions:[]})).not.toThrow()
+    expect(()=>parseMoldSettings({...DEFAULT_MOLD_SETTINGS,mode:'silicone-box',keyPlacement:'manual',keyPoints:[]})).not.toThrow()
   })
   it('saves all newer settings in project/undo recipes',()=>{
     const state={...DEFAULT_MOLD_SETTINGS,mode:'silicone-box' as const,
