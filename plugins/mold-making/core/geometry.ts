@@ -9,6 +9,7 @@ import { repairMoldTarget, liftCollapsedClosedMesh } from './repair'
 import { createSphericalDistanceField, sphericalOffset, type SphericalDistanceField } from './sphericalOffset'
 import { parseMoldSettings, type MoldSettings, type SplitAxis } from './settings'
 import {siliconeBoxCapacityMm3} from './materialEstimate'
+import {planVerticalChannels} from './pourChannels'
 import { projectedHull,contourAround,contourSegment,radialSeamContour,radialSiliconeLSeam,triangularContourTube,planeAxes } from './contourSeam'
 
 type Vec3 = [number,number,number]
@@ -1125,6 +1126,37 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
           ).translate([plan.radialOuter.cx,plan.radialOuter.cy,plan.outer.min[2]]))
           :toManifold(wasm,boxSolid(plan.outer),keep)
         solid=keep(block.subtract(positive))
+      }
+      if(s.pourEnabled||s.ventsEnabled){
+        // Cut physical connections from the outside to the casting void
+        // BEFORE parting. They cannot magically reappear at an assembled
+        // seam, and a clearance/cavity contact check rejects blind holes.
+        const channels=planVerticalChannels(
+          targetMesh,extentOf(targetMesh.positions),plan.outer,s,plan.radialOuter)
+        for(const channel of channels){
+          const bore=keep(wasm.Manifold.cylinder(
+            channel.topZ-channel.bottomZ,
+            channel.diameter/2,channel.diameter/2,64,
+          ).translate([channel.x,channel.y,channel.bottomZ]))
+          let cutter=bore
+          if(channel.kind==='pour'&&channel.funnelDepth>0&&
+             channel.funnelDiameter>channel.diameter){
+            const top=plan.outer.max[2]
+            const flare=keep(wasm.Manifold.cylinder(
+              channel.funnelDepth+0.5,
+              channel.diameter/2,channel.funnelDiameter/2,64,
+            ).translate([channel.x,channel.y,top-channel.funnelDepth]))
+            cutter=keep(bore.add(flare))
+          }
+          const contact=keep(cutter.intersect(positive))
+          if(contact.volume()<1e-4)
+            throw new Error(`${channel.kind==='pour'?'Pour channel':'Air vent'} does not intersect the actual casting cavity. Move its XY position or adjust clearance.`)
+          const before=solid.volume()
+          solid=keep(solid.subtract(cutter))
+          if(solid.isEmpty()||before-solid.volume()<1e-4)
+            throw new Error('Casting channel failed to remove mold material. Check channel location, diameter, and outside walls.')
+        }
+        warnings.push(`Cut ${channels.filter(c=>c.kind==='pour').length} vertical pour channel(s) and ${channels.filter(c=>c.kind==='vent').length} air vent(s), each connected to the casting void. Positions use normalized target XY coordinates; verify fill orientation and air-trap release. No automatic horizontal gates or risers yet.`)
       }
     }
     solid=chamferOuterCorners(solid,plan,s,keep)
