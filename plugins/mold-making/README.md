@@ -87,12 +87,20 @@ including X/Y/Z splits. Two-part **silicone containment boxes** also have a
 V-seam: a **capped U-profile** follows the two outer sidewalls and solid base
 for an X/Y split, leaving the top pour opening unobstructed; a horizontal Z
 split uses a **closed ring** supported by the printed walls. Round boxes
-follow a circular wall profile. Four-part molds retain discrete pins/bosses,
-and threefold radial sectors currently have no automatic registration.
+follow a circular wall profile. **Four-part molds now use four separate open
+V-ridge/groove pairs**: each is trimmed back from the perpendicular
+parting plane to avoid crossing another seam, with clamp ears on the
+appropriate exterior quadrant. For threefold radial tooling, all three
+120-degree radial interfaces support a vertical, capped V-profile,
+printed pins, or matching blind metal-dowel sockets.
 
 The V seam has its own **width, height, offset/spacing from the target or
 outer walls, and groove fit clearance**. These dimensions do not depend on
-the pin diameter or pin fit. External clamping tabs have independent
+the pin diameter or pin fit. The male V-ridge now has a **flattened tip**
+(24% of its half-width) for easier insertion, while the corresponding
+female groove remains open and clearance-fit. Exterior clamp ears are
+united into each mold half **before** cutting the female groove, so a tab
+cannot accidentally refill a nearby socket. Clamping tabs have independent
 **count per outside edge, width along that edge, projection from the
 mold exterior, and thickness per half**. Increasing their count/width
 may increase the generated backing to fit distinct tabs.
@@ -113,13 +121,16 @@ the separate mold pieces are included in STL/3MF export. The assembled preview o
 including its existing interactive plane gizmo and ViewBar controls. The
 mold meshes use ScanRuler's native `CapSet` to close the sectioned faces
 with the same stencil caps as other scene layers, rather than just clipping
-open surface shells. The previous section-view state is restored on exit.
+open surface shells. Exploded preview moves two parts along the chosen split
+axis, four parts diagonally along both split axes, and threefold sectors
+radially along their 120-degree sector bisectors. The previous section-view state is restored on exit.
 
 **Threefold** splits use three vertical 120-degree radial sectors around the
 target's XY bounds center, with a cylindrical outside for direct mold
 tooling. This is a threefold **mold layout**; it does not duplicate or
 symmetrize an asymmetric input model. Check radial demoldability. The
-current threefold layout does not generate mating registration.
+threefold layout supports registration, but does not currently generate
+external clamp ears.
 
 **Voxelization:** positive clearance already uses a sampled signed
 distance field (a voxel-like scalar grid) before a Manifold isosurface.
