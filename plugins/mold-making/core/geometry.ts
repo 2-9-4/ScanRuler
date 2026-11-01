@@ -108,10 +108,10 @@ export function moldMaterial(s:MoldSettings,targetHeight?:number):{side:number;b
     ?s.keyDiameter+2*s.keyClearance+2.5:0
   // Margin includes space from target to the V-ridge's inner flank,
   // full profile width, groove fit, and at least 1.25 mm outside the groove.
-  const vLand=v?s.vSeamSpacing+s.vSeamWidth+s.vSeamClearance+1.25:0
+  const vLand=v?s.vSeamSpacing+s.vSeamWidth+s.vSeamClearance+1.8:0
   const clearance=s.mode==='direct'?s.clearance:0
   const direct=Math.max(2,clearance+2,pinLand+clearance,vLand+clearance)
-  const wallMin=v?Math.max(2,s.vSeamWidth+s.vSeamClearance+s.vSeamSpacing+2.0):
+  const wallMin=v?Math.max(2,s.vSeamWidth+2*s.vSeamClearance+s.vSeamSpacing+2.5):
     s.keys&&s.parts!==3?Math.max(2,s.keyDiameter+2*s.keyClearance+2):2
   const material={
     side:direct+s.sideMargin,
@@ -525,7 +525,7 @@ function addContourVSeam(
   if(s.mode==='direct'){
     if(!plan.target)throw new Error('Contour mating requires a model.')
     path=contourAround(projectedHull(plan.target,axis),
-      s.vSeamSpacing+s.clearance+halfWidth,Math.max(2,s.vSeamWidth*2))
+      s.vSeamSpacing+s.clearance+halfWidth+0.5,Math.max(2,s.vSeamWidth*2))
     closed=true
   }else if(axis==='z'){
     const inner=plan.innerBox!
