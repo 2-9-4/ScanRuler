@@ -272,7 +272,7 @@ describe('Mold Making assembly',()=>{
       .toThrow(/Registration height.*too close/)
   })
   it('creates four keyed halves without splitting through a pre-existing registration pin',()=>{
-    const settings={...DEFAULT_MOLD_SETTINGS,parts:4 as const}
+    const settings={...DEFAULT_MOLD_SETTINGS,parts:4 as const,keyStyle:'tapered-key' as const}
     const plain=buildMold(wasm,master,matchedBlank(master,settings))
     const keyed=buildMold(wasm,master,settings)
     expect(keyed.parts).toHaveLength(4)
@@ -392,7 +392,39 @@ describe('Mold Making assembly',()=>{
     const expectedVolume=Math.PI*r*r*height-targetVolume
     expect(made.volumeMm3).toBeGreaterThan(expectedVolume*0.96)
     expect(made.volumeMm3).toBeLessThan(expectedVolume*1.04)
-    expect(made.warnings.join(' ')).toMatch(/NO automatic registration/)
+    expect(made.warnings.join(' ')).toMatch(/mating registration on all three radial interfaces/)
+  })
+  it('has a continuous V interface on each of the four quarter seams',()=>{
+    const settings={...DEFAULT_MOLD_SETTINGS,parts:4 as const,
+      keyStyle:'v-seam' as const,clampTabCount:0}
+    const blank=buildMold(wasm,master,matchedBlank(master,settings))
+    const made=buildMold(wasm,master,settings)
+    expect(made.parts).toHaveLength(4)
+    expect(made.printable).toBe(true)
+    intact(made.parts)
+    expect(made.warnings.join(' ')).toMatch(/open, flat-tipped V-ridge/)
+    // V-ridges/grooves change surface material, not the entire outer block.
+    expect(Math.abs(made.volumeMm3-blank.volumeMm3)).toBeLessThan(blank.volumeMm3*0.08)
+  })
+  it.each(['v-seam','printed-pin','tapered-key','metal-dowel'] as const)(
+    'registers all three radial mating interfaces using %s',keyStyle=>{
+      const target=boxSolid({min:[-5,-5,-5],max:[5,5,5]})
+      const settings={...DEFAULT_MOLD_SETTINGS,parts:3 as const,
+        keyStyle,keys:true,clampTabCount:0}
+      const made=buildMold(wasm,target,settings)
+      expect(made.parts).toHaveLength(3)
+      expect(made.printable).toBe(true)
+      intact(made.parts)
+      expect(made.warnings.join(' ')).toMatch(/mating registration on all three radial interfaces/)
+    })
+  it('keeps the V-groove clear even where exterior clamp ears approach it',()=>{
+    const settings={...DEFAULT_MOLD_SETTINGS,parts:2 as const,
+      clampTabCount:4,clampTabWidth:8,clampTabProjection:16,
+      clampTabThickness:9,keyStyle:'v-seam' as const}
+    const made=buildMold(wasm,master,settings)
+    expect(made.parts).toHaveLength(2)
+    expect(made.printable).toBe(true)
+    intact(made.parts)
   })
   it('does not silently export fragmented parts from an offset with registration',()=>{
     const created=buildMold(wasm,master,{
