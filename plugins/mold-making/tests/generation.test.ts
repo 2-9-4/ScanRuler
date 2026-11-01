@@ -201,6 +201,26 @@ describe('Mold Making assembly',()=>{
     expect(clearance.openingZ).toBeNull()
     intact(clearance.parts)
   })
+  it('exports clean, connected positive-clearance parts even with source repair off',()=>{
+    // Numerical degenerates are produced by the SDF/CSG kernel AFTER the
+    // master has been checked. The source repair checkbox must not control
+    // whether output mesh cleanup is applied.
+    const made=buildMold(wasm,master,{...noKeys,repairTarget:false,
+      clearance:0.1,offsetQuality:'balanced'})
+    expect(made.parts).toHaveLength(2)
+    intact(made.parts)
+    for(const part of made.parts){
+      expect(part.volumeMm3).toBeGreaterThan(0)
+      for(let i=0;i<part.indices.length;i+=3){
+        const {positions:p,indices:idx}=part
+        const a=idx[i]*3,b=idx[i+1]*3,c=idx[i+2]*3
+        const ux=p[b]-p[a],uy=p[b+1]-p[a+1],uz=p[b+2]-p[a+2]
+        const vx=p[c]-p[a],vy=p[c+1]-p[a+1],vz=p[c+2]-p[a+2]
+        expect(Math.hypot(uy*vz-uz*vy,uz*vx-ux*vz,ux*vy-uy*vx)).toBeGreaterThan(0)
+      }
+    }
+    expect(made.warnings.join(' ')).not.toMatch(/source repair was OFF/i)
+  })
   it('rejects a cavity offset that would puncture top or bottom of the mold',()=>{
     expect(()=>buildMold(wasm,master,{...noKeys,clearance:4.2}))
       .toThrow(/base\/top thickness|breaks through/)
