@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {describe,expect,it} from 'vitest'
 import {boxSolid} from '../core/geometry'
-import {contourAround,projectedHull,triangularContourTube} from '../core/contourSeam'
+import {contourAround,contourSegment,projectedHull,triangularContourTube} from '../core/contourSeam'
 import {closedness} from '../../mesh-tools/core/boolean'
 import {signedVolume} from '../../mesh-tools/core/hollow'
 
@@ -27,6 +27,25 @@ describe('Continuous V-seam geometry',()=>{
       expect(closedness(open.indices,open.positions.length/3)).toEqual({open:0,bad:0})
       expect(signedVolume(open.positions,open.indices)).toBeGreaterThan(0)
     }
+  })
+  it('truncates the V tip into a watertight flat assembly lead-in',()=>{
+    for(const axis of ['x','y','z'] as const){
+      const path=contourAround(projectedHull(cube,axis),2.5)
+      const sharp=triangularContourTube(path,axis,0,1.2,-0.4,2.8)
+      const flat=triangularContourTube(path,axis,0,1.2,-0.4,2.8,true,0.24)
+      expect(closedness(flat.indices,flat.positions.length/3)).toEqual({open:0,bad:0})
+      expect(signedVolume(flat.positions,flat.indices)).toBeGreaterThan(0)
+      expect(flat.positions.length).toBeGreaterThan(sharp.positions.length)
+    }
+  })
+  it('clips an outline to a single quarter interface without crossing the perpendicular seam',()=>{
+    const path=contourAround(projectedHull(cube,'x'),2.5)
+    const half=contourSegment(path,-7,-1.7)
+    expect(half.closed).toBe(false)
+    expect(half.path.length).toBeGreaterThanOrEqual(3)
+    expect(half.path.every(p=>p[0]>=-7-1e-6&&p[0]<=-1.7+1e-6)).toBe(true)
+    const v=triangularContourTube(half.path,'x',0,1,-0.4,2.8,false,0.24)
+    expect(closedness(v.indices,v.positions.length/3)).toEqual({open:0,bad:0})
   })
   it('creates a watertight outward-wound triangular loop on all three planes',()=>{
     for(const axis of ['x','y','z'] as const){

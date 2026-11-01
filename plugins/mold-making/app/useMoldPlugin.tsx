@@ -130,7 +130,7 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
         preview.current = new MoldPreview(host.sceneRef.current, invalidate)
       }
       setPreviewMode('section')
-      preview.current?.set(made, settings.source, settings.previewGap,'section')
+      preview.current?.set(made, settings.source, settings.previewGap,'section',settings.parts,settings.splitAxis)
       generatedVersion.current = selectedVersion
       setGenerated(made)
       setTargetBounds(made.targetBounds)

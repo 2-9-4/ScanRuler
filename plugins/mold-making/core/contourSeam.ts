@@ -77,20 +77,81 @@ export function contourAround(hull:readonly P[],offset:number,spacing=3):P[]{
   return result
 }
 
+/** Select the longest connected piece of an outline in the allowed
+ * tangent interval. Each of the four-part interfaces receives only its own
+ * partial seam; its ends stop short of the perpendicular parting plane.
+ * A full outline stays closed. Supports clipped straight segments rather
+ * than dropping vertices and leaving large jumps in the new open boundary.
+ */
+export function contourSegment(
+  path:readonly P[],low:number,high:number,closed=true,
+):{path:P[];closed:boolean}{
+  if(!(high>low))throw new Error('No room for a contour between parting planes.')
+  if(path.every(p=>p[0]>=low&&p[0]<=high))return {path:[...path],closed}
+  const n=closed?path.length:path.length-1
+  const lines:P[][]=[]
+  let run:P[]=[]
+  const append=(p:P)=>{
+    if(!run.length||distance(run[run.length-1],p)>1e-6)run.push(p)
+  }
+  for(let i=0;i<n;i++){
+    const a=path[i],b=path[(i+1)%path.length],dx=b[0]-a[0]
+    let t0=0,t1=1
+    if(Math.abs(dx)<1e-12){
+      if(a[0]<low||a[0]>high){if(run.length>1)lines.push(run);run=[];continue}
+    }else{
+      const tLo=(low-a[0])/dx,tHi=(high-a[0])/dx
+      t0=Math.max(0,Math.min(tLo,tHi))
+      t1=Math.min(1,Math.max(tLo,tHi))
+    }
+    if(t1<t0-1e-8){
+      if(run.length>1)lines.push(run)
+      run=[];continue
+    }
+    const point=(t:number):P=>[a[0]+dx*t,a[1]+(b[1]-a[1])*t]
+    append(point(t0));append(point(t1))
+    if(t1<1-1e-8){if(run.length>1)lines.push(run);run=[]}
+  }
+  if(run.length>1)lines.push(run)
+  // A circular outline can have a run crossing the list boundary.
+  if(closed&&lines.length>1){
+    const first=lines[0],last=lines[lines.length-1]
+    if(distance(last[last.length-1],first[0])<1e-5){
+      lines[0]=[...last,...first.slice(1)]
+      lines.pop()
+    }
+  }
+  const length=(a:P[])=>a.slice(1).reduce((acc,p,i)=>acc+distance(p,a[i]),0)
+  lines.sort((a,b)=>length(b)-length(a))
+  const selected=lines[0]
+  if(!selected||selected.length<2||length(selected)<1e-3)
+    throw new Error('The quarter-seam is too narrow for a continuous ridge.')
+  if(selected.length===2){
+    selected.splice(1,0,[(selected[0][0]+selected[1][0])/2,
+      (selected[0][1]+selected[1][1])/2])
+  }
+  return {path:selected,closed:false}
+}
+
 /** Single closed triangular tube following a ring in the parting plane.
  * The ridge is embedded into the negative half and projects into positive.
  * The matching groove uses the same centreline but a wider/deeper profile.
  */
 export function triangularContourTube(
   path:readonly P[],axis:SplitAxis,split:number,halfWidth:number,
-  back:number,front:number,closed=true,
+  back:number,front:number,closed=true,tipFlatFraction=0,
 ):Triangles {
-  if(path.length<3||halfWidth<=0||!(front>back))throw new Error('Invalid V-seam geometry.')
+  if(path.length<3||halfWidth<=0||!(front>back)||tipFlatFraction<0||tipFlatFraction>=1)
+    throw new Error('Invalid V-seam geometry.')
+  // A clipped V has a flat lead-in at its tip rather than a needle edge.
+  // Keep the legacy three-vertex triangular profile when tipFlatFraction=0.
+  const count=tipFlatFraction>0?4:3
   const [k,u,v]=planeAxes(axis)
-  const pos=new Float32Array(path.length*9)
-  const indexed=new Uint32Array((closed?path.length:path.length-1)*18+(closed?0:6))
+  const pos=new Float32Array(path.length*count*3)
+  const ringSegments=closed?path.length:path.length-1
+  const indexed=new Uint32Array(ringSegments*count*6+(closed?0:(count-2)*6))
   const put=(i:number,slot:number,x:number,y:number,normalPos:number)=>{
-    const j=(i*3+slot)*3
+    const j=(i*count+slot)*3
     pos[j+k]=normalPos;pos[j+u]=x;pos[j+v]=y
   }
   for(let i=0;i<path.length;i++){
@@ -103,22 +164,31 @@ export function triangularContourTube(
     const p=path[i]
     put(i,0,p[0]+nx*halfWidth,p[1]+ny*halfWidth,split+back)
     put(i,1,p[0]-nx*halfWidth,p[1]-ny*halfWidth,split+back)
-    put(i,2,p[0],p[1],split+front)
+    if(count===3)put(i,2,p[0],p[1],split+front)
+    else{
+      put(i,2,p[0]-nx*halfWidth*tipFlatFraction,
+        p[1]-ny*halfWidth*tipFlatFraction,split+front)
+      put(i,3,p[0]+nx*halfWidth*tipFlatFraction,
+        p[1]+ny*halfWidth*tipFlatFraction,split+front)
+    }
   }
   let cursor=0
-  for(let i=0;i<(closed?path.length:path.length-1);i++){
+  for(let i=0;i<ringSegments;i++){
     const j=(i+1)%path.length
-    for(const [a,b] of [[0,1],[1,2],[2,0]]){
-      const x=i*3+a,y=i*3+b,z=j*3+a,w=j*3+b
+    for(let a=0;a<count;a++){
+      const b=(a+1)%count
+      const x=i*count+a,y=i*count+b,z=j*count+a,w=j*count+b
       indexed[cursor++]=x;indexed[cursor++]=y;indexed[cursor++]=z
       indexed[cursor++]=z;indexed[cursor++]=y;indexed[cursor++]=w
     }
   }
   if(!closed){
-    // An open U-profile on a silicone box has solid caps at both ends.
-    indexed[cursor++]=0;indexed[cursor++]=2;indexed[cursor++]=1
-    const end=(path.length-1)*3
-    indexed[cursor++]=end;indexed[cursor++]=end+1;indexed[cursor++]=end+2
+    // Caps across a V/trapezoid cross-section close the printable solid.
+    for(let i=1;i<count-1;i++){
+      indexed[cursor++]=0;indexed[cursor++]=i+1;indexed[cursor++]=i
+      const end=(path.length-1)*count
+      indexed[cursor++]=end;indexed[cursor++]=end+i;indexed[cursor++]=end+i+1
+    }
   }
   // Ring direction and its 3D axis can flip the mesh's handedness.
   // Select outward winding from the exact signed volume.

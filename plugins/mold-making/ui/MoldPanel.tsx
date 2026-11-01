@@ -94,8 +94,8 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
   const setOffsetQuality=useMold(s=>s.setOffsetQuality)
   const active=source==='scan'?scanName:refName
   const multi=parts>1
-  const usesV=keys&&parts===2&&keyStyle==='v-seam'
-  const usesPins=keys&&parts!==3&&!usesV
+  const usesV=keys&&multi&&keyStyle==='v-seam'
+  const usesPins=keys&&multi&&!usesV
   const material=moldMaterial(moldSettings(),targetBounds?targetBounds.max[2]-targetBounds.min[2]:undefined)
   const fieldInput=({key,label,help}:{key:MoldDimension;label:string;help:string})=><label key={key} className="kv" title={help}>
     <span className="name">{label}</span>
@@ -173,7 +173,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
           <option value={4}>4 parts — quartered mold</option>
         </select></label>
       {multi&&<>
-        {parts===3&&<p className="hint">Threefold uses three vertical radial parting planes through the XY center, each spaced 120°. Registration features are currently unavailable for radial sectors.</p>}
+        {parts===3&&<p className="hint">Threefold has three 120° radial mating planes. The V-seam and printed/dowel registration are supported on all three interfaces; radial clamp ears are not currently generated.</p>}
         {parts!==3&&<label className="kv"><span className="name">Primary parting axis</span>
           <select data-test="mold-split-axis" value={splitAxis}
             onChange={e=>setSplitAxis(e.target.value as SplitAxis)}>
@@ -183,9 +183,9 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
           </select></label>}
         {parts===4&&<p className="hint">The second split is perpendicular: X→Y, Y→X, or Z→X.</p>}
         <label className="kv"><span className="name">Alignment features</span>
-          <input data-test="mold-keys" type="checkbox" disabled={parts===3} checked={keys&&parts!==3}
+          <input data-test="mold-keys" type="checkbox" checked={keys}
             onChange={e=>setKeys(e.target.checked)}/></label>
-        {keys&&parts!==3&&<>
+        {keys&&<>
           <label className="kv"><span className="name">Mating feature shape</span>
             <select data-test="mold-key-style" value={keyStyle}
               onChange={e=>setKeyStyle(e.target.value as KeyStyle)}>
@@ -195,24 +195,24 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
               <option value="metal-dowel">Matching holes for metal dowels</option>
             </select></label>
           {keyStyle==='metal-dowel'&&<p className="hint">Both halves receive blind holes. Insert separately purchased metal dowels during assembly. Diameter is the nominal hardware diameter.</p>}
-          {keyStyle==='v-seam'&&<p className="hint">{mode==='direct'&&parts===2
-            ?'A continuous triangular tongue-and-groove follows a coarse projected outline of the target, inset from the outer mold edges. Paired ears extend outside the mold for external clamps; pin positions do not apply.'
+          {keyStyle==='v-seam'&&<p className="hint">{parts===3
+            ?'Three vertical radial V-seams with truncated tips sit in the outside tooling wall. Radial clamp tabs are not automatically generated.'
+            :parts===4
+            ?'Open V-profiles follow each quarter interface and stop short of crossing parting planes. Exterior clamp ears are restricted to the relevant quadrant.'
             :mode==='direct'
-            ?'Continuous contour seams currently require two mold parts. Four-part direct molds use the earlier discrete pins instead.'
-            :parts===2
-            ?'Silicone boxes use a wall-supported U-shaped V-seam along both outside walls and the floor, preserving the open pouring rim.'
-            :'Four-part silicone boxes retain discrete exterior wall bosses.'}</p>}
+            ?'The contour V-seam follows a coarse outline of the target, with exterior clamping ears and a flattened ridge tip for assembly.'
+            :'Silicone boxes follow the solid walls and floor; the opening stays unobstructed.'}</p>}
           {usesV&&<div className="mold-feature-section">
             <div className="sec-head">V-seam · profile and spacing</div>
             {V_FIELDS.map(fieldInput)}
-            <div className="sec-head">Clamping tabs · exterior ears</div>
-            {TAB_FIELDS.map(fieldInput)}
+            {parts!==3&&<><div className="sec-head">Clamping tabs · exterior ears</div>
+            {TAB_FIELDS.map(fieldInput)}</>}
             <p className="hint">All required backing is included automatically; additional material below is optional. The tabs are solid clamp ears, not predrilled bolt holes.</p>
           </div>}
           {usesPins&&<div className="mold-feature-section">
             <div className="sec-head">Pins and dowels · size and placement</div>
             {PIN_FIELDS.map(fieldInput)}
-          <label className="kv"><span className="name">Key positions</span>
+          {parts!==3&&<><label className="kv"><span className="name">Key positions</span>
             <select data-test="mold-key-placement" value={keyPlacement}
               onChange={e=>setKeyPlacement(e.target.value as KeyPlacement)}>
               <option value="auto">Automatically distribute</option>
@@ -231,7 +231,8 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
               onManual={()=>setKeyPlacement('manual')}
               diameter={keyDiameter}
               vertical
-            />}
+            />}</>}
+          {parts===3&&<p className="hint">The radial seam uses two automatically spaced registration heights per interface. Manual pin positions are not yet editable in radial mode.</p>}
           </div>}
         </>}
       </>}

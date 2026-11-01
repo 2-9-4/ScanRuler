@@ -8,7 +8,7 @@ import { closedness, type Triangles } from '../../mesh-tools/core/boolean'
 import { repairMoldTarget, liftCollapsedClosedMesh } from './repair'
 import { createSphericalDistanceField, sphericalOffset, type SphericalDistanceField } from './sphericalOffset'
 import { parseMoldSettings, type MoldSettings, type SplitAxis } from './settings'
-import { projectedHull,contourAround,triangularContourTube,planeAxes } from './contourSeam'
+import { projectedHull,contourAround,contourSegment,triangularContourTube,planeAxes } from './contourSeam'
 
 type Vec3 = [number,number,number]
 export type Limits = { min:Vec3; max:Vec3 }
@@ -103,8 +103,8 @@ export interface MoldPlan {
  * interpret the extra inputs as the minimum total backing dimension.
  */
 export function moldMaterial(s:MoldSettings,targetHeight?:number):{side:number;base:number;wall:number}{
-  const v=s.keys&&s.parts===2&&s.keyStyle==='v-seam'
-  const pinLand=s.keys&&s.parts!==3&&!(s.parts===2&&s.keyStyle==='v-seam')
+  const v=s.keys&&s.parts!==1&&s.keyStyle==='v-seam'
+  const pinLand=s.keys&&s.keyStyle!=='v-seam'
     ?s.keyDiameter+2*s.keyClearance+2.5:0
   // Margin includes space from target to the V-ridge's inner flank,
   // full profile width, groove fit, and at least 1.25 mm outside the groove.
@@ -112,7 +112,7 @@ export function moldMaterial(s:MoldSettings,targetHeight?:number):{side:number;b
   const clearance=s.mode==='direct'?s.clearance:0
   const direct=Math.max(2,clearance+2,pinLand+clearance,vLand+clearance)
   const wallMin=v?Math.max(2,s.vSeamWidth+2*s.vSeamClearance+s.vSeamSpacing+2.5):
-    s.keys&&s.parts!==3?Math.max(2,s.keyDiameter+2*s.keyClearance+2):2
+    s.keys?Math.max(2,s.keyDiameter+2*s.keyClearance+(s.parts===3?3.5:2)):2
   // Size structural land and tab spacing WITHOUT user extras first.
   // Otherwise adding "extra" base material merely reduces the automatic
   // padding and appears to have no effect until a threshold is crossed.
@@ -121,7 +121,7 @@ export function moldMaterial(s:MoldSettings,targetHeight?:number):{side:number;b
     base:s.mode==='direct'?direct:Math.max(2,wallMin+0.5),
     wall:wallMin,
   }
-  if(v&&targetHeight!==undefined&&Number.isFinite(targetHeight)&&s.clampTabCount>0){
+  if(v&&s.parts!==3&&targetHeight!==undefined&&Number.isFinite(targetHeight)&&s.clampTabCount>0){
     const pitch=s.clampTabWidth+Math.max(2,s.clampTabWidth*0.25)
     const needed=s.clampTabCount*pitch+4
     const span=targetHeight+(s.mode==='direct'?2*material.base:
@@ -431,6 +431,7 @@ function addBoxWallKeys(
   wasm:ManifoldToplevel,negative:Manifold,positive:Manifold,
   axis:SplitAxis,split:number,s:MoldSettings,plan:MoldPlan,
   keep:(m:Manifold)=>Manifold,seamSpan?:readonly [number,number],
+  seamSpanAxis?:SplitAxis,
 ):[Manifold,Manifold] {
   if(axis==='z')throw new Error('Z split registration on a silicone box needs a separate flange; choose X/Y or turn off keys.')
   const idx=axisIndex(axis),t=axis==='x'?1:0
@@ -523,7 +524,7 @@ function addBoxWallKeys(
 function addContourVSeam(
   wasm:ManifoldToplevel,negative:Manifold,positive:Manifold,
   axis:SplitAxis,split:number,s:MoldSettings,plan:MoldPlan,
-  keep:(m:Manifold)=>Manifold,
+  keep:(m:Manifold)=>Manifold,seamSpan?:readonly [number,number],
 ):[Manifold,Manifold] {
   const halfWidth=s.vSeamWidth/2,fit=s.vSeamClearance
   const [,u,v]=planeAxes(axis)
@@ -576,6 +577,20 @@ function addContourVSeam(
       [edgeHi-inset,bottom],[edgeHi-inset,top]]
     closed=false
   }
+  if(seamSpan){
+    // Clip along the OTHER parting axis, which can be the vertical
+    // coordinate of this plane (Z-first fourfold). In all cases end the
+    // ridge short of the perpendicular interface.
+    const clipAxis=seamSpanAxis?axisIndex(seamSpanAxis):u
+    const alongV=clipAxis===v
+    const trim=halfWidth+fit+0.8
+    const lo=seamSpan[0]>outer.min[clipAxis]+1e-4?seamSpan[0]+trim:seamSpan[0]
+    const hi=seamSpan[1]<outer.max[clipAxis]-1e-4?seamSpan[1]-trim:seamSpan[1]
+    const oriented=alongV?path.map(([a,b]):[number,number]=>[b,a]):path
+    const clipped=contourSegment(oriented,lo,hi,closed)
+    path=alongV?clipped.path.map(([a,b]):[number,number]=>[b,a]):clipped.path
+    closed=clipped.closed
+  }
   const safety=halfWidth+fit+0.65
   for(const [a,b] of path){
     if(a-safety<outer.min[u]-1e-6||a+safety>outer.max[u]+1e-6||
@@ -585,24 +600,33 @@ function addContourVSeam(
   }
   const embed=Math.min(0.6,s.vSeamHeight*0.25)
   const tongue=toManifold(wasm,triangularContourTube(
-    path,axis,split,halfWidth,-embed,s.vSeamHeight,closed),keep)
+    path,axis,split,halfWidth,-embed,s.vSeamHeight,closed,0.24),keep)
   const groove=toManifold(wasm,triangularContourTube(
     path,axis,split,halfWidth+fit,-0.18,
     s.vSeamHeight+fit+0.3,closed),keep)
-  let neg=keep(negative.add(tongue))
-  let pos=keep(positive.subtract(groove))
+  // Construct the exterior clamp ears FIRST. Subtracting the groove last
+  // keeps it open even where a tab overlaps the seam near the exterior:
+  // previously unioning tabs AFTER the subtraction partially filled it.
+  let neg=negative
+  let pos=positive
   const k=axisIndex(axis),t=axis==='x'?1:0
   const mid=[center(outer.min[0],outer.max[0]),center(outer.min[1],outer.max[1])]
   const sideTangent=axis==='z'?0:t
-  const totalHeight=outer.max[2]-outer.min[2]
-  const zPitch=totalHeight/s.clampTabCount
-  for(const sign of [-1,1])for(let i=0;i<s.clampTabCount;i++){
+  const verticalSpan=seamSpan&&seamSpanAxis==='z'&&axis!=='z'
+    ?seamSpan:[outer.min[2],outer.max[2]]
+  const availableZ=verticalSpan[1]-verticalSpan[0]
+  const tabCount=seamSpan&&seamSpanAxis==='z'&&axis!=='z'
+    ?Math.min(s.clampTabCount,Math.floor(availableZ/(s.clampTabWidth+2)))
+    :s.clampTabCount
+  const zPitch=tabCount?availableZ/tabCount:0
+  for(const sign of [-1,1])for(let i=0;i<tabCount;i++){
     let edge=sign<0?outer.min[sideTangent]:outer.max[sideTangent]
+    if(seamSpan&&seamSpanAxis!=='z'&&(edge<seamSpan[0]-1e-4||edge>seamSpan[1]+1e-4))continue
     if(plan.cylinder&&axis!=='z'){
       const dx=split-mid[k],r=plan.cylinder.outerR
       edge=mid[sideTangent]+sign*Math.sqrt(Math.max(0,r*r-dx*dx))
     }
-    const z=outer.min[2]+zPitch*(i+0.5)
+    const z=verticalSpan[0]+zPitch*(i+0.5)
     const tabWidth=s.clampTabWidth
     const thickness=Math.max(2,s.clampTabThickness)
     const makeTab=(upper:boolean):Manifold=>{
@@ -634,17 +658,19 @@ function addContourVSeam(
     neg=keep(neg.add(makeTab(false)))
     pos=keep(pos.add(makeTab(true)))
   }
+  neg=keep(neg.add(tongue))
+  pos=keep(pos.subtract(groove))
   if(neg.isEmpty()||pos.isEmpty())throw new Error('V seam Boolean returned an empty part.')
   return [neg,pos]
 }
 function addKeys(
   wasm:ManifoldToplevel,negative:Manifold,positive:Manifold,
   axis:SplitAxis,split:number,s:MoldSettings,plan:MoldPlan,keep:(m:Manifold)=>Manifold,
-  seamSpan?:readonly [number,number],
+  seamSpan?:readonly [number,number],seamSpanAxis?:SplitAxis,
 ):[Manifold,Manifold] {
   // Registration is placed on material around the projected cavity in both parting-plane axes.
   // Metal dowel mode cuts blind clearance sockets on BOTH mating halves.
-  if(s.keyStyle==='v-seam'&&s.parts===2)return addContourVSeam(wasm,negative,positive,axis,split,s,plan,keep)
+  if(s.keyStyle==='v-seam')return addContourVSeam(wasm,negative,positive,axis,split,s,plan,keep,seamSpan,seamSpanAxis)
   if(s.mode==='silicone-box')return addBoxWallKeys(wasm,negative,positive,axis,split,s,plan,keep,seamSpan)
   const idx=axisIndex(axis)
   const locations=registrationSites(axis,split,s,plan,seamSpan)
@@ -714,6 +740,82 @@ export function splitThreefold(
   }
   return result
 }
+/** Register the three radial interfaces, each shared by exactly two
+ * sectors. The local X axis follows the radial ray; local Y points to the
+ * positive (CCW) wedge. The previous sector is male for printed
+ * registration, and the next sector owns the matching groove/socket.
+ * All features live in the calculated outer wall, never the cavity.
+ */
+function keyThreeParts(
+  wasm:ManifoldToplevel,pieces:Manifold[],s:MoldSettings,plan:MoldPlan,
+  keep:(m:Manifold)=>Manifold,
+):Manifold[]{
+  if(pieces.length!==3)throw new Error('Radial registration requires three sectors.')
+  const out=pieces.slice()
+  const cx=center(plan.outer.min[0],plan.outer.max[0])
+  const cy=center(plan.outer.min[1],plan.outer.max[1])
+  const target=plan.target?extentOf(plan.target.positions):null
+  const cavityRadius=plan.cylinder
+    ?plan.cylinder.innerR+(plan.outer.max[2]-plan.innerBox!.min[2])*
+      Math.tan(s.boxDraftDeg*Math.PI/180)
+    :target?Math.hypot((target.max[0]-target.min[0])/2,
+      (target.max[1]-target.min[1])/2)+s.clearance:0
+  const hw=s.keyStyle==='v-seam'?s.vSeamWidth/2:s.keyDiameter/2
+  const fit=s.keyStyle==='v-seam'?s.vSeamClearance:s.keyClearance
+  const radius=cavityRadius+(s.keyStyle==='v-seam'?s.vSeamSpacing:1.25)+hw+0.65
+  const outside=plan.radialOuter?.radius??plan.cylinder?.outerR??0
+  if(radius+hw+fit+0.3>=outside)
+    throw new Error('Radial registration does not fit inside the computed exterior land.')
+  const z0=plan.outer.min[2]+Math.max(hw+fit+0.8,1.5)
+  const z1=plan.outer.max[2]-Math.max(hw+fit+0.8,1.5)
+  if(z1-z0<=Math.max(1,hw))
+    throw new Error('Radial registration needs additional vertical backing.')
+  for(let seam=0;seam<3;seam++){
+    const angle=120*seam
+    const negative=(seam+2)%3,positive=seam
+    const place=(m:Manifold):Manifold=>
+      keep(keep(m.rotate([0,0,angle])).translate([cx,cy,0]))
+    let male=out[negative],female=out[positive]
+    if(s.keyStyle==='v-seam'){
+      // An open vertical ribbon with capped ends. Trimmed V tips provide
+      // the assembly lead-in at all three radial parting interfaces.
+      const path:[number,number][]=[
+        [radius,z0],[radius,(z0+z1)/2],[radius,z1],
+      ]
+      const embed=Math.min(0.6,s.vSeamHeight*0.25)
+      const tongue=place(toManifold(wasm,triangularContourTube(
+        path,'y',0,hw,-embed,s.vSeamHeight,false,0.24),keep))
+      const groove=place(toManifold(wasm,triangularContourTube(
+        path,'y',0,hw+fit,-0.18,s.vSeamHeight+fit+0.3,false),keep))
+      male=keep(male.add(tongue))
+      female=keep(female.subtract(groove))
+    }else{
+      // Two separated heights provide anti-rotation registration. Metal
+      // dowels use identical blind sockets in both pieces.
+      const L=s.keyDepth,radial=s.keyClearance
+      for(const z of [z0+(z1-z0)*0.28,z0+(z1-z0)*0.72]){
+        const pin=(normalOffset:number,length:number,low:number,high:number)=>
+          place(pinSolid(wasm,'y',[radius,normalOffset,z],length,low,high,keep))
+        if(s.keyStyle==='metal-dowel'){
+          const pocket=L+0.3
+          male=keep(male.subtract(pin(-(L/2-0.15),pocket,hw+radial,hw+radial)))
+          female=keep(female.subtract(pin(L/2-0.15,pocket,hw+radial,hw+radial)))
+        }else{
+          const embed=Math.min(1,L*0.4)
+          const taper=s.keyStyle==='tapered-key'
+          male=keep(male.add(pin((L-embed)/2,L+embed,hw,taper?hw*0.7:hw)))
+          female=keep(female.subtract(pin(
+            (L+2*radial+0.3)/2-0.15,L+2*radial+0.3,
+            hw+radial,taper?hw*0.7+radial:hw+radial)))
+        }
+      }
+    }
+    if(male.isEmpty()||female.isEmpty())throw new Error('Radial registration removed a tooling sector.')
+    out[negative]=male
+    out[positive]=female
+  }
+  return out
+}
 /** Four-part parts are split *before* any pins are added, so the second
  * plane cannot shear a pre-existing pin or socket into degenerate faces.
  * Then pin each adjacent pair on each finished mating interface. */
@@ -727,17 +829,17 @@ function keyFourParts(
   // Always measure key locations on the ORIGINAL four parts. Otherwise
   // first-seam pins extend the bounding boxes and move second-seam keys.
   const initial=pieces.map(p=>p.boundingBox())
-  const span=(i:number,j:number,axis:SplitAxis):readonly [number,number]=>{
-    const tangent=axis==='x'?1:0
+  const span=(i:number,j:number,otherAxis:SplitAxis):readonly [number,number]=>{
+    const tangent=axisIndex(otherAxis)
     return [Math.max(initial[i].min[tangent],initial[j].min[tangent]),
       Math.min(initial[i].max[tangent],initial[j].max[tangent])]
   }
   for(const [i,j] of [[0,2],[1,3]]){
-    const [low,high]=addKeys(wasm,registered[i],registered[j],first,firstAt,s,plan,keep,span(i,j,first))
+    const [low,high]=addKeys(wasm,registered[i],registered[j],first,firstAt,s,plan,keep,span(i,j,second),second)
     registered[i]=low;registered[j]=high
   }
   for(const [i,j] of [[0,1],[2,3]]){
-    const [low,high]=addKeys(wasm,registered[i],registered[j],second,secondAt,s,plan,keep,span(i,j,second))
+    const [low,high]=addKeys(wasm,registered[i],registered[j],second,secondAt,s,plan,keep,span(i,j,first),first)
     registered[i]=low;registered[j]=high
   }
   return registered
@@ -844,12 +946,15 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
     }else if(s.parts===3){
       onProgress?.('Cutting three 120° radial mold sectors around the Z axis…',0.84)
       pieces=splitThreefold(solid,plan,keep)
-      if(s.keys)warnings.push('Threefold radial tooling currently has NO automatic registration: choose external clamping or disable alignment. It is not the same as a threefold-symmetric master; verify your master geometry separately.')
+      if(s.keys){
+        pieces=keyThreeParts(wasm,pieces,s,plan,keep)
+        warnings.push('Threefold tooling has mating registration on all three radial interfaces. No automatic exterior clamp tabs are added to radial interfaces; verify clamping and release.')
+      }
       warnings.push('Threefold molds are three radial wedges around the XY center. Verify demolding, cavity clearances and corner release before printing.')
     }else if(s.parts!==1){
       onProgress?.('Cutting exact parting planes; applying mating pins and pockets…',0.84)
       const a=s.splitAxis,k=axisIndex(a)
-      if(s.parts===4&&a==='z'&&s.keys)throw new Error('Four-part Z-first tooling with pins is not yet supported. Choose X/Y as the primary parting axis, or disable pins.')
+      if(s.parts===4&&a==='z'&&s.keys&&s.keyStyle!=='v-seam')throw new Error('Four-part Z-first tooling with pins is not yet supported. Choose X/Y as the primary parting axis, use a V-seam, or disable pins.')
       const firstAt=extent.min[k]+(extent.max[k]-extent.min[k])*s.splitPosition
       pieces=split(wasm,pieces,a,firstAt,s,plan,keep,s.parts===2&&s.keys)
       if(s.parts===4){
@@ -864,7 +969,7 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
       }
         if(s.keys){
         if(s.mode==='silicone-box'&&!(s.keyStyle==='v-seam'&&s.parts===2))warnings.push('Registration is placed on external wall bosses at multiple heights. Printed pins require assembled clearance; metal dowel holes require separate hardware.')
-        if(s.keyStyle==='v-seam'&&s.parts===4)warnings.push('Four-part molds currently use discrete pins or bosses instead of a continuous V-seam; use two parts for the V-seam.')
+        if(s.keyStyle==='v-seam'&&s.parts===4)warnings.push('Each of the four adjoining seams receives its own open, flat-tipped V-ridge and matching groove, set back from perpendicular parting planes.')
         if(s.keyStyle==='v-seam'&&s.parts===2)warnings.push(s.mode==='direct'?'A continuous contour-following triangular tongue-and-groove with exterior clamp ears provides registration; verify the clamping force and cast release before manufacturing.':'A wall-supported U-shaped triangular tongue-and-groove with exterior clamp ears registers the silicone box while leaving the pouring opening unobstructed.')
         else warnings.push(s.keyStyle==='metal-dowel'?
           `Paired blind sockets are sized for ${s.keyDiameter} mm metal dowels, with ${s.keyClearance} mm radial fit clearance. Insert separate dowels during assembly.`:

@@ -7,9 +7,41 @@ import type { SceneManager } from '../../../src/viewer/SceneManager'
 import type { SceneLayer } from '../../../src/viewer/sceneLayers'
 import { CapSet, CAP_SLOT, cutColor } from '../../../src/viewer/sliceCap'
 import type { MoldBuild } from '../core/geometry'
-import type { MoldSource } from '../core/settings'
+import type { MoldSource, PartCount, SplitAxis } from '../core/settings'
 
 export type MoldPreviewMode = 'section' | 'exploded'
+
+/** Parting-aware exploded offsets in assembled/model coordinates. This is
+ * independent of the THREE scene graph so quadrant/radial layout can be
+ * regression tested without WebGL.
+ */
+export function explodedMoldOffsets(
+  boxes:readonly THREE.Box3[],parts:PartCount,splitAxis:SplitAxis,gap:number,
+):THREE.Vector3[] {
+  if(!boxes.length||!(gap>0))return boxes.map(()=>new THREE.Vector3())
+  const total=new THREE.Box3()
+  for(const box of boxes)total.union(box)
+  const origin=total.getCenter(new THREE.Vector3())
+  const size=total.getSize(new THREE.Vector3())
+  const travel=gap+Math.max(size.x,size.y,size.z)*0.18
+  return boxes.map((box,i)=>{
+    if(parts===3){
+      const a=(i+0.5)*2*Math.PI/3
+      return new THREE.Vector3(Math.cos(a),Math.sin(a),0).multiplyScalar(travel)
+    }
+    const c=box.getCenter(new THREE.Vector3())
+    const first=splitAxis==='x'?0:splitAxis==='y'?1:2
+    const second=splitAxis==='x'?1:0
+    const direction=new THREE.Vector3()
+    const sign=(axis:number)=>{
+      const a=c.getComponent(axis),o=origin.getComponent(axis)
+      direction.setComponent(axis,a>=o?1:-1)
+    }
+    sign(first)
+    if(parts===4)sign(second)
+    return direction.normalize().multiplyScalar(travel)
+  })
+}
 
 export class MoldPreview {
   private host: ReturnType<SceneManager['layerHost']>
@@ -25,7 +57,8 @@ export class MoldPreview {
   private viewMode:MoldPreviewMode='section'
   private bounds:MoldBuild['targetBounds']|null=null
   private explodeGap=3
-  private extent=0
+  private partCount:PartCount=2
+  private splitAxis:SplitAxis='x'
   constructor(private scene:SceneManager,private changed:()=>void) {
     this.host=scene.layerHost()
     const layer:SceneLayer={
@@ -54,13 +87,15 @@ export class MoldPreview {
         mesh,slot:CAP_SLOT.layers+i,color:cutColor(CAP_SLOT.layers+i),
       })),this.host.theme())
   }
-  set(build:MoldBuild,source:MoldSource,gap:number,mode:MoldPreviewMode='section'):void {
+  set(build:MoldBuild,source:MoldSource,gap:number,mode:MoldPreviewMode='section',
+    parts:PartCount=2,splitAxis:SplitAxis='x'):void {
     this.clear()
     this.source=source
     this.bounds=build.targetBounds
     this.explodeGap=gap
     this.viewMode=mode
-    this.extent=0
+    this.partCount=parts
+    this.splitAxis=splitAxis
     this.group.visible=true
     if(source==='reference'){
       this.priorNominal=this.scene.nominalShown()
@@ -77,7 +112,6 @@ export class MoldPreview {
       geo.setIndex(new THREE.BufferAttribute(p.indices,1))
       geo.computeVertexNormals()
       geo.computeBoundingBox()
-      this.extent=Math.max(this.extent,(geo.boundingBox?.max.x??0)-(geo.boundingBox?.min.x??0))
       const material=new THREE.MeshStandardMaterial({
         color:0x57a99d,roughness:0.68,metalness:0,flatShading:true,
         transparent:false,opacity:1,depthWrite:true,side:THREE.FrontSide,
@@ -106,11 +140,9 @@ export class MoldPreview {
     if(!Number.isFinite(gap)||gap<0)return
     if(gap>0||this.viewMode==='exploded')this.explodeGap=gap
     const displayed=this.viewMode==='section'?0:Math.max(gap,1)
-    this.parts.forEach((p,i)=>{
-      // At zero the assembly is closed. Positive gap means a separated parts
-      // layout, with no coplanar face clashes in the viewport.
-      p.position.x=displayed>0?(i-(this.parts.length-1)/2)*(this.extent+displayed):0
-    })
+    const bounds=this.meshes.map(m=>m.geometry.boundingBox??new THREE.Box3())
+    const offsets=explodedMoldOffsets(bounds,this.partCount,this.splitAxis,displayed)
+    this.parts.forEach((p,i)=>p.position.copy(offsets[i]))
     this.host.invalidate()
   }
   setVisible(visible:boolean):void {
