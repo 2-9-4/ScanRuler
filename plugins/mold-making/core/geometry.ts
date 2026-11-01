@@ -129,6 +129,15 @@ export function planMold(target:Triangles,settings:MoldSettings):MoldPlan {
   if(size.some(x=>!Number.isFinite(x)||x<=EPS))throw new Error('Target has zero extent.')
   const cx=center(min[0],max[0]),cy=center(min[1],max[1])
   const material=moldMaterial(s)
+  // Clamp ears use real requested widths and spacing. Rather than rejecting
+  // short masters or shrinking the ears invisibly, extend backing in Z as
+  // needed so every tab has an independent overlap with solid material.
+  if(s.keys&&s.parts===2&&s.keyStyle==='v-seam'){
+    const pitch=s.clampTabWidth+Math.max(2,s.clampTabWidth*0.25)
+    const needed=s.clampTabCount*pitch+4
+    const span=size[2]+(s.mode==='direct'?2*material.base:s.siliconeThickness+material.wall+material.base)
+    if(span<needed)material.base+=(needed-span)/(s.mode==='direct'?2:1)
+  }
   if(s.mode==='silicone-box'){
     const bottom=min[2]-material.base,top=max[2]+s.siliconeThickness+material.wall
     const innerBottom=min[2],innerTop=top+2
@@ -498,75 +507,99 @@ function addBoxWallKeys(
  * of disconnected pins. Two substantial ears at the outside edge permit
  * clamping without touching the casting cavity.
  */
+/** A V-ridge backed by continuous material on the parting plane.
+ * Direct tooling follows a coarse outward silhouette. Silicone boxes
+ * instead have an OPEN U seam supported by their two exterior walls and
+ * floor: a closed silhouette ring would run through the empty silicone
+ * cavity and create disconnected plastic.
+ */
 function addContourVSeam(
   wasm:ManifoldToplevel,negative:Manifold,positive:Manifold,
   axis:SplitAxis,split:number,s:MoldSettings,plan:MoldPlan,
   keep:(m:Manifold)=>Manifold,
 ):[Manifold,Manifold] {
-  if(!plan.target)throw new Error('Contour mating requires a complete target mesh.')
-  const margin=axis==='z'?s.sideMargin:Math.min(s.sideMargin,s.baseThickness)
-  // Fit the triangular cross section inside the backing even for the
-  // default 4 mm top/bottom land, and preserve 0.4 mm minimum wall.
-  const halfWidth=Math.min(1.5,Math.max(0.35,
-    (margin-s.clearance-2*s.keyClearance-1.4)/2.2))
-  const radial=s.keyClearance
-  const setback=halfWidth+radial+s.clearance+0.85
-  const reach=setback+halfWidth+radial+0.4
-  if(reach>=margin)
-    throw new Error(`Insufficient backing for continuous V-seam (${margin.toFixed(2)} mm available; need >${reach.toFixed(2)} mm). Increase base/top thickness or outer margin, or reduce cavity clearance.`)
-  const hull=projectedHull(plan.target,axis)
-  const path=contourAround(hull,setback,Math.max(2,s.keyDiameter))
+  const halfWidth=s.vSeamWidth/2,fit=s.vSeamClearance
   const [,u,v]=planeAxes(axis)
   const outer=plan.outer
-  const safe=halfWidth+radial+0.25
+  let path:[number,number][]
+  let closed:boolean
+  if(s.mode==='direct'){
+    if(!plan.target)throw new Error('Contour mating requires a model.')
+    path=contourAround(projectedHull(plan.target,axis),
+      s.vSeamSpacing+halfWidth,Math.max(2,s.vSeamWidth*2))
+    closed=true
+  }else{
+    if(axis==='z')throw new Error('Silicone-box V seams require a vertical X or Y split.')
+    const k=axisIndex(axis),t=axis==='x'?1:0
+    const mid=[center(outer.min[0],outer.max[0]),center(outer.min[1],outer.max[1])]
+    const inset=halfWidth+fit+1
+    let edgeLo=outer.min[t],edgeHi=outer.max[t]
+    if(plan.cylinder){
+      const dx=split-mid[k]
+      const radius=plan.cylinder.outerR
+      const chord=Math.sqrt(Math.max(0,radius*radius-dx*dx))
+      edgeLo=mid[t]-chord;edgeHi=mid[t]+chord
+    }
+    const bottom=outer.min[2]+inset
+    const top=outer.max[2]-inset
+    if(edgeHi-edgeLo<=inset*2||top-bottom<=s.vSeamWidth){
+      throw new Error('The mold box is too small for a wall-supported seam.')
+    }
+    // Two walls and a floor, with capped ends at the open pouring rim.
+    path=[[edgeLo+inset,top],[edgeLo+inset,bottom],
+      [edgeHi-inset,bottom],[edgeHi-inset,top]]
+    closed=false
+  }
+  const safety=halfWidth+fit+0.65
   for(const [a,b] of path){
-    if(a-safe<outer.min[u]||a+safe>outer.max[u]||
-       b-safe<outer.min[v]||b+safe>outer.max[v]){
-      throw new Error('Continuous contour V-seam needs more material around the projected outline. Increase margins or base/top thickness; no disconnected features were created.')
+    if(a-safety<outer.min[u]-1e-6||a+safety>outer.max[u]+1e-6||
+       b-safety<outer.min[v]-1e-6||b+safety>outer.max[v]+1e-6){
+      throw new Error('The computed V-seam lies outside the tooling. This indicates a geometry planning bug; no mold was exported.')
     }
   }
-  // The male prism is embedded into the negative half, so the union shares
-  // real material instead of a paper-thin coplanar contact. Groove is wider
-  // and deeper by the user-chosen radial fit clearance.
-  const embed=Math.min(0.5,s.keyDepth*0.25)
-  const tongue=toManifold(wasm,triangularContourTube(path,axis,split,halfWidth,-embed,s.keyDepth),keep)
-  const groove=toManifold(wasm,triangularContourTube(path,axis,split,
-    halfWidth+radial,-0.15,s.keyDepth+radial+0.25),keep)
+  const embed=Math.min(0.6,s.vSeamHeight*0.25)
+  const tongue=toManifold(wasm,triangularContourTube(
+    path,axis,split,halfWidth,-embed,s.vSeamHeight,closed),keep)
+  const groove=toManifold(wasm,triangularContourTube(
+    path,axis,split,halfWidth+fit,-0.18,
+    s.vSeamHeight+fit+0.3,closed),keep)
   let neg=keep(negative.add(tongue))
   let pos=keep(positive.subtract(groove))
-  // Clamp ears: each half gains its own protruding solid outside the block.
-  // They do not themselves overlap across the split plane.
-  const k=axisIndex(axis)
-  const side=axis==='x'?1:0
-  const zmin=outer.min[2],zmax=outer.max[2]
-  const zHeight=Math.min(7,Math.max(2,(zmax-zmin)*0.3))
-  const zmid=center(zmin,zmax)
-  for(const sign of [-1,1]){
-    const tabLimits=(positiveHalf:boolean):Limits=>{
-      const lo:[number,number,number]=[...outer.min],hi:[number,number,number]=[...outer.max]
-      const thickness=Math.max(4,Math.min(7,s.keyDepth+1.5))
-      lo[k]=positiveHalf?split:split-thickness
-      hi[k]=positiveHalf?split+thickness:split
-      if(axis==='z'){
-        // For Z splitting, choose opposing ears on X, crossing the main
-        // planar outline in Y near its middle.
-        const x=sign<0?outer.min[0]:outer.max[0]
-        lo[0]=sign<0?x-7:x-1.5
-        hi[0]=sign<0?x+1.5:x+7
-        lo[1]=center(outer.min[1],outer.max[1])-zHeight/2
-        hi[1]=center(outer.min[1],outer.max[1])+zHeight/2
-      }else{
-        const edge=sign<0?outer.min[side]:outer.max[side]
-        lo[side]=sign<0?edge-7:edge-1.5
-        hi[side]=sign<0?edge+1.5:edge+7
-        lo[2]=zmid-zHeight/2;hi[2]=zmid+zHeight/2
-      }
-      return {min:lo,max:hi}
+  const k=axisIndex(axis),t=axis==='x'?1:0
+  const mid=[center(outer.min[0],outer.max[0]),center(outer.min[1],outer.max[1])]
+  const sideTangent=axis==='z'?0:t
+  const totalHeight=outer.max[2]-outer.min[2]
+  const zPitch=totalHeight/s.clampTabCount
+  for(const sign of [-1,1])for(let i=0;i<s.clampTabCount;i++){
+    let edge=sign<0?outer.min[sideTangent]:outer.max[sideTangent]
+    if(plan.cylinder&&axis!=='z'){
+      const dx=split-mid[k],r=plan.cylinder.outerR
+      edge=mid[sideTangent]+sign*Math.sqrt(Math.max(0,r*r-dx*dx))
     }
-    neg=keep(neg.add(toManifold(wasm,boxSolid(tabLimits(false)),keep)))
-    pos=keep(pos.add(toManifold(wasm,boxSolid(tabLimits(true)),keep)))
+    const z=outer.min[2]+zPitch*(i+0.5)
+    const tabWidth=s.clampTabWidth
+    const thickness=Math.max(2,s.clampTabThickness)
+    const makeTab=(upper:boolean):Manifold=>{
+      const lo:Vec3=[...outer.min],hi:Vec3=[...outer.max]
+      lo[k]=upper?split:split-thickness
+      hi[k]=upper?split+thickness:split
+      const overlap=Math.max(1.5,Math.min(3,s.clampTabProjection*0.25))
+      lo[sideTangent]=sign<0?edge-s.clampTabProjection:edge-overlap
+      hi[sideTangent]=sign<0?edge+overlap:edge+s.clampTabProjection
+      if(axis==='z'){
+        // Top/bottom halves: tabs spread along Y, on both X edges.
+        const span=outer.max[1]-outer.min[1]
+        const y=outer.min[1]+span*(i+0.5)/s.clampTabCount
+        lo[1]=y-tabWidth/2;hi[1]=y+tabWidth/2
+      }else{
+        lo[2]=z-tabWidth/2;hi[2]=z+tabWidth/2
+      }
+      return toManifold(wasm,boxSolid({min:lo,max:hi}),keep)
+    }
+    neg=keep(neg.add(makeTab(false)))
+    pos=keep(pos.add(makeTab(true)))
   }
-  if(neg.isEmpty()||pos.isEmpty())throw new Error('Continuous V-seam operation removed a mold half.')
+  if(neg.isEmpty()||pos.isEmpty())throw new Error('V seam Boolean returned an empty part.')
   return [neg,pos]
 }
 function addKeys(
@@ -576,8 +609,8 @@ function addKeys(
 ):[Manifold,Manifold] {
   // Registration is placed on material around the projected cavity in both parting-plane axes.
   // Metal dowel mode cuts blind clearance sockets on BOTH mating halves.
-  if(s.mode==='silicone-box')return addBoxWallKeys(wasm,negative,positive,axis,split,s,plan,keep,seamSpan)
   if(s.keyStyle==='v-seam'&&s.parts===2)return addContourVSeam(wasm,negative,positive,axis,split,s,plan,keep)
+  if(s.mode==='silicone-box')return addBoxWallKeys(wasm,negative,positive,axis,split,s,plan,keep,seamSpan)
   const idx=axisIndex(axis)
   const locations=registrationSites(axis,split,s,plan,seamSpan)
   let a=negative,b=positive
@@ -796,8 +829,8 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
       }
         if(s.keys){
         if(s.mode==='silicone-box')warnings.push('Registration is placed on external wall bosses at multiple heights. Printed pins require assembled clearance; metal dowel holes require separate hardware.')
-        if(s.keyStyle==='v-seam'&&s.mode==='direct'&&s.parts===4)warnings.push('Four-part molds currently use straight seam pins instead of a continuous contour V-seam; use a two-part direct mold for the V-seam.')
-        if(s.keyStyle==='v-seam'&&s.mode==='direct'&&s.parts===2)warnings.push('A continuous contour-following triangular tongue-and-groove with exterior clamp ears provides registration; verify the clamping force and cast release before manufacturing.')
+        if(s.keyStyle==='v-seam'&&s.parts===4)warnings.push('Four-part molds currently use discrete pins or bosses instead of a continuous V-seam; use two parts for the V-seam.')
+        if(s.keyStyle==='v-seam'&&s.parts===2)warnings.push(s.mode==='direct'?'A continuous contour-following triangular tongue-and-groove with exterior clamp ears provides registration; verify the clamping force and cast release before manufacturing.':'A wall-supported U-shaped triangular tongue-and-groove with exterior clamp ears registers the silicone box while leaving the pouring opening unobstructed.')
         else warnings.push(s.keyStyle==='metal-dowel'?
           `Paired blind sockets are sized for ${s.keyDiameter} mm metal dowels, with ${s.keyClearance} mm radial fit clearance. Insert separate dowels during assembly.`:
           `${s.keyStyle==='tapered-key'?'Tapered':'Straight'} printed registration pins and matching clearance sockets.`)
