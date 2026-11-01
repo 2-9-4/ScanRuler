@@ -11,6 +11,38 @@ import type { MoldSource, PartCount, SplitAxis } from '../core/settings'
 
 export type MoldPreviewMode = 'section' | 'exploded'
 
+/** Parting-aware exploded offsets in assembled/model coordinates. This is
+ * independent of the THREE scene graph so quadrant/radial layout can be
+ * regression tested without WebGL.
+ */
+export function explodedMoldOffsets(
+  boxes:readonly THREE.Box3[],parts:PartCount,splitAxis:SplitAxis,gap:number,
+):THREE.Vector3[] {
+  if(!boxes.length||!(gap>0))return boxes.map(()=>new THREE.Vector3())
+  const total=new THREE.Box3()
+  for(const box of boxes)total.union(box)
+  const origin=total.getCenter(new THREE.Vector3())
+  const size=total.getSize(new THREE.Vector3())
+  const travel=gap+Math.max(size.x,size.y,size.z)*0.18
+  return boxes.map((box,i)=>{
+    if(parts===3){
+      const a=(i+0.5)*2*Math.PI/3
+      return new THREE.Vector3(Math.cos(a),Math.sin(a),0).multiplyScalar(travel)
+    }
+    const c=box.getCenter(new THREE.Vector3())
+    const first=splitAxis==='x'?0:splitAxis==='y'?1:2
+    const second=splitAxis==='x'?1:0
+    const direction=new THREE.Vector3()
+    const sign=(axis:number)=>{
+      const a=c.getComponent(axis),o=origin.getComponent(axis)
+      direction.setComponent(axis,a>=o?1:-1)
+    }
+    sign(first)
+    if(parts===4)sign(second)
+    return direction.normalize().multiplyScalar(travel)
+  })
+}
+
 export class MoldPreview {
   private host: ReturnType<SceneManager['layerHost']>
   private readonly caps=new CapSet()
@@ -27,7 +59,6 @@ export class MoldPreview {
   private explodeGap=3
   private partCount:PartCount=2
   private splitAxis:SplitAxis='x'
-  private readonly assembledBounds=new THREE.Box3()
   constructor(private scene:SceneManager,private changed:()=>void) {
     this.host=scene.layerHost()
     const layer:SceneLayer={
@@ -65,7 +96,6 @@ export class MoldPreview {
     this.viewMode=mode
     this.partCount=parts
     this.splitAxis=splitAxis
-    this.assembledBounds.makeEmpty()
     this.group.visible=true
     if(source==='reference'){
       this.priorNominal=this.scene.nominalShown()
@@ -82,7 +112,6 @@ export class MoldPreview {
       geo.setIndex(new THREE.BufferAttribute(p.indices,1))
       geo.computeVertexNormals()
       geo.computeBoundingBox()
-      if(geo.boundingBox)this.assembledBounds.union(geo.boundingBox)
       const material=new THREE.MeshStandardMaterial({
         color:0x57a99d,roughness:0.68,metalness:0,flatShading:true,
         transparent:false,opacity:1,depthWrite:true,side:THREE.FrontSide,
@@ -111,37 +140,9 @@ export class MoldPreview {
     if(!Number.isFinite(gap)||gap<0)return
     if(gap>0||this.viewMode==='exploded')this.explodeGap=gap
     const displayed=this.viewMode==='section'?0:Math.max(gap,1)
-    const origin=this.assembledBounds.getCenter(new THREE.Vector3())
-    const size=this.assembledBounds.getSize(new THREE.Vector3())
-    const travel=displayed+Math.max(size.x,size.y,size.z)*0.18
-    this.parts.forEach((p,i)=>{
-      p.position.set(0,0,0)
-      if(!displayed)return
-      let direction:THREE.Vector3
-      if(this.partCount===3){
-        // The sectors are laid out CCW around Z. Never translate all
-        // three parts along X; each moves out from its own radial bisector.
-        const a=(i+0.5)*2*Math.PI/3
-        direction=new THREE.Vector3(Math.cos(a),Math.sin(a),0)
-      }else{
-        const box=this.meshes[i]?.geometry.boundingBox
-        const c=box?box.getCenter(new THREE.Vector3()):origin.clone()
-        const first=this.splitAxis==='x'?0:this.splitAxis==='y'?1:2
-        const second=this.splitAxis==='x'?1:0
-        const components:[number,number,number]=[0,0,0]
-        const sample=(axis:number)=>{
-          // Parts split by exactly planar faces can share bounding-box
-          // centre on unrelated axes; use only the known parting axes.
-          const a=axis===0?c.x:axis===1?c.y:c.z
-          const o=axis===0?origin.x:axis===1?origin.y:origin.z
-          components[axis]=a>=o?1:-1
-        }
-        sample(first)
-        if(this.partCount===4)sample(second)
-        direction=new THREE.Vector3(...components).normalize()
-      }
-      p.position.copy(direction.multiplyScalar(travel))
-    })
+    const bounds=this.meshes.map(m=>m.geometry.boundingBox??new THREE.Box3())
+    const offsets=explodedMoldOffsets(bounds,this.partCount,this.splitAxis,displayed)
+    this.parts.forEach((p,i)=>p.position.copy(offsets[i]))
     this.host.invalidate()
   }
   setVisible(visible:boolean):void {
