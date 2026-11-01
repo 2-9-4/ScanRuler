@@ -151,7 +151,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
             <option value="x">X (left/right)</option>
             <option value="y">Y (front/back)</option>
             <option value="z">Z (top/bottom)</option>
-          </select></label>
+          </select></label>}
         {parts===4&&<p className="hint">The second split is perpendicular: X→Y, Y→X, or Z→X.</p>}
         <label className="kv"><span className="name">Alignment features</span>
           <input data-test="mold-keys" type="checkbox" disabled={parts===3} checked={keys&&parts!==3}
@@ -172,7 +172,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
               onChange={e=>setKeyPlacement(e.target.value as KeyPlacement)}>
               <option value="auto">Automatically distribute</option>
               <option value="manual">{mode==='silicone-box'?'Edit heights on exterior wall':'Edit positions along seam'}</option>
-            </select></label>
+            </select></label>}
           {keyStyle!=='v-seam'&&(mode==='direct'?
             <PlaneKeyEditor points={keyPoints} axis={splitAxis}
               manual={keyPlacement==='manual'} onChange={setKeyPoints}
