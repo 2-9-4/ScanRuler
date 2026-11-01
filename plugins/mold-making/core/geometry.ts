@@ -527,8 +527,27 @@ function addContourVSeam(
     path=contourAround(projectedHull(plan.target,axis),
       s.vSeamSpacing+s.clearance+halfWidth,Math.max(2,s.vSeamWidth*2))
     closed=true
+  }else if(axis==='z'){
+    const inner=plan.innerBox!
+    const inset=halfWidth+fit+1.2+s.vSeamSpacing
+    if(plan.cylinder){
+      const {cx,cy,innerR}=plan.cylinder
+      const zDistance=Math.max(0,split-inner.min[2])
+      const radius=innerR+zDistance*Math.tan(s.boxDraftDeg*Math.PI/180)+inset
+      const segments=96
+      path=Array.from({length:segments},(_,i)=>{
+        const angle=2*Math.PI*i/segments
+        return [cx+radius*Math.cos(angle),cy+radius*Math.sin(angle)] as [number,number]
+      })
+    }else{
+      // A horizontal parting plane crosses the bucket's four walls.
+      // Follow the inner wall at a safe outward offset, not the empty
+      // region that is to be filled with silicone.
+      path=contourAround(projectedHull(boxSolid(inner),'z'),inset,
+        Math.max(2,s.vSeamWidth*2))
+    }
+    closed=true
   }else{
-    if(axis==='z')throw new Error('Silicone-box V seams require a vertical X or Y split.')
     const k=axisIndex(axis),t=axis==='x'?1:0
     const mid=[center(outer.min[0],outer.max[0]),center(outer.min[1],outer.max[1])]
     const inset=halfWidth+fit+1.2+s.vSeamSpacing
@@ -587,8 +606,17 @@ function addContourVSeam(
       hi[sideTangent]=sign<0?edge+overlap:edge+s.clampTabProjection
       if(axis==='z'){
         // Top/bottom halves: tabs spread along Y, on both X edges.
+        // For a cylinder, use the local circle intersection rather than
+        // the maximal X extent (which would detach ears away from Y=0).
         const span=outer.max[1]-outer.min[1]
         const y=outer.min[1]+span*(i+0.5)/s.clampTabCount
+        if(plan.cylinder){
+          const dy=y-mid[1],r=plan.cylinder.outerR
+          const chord=Math.sqrt(Math.max(0,r*r-dy*dy))
+          edge=mid[0]+sign*chord
+          lo[sideTangent]=sign<0?edge-s.clampTabProjection:edge-overlap
+          hi[sideTangent]=sign<0?edge+overlap:edge+s.clampTabProjection
+        }
         lo[1]=y-tabWidth/2;hi[1]=y+tabWidth/2
       }else{
         lo[2]=z-tabWidth/2;hi[2]=z+tabWidth/2
