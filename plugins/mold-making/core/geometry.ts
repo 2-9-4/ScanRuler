@@ -1121,7 +1121,9 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
       pieces=splitThreefold(solid,plan,keep)
       if(s.keys){
         pieces=keyThreeParts(wasm,pieces,s,plan,keep)
-        warnings.push('Threefold tooling has mating registration on all three radial interfaces. No automatic exterior clamp tabs are added to radial interfaces; verify clamping and release.')
+        warnings.push(s.clampTabCount>0
+          ? `Threefold tooling has mating registration on all three radial interfaces, with ${s.clampTabCount} paired exterior clamp tabs per radial interface. Verify clamping and release.`
+          : 'Threefold tooling has mating registration on all three radial interfaces but no exterior clamp tabs. Provide external clamping and verify release.')
       }
       warnings.push('Threefold molds are three radial wedges around the XY center. Verify demolding, cavity clearances and corner release before printing.')
     }else if(s.parts!==1){
