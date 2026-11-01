@@ -93,9 +93,31 @@ function check(mesh:Triangles,what:string):void {
 export interface MoldPlan {
   outer:Limits; innerBox:Limits|null; openingZ:number|null
   cylinder:{cx:number;cy:number;outerR:number;innerR:number}|null
+  /** Effective calculated wall/backing material including user extra margin. */
+  material:{side:number;base:number;wall:number}
   /** The repaired input, read only while computing direct-mold contours. */
   target?:Triangles
   radialOuter?:{cx:number;cy:number;radius:number}
+}
+/** Required printable structure PLUS optional additional material. Never
+ * interpret the extra inputs as the minimum total backing dimension.
+ */
+export function moldMaterial(s:MoldSettings):{side:number;base:number;wall:number}{
+  const v=s.keys&&s.parts===2&&s.keyStyle==='v-seam'
+  const pinLand=s.keys&&s.parts!==3
+    ?s.keyDiameter+2*s.keyClearance+2.5:0
+  // Margin includes space from target to the V-ridge's inner flank,
+  // full profile width, groove fit, and at least 1.25 mm outside the groove.
+  const vLand=v?s.vSeamSpacing+s.vSeamWidth+s.vSeamClearance+1.25:0
+  const clearance=s.mode==='direct'?s.clearance:0
+  const direct=Math.max(2,clearance+2,pinLand+clearance,vLand+clearance)
+  const wallMin=v?Math.max(2,s.vSeamWidth+s.vSeamClearance+1.75):
+    s.keys&&s.parts!==3?Math.max(2,s.keyDiameter+2*s.keyClearance+2):2
+  return {
+    side:direct+s.sideMargin,
+    base:(s.mode==='direct'?direct:Math.max(2,wallMin+0.5))+s.baseThickness,
+    wall:wallMin+s.wallThickness,
+  }
 }
 export function planMold(target:Triangles,settings:MoldSettings):MoldPlan {
   const s=parseMoldSettings(settings)
@@ -106,38 +128,37 @@ export function planMold(target:Triangles,settings:MoldSettings):MoldPlan {
   const size=min.map((v,i)=>max[i]-v)
   if(size.some(x=>!Number.isFinite(x)||x<=EPS))throw new Error('Target has zero extent.')
   const cx=center(min[0],max[0]),cy=center(min[1],max[1])
+  const material=moldMaterial(s)
   if(s.mode==='silicone-box'){
-    const bottom=min[2]-s.baseThickness,top=max[2]+s.siliconeThickness+s.wallThickness
+    const bottom=min[2]-material.base,top=max[2]+s.siliconeThickness+material.wall
     const innerBottom=min[2],innerTop=top+2
     const draft=(innerTop-innerBottom)*Math.tan(s.boxDraftDeg*Math.PI/180)
     if(s.boxShape==='cylindrical'||s.parts===3){
       const innerR=Math.hypot(size[0]/2,size[1]/2)+s.siliconeThickness
-      const outerR=innerR+draft+s.wallThickness
+      const outerR=innerR+draft+material.wall
       return {outer:{min:[cx-outerR,cy-outerR,bottom],max:[cx+outerR,cy+outerR,top]},
         innerBox:{min:[cx-innerR,cy-innerR,innerBottom],max:[cx+innerR,cy+innerR,innerTop]},
-        cylinder:{cx,cy,innerR,outerR},openingZ:null}
+        cylinder:{cx,cy,innerR,outerR},openingZ:null,material}
     }
     const innerBox:Limits={min:[min[0]-s.siliconeThickness,min[1]-s.siliconeThickness,innerBottom],
       max:[max[0]+s.siliconeThickness,max[1]+s.siliconeThickness,innerTop]}
-    return {outer:{min:[innerBox.min[0]-s.wallThickness-draft,innerBox.min[1]-s.wallThickness-draft,bottom],
-      max:[innerBox.max[0]+s.wallThickness+draft,innerBox.max[1]+s.wallThickness+draft,top]},
-      innerBox,cylinder:null,openingZ:null}
+    return {outer:{min:[innerBox.min[0]-material.wall-draft,innerBox.min[1]-material.wall-draft,bottom],
+      max:[innerBox.max[0]+material.wall+draft,innerBox.max[1]+material.wall+draft,top]},
+      innerBox,cylinder:null,openingZ:null,material}
   }
   if(s.mode==='direct'){
-    if(s.sideMargin<=s.clearance)throw new Error('Outer margin must exceed cavity clearance.')
-    if(s.baseThickness<=s.clearance)throw new Error('Cavity clearance must be smaller than base/top thickness, or the cutter breaks through the outside. Increase base thickness.')
     if(s.parts===3){
       // Round outside makes the three 120° sectors rotationally equivalent
       // in their outer tooling, unlike cutting an ordinary XY rectangle.
-      const radius=Math.hypot(size[0]/2,size[1]/2)+s.sideMargin
-      return {outer:{min:[cx-radius,cy-radius,min[2]-s.baseThickness],
-        max:[cx+radius,cy+radius,max[2]+s.baseThickness]},
-        innerBox:null,cylinder:null,openingZ:null,target,
+      const radius=Math.hypot(size[0]/2,size[1]/2)+material.side
+      return {outer:{min:[cx-radius,cy-radius,min[2]-material.base],
+        max:[cx+radius,cy+radius,max[2]+material.base]},
+        innerBox:null,cylinder:null,openingZ:null,target,material,
         radialOuter:{cx,cy,radius}}
     }
-    return {outer:{min:[min[0]-s.sideMargin,min[1]-s.sideMargin,min[2]-s.baseThickness],
-      max:[max[0]+s.sideMargin,max[1]+s.sideMargin,max[2]+s.baseThickness]},
-      innerBox:null,cylinder:null,openingZ:s.parts===1?center(min[2],max[2]):null,target}
+    return {outer:{min:[min[0]-material.side,min[1]-material.side,min[2]-material.base],
+      max:[max[0]+material.side,max[1]+material.side,max[2]+material.base]},
+      innerBox:null,cylinder:null,openingZ:s.parts===1?center(min[2],max[2]):null,target,material}
   }
   throw new Error('Unrecognized mold type.')
 }
@@ -333,8 +354,8 @@ export function registrationSites(
   const inset=radius+0.75
   if(u1-u0<=2*inset||v1-v0<=2*inset)
     throw new Error('No room for registration keys in the selected parting plane. Increase the outer margin or reduce the key diameter.')
-  const targetLo=[outer.min[0]+s.sideMargin,outer.min[1]+s.sideMargin,outer.min[2]+s.baseThickness]
-  const targetHi=[outer.max[0]-s.sideMargin,outer.max[1]-s.sideMargin,outer.max[2]-s.baseThickness]
+  const limits=plan.target?extentOf(plan.target.positions):plan.innerBox!
+  const targetLo=limits.min,targetHi=limits.max
   const safe=(a:number,b:number)=>{
     if(a<u0+inset-1e-6||a>u1-inset+1e-6||b<v0+inset-1e-6||b>v1-inset+1e-6)return false
     const du=Math.max(targetLo[u]-a,0,a-targetHi[u])
@@ -422,7 +443,7 @@ function addBoxWallKeys(
   if(!heights.length)throw new Error('No safe registration heights on this silicone box.')
   // Move the boss centre out beyond the actual wall surface, leaving a
   // substantial intersection with the wall but no intrusion into the cavity.
-  const wallPenetration=Math.min(bossRadius*0.75,s.wallThickness*0.7)
+  const wallPenetration=Math.min(bossRadius*0.75,plan.material.wall*0.7)
   const overhang=bossRadius-wallPenetration
   const sites:Vec3[]=[]
   for(const sign of [-1,1]){
