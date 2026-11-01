@@ -6,7 +6,7 @@ import type { SolidMesh } from '../../../src/app/solids'
 import { extentOf } from '../../../src/core/geometry/bounds'
 import { closedness, type Triangles } from '../../mesh-tools/core/boolean'
 import { signedVolume } from '../../mesh-tools/core/hollow'
-import { repairMoldTarget } from './repair'
+import { repairMoldTarget, liftCollapsedClosedMesh } from './repair'
 import { createSphericalDistanceField, sphericalOffset, type SphericalDistanceField } from './sphericalOffset'
 import { parseMoldSettings, type MoldSettings, type SplitAxis } from './settings'
 
@@ -64,7 +64,7 @@ function check(mesh:Triangles,what:string):void {
     const vx=p[c]-p[a],vy=p[c+1]-p[a+1],vz=p[c+2]-p[a+2]
     const crossX=uy*vz-uz*vy,crossY=uz*vx-ux*vz,crossZ=ux*vy-uy*vx
     const area2=Math.hypot(crossX,crossY,crossZ)
-    if(area2===0)throw new Error(`${what} has a zero-area triangle at face ${i/3}. Enable 'Repair small mesh defects' in Mold Making, or repair the source in an external mesh editor.`)
+    if(area2===0)throw new Error(`${what} has a zero-area triangle at face ${i/3}. ${what.startsWith('Mold part')?'This triangle was produced by the geometry kernel during level-set/Boolean operations, not by the source.':'Enable Repair small mesh defects in Mold Making, or repair the source mesh.'}`)
   }
   const c=closedness(mesh.indices,n)
   if(c.open||c.bad)throw new Error(`${what} is not watertight (${c.open} boundary edges, ${c.bad} nonmanifold edges). Use Mesh Tools → Fill holes, then 'Use for analysis' (or enable Mold Making's small-defect repair).`)
@@ -119,6 +119,68 @@ function toManifold(wasm:ManifoldToplevel,mesh:Triangles,keep:(m:Manifold)=>Mani
   if(solid.status()!=='NoError'||solid.isEmpty())throw new Error('Solid was rejected by the geometry kernel.')
   return solid
 }
+/** Convert a Boolean result to a printable mesh. Some valid kernel
+ * solids acquire exactly collinear triangles at tessellation / Float32
+ * precision. Validate before and after any correction. We NEVER omit a
+ * triangle or ignore a failed watertightness/volume check.
+ *
+ * First try a <=1 µm vertex adjustment preserving all faces. When that
+ * cannot work, ask Manifold to simplify sub-micron edges, then recheck
+ * every exported triangle. Source-mesh repair settings do not apply here.
+ */
+function validatedPartMesh(solid:Manifold,name:string,warnings:string[]):Triangles {
+  const read=(part:Manifold):Triangles=>{
+    const m=part.getMesh()
+    return {positions:new Float32Array(m.vertProperties),indices:new Uint32Array(m.triVerts)}
+  }
+  const base=read(solid)
+  try{
+    check(base,name)
+    return base
+  }catch(error){
+    const message=error instanceof Error?error.message:String(error)
+    if(!/zero-area triangle|degenerate triangle indices/.test(message))throw error
+  }
+  const originalVolume=Math.abs(solid.volume())
+  const maxVolumeChange=Math.max(0.01,originalVolume*1e-4)
+  const accept=(candidate:Triangles,reason:string):Triangles=>{
+    check(candidate,name)
+    const difference=Math.abs(signedVolume(candidate.positions,candidate.indices)-originalVolume)
+    if(difference>maxVolumeChange){
+      throw new Error(`${name} output cleanup would change material volume by ${difference.toPrecision(4)} mm³ (limit ${maxVolumeChange.toPrecision(4)} mm³).`)
+    }
+    warnings.push(`${name}: corrected numerical zero-area triangles in the kernel's exported mesh (${reason}); verified closed topology and volume within ${maxVolumeChange.toPrecision(4)} mm³. Source mesh unchanged.`)
+    return candidate
+  }
+  let lastFailure='no compatible correction found'
+  const tryLift=(mesh:Triangles,description:string):Triangles|null=>{
+    const repaired=liftCollapsedClosedMesh(mesh)
+    if(!repaired||repaired.adjustedVertices===0)return null
+    try{
+      return accept(repaired.mesh,`${description}, nudged ${repaired.adjustedVertices} vertices ≤0.001 mm`)
+    }catch(error){
+      lastFailure=error instanceof Error?error.message:String(error)
+      return null
+    }
+  }
+  const direct=tryLift(base,'preserved original faces')
+  if(direct)return direct
+  for(const tolerance of [0.00001,0.0001]){
+    const simplified=solid.simplify(tolerance)
+    try{
+      if(simplified.isEmpty()||simplified.status()!=='NoError')continue
+      const mesh=read(simplified)
+      try{
+        return accept(mesh,`Manifold simplify tolerance ${tolerance} mm`)
+      }catch(error){
+        lastFailure=error instanceof Error?error.message:String(error)
+      }
+      const lifted=tryLift(mesh,`Manifold simplify ${tolerance} mm`)
+      if(lifted)return lifted
+    }finally{simplified.delete()}
+  }
+  throw new Error(`${name} has zero-area triangles after the geometry kernel's Boolean/level-set operations. Safe output cleanup (≤0.0001 mm simplification or ≤0.001 mm vertex adjustment) could not restore a watertight part without changing material volume. ${lastFailure}`)
+}
 /** Export only one physically connected solid per STL. Manifold Boolean
  * operations can leave tiny isolated slivers after complex intersections.
  * Trim ONLY sub-millimetre dust below a very small volume budget, explicitly
@@ -140,12 +202,14 @@ export function toPart(solid:Manifold,name:string,warnings:string[]=[]):MoldPart
       const volumes=sorted.map(p=>p.volume.toPrecision(4)).join(', ')
       throw new Error(`${name} contains ${islands.length} disconnected solids (volumes: ${volumes} mm³). The mold would export loose printable pieces. Disable registration to determine whether keys cause the fragments; otherwise increase wall/base thickness or move the parting plane. Substantial geometry was not discarded.`)
     }
-    const m=primary.part.getMesh()
-    const positions=new Float32Array(m.vertProperties)
-    const indices=new Uint32Array(m.triVerts)
-    check({positions,indices},name)
+    // The Manifold kernel can produce tiny collapsed triangles when
+    // converting a valid CSG/level-set result into Float32 mesh output.
+    // These are OUTPUT artifacts: repairing the imported source again
+    // cannot fix them. Preserve connectivity and keep the correction
+    // below a strict manufacturing-scale tolerance.
+    const exported=validatedPartMesh(primary.part,name,warnings)
     if(others.length)warnings.push(`${name}: excluded ${others.length} microscopic detached Boolean artifacts totalling ${discarded.toPrecision(3)} mm³ (each ≤${perIslandLimit.toPrecision(3)} mm³). Inspect the mold near intersections before printing.`)
-    return {name,positions,indices,volumeMm3:signedVolume(positions,indices)}
+    return {name,...exported,volumeMm3:signedVolume(exported.positions,exported.indices)}
   }finally{for(const island of islands)island.delete()}
 }
 /** Select seam coordinates, excluding too-close edges and collisions.
