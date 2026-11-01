@@ -214,3 +214,41 @@ These changes are regression-covered in `contourSeam.test.ts`,
 `generation.test.ts`, `settings.test.ts` and `materialEstimate.test.ts`.
 The complete browser build/Manifold suite and physical print still require
 local verification.
+
+## Optional direct-mold pour sprues and air vents (MOLD-012, 2026-11)
+
+The Mold Making panel provides an **opt-in** casting-channel section for
+multipart **direct-print** molds (2, 3 or 4 pieces). Both the pour channel and
+vents default to **off**, so existing saved molds and newly created molds
+generate unchanged until the user explicitly enables one.
+
+- The pour sprue is a vertical circular channel from the exterior top face
+  to the real casting void, with a tapered circular funnel mouth. Set bore
+  diameter, funnel mouth diameter, funnel depth (zero gives straight-only)
+  and an XY position as fractions of the **target bounding box**.
+- Optional air vents are smaller vertical circular bores, each with an
+  independently editable XY position and shared diameter. Up to eight
+  positions are supported. These are **manual** rather than automatically
+  identified at trapped high points.
+- A triangle-ray check locates the top casting surface beneath each XY
+  point. Geometry generation refuses locations outside the actual projected
+  model, collisions between channels, cuts through the outer mold sidewall,
+  and bores/funnels that cross a nominal parting plane. Tooling material
+  above the model is automatically increased when needed for the funnel.
+- Channels are subtracted **before** the mold is partitioned into pieces,
+  and their cutter must demonstrably intersect the actual Boolean casting
+  solid, not just its bounding box. Each separately exported mold piece is
+  still validated for manifold geometry and fragmentation. Existing
+  registration/key generation is otherwise unchanged.
+
+**Limitations:** vertical only; no automatic air-trap analysis, side gates,
+horizontal branched ducts, separate risers, or channels in silicone
+containment boxes. A channel connected to the cavity does not guarantee
+complete filling, venting, airtight sealing or safe release for every
+casting process. Inspect the assembled seam, pour orientation and any
+interference in a slicer before manufacturing.
+
+Tests: `pourChannels.test.ts`, `generation.test.ts`,
+`settings.test.ts`. Run locally with `npm run build` and
+`npx vitest run plugins/mold-making/tests`; remote source changes do not
+by themselves establish that the geometry suite passes.
