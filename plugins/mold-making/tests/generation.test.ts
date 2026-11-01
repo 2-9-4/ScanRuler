@@ -164,6 +164,29 @@ describe('Mold Making assembly',()=>{
     expect(m.volumeMm3).toBeCloseTo(expected,2)
     intact(m.parts)
   })
+  it('cuts connected optional pour, funnel and vent bores without changing default tooling',()=>{
+    const base={...DEFAULT_MOLD_SETTINGS,keys:false}
+    const plain=buildMold(wasm,master,base)
+    const settings={...base,pourEnabled:true,ventsEnabled:true,
+      pourPoint:[0.25,0.25] as [number,number],
+      ventPoints:[[0.75,0.75]] as [number,number][]}
+    const drilled=buildMold(wasm,master,settings)
+    expect(drilled.printable).toBe(true)
+    expect(drilled.parts).toHaveLength(2)
+    intact(drilled.parts)
+    expect(drilled.volumeMm3).toBeLessThan(plain.volumeMm3-20)
+    expect(drilled.warnings.join(' ')).toMatch(/1 vertical pour channel\(s\) and 1 air vent\(s\)/)
+    expect(plain.warnings.join(' ')).not.toMatch(/vertical pour channel/)
+    // Shared geometry is not mutated by optional channel generation.
+    expect(buildMold(wasm,master,base).volumeMm3).toBeCloseTo(plain.volumeMm3,3)
+  })
+  it('rejects pouring through a parting interface or oversized funnel rather than corrupting keys',()=>{
+    const common={...DEFAULT_MOLD_SETTINGS,keys:false,pourEnabled:true}
+    expect(()=>buildMold(wasm,master,{...common,pourPoint:[0.5,0.5]}))
+      .toThrow(/parting plane/)
+    expect(()=>buildMold(wasm,master,{...common,pourFunnelDiameter:100}))
+      .toThrow(/side wall/)
+  })
   it('builds a silicone containment box from an OPEN scan without any mesh repair',()=>{
     // Two triangles removed from a face: four boundary edges.
     const open={positions:master.positions,
