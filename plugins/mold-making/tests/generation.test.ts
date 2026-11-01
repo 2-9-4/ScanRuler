@@ -27,8 +27,24 @@ describe('Mold Making assembly',()=>{
     intact(result.parts)
     expect(result.warnings.join(' ')).toMatch(/removed 1 exactly zero-area/)
     expect(malformed.indices).toEqual(before)
+    // This triangle repeats vertex 1, so the validator correctly rejects
+    // its *indices* before checking geometric area.
     expect(()=>buildMold(wasm,malformed,{...noKeys,repairTarget:false}))
-      .toThrow(/zero-area triangle/)
+      .toThrow(/degenerate triangle indices/)
+  })
+  it('diagnoses a zero-area face with three distinct, collinear vertex indices',()=>{
+    // The extra point is exactly on edge 0→1. No repeated indices:
+    // this exercises the area test, unlike the preceding test.
+    const malformed={
+      positions:Float32Array.from([...master.positions,0,-4,0]),
+      indices:Uint32Array.from([...master.indices,0,1,8]),
+    }
+    expect(()=>buildMold(wasm,malformed,{...noKeys,repairTarget:false}))
+      .toThrow(/zero-area triangle at face 12/)
+    const repaired=buildMold(wasm,malformed,noKeys)
+    intact(repaired.parts)
+    expect(repaired.warnings.join(' ')).toMatch(/removed 1 exactly zero-area/)
+    expect(malformed.indices.length).toBe(master.indices.length+3)
   })
   it('retains every millimeter of the target in two distinct full-height rigid pieces',()=>{
     const m=buildMold(wasm,master,noKeys)
