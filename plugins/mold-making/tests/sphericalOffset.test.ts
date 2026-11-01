@@ -26,6 +26,13 @@ describe('Spherical solid clearance (Minkowski dilation by a ball)',()=>{
       const expected=1000+600+30*Math.PI+4*Math.PI/3
       expect(solid.volume()).toBeGreaterThan(expected*0.96)
       expect(solid.volume()).toBeLessThan(expected*1.04)
+      // A spherical expansion must NOT include the far diagonal of the
+      // expanded corner's bounding cube. A vertex-normal / box dilation
+      // would create spurious material there.
+      const corner=wasm.Manifold.cube([0.1,0.1,0.1]).translate([-0.9,-0.9,-0.9])
+      const intersection=solid.intersect(corner)
+      try{expect(intersection.isEmpty()||intersection.volume()<1e-6).toBe(true)}
+      finally{intersection.delete();corner.delete()}
       const output=solid.getMesh()
       expect(closedness(new Uint32Array(output.triVerts),
         output.vertProperties.length/3)).toEqual({open:0,bad:0})
