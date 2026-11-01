@@ -15,6 +15,7 @@ export function HolesTool({ ready, busy, onFill }: { ready: boolean; busy: boole
   const setFillMode = useMeshTools((s) => s.setFillMode)
   const survey = useMeshTools((s) => s.holeSurvey)
   const editing = useMeshTools((s) => s.editing)
+  const editedCopyPresent = useMeshTools((s) => s.copyTriangles !== null)
   const len = useLength()
   // A count for another size than the one in the field is on its way out.
   const s = survey && survey.maxSize === holeSize ? survey : null
@@ -95,6 +96,22 @@ export function HolesTool({ ready, busy, onFill }: { ready: boolean; busy: boole
             <span className="name">Holes, under {typedLen(s.maxSize, len.units)}</span>
             <b>{count(s.holes)}</b>
           </div>
+          <div className="kv" data-test="holes-open-edges">
+            <span className="name">Open boundary edges</span>
+            <b>{count(s.openEdges)}</b>
+          </div>
+          {s.nonmanifoldEdges>0&&<div className="kv" data-test="holes-nonmanifold-edges">
+            <span className="name">Nonmanifold edges</span>
+            <b>{count(s.nonmanifoldEdges)}</b>
+          </div>}
+          {editedCopyPresent&&<p className="hint" data-test="holes-copy-note">
+            This survey describes your pending edited copy, not the original scan.
+            Choose <b>Use for analysis</b> under Edited copy before generating a mold from it.
+          </p>}
+          {s.strayEdges>0&&<p className="hint" data-test="holes-stray-edges">
+            {count(s.strayEdges)} open boundary edges do not form complete loops.
+            Fill holes cannot patch those chains automatically; repair the topology first.
+          </p>}
           {s.holes > 0 && (
             <p className="hint" data-test="holes-gap">
               Marked on the part in orange, each in a ring — click a ring to fill just that hole.
@@ -103,9 +120,15 @@ export function HolesTool({ ready, busy, onFill }: { ready: boolean; busy: boole
               {s.smallestOpen !== null ? `, the smallest rim left open ${len.fmt(s.smallestOpen, 2)}` : ''}.
             </p>
           )}
-          {s.rims === 0 && (
+          {s.openEdges === 0 && s.nonmanifoldEdges === 0 && (
             <p className="hint" data-test="holes-closed">
-              The scan is closed — it has no open edge anywhere.
+              This mesh is closed — it has no open or nonmanifold edges.
+            </p>
+          )}
+          {s.rims === 0 && (s.openEdges > 0 || s.nonmanifoldEdges > 0) && (
+            <p className="hint" data-test="holes-not-closed">
+              The mesh is not watertight even though no complete hole rims were found.
+              A missing rim does not imply that the mesh is closed.
             </p>
           )}
           {s.rims > 0 && s.holes === 0 && (
