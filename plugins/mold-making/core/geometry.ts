@@ -199,18 +199,20 @@ export function toPart(solid:Manifold,name:string,warnings:string[]=[],detachedP
     // Boolean islands. Export each nontrivial island as a separate named
     // solid and make it visibly clear that manual cleanup is required.
     // Tiny numerical debris alone is filtered within the old tight budget.
+    const detachedBefore=detachedParts.length
     let discardedDust=0,dustCount=0
     for(const island of others){
       const trivial=island.volume<=perIslandLimit&&
         discardedDust+island.volume<=Math.min(1,primary.volume*2e-5)
       if(trivial){discardedDust+=island.volume;dustCount++;continue}
-      const label=`${name} — detached ${detachedParts.length+1}`
+      const label=`${name} — detached ${detachedParts.length-detachedBefore+1}`
       const standalone=validatedPartMesh(island.part,label,warnings)
       detachedParts.push({name:label,...standalone,
         volumeMm3:signedVolume(standalone.positions,standalone.indices)})
     }
-    if(detachedParts.length){
-      warnings.push(`${name}: ${detachedParts.length} disconnected printable islands (${detachedParts.map(p=>p.volumeMm3.toPrecision(4)).join(', ')} mm³) were preserved as individually exported loose parts. They may be unwanted Boolean fragments, detached pins or real tooling features. Inspect/delete them in the slicer before printing; the assembly is NOT guaranteed.`)
+    const added=detachedParts.slice(detachedBefore)
+    if(added.length){
+      warnings.push(`${name}: ${added.length} disconnected printable islands (${added.map(p=>p.volumeMm3.toPrecision(4)).join(', ')} mm³) were preserved as individually exported loose parts. They may be unwanted Boolean fragments, detached pins or real tooling features. Inspect/delete them in the slicer before printing; the assembly is NOT guaranteed.`)
     }
     // The Manifold kernel can produce tiny collapsed triangles when
     // converting a valid CSG/level-set result into Float32 mesh output.
