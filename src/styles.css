@@ -4398,3 +4398,29 @@ button.x:disabled {
 [data-test="mold-making-panel"] .mold-feature-section .kv {
   min-width: 0;
 }
+
+/* In-viewport exploded mold adjustment; never steals ordinary orbit/pan
+   events outside this small control. */
+.mold-explode-overlay {
+  position: absolute;
+  z-index: 30;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--ink);
+  background: var(--panel);
+  box-shadow: 0 5px 20px #0003;
+  pointer-events: auto;
+}
+.mold-explode-overlay label,.mold-explode-overlay output {
+  white-space: nowrap;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.mold-explode-overlay input[type="range"] { width: clamp(130px, 25vw, 320px); }

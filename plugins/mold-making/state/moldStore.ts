@@ -16,6 +16,9 @@ interface MoldState extends MoldSettings {
   setBoxShape(boxShape: BoxShape): void
   setKeys(keys: boolean): void
   setKeyStyle(keyStyle: KeyStyle): void
+  setTopBottomTabs(value:boolean):void
+  setTabBoltHoles(value:boolean):void
+  setTabCapturedNuts(value:boolean):void
   setKeyPlacement(keyPlacement: KeyPlacement): void
   setKeyPositions(keyPositions: number[]): void
   setKeyPoints(keyPoints: [number,number][]): void
@@ -32,6 +35,9 @@ export const useMold = create<MoldState>()((set)=>({
   setBoxShape: (boxShape) => set({boxShape}),
   setKeys: (keys) => set({keys}),
   setKeyStyle: (keyStyle) => set({keyStyle}),
+  setTopBottomTabs:(topBottomTabs)=>set({topBottomTabs}),
+  setTabBoltHoles:(tabBoltHoles)=>set({tabBoltHoles,tabCapturedNuts:tabBoltHoles?useMold.getState().tabCapturedNuts:false}),
+  setTabCapturedNuts:(tabCapturedNuts)=>set({tabCapturedNuts}),
   setKeyPlacement: (keyPlacement) => set({keyPlacement}),
   setKeyPositions: (keyPositions) => {
     if (keyPositions.length>12 || keyPositions.some(x=>!Number.isFinite(x)||x<0.01||x>0.99) ||

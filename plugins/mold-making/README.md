@@ -139,3 +139,43 @@ surface/Manifold operations. Coarse voxel Booleans may accelerate
 operations but introduce quantization and higher memory usage; this
 change does not replace the exact split planes or final export geometry
 with raw occupied voxels.
+
+## Mold hardware and downstream editing
+
+Clamping ears can now be placed on the **top and bottom exterior edges**
+of X/Y parting faces as well as the previously supported side edges. These
+are optional and have their own count, hidden until enabled. Threefold
+radial tooling receives clamping ears along all three 120-degree interfaces,
+distributed along Z; it uses the same ear dimensions/count as other layouts.
+Threefold V registration now returns inward from the outer rim toward the
+projected cavity contour (with a fixed safety clearance) rather than using
+only a short ridge at the outside.
+
+The tab hardware settings are optional and conditional: enabling **through
+bolt holes** drills a clearance bore through both registered ears, with
+independently specified diameter; enabling **captured nuts** adds a
+six-sided recess to the outside of the negative half using an
+across-flats dimension and pocket depth. The generator automatically grows
+ear thickness, width and projection as required by the requested hardware.
+These are modeled holes, not supplied nuts/bolts, and must be checked
+against the actual fastener dimensions and torque requirements.
+
+Four-part rectangular tooling now has small vertical **exterior corner
+chamfers**, cut before the four-way split. This gives each outside corner
+a planar printing/fixturing land without beveling the cavity corners.
+Existing legacy one-piece impression projects remain loadable, but new
+one-sided impressions are no longer offered as a creation choice.
+
+The Mold Making result opens as an **exploded model**, with the original
+source shown inside. A separation slider is overlaid on the 3D viewport
+and can return to zero gap. The assembled button still uses ScanRuler's
+native section view. Individual generated mold parts are offered through
+`src/app/solids.ts`, where Mesh Tools' Boolean panel can select them as
+operands while the original scan remains in place.
+
+For freeform mesh edits, **Edit copy** imports a selected mold part as
+a scan into Mesh Tools. **CAD reference** opens the selected part as the
+scan in Reverse engineer so sketches and modeled bodies can be built over
+it. Both explicit import actions **replace the previous scan**; the
+Boolean-solid handoff does not. This is a triangulated reference, not a
+parametric reconstruction of a molded part.

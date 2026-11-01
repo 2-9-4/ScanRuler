@@ -97,6 +97,19 @@ describe('Mold Making configuration',()=>{
       clampTabCount:5,clampTabProjection:18}
     expect(parseMoldSettings(saved)).toEqual(saved)
   })
+  it('round-trips optional clamp tabs, through bolts and hex-nut recess settings',()=>{
+    const configured={...DEFAULT_MOLD_SETTINGS,
+      topBottomTabs:true,topBottomTabCount:3,
+      tabBoltHoles:true,tabBoltDiameter:5.4,
+      tabCapturedNuts:true,tabNutAcrossFlats:8.1,tabNutDepth:5.2}
+    expect(parseMoldSettings(configured)).toEqual(configured)
+    moldSection.prepare(configured,{manifest:{} as never,members:new Map()})()
+    expect(moldSection.collect({sources:{} as never,scanSaved:true,addMember(){}})).toEqual(configured)
+    expect(()=>parseMoldSettings({...configured,tabNutDepth:-1})).toThrow()
+    expect(()=>parseMoldSettings({...configured,topBottomTabCount:1.5})).toThrow()
+    expect(()=>parseMoldSettings({...configured,tabBoltHoles:'yes'})).toThrow()
+    useMold.setState({...DEFAULT_MOLD_SETTINGS})
+  })
   it('resets a project lacking settings',()=>{
     useMold.getState().setMode('silicone-box')
     moldSection.prepare(undefined,{manifest:{} as never,members:new Map()})()

@@ -97,13 +97,12 @@ export class MoldPreview {
     this.partCount=parts
     this.splitAxis=splitAxis
     this.group.visible=true
-    if(source==='reference'){
-      this.priorNominal=this.scene.nominalShown()
-      this.host.scene.add(this.group)
-    }else{
-      this.priorScan=this.scene.scanShown()
-      this.host.partGroup.add(this.group)
-    }
+    // Keep both previous visibility states: the model inside the mold is
+    // the selected source, not any unrelated comparison model.
+    this.priorNominal=this.scene.nominalShown()
+    this.priorScan=this.scene.scanShown()
+    if(source==='reference')this.host.scene.add(this.group)
+    else this.host.partGroup.add(this.group)
     // MeshNormalMaterial/transparency was NOT intentional here. Real opaque
     // finish and correct depth writing make the part surface visible.
     for(const p of build.parts){
@@ -132,14 +131,21 @@ export class MoldPreview {
   setMode(mode:MoldPreviewMode):void {
     this.viewMode=mode
     const active=mode==='section'
-    if(this.source==='reference')this.scene.setNominalVisible(active)
-    else this.scene.setScanVisible(active)
-    this.setGap(active?0:Math.max(this.explodeGap,1))
+    // Keep the original master visible within the separated mold components.
+    // Unlike the prior mode, exploding the mold must never hide the model.
+    if(this.source==='reference'){
+      this.scene.setScanVisible(false)
+      this.scene.setNominalVisible(true)
+    }else{
+      this.scene.setNominalVisible(false)
+      this.scene.setScanVisible(true)
+    }
+    this.setGap(active?0:this.explodeGap)
   }
   setGap(gap:number):void {
     if(!Number.isFinite(gap)||gap<0)return
     if(gap>0||this.viewMode==='exploded')this.explodeGap=gap
-    const displayed=this.viewMode==='section'?0:Math.max(gap,1)
+    const displayed=this.viewMode==='section'?0:gap
     const bounds=this.meshes.map(m=>m.geometry.boundingBox??new THREE.Box3())
     const offsets=explodedMoldOffsets(bounds,this.partCount,this.splitAxis,displayed)
     this.parts.forEach((p,i)=>p.position.copy(offsets[i]))
@@ -150,10 +156,8 @@ export class MoldPreview {
     if(!visible&&this.bounds){
       // A section view belongs to the mold workspace, not to whichever
       // workspace is opened next.
-      if(this.source==='reference'&&this.priorNominal!==null)
-        this.scene.setNominalVisible(this.priorNominal)
-      else if(this.source==='scan'&&this.priorScan!==null)
-        this.scene.setScanVisible(this.priorScan)
+      if(this.priorNominal!==null)this.scene.setNominalVisible(this.priorNominal)
+      if(this.priorScan!==null)this.scene.setScanVisible(this.priorScan)
     }else if(this.bounds)this.setMode(this.viewMode)
     this.refreshCaps()
     this.host.invalidate()

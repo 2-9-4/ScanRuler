@@ -33,16 +33,28 @@ const V_FIELDS:readonly {key:MoldDimension;label:string;help:string}[]=[
   {key:'vSeamClearance',label:'V-groove fit clearance (mm)',help:'Extra width/depth for the female V-groove, independent of pin/dowel clearance.'},
 ]
 const TAB_FIELDS:readonly {key:MoldDimension;label:string;help:string}[]=[
-  {key:'clampTabCount',label:'Tabs per outside edge',help:'Number of clamping ears on each side of the seam. Two mating halves receive matching ears.'},
+  {key:'clampTabCount',label:'Side / radial tabs per edge',help:'Number of clamping ears along each exterior seam. For threefold molds these sit on the radial parting faces.'},
   {key:'clampTabWidth',label:'Tab width / height (mm)',help:'Size of each tab along its distributing edge.'},
   {key:'clampTabProjection',label:'Tab outside projection (mm)',help:'Distance tabs extend beyond the mold boundary for a clamp to grip.'},
   {key:'clampTabThickness',label:'Tab thickness per half (mm)',help:'Thickness of each tab in the mold opening direction.'},
 ]
-export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,generated,targetBounds,previewMode,onPreviewModeChange,generating,error}:{
+const EXTRA_TAB_FIELDS:readonly {key:MoldDimension;label:string;help:string}[]=[
+  {key:'topBottomTabCount',label:'Tabs along each top/bottom edge',help:'Number of paired ears on the top and bottom exterior edges (X/Y parting planes).'},
+]
+const BOLT_FIELDS:readonly {key:MoldDimension;label:string;help:string}[]=[
+  {key:'tabBoltDiameter',label:'Through-hole diameter (mm)',help:'Diameter of the unthreaded bolt clearance hole through both mating clamp ears.'},
+]
+const NUT_FIELDS:readonly {key:MoldDimension;label:string;help:string}[]=[
+  {key:'tabNutAcrossFlats',label:'Captured hex across flats (mm)',help:'Width between parallel flats of the nut, including fit allowance.'},
+  {key:'tabNutDepth',label:'Captured nut pocket depth (mm)',help:'Recess depth from the outside face of the negative mold half.'},
+]
+export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBoolean,onEditPart,generated,targetBounds,previewMode,onPreviewModeChange,generating,error}:{
   onOpenScan:(file:File)=>void
   onOpenReference:(file:File)=>void
   onGenerate:()=>void
   onExport:(format:'stl'|'3mf',index?:number)=>void
+  onBoolean:()=>void
+  onEditPart:(index:number,workspace:'mesh'|'reverse')=>void
   generated:MoldBuild|null
   targetBounds:Limits|null
   previewMode:MoldPreviewMode
@@ -78,15 +90,23 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
   const vSeamSpacing=useMold(s=>s.vSeamSpacing),vSeamClearance=useMold(s=>s.vSeamClearance)
   const clampTabCount=useMold(s=>s.clampTabCount),clampTabWidth=useMold(s=>s.clampTabWidth)
   const clampTabProjection=useMold(s=>s.clampTabProjection),clampTabThickness=useMold(s=>s.clampTabThickness)
+  const topBottomTabs=useMold(s=>s.topBottomTabs),topBottomTabCount=useMold(s=>s.topBottomTabCount)
+  const tabBoltHoles=useMold(s=>s.tabBoltHoles),tabBoltDiameter=useMold(s=>s.tabBoltDiameter)
+  const tabCapturedNuts=useMold(s=>s.tabCapturedNuts)
+  const tabNutAcrossFlats=useMold(s=>s.tabNutAcrossFlats),tabNutDepth=useMold(s=>s.tabNutDepth)
   const boxDraftDeg=useMold(s=>s.boxDraftDeg)
   const previewGap=useMold(s=>s.previewGap)
   const values={clearance,repairHoleSize,sideMargin,baseThickness,wallThickness,siliconeThickness,splitPosition,
     keyDiameter,keyDepth,keyClearance,vSeamWidth,vSeamHeight,vSeamSpacing,vSeamClearance,
-    clampTabCount,clampTabWidth,clampTabProjection,clampTabThickness,boxDraftDeg,previewGap}
+    clampTabCount,clampTabWidth,clampTabProjection,clampTabThickness,
+    topBottomTabCount,tabBoltDiameter,tabNutAcrossFlats,tabNutDepth,boxDraftDeg,previewGap}
   const setSource=useMold(s=>s.setSource),setMode=useMold(s=>s.setMode)
   const setParts=useMold(s=>s.setParts),setSplitAxis=useMold(s=>s.setSplitAxis)
   const setBoxShape=useMold(s=>s.setBoxShape),setKeys=useMold(s=>s.setKeys)
   const setKeyStyle=useMold(s=>s.setKeyStyle),setKeyPlacement=useMold(s=>s.setKeyPlacement)
+  const setTopBottomTabs=useMold(s=>s.setTopBottomTabs)
+  const setTabBoltHoles=useMold(s=>s.setTabBoltHoles)
+  const setTabCapturedNuts=useMold(s=>s.setTabCapturedNuts)
   const setKeyPositions=useMold(s=>s.setKeyPositions)
   const setKeyPoints=useMold(s=>s.setKeyPoints)
   const setDimension=useMold(s=>s.setDimension)
@@ -96,16 +116,17 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
   const multi=parts>1
   const usesV=keys&&multi&&keyStyle==='v-seam'
   const usesPins=keys&&multi&&!usesV
-  const material=moldMaterial(moldSettings(),targetBounds?targetBounds.max[2]-targetBounds.min[2]:undefined)
+  const material=moldMaterial(moldSettings(),targetBounds?targetBounds.max[2]-targetBounds.min[2]:undefined,
+    targetBounds?Math.min(targetBounds.max[0]-targetBounds.min[0],targetBounds.max[1]-targetBounds.min[1]):undefined)
   const fieldInput=({key,label,help}:{key:MoldDimension;label:string;help:string})=><label key={key} className="kv" title={help}>
     <span className="name">{label}</span>
     <input type="number" data-test={`mold-${key}`} min={key==='splitPosition'?0.1:0}
-      max={key==='splitPosition'?0.9:key==='boxDraftDeg'?12:key==='clampTabCount'?12:100000}
-      step={key==='splitPosition'?0.05:key==='clampTabCount'?1:0.1} value={values[key]}
+      max={key==='splitPosition'?0.9:key==='boxDraftDeg'?12:(key==='clampTabCount'||key==='topBottomTabCount')?12:100000}
+      step={key==='splitPosition'?0.05:(key==='clampTabCount'||key==='topBottomTabCount')?1:0.1} value={values[key]}
       onChange={e=>{if(e.target.value!=='')setDimension(key,Number(e.target.value))}}/>
   </label>
   const fields=FIELDS.filter(({key})=>{
-    if(key==='previewGap')return previewMode==='exploded'
+    if(key==='previewGap')return false // An in-viewport slider controls the layout.
     if(key==='splitPosition')return multi
     if(key==='boxDraftDeg')return mode==='silicone-box'
     if(mode==='direct')return ['clearance','sideMargin','baseThickness'].includes(key)
@@ -167,13 +188,13 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
       <label className="kv"><span className="name">Split into</span>
         <select data-test="mold-part-count" value={parts}
           onChange={e=>setParts(Number(e.target.value) as PartCount)}>
-          <option value={1}>1 part — one-sided impression</option>
+          {parts===1&&<option value={1}>Legacy one-sided impression (convert to 2+)</option>}
           <option value={2}>2 parts — two mating halves</option>
           <option value={3}>3 parts — 120° radial sectors around Z</option>
           <option value={4}>4 parts — quartered mold</option>
         </select></label>
       {multi&&<>
-        {parts===3&&<p className="hint">Threefold has three 120° radial mating planes. The V-seam and printed/dowel registration are supported on all three interfaces; radial clamp ears are not currently generated.</p>}
+        {parts===3&&<p className="hint">Threefold has three 120° radial mating planes. The V-seam and printed/dowel registration are supported on all three interfaces; clamp ears are available on the radial mating interfaces.</p>}
         {parts!==3&&<label className="kv"><span className="name">Primary parting axis</span>
           <select data-test="mold-split-axis" value={splitAxis}
             onChange={e=>setSplitAxis(e.target.value as SplitAxis)}>
@@ -196,7 +217,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
             </select></label>
           {keyStyle==='metal-dowel'&&<p className="hint">Both halves receive blind holes. Insert separately purchased metal dowels during assembly. Diameter is the nominal hardware diameter.</p>}
           {keyStyle==='v-seam'&&<p className="hint">{parts===3
-            ?'Three vertical radial V-seams with truncated tips sit in the outside tooling wall. Radial clamp tabs are not automatically generated.'
+            ?'Three vertical radial V-seams with truncated tips sit in the outside tooling wall. Radial clamp ears and optional bolt/nut pockets can secure all three mating interfaces.'
             :parts===4
             ?'Open V-profiles follow each quarter interface and stop short of crossing parting planes. Exterior clamp ears are restricted to the relevant quadrant.'
             :mode==='direct'
@@ -205,9 +226,27 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
           {usesV&&<div className="mold-feature-section">
             <div className="sec-head">V-seam · profile and spacing</div>
             {V_FIELDS.map(fieldInput)}
-            {parts!==3&&<><div className="sec-head">Clamping tabs · exterior ears</div>
-            {TAB_FIELDS.map(fieldInput)}</>}
-            <p className="hint">All required backing is included automatically; additional material below is optional. The tabs are solid clamp ears, not predrilled bolt holes.</p>
+          </div>}
+          {(usesV||parts===3)&&<div className="mold-feature-section">
+            <div className="sec-head">Clamping tabs · exterior ears</div>
+            {TAB_FIELDS.map(fieldInput)}
+            {(parts!==3&&(parts===4||splitAxis!=='z'))&&<><label className="kv"><span className="name">Add top and bottom clamp tabs</span>
+              <input type="checkbox" data-test="mold-top-bottom-tabs" checked={topBottomTabs}
+                onChange={e=>setTopBottomTabs(e.target.checked)}/></label>
+              {topBottomTabs&&EXTRA_TAB_FIELDS.map(fieldInput)}</>}
+            {(clampTabCount>0||(parts!==3&&topBottomTabs&&topBottomTabCount>0))&&<>
+              <label className="kv"><span className="name">Drill through-bolt holes in tabs</span>
+                <input type="checkbox" data-test="mold-tab-bolts" checked={tabBoltHoles}
+                  onChange={e=>setTabBoltHoles(e.target.checked)}/></label>
+              {tabBoltHoles&&<>
+                {BOLT_FIELDS.map(fieldInput)}
+                <label className="kv"><span className="name">Captured hex nuts</span>
+                  <input type="checkbox" data-test="mold-captured-nuts" checked={tabCapturedNuts}
+                    onChange={e=>setTabCapturedNuts(e.target.checked)}/></label>
+                {tabCapturedNuts&&NUT_FIELDS.map(fieldInput)}
+              </>}
+            </>}
+            <p className="hint">Tab dimensions grow automatically to preserve solid walls around enabled fasteners. Hex pockets open on the negative half's exterior face.</p>
           </div>}
           {usesPins&&<div className="mold-feature-section">
             <div className="sec-head">Pins and dowels · size and placement</div>
@@ -267,7 +306,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
       <p className="hint">
         {mode==='silicone-box'?'Printable containment box; you still must mount and seal the master. Draft applies to the box interior only.':
           parts===1?'Only one-piece molds cut the target at mid-height. Choose 2 or 4 to capture the whole model.':
-          'Two/four-part tooling captures the full target. Verify removal, orientation, thin clearances and casting undercuts before printing.'}
+          'Multi-part tooling captures the full target. Verify demolding, orientation, clearance and casting undercuts before printing.'}
       </p>
       <button type="button" data-test="mold-generate" disabled={busy||generating||!active}
         onClick={onGenerate}>{generating?'Generating…':'Generate tooling'}</button>
@@ -287,7 +326,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
           <button type="button" role="radio" aria-checked={previewMode==='exploded'} className={previewMode==='exploded'?'on':undefined}
             onClick={()=>onPreviewModeChange('exploded')}>Exploded</button>
         </div>
-        <p className="hint">Assembled view opens the app's built-in Section view. Use the main Section toolbar to move, flip or close the cross-section; these buttons only control assembly layout.</p>
+        <p className="hint">Exploded view shows the original model between the tooling sections. Use the separation slider on the 3D viewport to expand or contract the parts; Assembled switches to the app's built-in Section view.</p>
         <div className="kv"><span className="name">{generated.printable?'Exportable solids':'Preview-only solids'}</span><b>{generated.parts.length}</b></div>
         {!generated.printable&&<p className="hint mold-warning" role="alert">
           NOT PRINTABLE: fragmented geometry was detected. Export is disabled. These parts are provided only to inspect the failure.
@@ -306,6 +345,18 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
             onClick={()=>onExport('stl',i)}>STL</button>
         </div>)}
         <button type="button" disabled={!generated.printable} data-test="mold-export-3mf" onClick={()=>onExport('3mf')}>Export all parts · 3MF</button>
+        <div className="sec-head">Continue editing</div>
+        <button type="button" disabled={!generated.printable} data-test="mold-to-boolean"
+          onClick={onBoolean}>Use mold parts in Mesh Tools Boolean</button>
+        <p className="hint">Mold parts are shared with Mesh Tools as independent solid operands. The original loaded scan stays unchanged.</p>
+        {generated.parts.map((p,i)=><div key={'edit-'+i} className="kv">
+          <span className="name">{p.name}</span>
+          <button type="button" disabled={!generated.printable}
+            data-test={`mold-edit-mesh-${i}`} onClick={()=>onEditPart(i,'mesh')}>Edit copy</button>
+          <button type="button" disabled={!generated.printable}
+            data-test={`mold-edit-cad-${i}`} onClick={()=>onEditPart(i,'reverse')}>CAD reference</button>
+        </div>)}
+        <p className="hint">Edit copy / CAD reference loads the selected exported mold part as a new scan, replacing the current scan. Save the current project first if you need it.</p>
         {generated.warnings.map((w,i)=><p key={i} className="hint">{w}</p>)}
       </div>}
     </div>

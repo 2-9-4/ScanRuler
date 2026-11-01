@@ -9,6 +9,7 @@ import { useSectionView } from '../../../src/state/sectionViewStore'
 import { useStore } from '../../../src/state/store'
 import { useDeviation } from '../../../src/state/deviationStore'
 import { onScan } from '../../../src/app/scanEvents'
+import { offerSolids } from '../../../src/app/solids'
 import { buildMeshFile, type MeshFormat } from '../../../src/core/exportMesh'
 import { exportStem, saveBuilt } from '../../../src/app/exports'
 import { fileSafe } from '../../../src/core/project/manifest'
@@ -29,7 +30,8 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
   const [targetBounds, setTargetBounds] = useState<Limits|null>(null)
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [previewMode,setPreviewMode] = useState<MoldPreviewMode>('section')
+  const [previewMode,setPreviewMode] = useState<MoldPreviewMode>('exploded')
+  const previewGap = useMold(s=>s.previewGap)
   const preview = useRef<MoldPreview | null>(null)
   const priorSection=useRef<ReturnType<typeof useSectionView.getState>|null>(null)
   const generation = useRef(0)
@@ -57,6 +59,13 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
     return () => { offMold(); offScan() }
   }, [invalidate])
   useEffect(() => { setTargetBounds(null); invalidate() }, [scanName, referenceName, invalidate])
+  useEffect(() => {
+    offerSolids('mold-making',generated?.printable?generated.parts.map((part,i)=>({
+      key:`mold-making:part-${i}`,name:part.name,source:'Mold Making',version:generation.current,
+      mesh:async()=>({positions:part.positions.slice(),indices:part.indices.slice()}),
+    })):[])
+    return () => offerSolids('mold-making',[])
+  },[generated])
   useEffect(() => () => {
     if(priorSection.current)useSectionView.setState(priorSection.current)
     priorSection.current=null
@@ -129,8 +138,8 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
       if (!preview.current && host.sceneRef.current) {
         preview.current = new MoldPreview(host.sceneRef.current, invalidate)
       }
-      setPreviewMode('section')
-      preview.current?.set(made, settings.source, settings.previewGap,'section',settings.parts,settings.splitAxis)
+      setPreviewMode('exploded')
+      preview.current?.set(made, settings.source, settings.previewGap,'exploded',settings.parts,settings.splitAxis)
       generatedVersion.current = selectedVersion
       setGenerated(made)
       setTargetBounds(made.targetBounds)
@@ -154,6 +163,31 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
   const changePreviewMode=(next:MoldPreviewMode)=>{
     setPreviewMode(next)
     preview.current?.setMode(next)
+  }
+
+  const useForBoolean=()=>{
+    if(!generated?.printable)return
+    useShell.getState().setWorkspace('mesh')
+    useStore.getState().setStatus('Mold parts are available as separate Boolean operands under Mold Making. Open Mesh Tools → Boolean to select them.')
+  }
+
+  const editPart=async(index:number,workspace:'mesh'|'reverse')=>{
+    const part=generated?.parts[index]
+    if(!generated?.printable||!part)return
+    try{
+      // Use the existing scan-import pipeline, not a duplicate editable
+      // mesh store: this is a deliberate "edit a copy" operation and will
+      // replace the current scan. Boolean operands above do not.
+      const built=buildMeshFile('stl',[{
+        name:part.name,positions:part.positions,indices:part.indices,
+      }],null,'ScanRuler Mold Making')
+      if(!built)throw new Error('No triangles could be exported.')
+      const file=new File([new Uint8Array(built.bytes)],`${fileSafe(part.name)||'mold-part'}.stl`,
+        {type:built.mimeType})
+      await host.openScan(file,'mm')
+      useShell.getState().setWorkspace(workspace)
+      useStore.getState().setStatus(`${part.name} loaded as a modeling scan in ${workspace==='mesh'?'Mesh Tools':'Reverse engineer'}. The former scan was replaced; mold STL remains independent.`)
+    }catch(e){setError(e instanceof Error?e.message:String(e))}
   }
 
   const exportPart = (format: Extract<MeshFormat, 'stl' | '3mf'>, index?: number) => {
@@ -206,9 +240,20 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
   }
 
   return {
+    overlay:inWorkspace&&generated&&previewMode==='exploded'?(
+      <div className="mold-explode-overlay" data-test="mold-explode-overlay"
+        onPointerDown={e=>e.stopPropagation()} onWheel={e=>e.stopPropagation()}>
+        <label htmlFor="mold-explode-slider">Mold separation</label>
+        <input id="mold-explode-slider" type="range" data-test="mold-explode-slider"
+          min={0} max={Math.max(60,...generated.targetBounds.max.map((v,i)=>
+            (v-generated.targetBounds.min[i])*3))} step={0.5} value={previewGap}
+          onChange={e=>useMold.getState().setDimension('previewGap',Number(e.target.value))}/>
+        <output>{previewGap.toFixed(1)} mm</output>
+      </div>
+    ):null,
     startPane: source === 'reference' && referenceName ? null : {
       title: 'Mold Making',
-      blurb: 'Import a STEP or scanned model, split direct molds into 2 or 4 parts, or build rectangular/cylindrical silicone boxes with keys and drafted interior walls.',
+      blurb: 'Import a STEP or scanned model, split direct molds into 2, 3 or 4 parts, or build rectangular/cylindrical silicone boxes with keys and drafted interior walls.',
     },
     hideScan: false,
     canSave: !!referenceName && source === 'reference',
@@ -218,6 +263,8 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
         onOpenReference={(file) => void host.openReference(file)}
         onGenerate={() => void runGenerate()}
         onExport={exportPart}
+        onBoolean={useForBoolean}
+        onEditPart={(index,workspace)=>void editPart(index,workspace)}
         generated={generated}
         previewMode={previewMode}
         onPreviewModeChange={changePreviewMode}

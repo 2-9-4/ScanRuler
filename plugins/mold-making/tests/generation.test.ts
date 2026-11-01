@@ -204,9 +204,11 @@ describe('Mold Making assembly',()=>{
     const m=buildMold(wasm,master,{...noKeys,parts:4})
     expect(m.parts).toHaveLength(4)
     const outer=planMold(master,{...noKeys,parts:4}).outer
-    const expected=(outer.max[0]-outer.min[0])*
+    const unchamfered=(outer.max[0]-outer.min[0])*
       (outer.max[1]-outer.min[1])*(outer.max[2]-outer.min[2])-800
-    expect(m.volumeMm3).toBeCloseTo(expected,2)
+    // Four exterior vertical corners have a flat, printable chamfer face.
+    expect(m.volumeMm3).toBeLessThan(unchamfered)
+    expect(m.volumeMm3).toBeGreaterThan(unchamfered*0.90)
     intact(m.parts)
   })
   it('registers tall rectangular and cylindrical buckets using external wall bosses',()=>{
@@ -377,6 +379,73 @@ describe('Mold Making assembly',()=>{
     expect(result.parts).toHaveLength(2)
     expect(result.printable).toBe(true)
     intact(result.parts)
+  })
+  it('adds optional upper/lower external clamp ears without requiring side tabs',()=>{
+    const base={...DEFAULT_MOLD_SETTINGS,keyStyle:'v-seam' as const,
+      clampTabCount:0,topBottomTabs:false,topBottomTabCount:2}
+    const none=buildMold(wasm,master,base)
+    const extra=buildMold(wasm,master,{...base,topBottomTabs:true})
+    expect(extra.parts).toHaveLength(2)
+    expect(extra.printable).toBe(true)
+    intact(extra.parts)
+    const outside=planMold(master,{...base,topBottomTabs:true}).outer
+    expect(extra.parts.some(p=>p.positions.some((v,i)=>i%3===2&&v>outside.max[2]+2))).toBe(true)
+    expect(extra.parts.some(p=>p.positions.some((v,i)=>i%3===2&&v<outside.min[2]-2))).toBe(true)
+    expect(extra.volumeMm3).toBeGreaterThan(none.volumeMm3)
+  })
+  it('subtracts concentric through holes and an optional six-sided nut recess from clamp tabs',()=>{
+    const base={...DEFAULT_MOLD_SETTINGS,keyStyle:'v-seam' as const,
+      clampTabCount:1,clampTabWidth:10,tabBoltHoles:false,
+      topBottomTabs:true,topBottomTabCount:1}
+    const solid=buildMold(wasm,master,base)
+    const drilled=buildMold(wasm,master,{...base,tabBoltHoles:true})
+    const nuts=buildMold(wasm,master,{...base,tabBoltHoles:true,tabCapturedNuts:true})
+    for(const m of [solid,drilled,nuts]){
+      expect(m.parts).toHaveLength(2)
+      expect(m.printable).toBe(true)
+      intact(m.parts)
+    }
+    // Hardware relief subtracts material from otherwise identical ears.
+    // The nut option may cause automatic growth of the ears, so compare
+    // only to a blank using matching hardware-dependent dimensions.
+    expect(drilled.volumeMm3).toBeLessThan(solid.volumeMm3)
+    const sameSizeNoPocket=buildMold(wasm,master,{
+      ...base,tabBoltHoles:true,tabNutAcrossFlats:base.tabNutAcrossFlats,
+      tabNutDepth:base.tabNutDepth,tabCapturedNuts:false,
+      clampTabWidth:Math.max(base.clampTabWidth,base.tabNutAcrossFlats+4),
+      clampTabProjection:Math.max(base.clampTabProjection,base.tabNutAcrossFlats+5),
+      clampTabThickness:Math.max(base.clampTabThickness,base.tabNutDepth+2),
+    })
+    expect(nuts.volumeMm3).toBeLessThan(sameSizeNoPocket.volumeMm3)
+  })
+  it.each(['x','z'] as const)(
+    'keeps additional top/bottom bolted tabs attached on a %s-first four-piece mold',
+    splitAxis=>{
+      const options={...DEFAULT_MOLD_SETTINGS,parts:4 as const,
+        splitAxis,keyStyle:'v-seam' as const,clampTabCount:0,
+        topBottomTabs:true,topBottomTabCount:1,
+        tabBoltHoles:true,tabCapturedNuts:true}
+      const result=buildMold(wasm,master,options)
+      expect(result.parts).toHaveLength(4)
+      expect(result.printable).toBe(true)
+      intact(result.parts)
+    })
+  it('adds radial clamp ears to all three mating interfaces',()=>{
+    const target=boxSolid({min:[-5,-5,-5],max:[5,5,5]})
+    const noEars=buildMold(wasm,target,{...DEFAULT_MOLD_SETTINGS,
+      parts:3,keys:true,clampTabCount:0})
+    const withEars=buildMold(wasm,target,{...DEFAULT_MOLD_SETTINGS,
+      parts:3,keys:true,clampTabCount:2})
+    expect(withEars.parts).toHaveLength(3)
+    expect(withEars.printable).toBe(true)
+    intact(withEars.parts)
+    expect(withEars.volumeMm3).toBeGreaterThan(noEars.volumeMm3)
+    const outer=planMold(target,{...DEFAULT_MOLD_SETTINGS,parts:3}).radialOuter!.radius
+    expect(withEars.parts.some(p=>{
+      for(let i=0;i<p.positions.length;i+=3)
+        if(Math.hypot(p.positions[i],p.positions[i+1])>outer+2)return true
+      return false
+    })).toBe(true)
   })
   it('cuts three 120-degree radial sectors of cylindrical tooling',()=>{
     const target=boxSolid({min:[-5,-5,-5],max:[5,5,5]})
