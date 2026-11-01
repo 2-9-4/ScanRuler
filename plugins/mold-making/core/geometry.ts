@@ -8,7 +8,7 @@ import { closedness, type Triangles } from '../../mesh-tools/core/boolean'
 import { repairMoldTarget, liftCollapsedClosedMesh } from './repair'
 import { createSphericalDistanceField, sphericalOffset, type SphericalDistanceField } from './sphericalOffset'
 import { parseMoldSettings, type MoldSettings, type SplitAxis } from './settings'
-import { projectedHull,contourAround,contourSegment,radialSeamContour,triangularContourTube,planeAxes } from './contourSeam'
+import { projectedHull,contourAround,contourSegment,radialSeamContour,radialSiliconeLSeam,triangularContourTube,planeAxes } from './contourSeam'
 
 type Vec3 = [number,number,number]
 export type Limits = { min:Vec3; max:Vec3 }
@@ -925,16 +925,14 @@ function keyThreeParts(
       // bottom) enveloping the model on EACH radial parting face. The old
       // inner-wall -> floor -> outer-wall U sat entirely outside the model,
       // leaving a misleading bottom strip and no registration over its top.
-      // An open silicone containment bucket is different: it has no upper
-      // wall, so its wall/floor U must remain open at the pouring rim.
-      const outerLand=outside-hw-fit-0.8
+      // Silicone containment has no upper wall. Its seal must follow
+      // the supported outer WALL and then turn inward along the solid FLOOR:
+      // an L-shaped seam, with no unsupported outer-edge return leg.
       const hubSetback=Math.max(hw+fit+1.5,2*(hw+fit+0.8)/Math.sqrt(3))
       const path:[number,number][]=s.mode==='direct'
         ?radialSeamContour(plan.target!,angle*Math.PI/180,cx,cy,
           s.vSeamSpacing+hw+fit+0.8,hubSetback,Math.max(2,s.vSeamWidth*2))
-        :outerLand-radius>1
-          ?[[radius,z1],[radius,z0],[outerLand,z0],[outerLand,z1]]
-          :[[radius,z0],[radius,(z0+z1)/2],[radius,z1]]
+        :radialSiliconeLSeam(radius,hubSetback,z0,z1)
       // Keep the entire V-profile in actual tooling backing, including its
       // width on the rotated face, rather than accepting a thin edge strip.
       const rim=hw+fit+0.35
