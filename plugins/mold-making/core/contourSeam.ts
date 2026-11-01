@@ -171,6 +171,20 @@ export function radialSeamContour(
   return result
 }
 
+/** Threefold silicone boxes have an open pouring top. Their radial seam
+ * crosses the supported cylindrical SIDE WALL and then the solid BASE, not
+ * the unsupported outside edge of that wall. Cut the seam short of the hub
+ * where three wedges meet, so the three paired features never collide.
+ * Coordinates are (outward radius, height) on a radial parting plane. */
+export function radialSiliconeLSeam(
+  wallRadius:number,hubSetback:number,zFloor:number,zTop:number,
+):[number,number][]{
+  if(![wallRadius,hubSetback,zFloor,zTop].every(Number.isFinite)||
+     hubSetback<=0||wallRadius<=hubSetback||zTop<=zFloor)
+    throw new Error('No supported wall/floor L seam fits this silicone box.')
+  return [[wallRadius,zTop],[wallRadius,zFloor],[hubSetback,zFloor]]
+}
+
 /** Single closed triangular tube following a ring in the parting plane.
  * The ridge is embedded into the negative half and projects into positive.
  * The matching groove uses the same centreline but a wider/deeper profile.
@@ -184,35 +198,53 @@ export function triangularContourTube(
   // A clipped V has a flat lead-in at its tip rather than a needle edge.
   // Keep the legacy three-vertex triangular profile when tipFlatFraction=0.
   const count=tipFlatFraction>0?4:3
+  // An open ribbon must not finish with square 90-degree end faces. Add a
+  // short transition at each end, then taper its V width and protrusion.
+  // These stations give the ridge and the matching groove real chamfered
+  // end edges without introducing zero-width/degenerate triangles.
+  const bevel=Math.min(0.8,halfWidth*0.35,(front-back)*0.25)
+  const stations:P[]=closed?[...path]:[...path]
+  if(!closed){
+    const lead=distance(path[0],path[1])
+    const tail=distance(path[path.length-2],path[path.length-1])
+    const interpolate=(a:P,b:P,d:number):P=>[
+      a[0]+(b[0]-a[0])*d,a[1]+(b[1]-a[1])*d]
+    stations.splice(1,0,interpolate(path[0],path[1],Math.min(bevel/lead,0.35)))
+    const n=stations.length
+    stations.splice(n-1,0,interpolate(path[path.length-1],path[path.length-2],Math.min(bevel/tail,0.35)))
+  }
   const [k,u,v]=planeAxes(axis)
-  const pos=new Float32Array(path.length*count*3)
-  const ringSegments=closed?path.length:path.length-1
+  const pos=new Float32Array(stations.length*count*3)
+  const ringSegments=closed?stations.length:stations.length-1
   const indexed=new Uint32Array(ringSegments*count*6+(closed?0:(count-2)*6))
   const put=(i:number,slot:number,x:number,y:number,normalPos:number)=>{
     const j=(i*count+slot)*3
     pos[j+k]=normalPos;pos[j+u]=x;pos[j+v]=y
   }
-  for(let i=0;i<path.length;i++){
-    const prev=path[closed?(i+path.length-1)%path.length:Math.max(0,i-1)]
-    const next=path[closed?(i+1)%path.length:Math.min(path.length-1,i+1)]
+  for(let i=0;i<stations.length;i++){
+    const prev=stations[closed?(i+stations.length-1)%stations.length:Math.max(0,i-1)]
+    const next=stations[closed?(i+1)%stations.length:Math.min(stations.length-1,i+1)]
     const dx=next[0]-prev[0],dy=next[1]-prev[1]
     const d=Math.hypot(dx,dy)
     if(d<1e-8)throw new Error('V-seam contour contains coincident points.')
     const nx=dy/d,ny=-dx/d
-    const p=path[i]
-    put(i,0,p[0]+nx*halfWidth,p[1]+ny*halfWidth,split+back)
-    put(i,1,p[0]-nx*halfWidth,p[1]-ny*halfWidth,split+back)
-    if(count===3)put(i,2,p[0],p[1],split+front)
+    const p=stations[i]
+    const end=!closed&&(i===0||i===stations.length-1)
+    const hw=end?halfWidth-bevel:halfWidth
+    const tip=end?front-bevel:front
+    put(i,0,p[0]+nx*hw,p[1]+ny*hw,split+back)
+    put(i,1,p[0]-nx*hw,p[1]-ny*hw,split+back)
+    if(count===3)put(i,2,p[0],p[1],split+tip)
     else{
-      put(i,2,p[0]-nx*halfWidth*tipFlatFraction,
-        p[1]-ny*halfWidth*tipFlatFraction,split+front)
-      put(i,3,p[0]+nx*halfWidth*tipFlatFraction,
-        p[1]+ny*halfWidth*tipFlatFraction,split+front)
+      put(i,2,p[0]-nx*hw*tipFlatFraction,
+        p[1]-ny*hw*tipFlatFraction,split+tip)
+      put(i,3,p[0]+nx*hw*tipFlatFraction,
+        p[1]+ny*hw*tipFlatFraction,split+tip)
     }
   }
   let cursor=0
   for(let i=0;i<ringSegments;i++){
-    const j=(i+1)%path.length
+    const j=(i+1)%stations.length
     for(let a=0;a<count;a++){
       const b=(a+1)%count
       const x=i*count+a,y=i*count+b,z=j*count+a,w=j*count+b
@@ -224,7 +256,7 @@ export function triangularContourTube(
     // Caps across a V/trapezoid cross-section close the printable solid.
     for(let i=1;i<count-1;i++){
       indexed[cursor++]=0;indexed[cursor++]=i+1;indexed[cursor++]=i
-      const end=(path.length-1)*count
+      const end=(stations.length-1)*count
       indexed[cursor++]=end;indexed[cursor++]=end+i;indexed[cursor++]=end+i+1
     }
   }
