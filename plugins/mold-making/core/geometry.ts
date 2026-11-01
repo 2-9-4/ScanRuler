@@ -141,7 +141,7 @@ export function moldMaterial(s:MoldSettings,targetHeight?:number,targetWidth?:nu
       s.siliconeThickness+material.wall+material.base)
     if(span<needed)material.base+=(needed-span)/(s.mode==='direct'?2:1)
   }
-  if(v&&s.parts!==3&&s.topBottomTabs&&s.topBottomTabCount>0){
+  if(v&&s.parts!==3&&(s.parts===4||s.splitAxis!=='z')&&s.topBottomTabs&&s.topBottomTabCount>0){
     // Ears along the upper/lower outside rim must have adequate depth to
     // anchor into the surrounding body even when the model is shallow.
     const tab=clampHardware(s)
