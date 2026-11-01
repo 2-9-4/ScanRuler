@@ -121,7 +121,7 @@ export function moldMaterial(s:MoldSettings,targetHeight?:number):{side:number;b
     base:s.mode==='direct'?direct:Math.max(2,wallMin+0.5),
     wall:wallMin,
   }
-  if(v&&targetHeight!==undefined&&Number.isFinite(targetHeight)&&s.clampTabCount>0){
+  if(v&&s.parts!==3&&targetHeight!==undefined&&Number.isFinite(targetHeight)&&s.clampTabCount>0){
     const pitch=s.clampTabWidth+Math.max(2,s.clampTabWidth*0.25)
     const needed=s.clampTabCount*pitch+4
     const span=targetHeight+(s.mode==='direct'?2*material.base:
