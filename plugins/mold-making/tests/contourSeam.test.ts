@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {describe,expect,it} from 'vitest'
 import {boxSolid} from '../core/geometry'
-import {contourAround,contourSegment,projectedHull,radialSeamContour,triangularContourTube} from '../core/contourSeam'
+import {contourAround,contourSegment,projectedHull,radialSeamContour,radialSiliconeLSeam,triangularContourTube} from '../core/contourSeam'
 import {closedness} from '../../mesh-tools/core/boolean'
 import {signedVolume} from '../../mesh-tools/core/hollow'
 
@@ -40,12 +40,39 @@ describe('Continuous V-seam geometry',()=>{
       const tube=triangularContourTube(path,'y',0,1.2,-0.6,2.4,false,0.24)
       expect(closedness(tube.indices,tube.positions.length/3)).toEqual({open:0,bad:0})
       expect(signedVolume(tube.positions,tube.indices)).toBeGreaterThan(0)
-      // Each station retains the full, finite width of the V base.
-      for(let i=0;i<path.length;i++){
+      // Open V-ribbons have finite end chamfers, not square-cut endcaps.
+      // The two short transition stations retain the nominal profile.
+      const n=tube.positions.length/12
+      for(let i=0;i<n;i++){
         const p=tube.positions,j=i*12
         const width=Math.hypot(p[j]-p[j+3],p[j+1]-p[j+4],p[j+2]-p[j+5])
-        expect(width).toBeCloseTo(2.4,4)
+        expect(width).toBeGreaterThan(1.2)
+        if(i>0&&i<n-1)expect(width).toBeCloseTo(2.4,4)
+        else expect(width).toBeLessThan(2.4)
       }
+    }
+  })
+  it('forms a wall-and-floor L seam in a radial silicone box, not a U outside the master',()=>{
+    const wall=24,hub=4.2,floor=-11,top=22
+    const path=radialSiliconeLSeam(wall,hub,floor,top)
+    expect(path).toEqual([[wall,top],[wall,floor],[hub,floor]])
+    expect(path.filter(([r])=>r===wall)).toHaveLength(2)
+    expect(path[0][1]).toBe(top)
+    expect(path[path.length-1][1]).toBe(floor)
+    const ridge=triangularContourTube(path,'y',0,2.4,-0.6,2.4,false,0.24)
+    const socket=triangularContourTube(path,'y',0,2.6,-0.18,2.9,false)
+    for(const mesh of [ridge,socket]){
+      expect(closedness(mesh.indices,mesh.positions.length/3)).toEqual({open:0,bad:0})
+      expect(signedVolume(mesh.positions,mesh.indices)).toBeGreaterThan(0)
+      const count=mesh.positions.length/(mesh===ridge?12:9)
+      const first=mesh.positions,step=mesh===ridge?12:9
+      const widthAt=(i:number)=>{
+        const j=i*step
+        return Math.hypot(first[j]-first[j+3],first[j+1]-first[j+4],first[j+2]-first[j+5])
+      }
+      expect(widthAt(0)).toBeLessThan(widthAt(1))
+      expect(widthAt(count-1)).toBeLessThan(widthAt(count-2))
+      expect(widthAt(0)).toBeGreaterThan(0)
     }
   })
   it('caps an open U-shaped wall seam into one watertight printable ridge',()=>{
