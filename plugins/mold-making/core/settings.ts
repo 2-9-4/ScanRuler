@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Explicit parametric recipe. Unknown legacy project fields get defaults;
 // invalid user values are rejected rather than rounded to an unsafe shape.
-export const MOLD_MODES = ['direct', 'silicone-box', 'thin-negative-shell'] as const
+export const MOLD_MODES = ['direct', 'silicone-box'] as const
 export type MoldMode = (typeof MOLD_MODES)[number]
 export type MoldSource = 'scan' | 'reference'
 export type SplitAxis = 'x' | 'y' | 'z'
@@ -100,6 +100,9 @@ export function parseMoldSettings(value: unknown): MoldSettings {
   const parsed = { ...DEFAULT_MOLD_SETTINGS, ...raw } as MoldSettings
   if (!(['fast','balanced','fine'] as const).includes(parsed.offsetQuality)) throw new Error('Invalid spherical offset quality.')
   if (parsed.source !== 'scan' && parsed.source !== 'reference') throw new Error('Malformed mold target source.')
+  // Existing projects saved with the removed shell mode still load and
+  // default to direct tooling. Geometry and clearance are not reused.
+  if ((raw as Record<string,unknown>).mode === 'thin-negative-shell') parsed.mode='direct'
   if (!MOLD_MODES.includes(parsed.mode)) throw new Error('Malformed mold mode.')
   if (parsed.parts !== 1 && parsed.parts !== 2 && parsed.parts !== 4) throw new Error('Parts must be 1, 2 or 4.')
   if (!(['x','y','z'] as const).includes(parsed.splitAxis)) throw new Error('Split axis must be X, Y, or Z.')
@@ -126,5 +129,4 @@ export function parseMoldSettings(value: unknown): MoldSettings {
 export const MOLD_MODE_LABELS: Readonly<Record<MoldMode,string>> = {
   direct: 'Direct-print mold',
   'silicone-box': 'Silicone mold box',
-  'thin-negative-shell': 'Thin negative shell',
 }
