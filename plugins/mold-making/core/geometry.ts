@@ -459,7 +459,7 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
   const warnings:string[]=[]
   onProgress?.('Checking source geometry and mold settings…',0.06)
   if(s.mode==='silicone-box'){
-    // Unlike a direct-negative cavity or conformal shell, a silicone
+    // Unlike a direct-negative cavity, a silicone
     // containment box never uses the target as a Boolean cutter. Only its
     // bounding coordinates are required. Validating/repairing target faces
     // here incorrectly rejects open STL/STEP parts and ordinary scans.
@@ -562,7 +562,7 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
           pieces=keyFourParts(wasm,pieces,a,firstAt,second,secondAt,s,plan,keep)
         }
       }
-        if(s.keys&&s.mode!=='thin-negative-shell'){
+        if(s.keys){
         if(s.mode==='silicone-box')warnings.push('Registration is placed on external wall bosses at multiple heights. Printed pins require assembled clearance; metal dowel holes require separate hardware.')
         warnings.push(s.keyStyle==='metal-dowel'?
           `Paired blind sockets are sized for ${s.keyDiameter} mm metal dowels, with ${s.keyClearance} mm radial fit clearance. Insert separate dowels during assembly.`:
