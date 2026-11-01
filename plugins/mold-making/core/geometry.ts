@@ -233,8 +233,28 @@ export function toPart(solid:Manifold,name:string,warnings:string[]=[],detachedP
         detachedParts.push({name:label,...standalone,
           volumeMm3:stableVolume(standalone)})
       }catch(error){
-        const reason=error instanceof Error?error.message:String(error)
-        warnings.push(`${label}: excluded an invalid detached artifact (kernel volume ${island.volume.toPrecision(4)} mm³; ${reason}). Main mold preserved; inspect cavity and registration before printing.`)
+        // A disconnected kernel island can arrive with reversed triangle
+        // winding. Try only an orientation flip; the triangle topology and
+        // surface positions stay unchanged.
+        let oriented:Triangles|null=null
+        const m=island.part.getMesh()
+        const raw:Triangles={positions:new Float32Array(m.vertProperties),indices:new Uint32Array(m.triVerts)}
+        if(stableVolume(raw)<-EPS){
+          for(let i=0;i<raw.indices.length;i+=3){
+            const tmp=raw.indices[i+1]
+            raw.indices[i+1]=raw.indices[i+2]
+            raw.indices[i+2]=tmp
+          }
+          try{check(raw,label);oriented=raw}
+          catch{ /* An actual degenerate fragment remains unsafe. */ }
+        }
+        if(oriented){
+          detachedParts.push({name:label,...oriented,volumeMm3:stableVolume(oriented)})
+          warnings.push(`${label}: reversed inside-out island winding on export and revalidated all faces and topology.`)
+        }else{
+          const reason=error instanceof Error?error.message:String(error)
+          warnings.push(`${label}: excluded an invalid detached artifact (kernel volume ${island.volume.toPrecision(4)} mm³; ${reason}). Main mold preserved; inspect cavity and registration before printing.`)
+        }
       }
     }
     const added=detachedParts.slice(detachedBefore)
@@ -443,7 +463,7 @@ function addKeys(
   axis:SplitAxis,split:number,s:MoldSettings,plan:MoldPlan,keep:(m:Manifold)=>Manifold,
   seamSpan?:readonly [number,number],
 ):[Manifold,Manifold] {
-  // Key geometry sits in the backing base, not against casting surfaces.
+  // Registration is placed on material around the projected cavity in both parting-plane axes.
   // Metal dowel mode cuts blind clearance sockets on BOTH mating halves.
   if(s.mode==='silicone-box')return addBoxWallKeys(wasm,negative,positive,axis,split,s,plan,keep,seamSpan)
   const idx=axisIndex(axis)
