@@ -83,7 +83,7 @@ describe('Mold Making configuration',()=>{
   it('rejects invalid modes, part counts, angles, clearances and dimensions',()=>{
     for(const bad of [null,{...DEFAULT_MOLD_SETTINGS,mode:'other'},
       {...DEFAULT_MOLD_SETTINGS,parts:5},{...DEFAULT_MOLD_SETTINGS,boxShape:'triangle'},
-      {...DEFAULT_MOLD_SETTINGS,boxDraftDeg:25},{...DEFAULT_MOLD_SETTINGS,clampTabCount:0},
+      {...DEFAULT_MOLD_SETTINGS,boxDraftDeg:25},{...DEFAULT_MOLD_SETTINGS,clampTabCount:-1},
       {...DEFAULT_MOLD_SETTINGS,clearance:-1},{...DEFAULT_MOLD_SETTINGS,sideMargin:Infinity}]){
         expect(()=>parseMoldSettings(bad)).toThrow()
       }
