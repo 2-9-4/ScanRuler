@@ -4,7 +4,7 @@ import { SCAN_ACCEPT,REFERENCE_ACCEPT,REFERENCE_FORMATS } from '../../../src/cor
 import { ModelSlot } from '../../../src/ui/ModelSlot'
 import { useStore } from '../../../src/state/store'
 import { useDeviation } from '../../../src/state/deviationStore'
-import { MOLD_MODES,MOLD_MODE_LABELS,type MoldDimension,type PartCount,type SplitAxis,type BoxShape, type KeyStyle, type KeyPlacement } from '../core/settings'
+import { MOLD_MODES,MOLD_MODE_LABELS,type MoldDimension,type PartCount,type SplitAxis,type BoxShape, type KeyStyle, type KeyPlacement, type OffsetQuality } from '../core/settings'
 import { useMold } from '../state/moldStore'
 import type { MoldBuild } from '../core/geometry'
 
@@ -39,6 +39,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
   const boxShape=useMold(s=>s.boxShape),keys=useMold(s=>s.keys)
   const keyStyle=useMold(s=>s.keyStyle),keyPlacement=useMold(s=>s.keyPlacement)
   const keyPositions=useMold(s=>s.keyPositions)
+  const offsetQuality=useMold(s=>s.offsetQuality)
   const repairTarget=useMold(s=>s.repairTarget)
   const repairHoleSize=useMold(s=>s.repairHoleSize)
   const clearance=useMold(s=>s.clearance)
@@ -61,6 +62,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
   const setKeyPositions=useMold(s=>s.setKeyPositions)
   const setDimension=useMold(s=>s.setDimension)
   const setRepairTarget=useMold(s=>s.setRepairTarget)
+  const setOffsetQuality=useMold(s=>s.setOffsetQuality)
   const active=source==='scan'?scanName:refName
   const multi=parts>1
   const fields=FIELDS.filter(({key})=>{
@@ -185,6 +187,22 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
     </div>
     <div className="group">
       <div className="sec-head">4. Dimensions (mm)</div>
+      {mode!=='silicone-box'&&<label className="kv">
+        <span className="name">Spherical offset detail</span>
+        <select data-test="mold-offset-quality" value={offsetQuality}
+          onChange={e=>setOffsetQuality(e.target.value as OffsetQuality)}>
+          <option value="fast">Fast — coarse preview</option>
+          <option value="balanced">Balanced — default</option>
+          <option value="fine">Fine — slower, more detail</option>
+        </select>
+      </label>}
+      {mode!=='silicone-box'&&<p className="hint">
+        {offsetQuality==='fast'
+          ?'Fast previews use a coarse distance-field grid. Small features may disappear; switch to Fine before exporting detailed tooling.'
+          :offsetQuality==='balanced'
+          ?'Balanced mode limits the distance-field workload. Grid spacing is shown in the generated warnings; use Fine for small surface detail.'
+          :'Fine retains smaller features but can take substantially longer and use much more memory.'}
+      </p>}
       {fields.map(f=><label key={f.key} className="kv" title={f.help}>
         <span className="name">{f.label}</span>
         <input type="number" data-test={`mold-${f.key}`}
