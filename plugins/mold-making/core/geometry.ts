@@ -114,7 +114,7 @@ export function clampHardware(s:MoldSettings){
     thickness:Math.max(s.clampTabThickness,nuts?s.tabNutDepth+2:2),
   }
 }
-export function moldMaterial(s:MoldSettings,targetHeight?:number):{side:number;base:number;wall:number}{
+export function moldMaterial(s:MoldSettings,targetHeight?:number,targetWidth?:number):{side:number;base:number;wall:number}{
   const v=s.keys&&s.parts!==1&&s.keyStyle==='v-seam'
   const pinLand=s.keys&&s.keyStyle!=='v-seam'
     ?s.keyDiameter+2*s.keyClearance+2.5:0
@@ -144,7 +144,13 @@ export function moldMaterial(s:MoldSettings,targetHeight?:number):{side:number;b
   if(v&&s.parts!==3&&s.topBottomTabs&&s.topBottomTabCount>0){
     // Ears along the upper/lower outside rim must have adequate depth to
     // anchor into the surrounding body even when the model is shallow.
-    material.base=Math.max(material.base,clampHardware(s).width*0.35+1.5)
+    const tab=clampHardware(s)
+    material.base=Math.max(material.base,tab.width*0.35+1.5)
+    if(targetWidth!==undefined&&s.splitAxis!=='z'){
+      const perInterface=s.topBottomTabCount*(tab.width+2)+2
+      const minWidth=s.parts===4?perInterface*2:perInterface
+      material.side=Math.max(material.side,(minWidth-targetWidth)/2)
+    }
   }
   // Extras must ALWAYS add material, even when the calculated requirement
   // is already dominated by tab spacing or a large V-seam.
@@ -162,7 +168,7 @@ export function planMold(target:Triangles,settings:MoldSettings):MoldPlan {
   const size=min.map((v,i)=>max[i]-v)
   if(size.some(x=>!Number.isFinite(x)||x<=EPS))throw new Error('Target has zero extent.')
   const cx=center(min[0],max[0]),cy=center(min[1],max[1])
-  const material=moldMaterial(s,size[2])
+  const material=moldMaterial(s,size[2],Math.min(size[0],size[1]))
   if(s.mode==='silicone-box'){
     const bottom=min[2]-material.base,top=max[2]+s.siliconeThickness+material.wall
     const innerBottom=min[2],innerTop=top+2
