@@ -1189,8 +1189,14 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
       ?siliconeBoxCapacityMm3(plan,s.boxDraftDeg):null
     // Silicone-box input may be an OPEN scan or vertex cloud: never claim
     // a net-pour volume from its bounding box or from an unsigned mesh.
-    const edges=targetMesh.indices.length
-      ?closedness(targetMesh.indices,targetMesh.positions.length/3):null
+    const vertexCount=targetMesh.positions.length/3
+    const validIndexing=targetMesh.indices.length>0&&
+      targetMesh.indices.length%3===0&&
+      targetMesh.indices.every(i=>i<vertexCount)
+    // Silicone boxes deliberately accept malformed/open scan faces.
+    // Estimating displacement must NEVER turn such a valid box build into
+    // a hard error simply because the reference mesh cannot be measured.
+    const edges=validIndexing?closedness(targetMesh.indices,vertexCount):null
     const master=edges&&edges.open===0&&edges.bad===0
       ?stableVolume(targetMesh):null
     const masterDisplacementMm3=master!==null&&master>0?master:null
