@@ -13,7 +13,7 @@ const FIELDS:readonly {key:MoldDimension;label:string;help:string}[]=[
   {key:'clearance',label:'Cavity clearance (+ enlarges)',help:'Positive means a spherical dilation of the target solid, enlarging the casting cavity. A signed-distance field is sampled to generate a closed offset; small features may be lost at the chosen grid resolution.'},
   {key:'sideMargin',label:'Outer margin',help:'Material beyond the target in X and Y, millimetres'},
   {key:'baseThickness',label:'Base / top material',help:'Solid material outside the target bounds'},
-  {key:'wallThickness',label:'Printed wall',help:'Wall thickness of the silicone box or conformal shell'},
+  {key:'wallThickness',label:'Printed wall',help:'Wall thickness of the silicone box'},
   {key:'siliconeThickness',label:'Silicone space',help:'Distance between master and containment walls'},
   {key:'splitPosition',label:'Split location (0–1)',help:'Fraction of model bounds along selected X/Y/Z axis'},
   {key:'keyDiameter',label:'Registration diameter',help:'Printed key base or nominal diameter of a separately inserted metal dowel'},
