@@ -158,7 +158,7 @@ export function validMoldDimension(key: MoldDimension, value: number): boolean {
   if (key === 'splitPosition') return value >= 0.1 && value <= 0.9
   if (key === 'clampTabCount' || key==='topBottomTabCount') return Number.isInteger(value) && value>=0 && value<=12
   if (key === 'boxDraftDeg') return value >= 0 && value <= 12
-  if (key === 'previewGap' || key === 'clearance' || key === 'sideMargin' || key === 'baseThickness' ||
+  if (key === 'previewGap' || key === 'pourFunnelDepth' || key === 'clearance' || key === 'sideMargin' || key === 'baseThickness' ||
       key === 'wallThickness' || key === 'keyClearance' || key === 'vSeamClearance' || key === 'vSeamSpacing') {
     return value >= 0 && value <= 100_000
   }
