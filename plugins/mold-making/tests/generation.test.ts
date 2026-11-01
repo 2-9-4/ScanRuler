@@ -4,7 +4,7 @@
 import {beforeAll,describe,expect,it} from 'vitest'
 import Module,{type ManifoldToplevel} from 'manifold-3d'
 import {DEFAULT_MOLD_SETTINGS} from '../core/settings'
-import {boxSolid,buildMold,planMold,seamPositions,toPart} from '../core/geometry'
+import {boxSolid,buildMold,planMold,seamPositions,registrationSites,toPart} from '../core/geometry'
 import {closedness} from '../../mesh-tools/core/boolean'
 import {signedVolume} from '../../mesh-tools/core/hollow'
 
@@ -82,6 +82,31 @@ describe('Mold Making assembly',()=>{
     const short=seamPositions(0,9,settings)
     expect(short).toHaveLength(1)
     expect(short[0]).toBeCloseTo(4.5)
+  })
+  it('distributes registration across both tangent axes, including above the cavity',()=>{
+    const plan=planMold(master,DEFAULT_MOLD_SETTINGS)
+    const sites=registrationSites('x',0,DEFAULT_MOLD_SETTINGS,plan)
+    expect(sites).toHaveLength(4)
+    expect(new Set(sites.map(p=>p[1].toFixed(3))).size).toBe(2)
+    expect(new Set(sites.map(p=>p[2].toFixed(3))).size).toBe(2)
+    expect(sites.some(p=>p[2]<0)).toBe(true)
+    expect(sites.some(p=>p[2]>10)).toBe(true)
+    const ySites=registrationSites('y',0,DEFAULT_MOLD_SETTINGS,plan)
+    expect(new Set(ySites.map(p=>p[0].toFixed(3))).size).toBe(2)
+    expect(new Set(ySites.map(p=>p[2].toFixed(3))).size).toBe(2)
+    const zSites=registrationSites('z',5,DEFAULT_MOLD_SETTINGS,plan)
+    expect(new Set(zSites.map(p=>p[0].toFixed(3))).size).toBe(2)
+    expect(new Set(zSites.map(p=>p[1].toFixed(3))).size).toBe(2)
+  })
+  it('rejects manual pin locations inside the projected cavity and accepts outer corners',()=>{
+    const plan=planMold(master,DEFAULT_MOLD_SETTINGS)
+    const manual={...DEFAULT_MOLD_SETTINGS,keyPlacement:'manual' as const,
+      keyPoints:[[0.5,0.5]] as [number,number][]}
+    expect(()=>registrationSites('x',0,manual,plan)).toThrow(/projected casting cavity/)
+    const okay={...manual,keyPoints:[[0.12,0.15],[0.88,0.85]] as [number,number][]}
+    expect(registrationSites('x',0,okay,plan)).toHaveLength(2)
+    const four=registrationSites('x',0,DEFAULT_MOLD_SETTINGS,plan,[-12,0])
+    expect(four).toHaveLength(2)
   })
   it('retains every millimeter of the target in two distinct full-height rigid pieces',()=>{
     const m=buildMold(wasm,master,noKeys)
