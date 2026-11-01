@@ -28,6 +28,18 @@ describe('Mold Making configuration',()=>{
     expect(MOLD_MODES).not.toContain('thin-negative-shell')
     expect(parsed.clearance).toBe(old.clearance)
   })
+  it('preserves two-axis registration coordinates through project save and restore',()=>{
+    const s={...DEFAULT_MOLD_SETTINGS,keyPlacement:'manual' as const,
+      keyPoints:[[0.13,0.25],[0.82,0.77]] as [number,number][]}
+    moldSection.prepare(s,{manifest:{} as never,members:new Map()})()
+    expect(moldSection.collect({sources:{} as never,scanSaved:true,addMember(){}})?.keyPoints).toEqual(s.keyPoints)
+    expect(moldSection.holdsWork!()).toBe(true)
+    useMold.getState().setKeyPoints([[0.22,0.18],[0.8,0.9]])
+    expect(useMold.getState().keyPoints).toEqual([[0.22,0.18],[0.8,0.9]])
+    expect(()=>parseMoldSettings({...s,keyPoints:[[0.5,0.5],[0.5,0.5]]})).toThrow(/distinct/)
+    useMold.setState({...DEFAULT_MOLD_SETTINGS})
+    expect(moldSection.holdsWork!()).toBe(false)
+  })
   it('persists manually editable metal-dowel hole locations',()=>{
     const s={...DEFAULT_MOLD_SETTINGS,keyStyle:'metal-dowel' as const,
       keyPlacement:'manual' as const,keyPositions:[0.2,0.53,0.8]}
