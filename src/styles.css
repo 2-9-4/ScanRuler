@@ -4321,3 +4321,57 @@ button.x:disabled {
     grid-template-columns: 1fr;
   }
 }
+
+/* True two-axis registration editor: measured seam and target envelope. */
+[data-test="mold-making-panel"] .mold-plane-editor {
+  margin: 10px 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--well);
+  padding: 10px;
+  min-width: 0;
+}
+[data-test="mold-making-panel"] .mold-plane-head {
+  font-size: 12px;
+  font-weight: 650;
+  margin: 0 0 8px;
+}
+[data-test="mold-making-panel"] .mold-plane-editor svg {
+  display: block;
+  max-width: 100%;
+  width: 100%;
+  height: auto;
+  touch-action: none;
+  user-select: none;
+}
+[data-test="mold-making-panel"] .mold-plane-editor svg circle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+[data-test="mold-making-panel"] .mold-plane-points {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+[data-test="mold-making-panel"] .mold-plane-point {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  font-size: 11px;
+  min-width: 0;
+}
+[data-test="mold-making-panel"] .mold-plane-point label {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+[data-test="mold-making-panel"] .mold-plane-point input {
+  width: 55px;
+  min-width: 0;
+  box-sizing: border-box;
+}
+[data-test="mold-making-panel"] .mold-plane-point button {
+  min-width: 26px;
+  padding: 3px 6px;
+}

@@ -2,9 +2,9 @@
 // Regression tests for complete-height cavities, separately manifold parts,
 // registration, cylindrical boxes and preservation of sub-mm geometry.
 import {beforeAll,describe,expect,it} from 'vitest'
-import Module,{type ManifoldToplevel} from 'manifold-3d'
+import Module,{type ManifoldToplevel,type Manifold} from 'manifold-3d'
 import {DEFAULT_MOLD_SETTINGS} from '../core/settings'
-import {boxSolid,buildMold,planMold,seamPositions,toPart} from '../core/geometry'
+import {boxSolid,buildMold,planMold,seamPositions,registrationSites,toPart} from '../core/geometry'
 import {closedness} from '../../mesh-tools/core/boolean'
 import {signedVolume} from '../../mesh-tools/core/hollow'
 
@@ -82,6 +82,57 @@ describe('Mold Making assembly',()=>{
     const short=seamPositions(0,9,settings)
     expect(short).toHaveLength(1)
     expect(short[0]).toBeCloseTo(4.5)
+  })
+  it('does not fail the main mold because a detached artifact exports as zero-volume',()=>{
+    const main=wasm.Manifold.cube([8,8,8])
+    // A generated Boolean island may have a nonzero kernel volume, but
+    // collapse entirely when written into Float32 mesh coordinates.
+    const emptySimplified={isEmpty:()=>true,status:()=> 'NoError',delete:()=>{}}
+    const invalid={
+      volume:()=>45.1,
+      getMesh:()=>({
+        vertProperties:new Float32Array([0,0,0,1,0,0,0,1,0]),
+        triVerts:new Uint32Array([0,1,2]),
+      }),
+      simplify:()=>emptySimplified,
+      delete:()=>{},
+    } as unknown as Manifold
+    const composite={
+      isEmpty:()=>false,status:()=> 'NoError',
+      decompose:()=>[main,invalid],
+    } as unknown as Manifold
+    const warnings:string[]=[],detached:ReturnType<typeof toPart>[]=[]
+    const part=toPart(composite,'Mold part 1',warnings,detached)
+    expect(part.volumeMm3).toBeCloseTo(512)
+    intact([part])
+    expect(detached).toHaveLength(0)
+    expect(warnings.join(' ')).toMatch(/excluded an invalid detached artifact/)
+    expect(warnings.join(' ')).toMatch(/45\.1/)
+  })
+  it('distributes registration across both tangent axes, including above the cavity',()=>{
+    const plan=planMold(master,DEFAULT_MOLD_SETTINGS)
+    const sites=registrationSites('x',0,DEFAULT_MOLD_SETTINGS,plan)
+    expect(sites).toHaveLength(4)
+    expect(new Set(sites.map(p=>p[1].toFixed(3))).size).toBe(2)
+    expect(new Set(sites.map(p=>p[2].toFixed(3))).size).toBe(2)
+    expect(sites.some(p=>p[2]<0)).toBe(true)
+    expect(sites.some(p=>p[2]>10)).toBe(true)
+    const ySites=registrationSites('y',0,DEFAULT_MOLD_SETTINGS,plan)
+    expect(new Set(ySites.map(p=>p[0].toFixed(3))).size).toBe(2)
+    expect(new Set(ySites.map(p=>p[2].toFixed(3))).size).toBe(2)
+    const zSites=registrationSites('z',5,DEFAULT_MOLD_SETTINGS,plan)
+    expect(new Set(zSites.map(p=>p[0].toFixed(3))).size).toBe(2)
+    expect(new Set(zSites.map(p=>p[1].toFixed(3))).size).toBe(2)
+  })
+  it('rejects manual pin locations inside the projected cavity and accepts outer corners',()=>{
+    const plan=planMold(master,DEFAULT_MOLD_SETTINGS)
+    const manual={...DEFAULT_MOLD_SETTINGS,keyPlacement:'manual' as const,
+      keyPoints:[[0.5,0.5]] as [number,number][]}
+    expect(()=>registrationSites('x',0,manual,plan)).toThrow(/projected casting cavity/)
+    const okay={...manual,keyPoints:[[0.12,0.15],[0.88,0.85]] as [number,number][]}
+    expect(registrationSites('x',0,okay,plan)).toHaveLength(2)
+    const four=registrationSites('x',0,DEFAULT_MOLD_SETTINGS,plan,[-12,0])
+    expect(four).toHaveLength(2)
   })
   it('retains every millimeter of the target in two distinct full-height rigid pieces',()=>{
     const m=buildMold(wasm,master,noKeys)

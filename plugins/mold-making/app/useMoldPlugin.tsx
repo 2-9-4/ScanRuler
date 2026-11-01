@@ -13,7 +13,7 @@ import { exportStem, saveBuilt } from '../../../src/app/exports'
 import { fileSafe } from '../../../src/core/project/manifest'
 import { moldSettings, useMold } from '../state/moldStore'
 import { MOLD_SETTING_KEYS } from '../core/settings'
-import type { MoldBuild } from '../core/geometry'
+import type { MoldBuild, Limits } from '../core/geometry'
 import { MoldPreview } from '../viewer/moldPreview'
 import { MoldPanel } from '../ui/MoldPanel'
 
@@ -25,6 +25,7 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
   const referenceName = useDeviation((s) => s.nominalName)
   const scanName = useStore((s) => s.fileName)
   const [generated, setGenerated] = useState<MoldBuild | null>(null)
+  const [targetBounds, setTargetBounds] = useState<Limits|null>(null)
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const preview = useRef<MoldPreview | null>(null)
@@ -48,7 +49,7 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
     const offScan = onScan({ loaded: invalidate, swapped: invalidate })
     return () => { offMold(); offScan() }
   }, [invalidate])
-  useEffect(() => invalidate(), [scanName, referenceName, invalidate])
+  useEffect(() => { setTargetBounds(null); invalidate() }, [scanName, referenceName, invalidate])
   useEffect(() => () => { preview.current?.dispose(); preview.current = null }, [])
   useEffect(() => { preview.current?.setVisible(inWorkspace) }, [inWorkspace, generated])
   useEffect(() => useDeviation.subscribe((s,prev) => {
@@ -96,6 +97,7 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
       preview.current?.set(made, settings.source, settings.previewGap)
       generatedVersion.current = selectedVersion
       setGenerated(made)
+      setTargetBounds(made.targetBounds)
       host.sceneRef.current?.frameAll()
       useStore.getState().setStatus('Generated a watertight mold component. Review the release and casting warnings before printing.')
     } catch (e) {
@@ -170,6 +172,7 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
         onGenerate={() => void runGenerate()}
         onExport={exportPart}
         generated={generated}
+        targetBounds={targetBounds}
         generating={generating}
         error={error}
       />

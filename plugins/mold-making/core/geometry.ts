@@ -16,6 +16,7 @@ export interface MoldPart { name:string; positions:Float32Array; indices:Uint32A
 export interface MoldBuild {
   parts:MoldPart[]; kind:MoldSettings['mode']; warnings:string[]
   volumeMm3:number; openingZ:number|null
+  targetBounds:Limits
   /** First component only. Never join touching parts into an invalid mesh. */
   positions:Float32Array; indices:Uint32Array
 }
@@ -46,6 +47,23 @@ export function draftedBox(limits:Limits,topExpansion:number):Triangles {
   }
   return m
 }
+/** Origin-relative signed volume avoids cancellation for tiny islands
+ * far from the world origin: tetrahedra are measured from a nearby vertex.
+ */
+function stableVolume(mesh:Triangles):number {
+  const p=mesh.positions,idx=mesh.indices
+  if(p.length<3||idx.length===0)return 0
+  const ox=p[0],oy=p[1],oz=p[2]
+  let volume6=0
+  for(let t=0;t<idx.length;t+=3){
+    const a=idx[t]*3,b=idx[t+1]*3,c=idx[t+2]*3
+    const ax=p[a]-ox,ay=p[a+1]-oy,az=p[a+2]-oz
+    const bx=p[b]-ox,by=p[b+1]-oy,bz=p[b+2]-oz
+    const cx=p[c]-ox,cy=p[c+1]-oy,cz=p[c+2]-oz
+    volume6+=ax*(by*cz-bz*cy)+ay*(bz*cx-bx*cz)+az*(bx*cy-by*cx)
+  }
+  return volume6/6
+}
 function check(mesh:Triangles,what:string):void {
   const n=mesh.positions.length/3
   if(!n||!Number.isInteger(n)||mesh.indices.length===0||mesh.indices.length%3)throw new Error(`${what}: invalid triangles.`)
@@ -68,7 +86,7 @@ function check(mesh:Triangles,what:string):void {
   }
   const c=closedness(mesh.indices,n)
   if(c.open||c.bad)throw new Error(`${what} is not watertight (${c.open} boundary edges, ${c.bad} nonmanifold edges). Use Mesh Tools → Fill holes, then 'Use for analysis' (or enable Mold Making's small-defect repair).`)
-  if(!(signedVolume(mesh.positions,mesh.indices)>EPS))throw new Error(`${what} is inside-out or zero-volume.`)
+  if(!(stableVolume(mesh)>EPS))throw new Error(`${what} is inside-out or zero-volume.`)
 }
 export interface MoldPlan {
   outer:Limits; innerBox:Limits|null; openingZ:number|null
@@ -143,7 +161,7 @@ function validatedPartMesh(solid:Manifold,name:string,warnings:string[]):Triangl
   const maxVolumeChange=Math.max(0.01,originalVolume*1e-4)
   const accept=(candidate:Triangles,reason:string):Triangles=>{
     check(candidate,name)
-    const difference=Math.abs(signedVolume(candidate.positions,candidate.indices)-originalVolume)
+    const difference=Math.abs(stableVolume(candidate)-originalVolume)
     if(difference>maxVolumeChange){
       throw new Error(`${name} output cleanup would change material volume by ${difference.toPrecision(4)} mm³ (limit ${maxVolumeChange.toPrecision(4)} mm³).`)
     }
@@ -206,9 +224,38 @@ export function toPart(solid:Manifold,name:string,warnings:string[]=[],detachedP
         discardedDust+island.volume<=Math.min(1,primary.volume*2e-5)
       if(trivial){discardedDust+=island.volume;dustCount++;continue}
       const label=`${name} — detached ${detachedParts.length-detachedBefore+1}`
-      const standalone=validatedPartMesh(island.part,label,warnings)
-      detachedParts.push({name:label,...standalone,
-        volumeMm3:signedVolume(standalone.positions,standalone.indices)})
+      // Detached slivers are frequently zero-volume at Float32 export
+      // precision even when the Manifold kernel reports positive volume.
+      // Such fragments must NEVER abort an otherwise valid main mold, but
+      // also must not be silently exported as printable geometry.
+      try {
+        const standalone=validatedPartMesh(island.part,label,warnings)
+        detachedParts.push({name:label,...standalone,
+          volumeMm3:stableVolume(standalone)})
+      }catch(error){
+        // A disconnected kernel island can arrive with reversed triangle
+        // winding. Try only an orientation flip; the triangle topology and
+        // surface positions stay unchanged.
+        let oriented:Triangles|null=null
+        const m=island.part.getMesh()
+        const raw:Triangles={positions:new Float32Array(m.vertProperties),indices:new Uint32Array(m.triVerts)}
+        if(stableVolume(raw)<-EPS){
+          for(let i=0;i<raw.indices.length;i+=3){
+            const tmp=raw.indices[i+1]
+            raw.indices[i+1]=raw.indices[i+2]
+            raw.indices[i+2]=tmp
+          }
+          try{check(raw,label);oriented=raw}
+          catch{ /* An actual degenerate fragment remains unsafe. */ }
+        }
+        if(oriented){
+          detachedParts.push({name:label,...oriented,volumeMm3:stableVolume(oriented)})
+          warnings.push(`${label}: reversed inside-out island winding on export and revalidated all faces and topology.`)
+        }else{
+          const reason=error instanceof Error?error.message:String(error)
+          warnings.push(`${label}: excluded an invalid detached artifact (kernel volume ${island.volume.toPrecision(4)} mm³; ${reason}). Main mold preserved; inspect cavity and registration before printing.`)
+        }
+      }
     }
     const added=detachedParts.slice(detachedBefore)
     if(added.length){
@@ -221,7 +268,7 @@ export function toPart(solid:Manifold,name:string,warnings:string[]=[],detachedP
     // below a strict manufacturing-scale tolerance.
     const exported=validatedPartMesh(primary.part,name,warnings)
     if(dustCount)warnings.push(`${name}: excluded ${dustCount} microscopic Boolean dust islands totalling ${discardedDust.toPrecision(3)} mm³ (each ≤${perIslandLimit.toPrecision(3)} mm³).`)
-    return {name,...exported,volumeMm3:signedVolume(exported.positions,exported.indices)}
+    return {name,...exported,volumeMm3:stableVolume(exported)}
   }finally{for(const island of islands)island.delete()}
 }
 /** Select seam coordinates, excluding too-close edges and collisions.
@@ -254,6 +301,61 @@ export function seamPositions(
   }
   if(!chosen.length)throw new Error('Add at least one manual alignment pin.')
   return chosen
+}
+/** Registration sites in the parting PLANE, not in one bottom-Z row.
+ * Direct molds get keys in the solid backing surrounding the projected
+ * target's conservative bounding rectangle. That prevents keys crossing
+ * the casting cavity, even on an undercut mesh.
+ */
+export function registrationSites(
+  axis:SplitAxis,split:number,s:MoldSettings,plan:MoldPlan,
+  seamSpan?:readonly [number,number],
+):Vec3[] {
+  const k=axisIndex(axis),u=axis==='x'?1:0,v=axis==='z'?1:2
+  const outer=plan.outer
+  const u0=seamSpan?.[0]??outer.min[u],u1=seamSpan?.[1]??outer.max[u]
+  const v0=outer.min[v],v1=outer.max[v]
+  const radius=s.keyDiameter/2+s.keyClearance
+  const inset=radius+0.75
+  if(u1-u0<=2*inset||v1-v0<=2*inset)
+    throw new Error('No room for registration keys in the selected parting plane. Increase the outer margin or reduce the key diameter.')
+  const targetLo=[outer.min[0]+s.sideMargin,outer.min[1]+s.sideMargin,outer.min[2]+s.baseThickness]
+  const targetHi=[outer.max[0]-s.sideMargin,outer.max[1]-s.sideMargin,outer.max[2]-s.baseThickness]
+  const safe=(a:number,b:number)=>{
+    if(a<u0+inset-1e-6||a>u1-inset+1e-6||b<v0+inset-1e-6||b>v1-inset+1e-6)return false
+    const du=Math.max(targetLo[u]-a,0,a-targetHi[u])
+    const dv=Math.max(targetLo[v]-b,0,b-targetHi[v])
+    // No pin/socket cylinder may penetrate the projected master. An extra
+    // 0.5mm land protects the cavity from Boolean edge coincidences.
+    return Math.hypot(du,dv)>radius+s.clearance+0.5
+  }
+  const spanU=u1-u0,spanV=v1-v0
+  const coords=s.keyPlacement==='manual'
+    ? s.keyPoints.map(([a,b])=>[u0+a*spanU,v0+b*spanV] as [number,number])
+    : [
+        [u0+inset,v0+inset],[u1-inset,v0+inset],
+        [u0+inset,v1-inset],[u1-inset,v1-inset],
+      ] as [number,number][]
+  const chosen:[number,number][]=[]
+  const separation=2*radius+0.75
+  for(const [a,b] of coords){
+    if(!safe(a,b)){
+      if(s.keyPlacement==='manual')throw new Error(
+        'Registration point is outside safe solid backing or overlaps the projected casting cavity. Move it toward an outer corner, reduce its diameter, or increase mold margins.')
+      continue
+    }
+    if(chosen.some(([x,y])=>Math.hypot(x-a,y-b)<separation)){
+      if(s.keyPlacement==='manual')throw new Error('Registration points overlap. Spread them farther apart in the 2D editor.')
+      continue
+    }
+    chosen.push([a,b])
+  }
+  if(!chosen.length)throw new Error('No safe registration location on this seam. Increase the backing or outer margin, or adjust the parting axis.')
+  return chosen.map(([a,b])=>{
+    const p:Vec3=[center(outer.min[0],outer.max[0]),center(outer.min[1],outer.max[1]),center(outer.min[2],outer.max[2])]
+    p[k]=split;p[u]=a;p[v]=b
+    return p
+  })
 }
 function pinSolid(
   wasm:ManifoldToplevel,axis:SplitAxis,centre:Vec3,length:number,
@@ -361,31 +463,11 @@ function addKeys(
   axis:SplitAxis,split:number,s:MoldSettings,plan:MoldPlan,keep:(m:Manifold)=>Manifold,
   seamSpan?:readonly [number,number],
 ):[Manifold,Manifold] {
-  // Key geometry sits in the backing base, not against casting surfaces.
+  // Registration is placed on material around the projected cavity in both parting-plane axes.
   // Metal dowel mode cuts blind clearance sockets on BOTH mating halves.
   if(s.mode==='silicone-box')return addBoxWallKeys(wasm,negative,positive,axis,split,s,plan,keep,seamSpan)
-  if(s.baseThickness<s.keyDiameter+2*s.keyClearance+0.2)throw new Error('Base too thin for registration features. Increase base or reduce dowel diameter.')
-  const base=plan.outer,idx=axisIndex(axis),z=base.min[2]+s.baseThickness/2
-  const locations:Vec3[]=[]
-  if(axis==='z'){
-    const cy=center(base.min[1],base.max[1]),cx=center(base.min[0],base.max[0])
-    const radius=(plan.cylinder?.outerR??(base.max[0]-base.min[0])/2)
-    const rx=radius-s.keyDiameter/2-s.keyClearance-1.2
-    if(rx<s.keyDiameter)throw new Error('Not enough exterior wall for Z-parting registration.')
-    locations.push([cx-rx,cy,split],[cx+rx,cy,split])
-  }else{
-    const n:SplitAxis=axis==='x'?'y':'x',t=axisIndex(n)
-    const a=negative.boundingBox(),b=positive.boundingBox()
-    const lo=seamSpan?.[0]??Math.max(a.min[t],b.min[t])
-    const hi=seamSpan?.[1]??Math.min(a.max[t],b.max[t])
-    const coords=seamPositions(lo,hi,s)
-    for(const x of coords){
-      const p:Vec3=[center(base.min[0],base.max[0]),center(base.min[1],base.max[1]),z]
-      p[idx]=split
-      p[t]=x
-      locations.push(p)
-    }
-  }
+  const idx=axisIndex(axis)
+  const locations=registrationSites(axis,split,s,plan,seamSpan)
   let a=negative,b=positive
   const L=s.keyDepth,embed=Math.min(1.0,L*0.4)
   const radial=s.keyClearance,r=s.keyDiameter/2
@@ -580,7 +662,7 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
     if(mainParts.length!==s.parts)throw new Error('Part count mismatch: a component disappeared during splitting.')
     const parts=[...mainParts,...loose]
     onProgress?.('Preparing printable components for export…',0.99)
-    return {parts,kind:s.mode,warnings,openingZ:plan.openingZ,
+    return {parts,kind:s.mode,warnings,openingZ:plan.openingZ,targetBounds:extentOf(targetMesh.positions),
       volumeMm3:parts.reduce((v,p)=>v+p.volumeMm3,0),
       positions:parts[0].positions,indices:parts[0].indices}
   }finally{
