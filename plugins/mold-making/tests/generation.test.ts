@@ -145,8 +145,14 @@ describe('Mold Making assembly',()=>{
     expect(()=>registrationSites('x',0,manual,plan)).toThrow(/projected casting cavity/)
     const okay={...manual,keyPoints:[[0.2,0.15],[0.8,0.85]] as [number,number][]}
     expect(registrationSites('x',0,okay,plan)).toHaveLength(2)
+    // On a shortened four-part interface, pin sites still span both
+    // available parting-plane coordinates (two lateral × two vertical).
+    // With enough backing to fit all four, none should be discarded.
     const four=registrationSites('x',0,pinSettings,plan,[-12,0])
-    expect(four).toHaveLength(2)
+    expect(four).toHaveLength(4)
+    expect(new Set(four.map(p=>p[1].toFixed(3))).size).toBe(2)
+    expect(new Set(four.map(p=>p[2].toFixed(3))).size).toBe(2)
+    expect(four.every(p=>p[1]>=-12&&p[1]<=0)).toBe(true)
   })
   it('retains every millimeter of the target in two distinct full-height rigid pieces',()=>{
     const m=buildMold(wasm,master,noKeys)
