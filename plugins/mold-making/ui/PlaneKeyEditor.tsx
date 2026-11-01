@@ -22,13 +22,14 @@ const LX=48,RX=432,TY=36,BY=322,W=480,H=370
 const clamp=(v:number)=>Math.max(0.01,Math.min(0.99,v))
 const round=(v:number)=>Math.round(clamp(v)*1000)/1000
 const dist=(a:Point,b:Point)=>Math.hypot(a[0]-b[0],a[1]-b[1])
-const coords=(e:PointerEvent<SVGSVGElement>):Point=>{
-  const el=e.currentTarget,r=el.getBoundingClientRect()
-  const x=(e.clientX-r.left)/r.width*W,y=(e.clientY-r.top)/r.height*H
+const coords=(clientX:number,clientY:number,el:SVGSVGElement):Point=>{
+  const r=el.getBoundingClientRect()
+  const x=(clientX-r.left)/r.width*W,y=(clientY-r.top)/r.height*H
   return [round((x-LX)/(RX-LX)),round((BY-y)/(BY-TY))]
 }
 export function PlaneKeyEditor({points,axis,manual,onChange,onManual,bounds,sideMargin,baseThickness,diameter,clearance}:Props){
   const drag=useRef<number|null>(null)
+  const canvas=useRef<SVGSVGElement|null>(null)
   const dimensions:readonly [number,number]=axis==='x'?[1,2]:axis==='y'?[0,2]:[0,1]
   const axisLabels:readonly [string,string]=axis==='x'?['Y','Z']:axis==='y'?['X','Z']:['X','Y']
   const ext=bounds?dimensions.map(i=>[bounds.min[i]-(i===2?baseThickness:sideMargin),bounds.max[i]+(i===2?baseThickness:sideMargin)] as Point):null
@@ -39,7 +40,11 @@ export function PlaneKeyEditor({points,axis,manual,onChange,onManual,bounds,side
     b:(bounds.min[dimensions[1]]-ext[1][0])/(ext[1][1]-ext[1][0]),
     t:(bounds.max[dimensions[1]]-ext[1][0])/(ext[1][1]-ext[1][0]),
   }:null
-  const display=manual?points:[[0.12,0.15],[0.88,0.15],[0.12,0.85],[0.88,0.85]] as Point[]
+  const pad=diameter/2+clearance+0.75
+  const uInset=ext?Math.min(0.49,pad/(ext[0][1]-ext[0][0])):0.12
+  const vInset=ext?Math.min(0.49,pad/(ext[1][1]-ext[1][0])):0.15
+  const display=manual?points:[[uInset,vInset],[1-uInset,vInset],
+    [uInset,1-vInset],[1-uInset,1-vInset]] as Point[]
   const replace=(index:number,p:Point)=>{
     const next=points.map(v=>[...v] as Point)
     if(next.some((v,i)=>i!==index&&dist(v,p)<0.025))return
@@ -48,7 +53,8 @@ export function PlaneKeyEditor({points,axis,manual,onChange,onManual,bounds,side
   const handleDown=(e:PointerEvent<SVGSVGElement>)=>{
     if(!manual){onManual();return}
     if(drag.current!==null||points.length>=16)return
-    const p=coords(e)
+    if(!canvas.current)return
+    const p=coords(e.clientX,e.clientY,canvas.current)
     if(points.some(v=>dist(v,p)<0.025))return
     onChange([...points,p])
   }
@@ -67,10 +73,10 @@ export function PlaneKeyEditor({points,axis,manual,onChange,onManual,bounds,side
   }
   return <div className="mold-plane-editor">
     <div className="mold-plane-head">Parting-plane editor · {axisLabels.join(' / ')} axes</div>
-    <svg viewBox={`0 0 ${W} ${H}`} role="group" aria-label="Two-dimensional mating pin editor"
+    <svg ref={canvas} viewBox={`0 0 ${W} ${H}`} role="group" aria-label="Two-dimensional mating pin editor"
       preserveAspectRatio="xMidYMid meet"
       onPointerDown={handleDown}
-      onPointerMove={e=>{if(drag.current!==null&&manual)replace(drag.current,coords(e))}}
+      onPointerMove={e=>{if(drag.current!==null&&manual)canvas.current&&replace(drag.current,coords(e.clientX,e.clientY,canvas.current))}}
       onPointerUp={()=>{drag.current=null}} onPointerCancel={()=>{drag.current=null}}>
       <rect x={LX} y={TY} width={RX-LX} height={BY-TY} fill="var(--well)" stroke="var(--line-strong)" strokeWidth="2"/>
       {[0.25,0.5,0.75].map(v=><g key={v} opacity=".33">
@@ -96,7 +102,7 @@ export function PlaneKeyEditor({points,axis,manual,onChange,onManual,bounds,side
             aria-valuemin={1} aria-valuemax={99} aria-valuenow={Math.round(p[0]*100)}
             style={{cursor:manual?'move':'pointer',touchAction:'none'}}
             onPointerDown={e=>{e.stopPropagation();if(!manual){onManual();return}drag.current=i;e.currentTarget.setPointerCapture(e.pointerId)}}
-            onPointerMove={e=>{e.stopPropagation();if(drag.current===i&&manual)replace(i,coords(e))}}
+            onPointerMove={e=>{e.stopPropagation();if(drag.current===i&&manual)canvas.current&&replace(i,coords(e.clientX,e.clientY,canvas.current))}}
             onPointerUp={()=>{drag.current=null}}
             onPointerCancel={()=>{drag.current=null}}
             onKeyDown={e=>{
