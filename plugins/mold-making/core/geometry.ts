@@ -107,9 +107,7 @@ export function planMold(target:Triangles,settings:MoldSettings):MoldPlan {
       max:[max[0]+s.sideMargin,max[1]+s.sideMargin,max[2]+s.baseThickness]},
       innerBox:null,cylinder:null,openingZ:s.parts===1?center(min[2],max[2]):null}
   }
-  const m=s.clearance+s.wallThickness+2
-  return {outer:{min:[min[0]-m,min[1]-m,min[2]-m],max:[max[0]+m,max[1]+m,max[2]+m]},
-    innerBox:null,cylinder:null,openingZ:s.parts===1?center(min[2],max[2]):null}
+  throw new Error('Unrecognized mold type.')
 }
 function toManifold(wasm:ManifoldToplevel,mesh:Triangles,keep:(m:Manifold)=>Manifold):Manifold {
   check(mesh,'Target or tooling solid')
@@ -348,7 +346,6 @@ function addKeys(
 ):[Manifold,Manifold] {
   // Key geometry sits in the backing base, not against casting surfaces.
   // Metal dowel mode cuts blind clearance sockets on BOTH mating halves.
-  if(s.mode==='thin-negative-shell')return [negative,positive]
   if(s.mode==='silicone-box')return addBoxWallKeys(wasm,negative,positive,axis,split,s,plan,keep,seamSpan)
   if(s.baseThickness<s.keyDiameter+2*s.keyClearance+0.2)throw new Error('Base too thin for registration features. Increase base or reduce dowel diameter.')
   const base=plan.outer,idx=axisIndex(axis),z=base.min[2]+s.baseThickness/2
@@ -509,7 +506,7 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
         return keep(solid)
       }
       const positive=s.clearance>0?dilate(s.clearance):toManifold(wasm,targetMesh,keep)
-      if(s.mode==='direct'){
+      {
         // The offset cutter may move *more* than d at a sharp corner.
         // Check its actual Manifold bounds against every outside wall, not
         // just sideMargin > clearance. Avoid accidental through-holes.
@@ -523,12 +520,6 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
           }
         }
         solid=keep(toManifold(wasm,boxSolid(plan.outer),keep).subtract(positive))
-      }else{
-        const skin=dilate(s.clearance+s.wallThickness)
-        const outerVolume=skin.volume(),innerVolume=positive.volume()
-        if(outerVolume<=innerVolume)throw new Error('Shell offset lost its enclosing material. Increase shell thickness or fix target geometry.')
-        solid=keep(skin.subtract(positive))
-        warnings.push('Thin shells use sampled spherical distance-field dilation, not vertex-normal offsets. Inspect fine features, small concavities, and disconnected regions before printing.')
       }
     }
     if(solid.isEmpty())throw new Error('The mold is empty. Increase the wall or margins.')
@@ -542,7 +533,7 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
     }else if(s.parts!==1){
       onProgress?.('Cutting exact parting planes; applying mating pins and pockets…')
       const a=s.splitAxis,k=axisIndex(a)
-      if(s.parts===4&&a==='z'&&s.keys&&s.mode!=='thin-negative-shell')throw new Error('Four-part Z-first tooling with pins is not yet supported. Choose X/Y as the primary parting axis, or disable pins.')
+      if(s.parts===4&&a==='z'&&s.keys)throw new Error('Four-part Z-first tooling with pins is not yet supported. Choose X/Y as the primary parting axis, or disable pins.')
       const firstAt=extent.min[k]+(extent.max[k]-extent.min[k])*s.splitPosition
       pieces=split(wasm,pieces,a,firstAt,s,plan,keep,s.parts===2&&s.keys)
       if(s.parts===4){
@@ -555,8 +546,7 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
           pieces=keyFourParts(wasm,pieces,a,firstAt,second,secondAt,s,plan,keep)
         }
       }
-      if(s.keys&&s.mode==='thin-negative-shell')warnings.push('Registration on thin conformal shells is not implemented; use an external clamp/jacket.')
-      if(s.keys&&s.mode!=='thin-negative-shell'){
+        if(s.keys&&s.mode!=='thin-negative-shell'){
         if(s.mode==='silicone-box')warnings.push('Registration is placed on external wall bosses at multiple heights. Printed pins require assembled clearance; metal dowel holes require separate hardware.')
         warnings.push(s.keyStyle==='metal-dowel'?
           `Paired blind sockets are sized for ${s.keyDiameter} mm metal dowels, with ${s.keyClearance} mm radial fit clearance. Insert separate dowels during assembly.`:
