@@ -282,10 +282,11 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
       {generated&&<div data-test="mold-result">
         <div className="kindrow featurekeys" role="radiogroup" aria-label="Mold preview mode">
           <button type="button" role="radio" aria-checked={previewMode==='section'} className={previewMode==='section'?'on':undefined}
-            onClick={()=>onPreviewModeChange('section')}>Assembled + cross-section</button>
+            onClick={()=>onPreviewModeChange('section')}>Assembled</button>
           <button type="button" role="radio" aria-checked={previewMode==='exploded'} className={previewMode==='exploded'?'on':undefined}
             onClick={()=>onPreviewModeChange('exploded')}>Exploded</button>
         </div>
+        <p className="hint">Assembled view opens the app's built-in Section view. Use the main Section toolbar to move, flip or close the cross-section; these buttons only control assembly layout.</p>
         <div className="kv"><span className="name">{generated.printable?'Exportable solids':'Preview-only solids'}</span><b>{generated.parts.length}</b></div>
         {!generated.printable&&<p className="hint mold-warning" role="alert">
           NOT PRINTABLE: fragmented geometry was detected. Export is disabled. These parts are provided only to inspect the failure.
