@@ -62,7 +62,12 @@ describe('Mold Making non-destructive source repair',()=>{
     const hole={positions:cube.positions,
       indices:Uint32Array.from([...cube.indices.slice(0,6),...cube.indices.slice(12)])}
     expect(()=>repairMoldTarget(hole,true,1)).toThrow(/Largest open rim/)
-    expect(()=>repairMoldTarget(hole,false,20)).toThrow(/Enable Repair small/)
+    // Disabling the optional repair must not reject or edit a target.
+    // The caller's validation (buildMold/check) decides whether it is usable.
+    const passThrough=repairMoldTarget(hole,false,20)
+    expect(passThrough.mesh).toBe(hole)
+    expect(passThrough.filledHoles).toBe(0)
+    expect(passThrough.warnings).toEqual([])
   })
   it('fails instead of guessing if input is nonsensical',()=>{
     expect(()=>repairMoldTarget({positions:cube.positions,
