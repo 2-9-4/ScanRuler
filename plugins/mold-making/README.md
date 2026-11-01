@@ -179,3 +179,38 @@ scan in Reverse engineer so sketches and modeled bodies can be built over
 it. Both explicit import actions **replace the previous scan**; the
 Boolean-solid handoff does not. This is a triangulated reference, not a
 parametric reconstruction of a molded part.
+
+## Threefold registration and material estimates (2026-11)
+
+- The default V-profile is now **4.8 mm wide × 2.4 mm high** (nominal
+  45° sloping sides), with independent groove fit clearance. Existing saved
+  projects retain their explicitly configured width/height.
+- Threefold **direct molds** use an open, rounded **C** registration contour
+  wrapping the master in each radial parting plane. Threefold **silicone
+  containment boxes** use an **L**: down the supported cylindrical outer
+  wall, then inward across the solid bottom plate. Both end short of the
+  shared central hub. They are not interchangeable: an open-top silicone box
+  cannot support the upper bar of a C seam.
+- Open V-profile ends are chamfered by short, positive-width lead-in
+  transitions, avoiding square 90° endcaps and zero-width knife edges.
+  The direct-mold seam remains outside the source silhouette; the silicone
+  L requires enough floor and side-wall backing. Failed geometry validation
+  must block export rather than create disconnected ribbon fragments.
+- **Material quantity & cost estimates** are available in a collapsed
+  section of generated results, with editable density and $/kg assumptions.
+  Printed part material is the exact closed mesh volume, but reported
+  fully-solid mass/cost is **not a slicer print time, infill, supports or
+  purge calculation**. Direct casting void volume is the actual Boolean
+  cutter volume, including deliberately requested clearance. For silicone
+  boxes, capacity to the rim is integrated from the designed interior wall
+  taper. The master's volume is subtracted only when its source triangles
+  form a closed, positive-volume mesh. For open scans/vertex clouds, only
+  gross capacity is reported and is not a usable net pour estimate. Neither
+  estimate includes overpour, fittings, headspace, trapped air, or waste.
+  No geometry, build settings, preview or export path is changed by editing
+  material assumptions.
+
+These changes are regression-covered in `contourSeam.test.ts`,
+`generation.test.ts`, `settings.test.ts` and `materialEstimate.test.ts`.
+The complete browser build/Manifold suite and physical print still require
+local verification.
