@@ -94,6 +94,7 @@ export function repairMoldTarget(
       }
     }
   }
+  let patchFailure:string|null=null
   if(enabled && topology.open>0 && topology.bad===0){
     const border=boundaryLoops(mesh.indices,mesh.positions.length/3)
     const sizes=border.loops.map(loop=>loopSize(mesh.positions,loop.vertices))
@@ -102,15 +103,19 @@ export function repairMoldTarget(
     // opening and must be repaired manually.
     if(border.stray===0&&sizes.length>0&&sizes.every(size=>size<maxHoleMm)){
       onProgress?.(`Patching ${sizes.length} tiny boundary loops on the temporary mold target…`)
-      const patch=fillHoles(mesh.positions,mesh.indices,mesh.positions.length/3,maxHoleMm,'flat',onProgress)
-      if(patch.report.failed===0&&patch.report.left===0){
-        const candidate={positions:patch.positions,indices:patch.indices}
-        const c=closedness(candidate.indices,candidate.positions.length/3)
-        if(!c.open&&!c.bad){
-          mesh=candidate
-          topology=c
-          filledHoles=patch.report.filled
-        }
+      try{
+        const patch=fillHoles(mesh.positions,mesh.indices,mesh.positions.length/3,maxHoleMm,'flat',onProgress)
+        if(patch.report.failed===0&&patch.report.left===0){
+          const candidate={positions:patch.positions,indices:patch.indices}
+          const c=closedness(candidate.indices,candidate.positions.length/3)
+          if(!c.open&&!c.bad){
+            mesh=candidate
+            topology=c
+            filledHoles=patch.report.filled
+          }else patchFailure=`Generated patches still have ${c.open} open and ${c.bad} nonmanifold edges.`
+        }else patchFailure=`${patch.report.failed} hole patches failed and ${patch.report.left} rims were left open.`
+      }catch(error){
+        patchFailure=error instanceof Error?error.message:String(error)
       }
     }
   }
@@ -119,10 +124,15 @@ export function repairMoldTarget(
     const sizes=border?.loops.map(loop=>loopSize(mesh.positions,loop.vertices))??[]
     const largest=sizes.length?Math.max(...sizes):null
     const detail=largest===null?'':` Largest open rim: ${largest.toPrecision(3)} mm across.`
+    const reason=topology.bad>0?' Nonmanifold edges require manual repair.':
+      border&&border.stray>0?` ${border.stray} unmatched boundary edges do not form complete, fillable loops.`:
+      sizes.some(size=>size>=maxHoleMm)?` At least one boundary rim exceeds the configured ${maxHoleMm} mm patch limit.`:
+      patchFailure?` Patch solver failed: ${patchFailure}.`:
+      ' These edges could not be filled safely.'
     const cleanupDetail=removedFaces>0&&topology.open>sourceTopology.open
       ?` Mesh Tools may report the original as closed because removing ${removedFaces} zero-area triangles in the temporary mold copy exposed ${topology.open-sourceTopology.open} additional open edges.`
       :''
-    throw new Error(`Target is not watertight (${topology.open} boundary edges, ${topology.bad} nonmanifold edges).${detail}${cleanupDetail} ${enabled?'Auto-repair could not safely close the mesh. Increase Mold Making\'s maximum small-hole size only if the missing surface really belongs there; otherwise use Mesh Tools → Fill holes → Use for analysis.':'Enable Repair small mesh defects in Mold Making, or use Mesh Tools → Fill holes → Use for analysis.'}`)
+    throw new Error(`Target is not watertight (${topology.open} boundary edges, ${topology.bad} nonmanifold edges).${detail}${reason}${cleanupDetail} ${enabled?'Auto-repair could not safely close the mesh. Increase Mold Making\'s maximum small-hole size only if the missing surface really belongs there; otherwise use Mesh Tools → Fill holes → Use for analysis.':'Enable Repair small mesh defects in Mold Making, or use Mesh Tools → Fill holes → Use for analysis.'}`)
   }
   const warnings:string[]=[]
   if(removedFaces||weldedVertices||filledHoles){
