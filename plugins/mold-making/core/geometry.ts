@@ -16,6 +16,7 @@ export interface MoldPart { name:string; positions:Float32Array; indices:Uint32A
 export interface MoldBuild {
   parts:MoldPart[]; kind:MoldSettings['mode']; warnings:string[]
   volumeMm3:number; openingZ:number|null
+  targetBounds:Limits
   /** First component only. Never join touching parts into an invalid mesh. */
   positions:Float32Array; indices:Uint32Array
 }
@@ -641,7 +642,7 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
     if(mainParts.length!==s.parts)throw new Error('Part count mismatch: a component disappeared during splitting.')
     const parts=[...mainParts,...loose]
     onProgress?.('Preparing printable components for export…',0.99)
-    return {parts,kind:s.mode,warnings,openingZ:plan.openingZ,
+    return {parts,kind:s.mode,warnings,openingZ:plan.openingZ,targetBounds:extentOf(targetMesh.positions),
       volumeMm3:parts.reduce((v,p)=>v+p.volumeMm3,0),
       positions:parts[0].positions,indices:parts[0].indices}
   }finally{
