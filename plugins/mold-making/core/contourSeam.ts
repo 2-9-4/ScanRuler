@@ -17,7 +17,7 @@ export const planeAxes=(axis:SplitAxis):[number,number,number]=>axis==='x'?[0,1,
  */
 export function projectedHull(mesh:SolidMesh,axis:SplitAxis):P[]{
   const [,u,v]=planeAxes(axis),p=mesh.positions
-  const stride=Math.max(1,Math.floor(p.length/3/30_000))
+  const stride=Math.max(1,Math.ceil(p.length/3/30_000))
   const seen=new Map<string,P>()
   for(let i=0;i<p.length/3;i+=stride){
     const a=p[3*i+u],b=p[3*i+v]
