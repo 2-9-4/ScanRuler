@@ -69,7 +69,7 @@ export interface SphericalDistanceField {
   sdf(v:readonly number[]):number
   dispose():void
 }
-export function createSphericalDistanceField(mesh:SolidMesh,onProgress?:(message:string)=>void):SphericalDistanceField {
+export function createSphericalDistanceField(mesh:SolidMesh,onProgress?:(message:string,fraction?:number)=>void):SphericalDistanceField {
   onProgress?.('Indexing source triangles for spherical clearance…')
   const geometry=new BufferGeometry()
   geometry.setAttribute('position',new BufferAttribute(mesh.positions,3))
@@ -112,7 +112,7 @@ export function createSphericalDistanceField(mesh:SolidMesh,onProgress?:(message
 
 export function sphericalOffset(
   wasm:ManifoldToplevel,mesh:SolidMesh,d:number,
-  onProgress?:(message:string)=>void,
+  onProgress?:(message:string,fraction?:number)=>void,
   quality:OffsetQuality='balanced',
   sharedField?:SphericalDistanceField,
 ):{solid:Manifold;report:SphericalOffsetReport} {
@@ -127,9 +127,28 @@ export function sphericalOffset(
   const ownField=!sharedField
   const field=sharedField??createSphericalDistanceField(mesh,onProgress)
   try{
-    onProgress?.(`Sampling ${quality} spherical clearance at ${report.gridMm.toFixed(3)} mm spacing (${report.gridSamples.toLocaleString()} points)…`)
+    onProgress?.(`Sampling ${quality} spherical clearance at ${report.gridMm.toFixed(3)} mm spacing (${report.gridSamples.toLocaleString()} cells estimated)…`,0.16)
+    // The WASM kernel calls the signed-distance function synchronously.
+    // Report coarse, monotonic stages at about 1% intervals. The number
+    // of callback evaluations can exceed the nominal grid count because
+    // of surface refinement, so this is approximate progress, not an ETA.
+    let calls=0,lastBucket=-1
+    const sdf=(v:readonly number[]):number=>{
+      const result=field.sdf(v)
+      calls++
+      if((calls&1023)===0&&onProgress){
+        const portion=Math.min(0.98,calls/report.gridSamples)
+        const bucket=Math.floor(portion*60)
+        if(bucket>lastBucket){
+          lastBucket=bucket
+          onProgress(`Sampling mold clearance — ${calls.toLocaleString()} distance queries…`,0.16+0.63*portion)
+        }
+      }
+      return result
+    }
     // Inside is positive. Negative isolevel expands the source solid.
-    const solid=wasm.Manifold.levelSet(field.sdf,bounds,report.gridMm,-d,report.toleranceMm)
+    const solid=wasm.Manifold.levelSet(sdf,bounds,report.gridMm,-d,report.toleranceMm)
+    onProgress?.('Finalizing spherical-offset solid…',0.81)
     if(solid.status()!=='NoError'||solid.isEmpty()){
       solid.delete()
       throw new Error('Spherical distance-field offset produced no valid closed solid.')
