@@ -4245,7 +4245,7 @@ button.x:disabled {
 
 
 /* Mold Making's schematic registration editor and per-worker progress. */
-[data-test="mold-making-panel"] .mold-type-choices {
+[data-test="mold-making-panel"] .kindrow.featurekeys {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 [data-test="mold-making-panel"] .mold-key-editor {
