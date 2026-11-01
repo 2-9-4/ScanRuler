@@ -79,6 +79,21 @@ describe('Mold Making non-destructive source repair',()=>{
       expect(Math.hypot(u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0])).toBeGreaterThan(0)
     }
   })
+  it('removes a redundant collinear face when doing so restores closed topology',()=>{
+    const input={
+      positions:Float32Array.from([...cube.positions,5,0,0]),
+      indices:Uint32Array.from([...cube.indices,0,1,8]),
+    }
+    const before=input.indices.slice()
+    const t=closedness(input.indices,input.positions.length/3)
+    expect(t.bad).toBeGreaterThan(0)
+    const fixed=repairMoldTarget(input,true,2)
+    closed(fixed)
+    expect(fixed.removedFaces).toBe(1)
+    expect(fixed.adjustedVertices).toBe(0)
+    expect(fixed.mesh.indices.length).toBe(cube.indices.length)
+    expect(input.indices).toEqual(before)
+  })
   it('does not remove zero-area triangles when repair is switched off',()=>{
     const malformed={
       positions:cube.positions,
