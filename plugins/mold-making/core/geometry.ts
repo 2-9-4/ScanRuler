@@ -104,7 +104,7 @@ export interface MoldPlan {
  */
 export function moldMaterial(s:MoldSettings,targetHeight?:number):{side:number;base:number;wall:number}{
   const v=s.keys&&s.parts!==1&&s.keyStyle==='v-seam'
-  const pinLand=s.keys&&s.parts!==3&&s.keyStyle!=='v-seam'
+  const pinLand=s.keys&&s.keyStyle!=='v-seam'
     ?s.keyDiameter+2*s.keyClearance+2.5:0
   // Margin includes space from target to the V-ridge's inner flank,
   // full profile width, groove fit, and at least 1.25 mm outside the groove.
@@ -112,7 +112,7 @@ export function moldMaterial(s:MoldSettings,targetHeight?:number):{side:number;b
   const clearance=s.mode==='direct'?s.clearance:0
   const direct=Math.max(2,clearance+2,pinLand+clearance,vLand+clearance)
   const wallMin=v?Math.max(2,s.vSeamWidth+2*s.vSeamClearance+s.vSeamSpacing+2.5):
-    s.keys&&s.parts!==3?Math.max(2,s.keyDiameter+2*s.keyClearance+2):2
+    s.keys?Math.max(2,s.keyDiameter+2*s.keyClearance+2):2
   // Size structural land and tab spacing WITHOUT user extras first.
   // Otherwise adding "extra" base material merely reduces the automatic
   // padding and appears to have no effect until a threshold is crossed.
@@ -731,6 +731,82 @@ export function splitThreefold(
   }
   return result
 }
+/** Register the three radial interfaces, each shared by exactly two
+ * sectors. The local X axis follows the radial ray; local Y points to the
+ * positive (CCW) wedge. The previous sector is male for printed
+ * registration, and the next sector owns the matching groove/socket.
+ * All features live in the calculated outer wall, never the cavity.
+ */
+function keyThreeParts(
+  wasm:ManifoldToplevel,pieces:Manifold[],s:MoldSettings,plan:MoldPlan,
+  keep:(m:Manifold)=>Manifold,
+):Manifold[]{
+  if(pieces.length!==3)throw new Error('Radial registration requires three sectors.')
+  const out=pieces.slice()
+  const cx=center(plan.outer.min[0],plan.outer.max[0])
+  const cy=center(plan.outer.min[1],plan.outer.max[1])
+  const target=plan.target?extentOf(plan.target.positions):null
+  const cavityRadius=plan.cylinder
+    ?plan.cylinder.innerR+(plan.outer.max[2]-plan.innerBox!.min[2])*
+      Math.tan(s.boxDraftDeg*Math.PI/180)
+    :target?Math.hypot((target.max[0]-target.min[0])/2,
+      (target.max[1]-target.min[1])/2)+s.clearance:0
+  const hw=s.keyStyle==='v-seam'?s.vSeamWidth/2:s.keyDiameter/2
+  const fit=s.keyStyle==='v-seam'?s.vSeamClearance:s.keyClearance
+  const radius=cavityRadius+(s.keyStyle==='v-seam'?s.vSeamSpacing:1.25)+hw+0.65
+  const outside=plan.radialOuter?.radius??plan.cylinder?.outerR??0
+  if(radius+hw+fit+0.3>=outside)
+    throw new Error('Radial registration does not fit inside the computed exterior land.')
+  const z0=plan.outer.min[2]+Math.max(hw+fit+0.8,1.5)
+  const z1=plan.outer.max[2]-Math.max(hw+fit+0.8,1.5)
+  if(z1-z0<=Math.max(1,hw))
+    throw new Error('Radial registration needs additional vertical backing.')
+  for(let seam=0;seam<3;seam++){
+    const angle=120*seam
+    const negative=(seam+2)%3,positive=seam
+    const place=(m:Manifold):Manifold=>
+      keep(keep(m.rotate([0,0,angle])).translate([cx,cy,0]))
+    let male=out[negative],female=out[positive]
+    if(s.keyStyle==='v-seam'){
+      // An open vertical ribbon with capped ends. Trimmed V tips provide
+      // the assembly lead-in at all three radial parting interfaces.
+      const path:[number,number][]=[
+        [radius,z0],[radius,(z0+z1)/2],[radius,z1],
+      ]
+      const embed=Math.min(0.6,s.vSeamHeight*0.25)
+      const tongue=place(toManifold(wasm,triangularContourTube(
+        path,'y',0,hw,-embed,s.vSeamHeight,false,0.24),keep))
+      const groove=place(toManifold(wasm,triangularContourTube(
+        path,'y',0,hw+fit,-0.18,s.vSeamHeight+fit+0.3,false),keep))
+      male=keep(male.add(tongue))
+      female=keep(female.subtract(groove))
+    }else{
+      // Two separated heights provide anti-rotation registration. Metal
+      // dowels use identical blind sockets in both pieces.
+      const L=s.keyDepth,radial=s.keyClearance
+      for(const z of [z0+(z1-z0)*0.28,z0+(z1-z0)*0.72]){
+        const pin=(normalOffset:number,length:number,low:number,high:number)=>
+          place(pinSolid(wasm,'y',[radius,normalOffset,z],length,low,high,keep))
+        if(s.keyStyle==='metal-dowel'){
+          const pocket=L+0.3
+          male=keep(male.subtract(pin(-(L/2-0.15),pocket,hw+radial,hw+radial)))
+          female=keep(female.subtract(pin(L/2-0.15,pocket,hw+radial,hw+radial)))
+        }else{
+          const embed=Math.min(1,L*0.4)
+          const taper=s.keyStyle==='tapered-key'
+          male=keep(male.add(pin((L-embed)/2,L+embed,hw,taper?hw*0.7:hw)))
+          female=keep(female.subtract(pin(
+            (L+2*radial+0.3)/2-0.15,L+2*radial+0.3,
+            hw+radial,taper?hw*0.7+radial:hw+radial)))
+        }
+      }
+    }
+    if(male.isEmpty()||female.isEmpty())throw new Error('Radial registration removed a tooling sector.')
+    out[negative]=male
+    out[positive]=female
+  }
+  return out
+}
 /** Four-part parts are split *before* any pins are added, so the second
  * plane cannot shear a pre-existing pin or socket into degenerate faces.
  * Then pin each adjacent pair on each finished mating interface. */
@@ -861,7 +937,10 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
     }else if(s.parts===3){
       onProgress?.('Cutting three 120° radial mold sectors around the Z axis…',0.84)
       pieces=splitThreefold(solid,plan,keep)
-      if(s.keys)warnings.push('Threefold radial tooling currently has NO automatic registration: choose external clamping or disable alignment. It is not the same as a threefold-symmetric master; verify your master geometry separately.')
+      if(s.keys){
+        pieces=keyThreeParts(wasm,pieces,s,plan,keep)
+        warnings.push('Threefold tooling has mating registration on all three radial interfaces. No automatic exterior clamp tabs are added to radial interfaces; verify clamping and release.')
+      }
       warnings.push('Threefold molds are three radial wedges around the XY center. Verify demolding, cavity clearances and corner release before printing.')
     }else if(s.parts!==1){
       onProgress?.('Cutting exact parting planes; applying mating pins and pockets…',0.84)
