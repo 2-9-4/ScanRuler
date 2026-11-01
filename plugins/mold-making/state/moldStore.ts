@@ -18,6 +18,7 @@ interface MoldState extends MoldSettings {
   setKeyStyle(keyStyle: KeyStyle): void
   setKeyPlacement(keyPlacement: KeyPlacement): void
   setKeyPositions(keyPositions: number[]): void
+  setKeyPoints(keyPoints: [number,number][]): void
   setDimension(key: MoldDimension, value: number): void
 }
 export const useMold = create<MoldState>()((set)=>({
@@ -37,6 +38,12 @@ export const useMold = create<MoldState>()((set)=>({
       new Set(keyPositions).size!==keyPositions.length) return
     set({keyPositions:[...keyPositions]})
   },
+  setKeyPoints: (keyPoints) => {
+    if(keyPoints.length>16||keyPoints.some(point=>point.length!==2||
+       point.some(v=>!Number.isFinite(v)||v<0.01||v>0.99))||
+       new Set(keyPoints.map(point=>point.join(','))).size!==keyPoints.length)return
+    set({keyPoints:keyPoints.map(p=>[...p] as [number,number])})
+  },
   setDimension: (key,value) => {
     if (!validMoldDimension(key,value)) return
     set({[key]:value} as Pick<MoldState,MoldDimension>)
@@ -44,5 +51,5 @@ export const useMold = create<MoldState>()((set)=>({
 }))
 export function moldSettings(): MoldSettings {
   const s = useMold.getState()
-  return Object.fromEntries(MOLD_SETTING_KEYS.map(key => [key,key==='keyPositions'?[...s.keyPositions]:s[key]])) as unknown as MoldSettings
+  return Object.fromEntries(MOLD_SETTING_KEYS.map(key => [key,key==='keyPositions'?[...s.keyPositions]:key==='keyPoints'?s.keyPoints.map(p=>[...p]):s[key]])) as unknown as MoldSettings
 }
