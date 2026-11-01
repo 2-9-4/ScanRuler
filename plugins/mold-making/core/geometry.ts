@@ -414,7 +414,7 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
   const keep=(x:Manifold):Manifold=>{heap.push(x);return x}
   // One triangle BVH per generation, not once per clearance radius.
   // Thin negative shells compute two concentric offsets from the same input.
-  let distanceField:SphericalDistanceField|null=null
+  const fieldRef:{current:SphericalDistanceField|null}={current:null}
   try{
     let solid:Manifold
     onProgress?.('Constructing full-height tooling from the source solid…')
@@ -439,8 +439,8 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
       // spherical clearance rounds convex corners and avoids per-vertex
       // normal spikes. Zero clearance keeps the original cutter exactly.
       const dilate=(distance:number):Manifold=>{
-        distanceField??=createSphericalDistanceField(targetMesh,onProgress)
-        const {solid,report}=sphericalOffset(wasm,targetMesh,distance,onProgress,s.offsetQuality,distanceField)
+        fieldRef.current??=createSphericalDistanceField(targetMesh,onProgress)
+        const {solid,report}=sphericalOffset(wasm,targetMesh,distance,onProgress,s.offsetQuality,fieldRef.current)
         warnings.push(`Spherical distance-field offset ${distance} mm (${s.offsetQuality}) used a ${report.gridMm.toFixed(3)} mm grid (${report.gridSamples.toLocaleString()} samples; refinement tolerance ${report.toleranceMm.toFixed(3)} mm). Small features below this spacing may be lost; inspect the cavity before printing.`)
         return keep(solid)
       }
@@ -506,7 +506,7 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
       volumeMm3:parts.reduce((v,p)=>v+p.volumeMm3,0),
       positions:parts[0].positions,indices:parts[0].indices}
   }finally{
-    distanceField?.dispose()
+    fieldRef.current?.dispose()
     for(let i=heap.length-1;i>=0;i--)heap[i].delete()
   }
 }
