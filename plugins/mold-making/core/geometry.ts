@@ -102,7 +102,7 @@ export interface MoldPlan {
 /** Required printable structure PLUS optional additional material. Never
  * interpret the extra inputs as the minimum total backing dimension.
  */
-export function moldMaterial(s:MoldSettings):{side:number;base:number;wall:number}{
+export function moldMaterial(s:MoldSettings,targetHeight?:number):{side:number;base:number;wall:number}{
   const v=s.keys&&s.parts===2&&s.keyStyle==='v-seam'
   const pinLand=s.keys&&s.parts!==3
     ?s.keyDiameter+2*s.keyClearance+2.5:0
@@ -111,13 +111,21 @@ export function moldMaterial(s:MoldSettings):{side:number;base:number;wall:numbe
   const vLand=v?s.vSeamSpacing+s.vSeamWidth+s.vSeamClearance+1.25:0
   const clearance=s.mode==='direct'?s.clearance:0
   const direct=Math.max(2,clearance+2,pinLand+clearance,vLand+clearance)
-  const wallMin=v?Math.max(2,s.vSeamWidth+s.vSeamClearance+1.75):
+  const wallMin=v?Math.max(2,s.vSeamWidth+s.vSeamClearance+s.vSeamSpacing+2.0):
     s.keys&&s.parts!==3?Math.max(2,s.keyDiameter+2*s.keyClearance+2):2
-  return {
+  const material={
     side:direct+s.sideMargin,
     base:(s.mode==='direct'?direct:Math.max(2,wallMin+0.5))+s.baseThickness,
     wall:wallMin+s.wallThickness,
   }
+  if(v&&targetHeight!==undefined&&Number.isFinite(targetHeight)){
+    const pitch=s.clampTabWidth+Math.max(2,s.clampTabWidth*0.25)
+    const needed=s.clampTabCount*pitch+4
+    const span=targetHeight+(s.mode==='direct'?2*material.base:
+      s.siliconeThickness+material.wall+material.base)
+    if(span<needed)material.base+=(needed-span)/(s.mode==='direct'?2:1)
+  }
+  return material
 }
 export function planMold(target:Triangles,settings:MoldSettings):MoldPlan {
   const s=parseMoldSettings(settings)
@@ -128,16 +136,7 @@ export function planMold(target:Triangles,settings:MoldSettings):MoldPlan {
   const size=min.map((v,i)=>max[i]-v)
   if(size.some(x=>!Number.isFinite(x)||x<=EPS))throw new Error('Target has zero extent.')
   const cx=center(min[0],max[0]),cy=center(min[1],max[1])
-  const material=moldMaterial(s)
-  // Clamp ears use real requested widths and spacing. Rather than rejecting
-  // short masters or shrinking the ears invisibly, extend backing in Z as
-  // needed so every tab has an independent overlap with solid material.
-  if(s.keys&&s.parts===2&&s.keyStyle==='v-seam'){
-    const pitch=s.clampTabWidth+Math.max(2,s.clampTabWidth*0.25)
-    const needed=s.clampTabCount*pitch+4
-    const span=size[2]+(s.mode==='direct'?2*material.base:s.siliconeThickness+material.wall+material.base)
-    if(span<needed)material.base+=(needed-span)/(s.mode==='direct'?2:1)
-  }
+  const material=moldMaterial(s,size[2])
   if(s.mode==='silicone-box'){
     const bottom=min[2]-material.base,top=max[2]+s.siliconeThickness+material.wall
     const innerBottom=min[2],innerTop=top+2
@@ -526,13 +525,13 @@ function addContourVSeam(
   if(s.mode==='direct'){
     if(!plan.target)throw new Error('Contour mating requires a model.')
     path=contourAround(projectedHull(plan.target,axis),
-      s.vSeamSpacing+halfWidth,Math.max(2,s.vSeamWidth*2))
+      s.vSeamSpacing+s.clearance+halfWidth,Math.max(2,s.vSeamWidth*2))
     closed=true
   }else{
     if(axis==='z')throw new Error('Silicone-box V seams require a vertical X or Y split.')
     const k=axisIndex(axis),t=axis==='x'?1:0
     const mid=[center(outer.min[0],outer.max[0]),center(outer.min[1],outer.max[1])]
-    const inset=halfWidth+fit+1
+    const inset=halfWidth+fit+1.2+s.vSeamSpacing
     let edgeLo=outer.min[t],edgeHi=outer.max[t]
     if(plan.cylinder){
       const dx=split-mid[k]
