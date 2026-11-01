@@ -11,6 +11,9 @@ describe('Mold Making configuration',()=>{
     expect(DEFAULT_MOLD_SETTINGS.clearance).toBe(0)
     expect(DEFAULT_MOLD_SETTINGS.offsetQuality).toBe('balanced')
     expect(DEFAULT_MOLD_SETTINGS.keyStyle).toBe('v-seam')
+    expect(DEFAULT_MOLD_SETTINGS.sideMargin).toBe(0)
+    expect(DEFAULT_MOLD_SETTINGS.baseThickness).toBe(0)
+    expect(DEFAULT_MOLD_SETTINGS.wallThickness).toBe(0)
     expect(parseMoldSettings({...DEFAULT_MOLD_SETTINGS,parts:3}).parts).toBe(3)
   })
   it('preserves quality through project settings and applies the default to legacy projects',()=>{
@@ -57,10 +60,11 @@ describe('Mold Making configuration',()=>{
     expect(()=>parseMoldSettings({...DEFAULT_MOLD_SETTINGS,keyPositions:[-1]})).toThrow(/1–99/)
     // Direct molds use 2D keyPoints; silicone boxes use 1D height keyPositions.
     expect(()=>parseMoldSettings({...DEFAULT_MOLD_SETTINGS,mode:'direct',keyStyle:'tapered-key',keyPlacement:'manual',keyPoints:[]})).toThrow(/manual/)
-    expect(()=>parseMoldSettings({...DEFAULT_MOLD_SETTINGS,mode:'silicone-box',keyPlacement:'manual',keyPositions:[]})).toThrow(/manual/)
+    expect(()=>parseMoldSettings({...DEFAULT_MOLD_SETTINGS,mode:'silicone-box',keyStyle:'metal-dowel',keyPlacement:'manual',keyPositions:[]})).toThrow(/manual/)
     expect(()=>parseMoldSettings({...DEFAULT_MOLD_SETTINGS,mode:'direct',keyStyle:'tapered-key',keyPlacement:'manual',keyPositions:[]})).not.toThrow()
     expect(()=>parseMoldSettings({...DEFAULT_MOLD_SETTINGS,mode:'direct',keyStyle:'v-seam',keyPlacement:'manual',keyPoints:[]})).not.toThrow()
-    expect(()=>parseMoldSettings({...DEFAULT_MOLD_SETTINGS,mode:'silicone-box',keyPlacement:'manual',keyPoints:[]})).not.toThrow()
+    expect(()=>parseMoldSettings({...DEFAULT_MOLD_SETTINGS,mode:'silicone-box',keyStyle:'metal-dowel',keyPlacement:'manual',keyPoints:[]})).not.toThrow()
+    expect(()=>parseMoldSettings({...DEFAULT_MOLD_SETTINGS,mode:'silicone-box',keyPlacement:'manual',keyPositions:[]})).not.toThrow()
   })
   it('saves all newer settings in project/undo recipes',()=>{
     const state={...DEFAULT_MOLD_SETTINGS,mode:'silicone-box' as const,
@@ -79,12 +83,19 @@ describe('Mold Making configuration',()=>{
   it('rejects invalid modes, part counts, angles, clearances and dimensions',()=>{
     for(const bad of [null,{...DEFAULT_MOLD_SETTINGS,mode:'other'},
       {...DEFAULT_MOLD_SETTINGS,parts:5},{...DEFAULT_MOLD_SETTINGS,boxShape:'triangle'},
-      {...DEFAULT_MOLD_SETTINGS,boxDraftDeg:25},{...DEFAULT_MOLD_SETTINGS,wallThickness:0},
+      {...DEFAULT_MOLD_SETTINGS,boxDraftDeg:25},{...DEFAULT_MOLD_SETTINGS,clampTabCount:-1},
       {...DEFAULT_MOLD_SETTINGS,clearance:-1},{...DEFAULT_MOLD_SETTINGS,sideMargin:Infinity}]){
         expect(()=>parseMoldSettings(bad)).toThrow()
       }
     expect(validMoldDimension('clearance',0)).toBe(true)
     expect(validMoldDimension('wallThickness',NaN)).toBe(false)
+    expect(validMoldDimension('wallThickness',0)).toBe(true)
+    expect(validMoldDimension('baseThickness',0)).toBe(true)
+    expect(validMoldDimension('vSeamSpacing',0)).toBe(true)
+    expect(validMoldDimension('clampTabCount',3.5)).toBe(false)
+    const saved={...DEFAULT_MOLD_SETTINGS,vSeamWidth:3.8,vSeamSpacing:2.2,
+      clampTabCount:5,clampTabProjection:18}
+    expect(parseMoldSettings(saved)).toEqual(saved)
   })
   it('resets a project lacking settings',()=>{
     useMold.getState().setMode('silicone-box')

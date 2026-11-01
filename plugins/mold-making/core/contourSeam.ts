@@ -83,18 +83,19 @@ export function contourAround(hull:readonly P[],offset:number,spacing=3):P[]{
  */
 export function triangularContourTube(
   path:readonly P[],axis:SplitAxis,split:number,halfWidth:number,
-  back:number,front:number,
+  back:number,front:number,closed=true,
 ):Triangles {
   if(path.length<3||halfWidth<=0||!(front>back))throw new Error('Invalid V-seam geometry.')
   const [k,u,v]=planeAxes(axis)
   const pos=new Float32Array(path.length*9)
-  const indexed=new Uint32Array(path.length*18)
+  const indexed=new Uint32Array((closed?path.length:path.length-1)*18+(closed?0:6))
   const put=(i:number,slot:number,x:number,y:number,normalPos:number)=>{
     const j=(i*3+slot)*3
     pos[j+k]=normalPos;pos[j+u]=x;pos[j+v]=y
   }
   for(let i=0;i<path.length;i++){
-    const prev=path[(i+path.length-1)%path.length],next=path[(i+1)%path.length]
+    const prev=path[closed?(i+path.length-1)%path.length:Math.max(0,i-1)]
+    const next=path[closed?(i+1)%path.length:Math.min(path.length-1,i+1)]
     const dx=next[0]-prev[0],dy=next[1]-prev[1]
     const d=Math.hypot(dx,dy)
     if(d<1e-8)throw new Error('V-seam contour contains coincident points.')
@@ -105,13 +106,19 @@ export function triangularContourTube(
     put(i,2,p[0],p[1],split+front)
   }
   let cursor=0
-  for(let i=0;i<path.length;i++){
+  for(let i=0;i<(closed?path.length:path.length-1);i++){
     const j=(i+1)%path.length
     for(const [a,b] of [[0,1],[1,2],[2,0]]){
       const x=i*3+a,y=i*3+b,z=j*3+a,w=j*3+b
       indexed[cursor++]=x;indexed[cursor++]=y;indexed[cursor++]=z
       indexed[cursor++]=z;indexed[cursor++]=y;indexed[cursor++]=w
     }
+  }
+  if(!closed){
+    // An open U-profile on a silicone box has solid caps at both ends.
+    indexed[cursor++]=0;indexed[cursor++]=2;indexed[cursor++]=1
+    const end=(path.length-1)*3
+    indexed[cursor++]=end;indexed[cursor++]=end+1;indexed[cursor++]=end+2
   }
   // Ring direction and its 3D axis can flip the mesh's handedness.
   // Select outward winding from the exact signed volume.

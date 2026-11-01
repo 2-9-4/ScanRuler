@@ -5,6 +5,7 @@ import {beforeAll,describe,expect,it} from 'vitest'
 import Module,{type ManifoldToplevel,type Manifold} from 'manifold-3d'
 import {DEFAULT_MOLD_SETTINGS} from '../core/settings'
 import {boxSolid,buildMold,planMold,seamPositions,registrationSites,toPart} from '../core/geometry'
+import type {MoldSettings} from '../core/settings'
 import {closedness} from '../../mesh-tools/core/boolean'
 import {signedVolume} from '../../mesh-tools/core/hollow'
 
@@ -12,6 +13,16 @@ let wasm:ManifoldToplevel
 beforeAll(async()=>{wasm=await Module();wasm.setup()})
 const master=boxSolid({min:[-5,-4,0],max:[5,4,10]})
 const noKeys={...DEFAULT_MOLD_SETTINGS,keys:false} as const
+/** Compare physical features against an otherwise identical unkeyed block,
+ * not a much smaller block built with only the minimum no-key backing. */
+const matchedBlank=(target:typeof master,settings:MoldSettings):MoldSettings=>{
+  const keyed=planMold(target,settings).material
+  const blank=planMold(target,{...settings,keys:false}).material
+  return {...settings,keys:false,
+    sideMargin:settings.sideMargin+keyed.side-blank.side,
+    baseThickness:settings.baseThickness+keyed.base-blank.base,
+    wallThickness:settings.wallThickness+keyed.wall-blank.wall}
+}
 const intact=(parts:ReturnType<typeof buildMold>['parts'])=>{
   for(const p of parts){
     expect(p.volumeMm3).toBeGreaterThan(0)
@@ -243,8 +254,9 @@ describe('Mold Making assembly',()=>{
       .toThrow(/Registration height.*too close/)
   })
   it('creates four keyed halves without splitting through a pre-existing registration pin',()=>{
-    const plain=buildMold(wasm,master,{...noKeys,parts:4})
-    const keyed=buildMold(wasm,master,{...DEFAULT_MOLD_SETTINGS,parts:4})
+    const settings={...DEFAULT_MOLD_SETTINGS,parts:4 as const}
+    const plain=buildMold(wasm,master,matchedBlank(master,settings))
+    const keyed=buildMold(wasm,master,settings)
     expect(keyed.parts).toHaveLength(4)
     intact(keyed.parts)
     const netMaterialDelta=Math.abs(keyed.volumeMm3-plain.volumeMm3)
@@ -260,8 +272,15 @@ describe('Mold Making assembly',()=>{
   })
   it('increases cavity volume (reduces printed block volume) for positive clearance',()=>{
     const common={...DEFAULT_MOLD_SETTINGS,keys:false}
-    const zero=buildMold(wasm,master,common)
-    const clearance=buildMold(wasm,master,{...common,clearance:0.1})
+    const grown={...common,clearance:0.1}
+    const zeroPlan=planMold(master,common)
+    const expanded=planMold(master,grown)
+    // The new automatic mold material enlarges the block WITH the cavity;
+    // compare two cavity sizes only after making the external blocks equal.
+    const zero=buildMold(wasm,master,{...common,
+      sideMargin:expanded.material.side-zeroPlan.material.side,
+      baseThickness:expanded.material.base-zeroPlan.material.base})
+    const clearance=buildMold(wasm,master,grown)
     expect(clearance.volumeMm3).toBeLessThan(zero.volumeMm3)
     expect(clearance.openingZ).toBeNull()
     intact(clearance.parts)
@@ -287,14 +306,14 @@ describe('Mold Making assembly',()=>{
     expect(made.warnings.join(' ')).not.toMatch(/source repair was OFF/i)
   })
   it('builds a continuous V-ridge and matching groove around the projected outline with external clamping ears',()=>{
-    const without=buildMold(wasm,master,{...DEFAULT_MOLD_SETTINGS,keys:false})
-    const withSeam=buildMold(wasm,master,{...DEFAULT_MOLD_SETTINGS,keyStyle:'v-seam'})
+    const settings={...DEFAULT_MOLD_SETTINGS,keyStyle:'v-seam' as const}
+    const without=buildMold(wasm,master,matchedBlank(master,settings))
+    const withSeam=buildMold(wasm,master,settings)
     expect(withSeam.parts).toHaveLength(2)
     expect(withSeam.printable).toBe(true)
     intact(withSeam.parts)
     expect(withSeam.warnings.join(' ')).toMatch(/continuous contour-following triangular/)
-    const totalBefore=without.volumeMm3
-    expect(Math.abs(withSeam.volumeMm3-totalBefore)).toBeLessThan(1600)
+    expect(withSeam.volumeMm3).toBeGreaterThan(without.volumeMm3)
     // Ears must extend outside the unkeyed mold's Y bounds.
     const bounds=(a:typeof withSeam.parts)=>a.flatMap(p=>{
       const ys:number[]=[]
@@ -305,6 +324,41 @@ describe('Mold Making assembly',()=>{
     expect(Math.min(...after)).toBeLessThan(Math.min(...before)-1)
     expect(Math.max(...after)).toBeGreaterThan(Math.max(...before)+1)
   })
+  it('uses the requested V-seam width, offset and larger clamp tab count without rejecting zero extra margins',()=>{
+    const settings={...DEFAULT_MOLD_SETTINGS,sideMargin:0,baseThickness:0,
+      vSeamWidth:4,vSeamHeight:3.5,vSeamSpacing:2.5,
+      clampTabCount:4,clampTabWidth:10,clampTabProjection:16,clampTabThickness:9}
+    const plan=planMold(master,settings)
+    expect(plan.material.side).toBeGreaterThan(settings.vSeamSpacing+settings.vSeamWidth)
+    expect(plan.material.base).toBeGreaterThan(settings.vSeamWidth)
+    const generated=buildMold(wasm,master,settings)
+    expect(generated.parts).toHaveLength(2)
+    expect(generated.printable).toBe(true)
+    intact(generated.parts)
+  })
+  it.each(['rectangular','cylindrical'] as const)(
+    'makes an attached U-shaped V-seam on a %s silicone box, keeping the pouring opening',
+    (boxShape)=>{
+      const settings={...DEFAULT_MOLD_SETTINGS,mode:'silicone-box' as const,
+        boxShape,splitAxis:'x' as const,keys:true,keyStyle:'v-seam' as const,
+        wallThickness:0,baseThickness:0,clampTabCount:2,clampTabWidth:8}
+      const result=buildMold(wasm,master,settings)
+      expect(result.parts).toHaveLength(2)
+      intact(result.parts)
+      expect(result.printable).toBe(true)
+      expect(result.warnings.join(' ')).toMatch(/wall-supported U-shaped/)
+      const plan=planMold(master,settings)
+      expect(plan.material.wall).toBeGreaterThan(settings.vSeamWidth)
+    })
+  it('supports a closed V-seam on a silicone-box horizontal Z split',()=>{
+    const settings={...DEFAULT_MOLD_SETTINGS,mode:'silicone-box' as const,
+      keys:true,keyStyle:'v-seam' as const,splitAxis:'z' as const,
+      clampTabCount:2,clampTabWidth:8}
+    const result=buildMold(wasm,master,settings)
+    expect(result.parts).toHaveLength(2)
+    expect(result.printable).toBe(true)
+    intact(result.parts)
+  })
   it('cuts three 120-degree radial sectors of cylindrical tooling',()=>{
     const target=boxSolid({min:[-5,-5,-5],max:[5,5,5]})
     const made=buildMold(wasm,target,{...DEFAULT_MOLD_SETTINGS,
@@ -312,8 +366,9 @@ describe('Mold Making assembly',()=>{
     expect(made.parts).toHaveLength(3)
     expect(made.printable).toBe(true)
     intact(made.parts)
-    const r=Math.hypot(5,5)+DEFAULT_MOLD_SETTINGS.sideMargin
-    const height=10+2*DEFAULT_MOLD_SETTINGS.baseThickness
+    const planned=planMold(target,{...DEFAULT_MOLD_SETTINGS,parts:3})
+    const r=Math.hypot(5,5)+planned.material.side
+    const height=10+2*planned.material.base
     const targetVolume=1000
     const expectedVolume=Math.PI*r*r*height-targetVolume
     expect(made.volumeMm3).toBeGreaterThan(expectedVolume*0.96)
@@ -334,9 +389,15 @@ describe('Mold Making assembly',()=>{
     expect(created.printable).toBe(true)
     expect(created.parts).toHaveLength(2)
   })
-  it('rejects a cavity offset that would puncture top or bottom of the mold',()=>{
-    expect(()=>buildMold(wasm,master,{...noKeys,clearance:4.2}))
-      .toThrow(/base\/top thickness|breaks through/)
+  it('automatically expands the mold backing to fit a large requested cavity clearance',()=>{
+    const settings={...noKeys,clearance:4.2,sideMargin:0,baseThickness:0}
+    const plan=planMold(master,settings)
+    expect(plan.material.side).toBeGreaterThan(4.2)
+    expect(plan.material.base).toBeGreaterThan(4.2)
+    const made=buildMold(wasm,master,settings)
+    expect(made.parts).toHaveLength(2)
+    expect(made.printable).toBe(true)
+    intact(made.parts)
   })
   it('rejects invalid geometry without relying on an arbitrary triangle aspect ratio',()=>{
     // Extremely skinny but nonzero-area triangles are valid. Ordinary
@@ -367,8 +428,9 @@ describe('Mold Making assembly',()=>{
       .toThrow(/overlaps/)
   })
   it('cuts matching blind metal-dowel sockets in both mating halves',()=>{
-    const plain=buildMold(wasm,master,{...DEFAULT_MOLD_SETTINGS,keys:false})
-    const sockets=buildMold(wasm,master,{...DEFAULT_MOLD_SETTINGS,keyStyle:'metal-dowel'})
+    const settings={...DEFAULT_MOLD_SETTINGS,keyStyle:'metal-dowel' as const}
+    const plain=buildMold(wasm,master,matchedBlank(master,settings))
+    const sockets=buildMold(wasm,master,settings)
     expect(sockets.parts).toHaveLength(2)
     intact(sockets.parts)
     expect(sockets.parts[0].volumeMm3).toBeLessThan(plain.parts[0].volumeMm3)
@@ -376,8 +438,9 @@ describe('Mold Making assembly',()=>{
     expect(sockets.warnings.join(' ')).toMatch(/metal dowels/)
   })
   it('makes tapered printed male keys and clearance-fit female cavities',()=>{
-    const plain=buildMold(wasm,master,{...DEFAULT_MOLD_SETTINGS,keys:false})
-    const m=buildMold(wasm,master,{...DEFAULT_MOLD_SETTINGS,keyStyle:'tapered-key'})
+    const settings={...DEFAULT_MOLD_SETTINGS,keyStyle:'tapered-key' as const}
+    const plain=buildMold(wasm,master,matchedBlank(master,settings))
+    const m=buildMold(wasm,master,settings)
     expect(m.parts).toHaveLength(2)
     intact(m.parts)
     expect(m.parts[0].volumeMm3).toBeGreaterThan(plain.parts[0].volumeMm3)
@@ -389,8 +452,9 @@ describe('Mold Making assembly',()=>{
     intact(m.parts)
   })
   it('adds physical pins and corresponding negative pockets',()=>{
-    const plain=buildMold(wasm,master,noKeys)
-    const keyed=buildMold(wasm,master,{...DEFAULT_MOLD_SETTINGS,keyStyle:'tapered-key'})
+    const settings={...DEFAULT_MOLD_SETTINGS,keyStyle:'tapered-key' as const}
+    const plain=buildMold(wasm,master,matchedBlank(master,settings))
+    const keyed=buildMold(wasm,master,settings)
     expect(keyed.parts).toHaveLength(2)
     intact(keyed.parts)
     expect(keyed.parts[0].volumeMm3).toBeGreaterThan(plain.parts[0].volumeMm3)

@@ -5,24 +5,38 @@ import { ModelSlot } from '../../../src/ui/ModelSlot'
 import { useStore } from '../../../src/state/store'
 import { useDeviation } from '../../../src/state/deviationStore'
 import { MOLD_MODES,MOLD_MODE_LABELS,type MoldDimension,type PartCount,type SplitAxis,type BoxShape, type KeyStyle, type KeyPlacement, type OffsetQuality } from '../core/settings'
-import { useMold } from '../state/moldStore'
-import type { MoldBuild, Limits } from '../core/geometry'
+import { moldSettings, useMold } from '../state/moldStore'
+import { moldMaterial, type MoldBuild, type Limits } from '../core/geometry'
 import { KeyPositionEditor } from './KeyPositionEditor'
 import { PlaneKeyEditor } from './PlaneKeyEditor'
 import type { MoldPreviewMode } from '../viewer/moldPreview'
 
 const FIELDS:readonly {key:MoldDimension;label:string;help:string}[]=[
   {key:'clearance',label:'Cavity clearance (+ enlarges)',help:'Positive means a spherical dilation of the target solid, enlarging the casting cavity. A signed-distance field is sampled to generate a closed offset; small features may be lost at the chosen grid resolution.'},
-  {key:'sideMargin',label:'Outer margin',help:'Material beyond the target in X and Y, millimetres'},
-  {key:'baseThickness',label:'Base / top material',help:'Solid material outside the target bounds'},
-  {key:'wallThickness',label:'Printed wall',help:'Wall thickness of the silicone box'},
+  {key:'sideMargin',label:'Extra side material (mm)',help:'Additional solid material beyond the automatically calculated necessary side margin; zero is valid.'},
+  {key:'baseThickness',label:'Extra base / top material (mm)',help:'Additional material beyond the automatically calculated structural backing. Zero is valid.'},
+  {key:'wallThickness',label:'Extra silicone-box wall (mm)',help:'Added to the minimum safe printed wall; zero is valid.'},
   {key:'siliconeThickness',label:'Silicone space',help:'Distance between master and containment walls'},
   {key:'splitPosition',label:'Split location (0–1)',help:'Fraction of model bounds along selected X/Y/Z axis'},
-  {key:'keyDiameter',label:'Registration diameter',help:'Printed key base or nominal diameter of a separately inserted metal dowel'},
-  {key:'keyDepth',label:'Registration depth',help:'Printed pin engagement or blind hole depth in each half for a separate metal dowel'},
-  {key:'keyClearance',label:'Radial fit clearance',help:'Added radius to the female printed-key pocket or both metal-dowel holes'},
   {key:'boxDraftDeg',label:'Interior wall draft (°)',help:'Silicone containment-box wall taper; does not change the master cavity'},
   {key:'previewGap',label:'Exploded view gap',help:'Spacing between parts in the viewport. Zero shows assembled geometry.'},
+]
+const PIN_FIELDS:readonly {key:MoldDimension;label:string;help:string}[]=[
+  {key:'keyDiameter',label:'Pin / dowel diameter (mm)',help:'Printed pin diameter, or the nominal size of a separate steel dowel.'},
+  {key:'keyDepth',label:'Pin engagement / socket depth (mm)',help:'Length of the printed pin or the dowel socket.'},
+  {key:'keyClearance',label:'Pin / socket radial fit clearance (mm)',help:'Extra socket radius, separate from the V-seam groove clearance.'},
+]
+const V_FIELDS:readonly {key:MoldDimension;label:string;help:string}[]=[
+  {key:'vSeamWidth',label:'V-ridge base width (mm)',help:'Full width of the triangular ridge, measured along the parting face.'},
+  {key:'vSeamHeight',label:'V-ridge height (mm)',help:'How far the ridge projects into the matching half.'},
+  {key:'vSeamSpacing',label:'V-seam spacing from surface (mm)',help:'On direct molds, distance from the expanded cavity outline to the ridge inner side; on silicone boxes, additional inset from the outer wall.'},
+  {key:'vSeamClearance',label:'V-groove fit clearance (mm)',help:'Extra width/depth for the female V-groove, independent of pin/dowel clearance.'},
+]
+const TAB_FIELDS:readonly {key:MoldDimension;label:string;help:string}[]=[
+  {key:'clampTabCount',label:'Tabs per outside edge',help:'Number of clamping ears on each side of the seam. Two mating halves receive matching ears.'},
+  {key:'clampTabWidth',label:'Tab width / height (mm)',help:'Size of each tab along its distributing edge.'},
+  {key:'clampTabProjection',label:'Tab outside projection (mm)',help:'Distance tabs extend beyond the mold boundary for a clamp to grip.'},
+  {key:'clampTabThickness',label:'Tab thickness per half (mm)',help:'Thickness of each tab in the mold opening direction.'},
 ]
 export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,generated,targetBounds,previewMode,onPreviewModeChange,generating,error}:{
   onOpenScan:(file:File)=>void
@@ -60,10 +74,15 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
   const keyDiameter=useMold(s=>s.keyDiameter)
   const keyDepth=useMold(s=>s.keyDepth)
   const keyClearance=useMold(s=>s.keyClearance)
+  const vSeamWidth=useMold(s=>s.vSeamWidth),vSeamHeight=useMold(s=>s.vSeamHeight)
+  const vSeamSpacing=useMold(s=>s.vSeamSpacing),vSeamClearance=useMold(s=>s.vSeamClearance)
+  const clampTabCount=useMold(s=>s.clampTabCount),clampTabWidth=useMold(s=>s.clampTabWidth)
+  const clampTabProjection=useMold(s=>s.clampTabProjection),clampTabThickness=useMold(s=>s.clampTabThickness)
   const boxDraftDeg=useMold(s=>s.boxDraftDeg)
   const previewGap=useMold(s=>s.previewGap)
   const values={clearance,repairHoleSize,sideMargin,baseThickness,wallThickness,siliconeThickness,splitPosition,
-    keyDiameter,keyDepth,keyClearance,boxDraftDeg,previewGap}
+    keyDiameter,keyDepth,keyClearance,vSeamWidth,vSeamHeight,vSeamSpacing,vSeamClearance,
+    clampTabCount,clampTabWidth,clampTabProjection,clampTabThickness,boxDraftDeg,previewGap}
   const setSource=useMold(s=>s.setSource),setMode=useMold(s=>s.setMode)
   const setParts=useMold(s=>s.setParts),setSplitAxis=useMold(s=>s.setSplitAxis)
   const setBoxShape=useMold(s=>s.setBoxShape),setKeys=useMold(s=>s.setKeys)
@@ -75,10 +94,19 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
   const setOffsetQuality=useMold(s=>s.setOffsetQuality)
   const active=source==='scan'?scanName:refName
   const multi=parts>1
+  const usesV=keys&&parts===2&&keyStyle==='v-seam'
+  const usesPins=keys&&parts!==3&&!usesV
+  const material=moldMaterial(moldSettings(),targetBounds?targetBounds.max[2]-targetBounds.min[2]:undefined)
+  const fieldInput=({key,label,help}:{key:MoldDimension;label:string;help:string})=><label key={key} className="kv" title={help}>
+    <span className="name">{label}</span>
+    <input type="number" data-test={`mold-${key}`} min={key==='splitPosition'?0.1:0}
+      max={key==='splitPosition'?0.9:key==='boxDraftDeg'?12:key==='clampTabCount'?12:100000}
+      step={key==='splitPosition'?0.05:key==='clampTabCount'?1:0.1} value={values[key]}
+      onChange={e=>{if(e.target.value!=='')setDimension(key,Number(e.target.value))}}/>
+  </label>
   const fields=FIELDS.filter(({key})=>{
-    if(key==='previewGap')return true
+    if(key==='previewGap')return previewMode==='exploded'
     if(key==='splitPosition')return multi
-    if(['keyDiameter','keyDepth','keyClearance'].includes(key))return multi&&keys
     if(key==='boxDraftDeg')return mode==='silicone-box'
     if(mode==='direct')return ['clearance','sideMargin','baseThickness'].includes(key)
     if(mode==='silicone-box')return ['siliconeThickness','wallThickness','baseThickness'].includes(key)
@@ -171,18 +199,30 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
             ?'A continuous triangular tongue-and-groove follows a coarse projected outline of the target, inset from the outer mold edges. Paired ears extend outside the mold for external clamps; pin positions do not apply.'
             :mode==='direct'
             ?'Continuous contour seams currently require two mold parts. Four-part direct molds use the earlier discrete pins instead.'
-            :'Continuous contour seams currently require a two-part direct mold. Silicone boxes retain their external wall-boss registration.'}</p>}
-          {keyStyle!=='v-seam'&&<label className="kv"><span className="name">Key positions</span>
+            :parts===2
+            ?'Silicone boxes use a wall-supported U-shaped V-seam along both outside walls and the floor, preserving the open pouring rim.'
+            :'Four-part silicone boxes retain discrete exterior wall bosses.'}</p>}
+          {usesV&&<div className="mold-feature-section">
+            <div className="sec-head">V-seam · profile and spacing</div>
+            {V_FIELDS.map(fieldInput)}
+            <div className="sec-head">Clamping tabs · exterior ears</div>
+            {TAB_FIELDS.map(fieldInput)}
+            <p className="hint">All required backing is included automatically; additional material below is optional. The tabs are solid clamp ears, not predrilled bolt holes.</p>
+          </div>}
+          {usesPins&&<div className="mold-feature-section">
+            <div className="sec-head">Pins and dowels · size and placement</div>
+            {PIN_FIELDS.map(fieldInput)}
+          <label className="kv"><span className="name">Key positions</span>
             <select data-test="mold-key-placement" value={keyPlacement}
               onChange={e=>setKeyPlacement(e.target.value as KeyPlacement)}>
               <option value="auto">Automatically distribute</option>
               <option value="manual">{mode==='silicone-box'?'Edit heights on exterior wall':'Edit positions along seam'}</option>
-            </select></label>}
-          {keyStyle!=='v-seam'&&(mode==='direct'?
+            </select></label>
+          {mode==='direct'?
             <PlaneKeyEditor points={keyPoints} axis={splitAxis}
               manual={keyPlacement==='manual'} onChange={setKeyPoints}
               onManual={()=>setKeyPlacement('manual')} bounds={targetBounds}
-              sideMargin={sideMargin} baseThickness={baseThickness}
+              sideMargin={material.side} baseThickness={material.base}
               diameter={keyDiameter} clearance={keyClearance} cavityClearance={clearance}/>
             :<KeyPositionEditor
               positions={keyPositions}
@@ -191,7 +231,8 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
               onManual={()=>setKeyPlacement('manual')}
               diameter={keyDiameter}
               vertical
-            />)}
+            />}
+          </div>}
         </>}
       </>}
     </div>
@@ -213,14 +254,11 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
           ?'Balanced mode limits the distance-field workload. Grid spacing is shown in the generated warnings; use Fine for small surface detail.'
           :'Fine retains smaller features but can take substantially longer and use much more memory.'}
       </p>}
-      {fields.map(f=><label key={f.key} className="kv" title={f.help}>
-        <span className="name">{f.label}</span>
-        <input type="number" data-test={`mold-${f.key}`}
-          min={f.key==='splitPosition'?0.1:0}
-          max={f.key==='splitPosition'?0.9:f.key==='boxDraftDeg'?12:100000}
-          step={f.key==='splitPosition'?0.05:0.1} value={values[f.key]}
-          onChange={e=>{if(e.target.value!=='')setDimension(f.key,Number(e.target.value))}}/>
-      </label>)}
+      {fields.map(fieldInput)}
+      <p className="hint">Automatically required solid material: {mode==='direct'
+        ?`${material.side.toFixed(2)} mm at sides, ${material.base.toFixed(2)} mm above/below the model`
+        :`${material.wall.toFixed(2)} mm walls, ${material.base.toFixed(2)} mm base`}.
+        Extra margins add material on top of these calculated requirements and may be zero.</p>
     </div>
     <div className="group">
       <div className="sec-head">5. Generate, inspect &amp; export</div>
@@ -244,10 +282,11 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
       {generated&&<div data-test="mold-result">
         <div className="kindrow featurekeys" role="radiogroup" aria-label="Mold preview mode">
           <button type="button" role="radio" aria-checked={previewMode==='section'} className={previewMode==='section'?'on':undefined}
-            onClick={()=>onPreviewModeChange('section')}>Assembled + cross-section</button>
+            onClick={()=>onPreviewModeChange('section')}>Assembled</button>
           <button type="button" role="radio" aria-checked={previewMode==='exploded'} className={previewMode==='exploded'?'on':undefined}
             onClick={()=>onPreviewModeChange('exploded')}>Exploded</button>
         </div>
+        <p className="hint">Assembled view opens the app's built-in Section view. Use the main Section toolbar to move, flip or close the cross-section; these buttons only control assembly layout.</p>
         <div className="kv"><span className="name">{generated.printable?'Exportable solids':'Preview-only solids'}</span><b>{generated.parts.length}</b></div>
         {!generated.printable&&<p className="hint mold-warning" role="alert">
           NOT PRINTABLE: fragmented geometry was detected. Export is disabled. These parts are provided only to inspect the failure.

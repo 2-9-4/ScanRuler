@@ -21,8 +21,11 @@ export interface MoldSettings {
   repairTarget: boolean
   /** Maximum edge-to-edge span of an open rim allowed for automatic patching. */
   repairHoleSize: number
+  /** Extra side material over calculated minimum (mm). */
   sideMargin: number
+  /** Extra top/bottom material over calculated minimum (mm). */
   baseThickness: number
+  /** Extra silicone-box wall material over calculated minimum (mm). */
   wallThickness: number
   siliconeThickness: number
   parts: PartCount
@@ -41,6 +44,18 @@ export interface MoldSettings {
   keyDiameter: number
   keyDepth: number
   keyClearance: number
+  /** V-ridge full base width and protruding height, millimetres. */
+  vSeamWidth: number
+  vSeamHeight: number
+  /** Minimum distance from the projected cavity outline to the ridge's nearer edge. */
+  vSeamSpacing: number
+  /** Independent V-groove fit clearance (not pin clearance). */
+  vSeamClearance: number
+  /** Number of clamp ears per outside edge of the seam. */
+  clampTabCount: number
+  clampTabWidth: number
+  clampTabProjection: number
+  clampTabThickness: number
   /** Silicone box *interior wall* draft, degrees, widening at the opening. */
   boxDraftDeg: number
   /** Display-only gap between printed components; not applied to STL parts. */
@@ -57,9 +72,9 @@ export const DEFAULT_MOLD_SETTINGS: Readonly<MoldSettings> = Object.freeze({
   offsetQuality: 'balanced',
   repairTarget: true,
   repairHoleSize: 2,
-  sideMargin: 8,
-  baseThickness: 4,
-  wallThickness: 3,
+  sideMargin: 0,
+  baseThickness: 0,
+  wallThickness: 0,
   siliconeThickness: 12,
   parts: 2,
   splitAxis: 'x',
@@ -73,6 +88,14 @@ export const DEFAULT_MOLD_SETTINGS: Readonly<MoldSettings> = Object.freeze({
   keyDiameter: 3,
   keyDepth: 3,
   keyClearance: 0.2,
+  vSeamWidth: 2.4,
+  vSeamHeight: 2.4,
+  vSeamSpacing: 1.5,
+  vSeamClearance: 0.2,
+  clampTabCount: 3,
+  clampTabWidth: 16,
+  clampTabProjection: 12,
+  clampTabThickness: 8,
   boxDraftDeg: 1,
   previewGap: 3,
 })
@@ -82,7 +105,10 @@ export type MoldDimension = Exclude<{
 }[keyof MoldSettings], 'parts'>
 export const MOLD_DIMENSIONS: readonly MoldDimension[] = [
   'clearance', 'repairHoleSize', 'sideMargin', 'baseThickness', 'wallThickness', 'siliconeThickness',
-  'splitPosition', 'keyDiameter', 'keyDepth', 'keyClearance', 'boxDraftDeg', 'previewGap',
+  'splitPosition', 'keyDiameter', 'keyDepth', 'keyClearance',
+  'vSeamWidth', 'vSeamHeight', 'vSeamSpacing', 'vSeamClearance',
+  'clampTabCount', 'clampTabWidth', 'clampTabProjection', 'clampTabThickness',
+  'boxDraftDeg', 'previewGap',
 ]
 export const MOLD_SETTING_KEYS: readonly (keyof MoldSettings)[] = [
   'source', 'mode', ...MOLD_DIMENSIONS, 'offsetQuality', 'repairTarget', 'parts', 'splitAxis', 'boxShape', 'keys',
@@ -91,8 +117,10 @@ export const MOLD_SETTING_KEYS: readonly (keyof MoldSettings)[] = [
 export function validMoldDimension(key: MoldDimension, value: number): boolean {
   if (!Number.isFinite(value)) return false
   if (key === 'splitPosition') return value >= 0.1 && value <= 0.9
+  if (key === 'clampTabCount') return Number.isInteger(value) && value>=0 && value<=12
   if (key === 'boxDraftDeg') return value >= 0 && value <= 12
-  if (key === 'previewGap' || key === 'clearance' || key === 'sideMargin' || key === 'keyClearance') {
+  if (key === 'previewGap' || key === 'clearance' || key === 'sideMargin' || key === 'baseThickness' ||
+      key === 'wallThickness' || key === 'keyClearance' || key === 'vSeamClearance' || key === 'vSeamSpacing') {
     return value >= 0 && value <= 100_000
   }
   return value > 0 && value <= 100_000
@@ -124,9 +152,9 @@ export function parseMoldSettings(value: unknown): MoldSettings {
   ))throw new Error('Alignment points must be pairs of fractions between 1% and 99%.')
   if(new Set(parsed.keyPoints.map(p=>p.join(','))).size!==parsed.keyPoints.length)
     throw new Error('Alignment points must have distinct coordinates.')
-  if(parsed.keys&&parsed.parts!==3&&parsed.keyStyle!=='v-seam'&&parsed.keyPlacement==='manual'&&parsed.mode==='direct'&&parsed.keyPoints.length===0)
+  if(parsed.keys&&parsed.parts!==3&&(parsed.keyStyle!=='v-seam'||parsed.parts===4)&&parsed.keyPlacement==='manual'&&parsed.mode==='direct'&&parsed.keyPoints.length===0)
     throw new Error('Add manual alignment points or disable registration.')
-  if(parsed.keys&&parsed.parts!==3&&parsed.keyPlacement==='manual'&&parsed.mode==='silicone-box'&&parsed.keyPositions.length===0)
+  if(parsed.keys&&parsed.parts!==3&&(parsed.keyStyle!=='v-seam'||parsed.parts===4)&&parsed.keyPlacement==='manual'&&parsed.mode==='silicone-box'&&parsed.keyPositions.length===0)
     throw new Error('Add manual registration heights or disable registration.')
   for (const key of MOLD_DIMENSIONS) {
     if (typeof parsed[key] !== 'number' || !validMoldDimension(key, parsed[key])) {

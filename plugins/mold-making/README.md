@@ -77,24 +77,43 @@ parting plane with rounded corners rather than placing isolated pins in block
 corners. This is deliberately an **outer approximation** of the target's
 projected geometry; small concavities are not followed, so the registration
 does not enter the cast cavity. The ridge is backed by solid material and the
-socket includes radial fit clearance. Two paired exterior ears on each
+socket includes radial fit clearance. Multiple user-sized exterior ears on each
 mating half permit applying external clamps (no automatic holes or clamp
-hardware specification). If the outline and backing thickness cannot
-accommodate the profile, generation refuses to create unsafe material.
+hardware specification). The minimum necessary backing is now automatically calculated from the
+seam dimensions, so zero extra margins are valid.
 
-This contour method is currently implemented for **two-part direct
-molds**. Four-part direct molds retain discrete registration instead of
-a continuous V seam, and threefold radial sectors currently have **no
-automatic registration**; these limitations are reported in the UI and
-output warnings. Silicone containment boxes retain their exterior
-registration bosses rather than adding a contour V.
+This contour method is implemented for **two-part direct molds**,
+including X/Y/Z splits. Two-part **silicone containment boxes** also have a
+V-seam: a **capped U-profile** follows the two outer sidewalls and solid base
+for an X/Y split, leaving the top pour opening unobstructed; a horizontal Z
+split uses a **closed ring** supported by the printed walls. Round boxes
+follow a circular wall profile. Four-part molds retain discrete pins/bosses,
+and threefold radial sectors currently have no automatic registration.
+
+The V seam has its own **width, height, offset/spacing from the target or
+outer walls, and groove fit clearance**. These dimensions do not depend on
+the pin diameter or pin fit. External clamping tabs have independent
+**count per outside edge, width along that edge, projection from the
+mold exterior, and thickness per half**. Increasing their count/width
+may increase the generated backing to fit distinct tabs.
+
+**Dimension fields called "extra" default to zero**. The generator first
+calculates the minimum solid wall/backing necessary for the selected cavity
+clearance, registration feature, and tab layout, then adds the user's extra
+side/base/wall material. Entering zero does not turn off necessary
+structural walls. Silicone space remains an explicit physical distance.
+Old saved project dimensions named sideMargin/baseThickness/wallThickness are
+still accepted and now represent additional material, so legacy projects
+with positive values can generate larger molds than previously.
 
 The default 3D result view is the **assembled mold with the original
 source model visible and a section plane perpendicular to the primary
 parting plane**. Toggle to an exploded preview in the mold panel; only
-the separate mold pieces are included in STL/3MF export. The sectional
-view uses the main viewport's section clipping and temporarily changes
-source visibility.
+the separate mold pieces are included in STL/3MF export. The assembled preview opens the application’s native section-view store,
+including its existing interactive plane gizmo and ViewBar controls. The
+mold meshes use ScanRuler's native `CapSet` to close the sectioned faces
+with the same stencil caps as other scene layers, rather than just clipping
+open surface shells. The previous section-view state is restored on exit.
 
 **Threefold** splits use three vertical 120-degree radial sectors around the
 target's XY bounds center, with a cylindrical outside for direct mold

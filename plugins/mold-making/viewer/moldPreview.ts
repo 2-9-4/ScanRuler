@@ -5,14 +5,16 @@
 import * as THREE from 'three'
 import type { SceneManager } from '../../../src/viewer/SceneManager'
 import type { SceneLayer } from '../../../src/viewer/sceneLayers'
+import { CapSet, CAP_SLOT, cutColor } from '../../../src/viewer/sliceCap'
 import type { MoldBuild } from '../core/geometry'
-import type { MoldSource, SplitAxis } from '../core/settings'
-import type { SectionFrame } from '../../../src/core/section/frame'
+import type { MoldSource } from '../core/settings'
 
 export type MoldPreviewMode = 'section' | 'exploded'
 
 export class MoldPreview {
   private host: ReturnType<SceneManager['layerHost']>
+  private readonly caps=new CapSet()
+  private activeSection:THREE.Plane[]|null=null
   private group = new THREE.Group()
   private meshes:THREE.Mesh[]=[]
   private parts:THREE.Group[]=[]
@@ -21,7 +23,6 @@ export class MoldPreview {
   private priorNominal:boolean|null=null
   private priorScan:boolean|null=null
   private viewMode:MoldPreviewMode='section'
-  private splitAxis:SplitAxis='x'
   private bounds:MoldBuild['targetBounds']|null=null
   private explodeGap=3
   private extent=0
@@ -29,13 +30,16 @@ export class MoldPreview {
     this.host=scene.layerHost()
     const layer:SceneLayer={
       order:80,
-      clippingChanged:(planes)=>{
+      clippingChanged:(planes,section)=>{
         for(const mesh of this.meshes){
           const m=mesh.material as THREE.MeshStandardMaterial
           m.clippingPlanes=planes??[]
           m.needsUpdate=true
         }
+        this.activeSection=section?planes:null
+        this.refreshCaps()
       },
+      themeChanged:()=>this.refreshCaps(),
       partMoved:()=>this.changed(),
       scanReplaced:()=>{if(this.source==='scan')this.changed()},
       frameBox:()=>this.group.visible&&this.meshes.length?new THREE.Box3().setFromObject(this.group):null,
@@ -44,10 +48,15 @@ export class MoldPreview {
     this.group.name='Mold Making — print components'
     this.remove=scene.addLayer(layer)
   }
-  set(build:MoldBuild,source:MoldSource,gap:number,mode:MoldPreviewMode='section',splitAxis:SplitAxis='x'):void {
+  private refreshCaps():void {
+    this.caps.update(this.group.visible?this.activeSection:null,
+      this.meshes.map((mesh,i)=>({
+        mesh,slot:CAP_SLOT.layers+i,color:cutColor(CAP_SLOT.layers+i),
+      })),this.host.theme())
+  }
+  set(build:MoldBuild,source:MoldSource,gap:number,mode:MoldPreviewMode='section'):void {
     this.clear()
     this.source=source
-    this.splitAxis=splitAxis
     this.bounds=build.targetBounds
     this.explodeGap=gap
     this.viewMode=mode
@@ -84,25 +93,13 @@ export class MoldPreview {
       this.group.add(part)
     }
     this.setMode(mode)
+    this.refreshCaps()
   }
   setMode(mode:MoldPreviewMode):void {
     this.viewMode=mode
     const active=mode==='section'
     if(this.source==='reference')this.scene.setNominalVisible(active)
     else this.scene.setScanVisible(active)
-    if(active){
-      const bounds=this.bounds
-      if(bounds){
-        const origin:[number,number,number]=bounds.min.map((v,i)=>(v+bounds.max[i])/2) as [number,number,number]
-        // Section through the master, perpendicular to the first parting
-        // plane, so both mating sections and the cavity are visible together.
-        const normal:[number,number,number]=this.splitAxis==='x'?[0,1,0]:[1,0,0]
-        const basisU:[number,number,number]=this.splitAxis==='x'?[-1,0,0]:[0,1,0]
-        const basisV:[number,number,number]=[0,0,1]
-        const section:SectionFrame={origin,normal,basisU,basisV}
-        this.scene.setSectionView(section)
-      }
-    }else this.scene.setSectionView(null)
     this.setGap(active?0:Math.max(this.explodeGap,1))
   }
   setGap(gap:number):void {
@@ -121,19 +118,18 @@ export class MoldPreview {
     if(!visible&&this.bounds){
       // A section view belongs to the mold workspace, not to whichever
       // workspace is opened next.
-      this.scene.setSectionView(null)
       if(this.source==='reference'&&this.priorNominal!==null)
         this.scene.setNominalVisible(this.priorNominal)
       else if(this.source==='scan'&&this.priorScan!==null)
         this.scene.setScanVisible(this.priorScan)
     }else if(this.bounds)this.setMode(this.viewMode)
+    this.refreshCaps()
     this.host.invalidate()
   }
   clear():void {
-    if(this.bounds){
-      this.scene.setSectionView(null)
-      this.bounds=null
-    }
+    this.caps.update(null,[],this.host.theme())
+    this.activeSection=null
+    this.bounds=null
     this.group.parent?.remove(this.group)
     for(const mesh of this.meshes){
       mesh.geometry.dispose()
@@ -153,5 +149,5 @@ export class MoldPreview {
     }
     this.host.invalidate()
   }
-  dispose():void{this.remove()}
+  dispose():void{this.remove();this.caps.dispose()}
 }
