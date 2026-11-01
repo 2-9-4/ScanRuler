@@ -191,6 +191,19 @@ describe('Mold Making assembly',()=>{
     expect(()=>buildMold(wasm,master,{...common,pourFunnelDiameter:100}))
       .toThrow(/side wall/)
   })
+  it('keeps optional channel openings in a single sector of both threefold and quartered tooling',()=>{
+    const target=boxSolid({min:[-5,-5,0],max:[5,5,10]})
+    for(const parts of [3,4] as const){
+      const placement=parts===3?[0.05,0.5]:[0.08,0.08]
+      const settings={...DEFAULT_MOLD_SETTINGS,keys:false,parts,
+        pourEnabled:true,pourPoint:placement as [number,number]}
+      const result=buildMold(wasm,target,settings)
+      expect(result.parts).toHaveLength(parts)
+      expect(result.printable).toBe(true)
+      intact(result.parts)
+      expect(result.warnings.join(' ')).toMatch(/1 vertical pour channel/)
+    }
+  })
   it('builds a silicone containment box from an OPEN scan without any mesh repair',()=>{
     // Two triangles removed from a face: four boundary edges.
     const open={positions:master.positions,
