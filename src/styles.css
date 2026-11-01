@@ -4375,3 +4375,26 @@ button.x:disabled {
   min-width: 26px;
   padding: 3px 6px;
 }
+
+/* Mold Making: mutually exclusive, clearly separated registration controls. */
+[data-test="mold-making-panel"] .mold-feature-section {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  margin: 8px 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--well);
+}
+[data-test="mold-making-panel"] .mold-feature-section .sec-head {
+  margin-top: 5px;
+  padding-top: 2px;
+}
+[data-test="mold-making-panel"] .mold-feature-section .sec-head:not(:first-child) {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  margin-top: 8px;
+}
+[data-test="mold-making-panel"] .mold-feature-section .kv {
+  min-width: 0;
+}
