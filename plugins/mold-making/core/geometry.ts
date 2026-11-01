@@ -76,7 +76,9 @@ export interface MoldPlan {
 }
 export function planMold(target:Triangles,settings:MoldSettings):MoldPlan {
   const s=parseMoldSettings(settings)
-  if(!target.positions.length||!target.indices.length)throw new Error('Load a solid target.')
+  // A containment box is sized from model bounds, not its topology: even
+  // an open/non-manifold scan can be used as a reference for the container.
+  if(!target.positions.length||(s.mode!=='silicone-box'&&!target.indices.length))throw new Error('Load a target mesh.')
   const {min,max}=extentOf(target.positions)
   const size=min.map((v,i)=>max[i]-v)
   if(size.some(x=>!Number.isFinite(x)||x<=EPS))throw new Error('Target has zero extent.')
@@ -293,15 +295,26 @@ function keyFourParts(
 /** Full-height negative, then one or two exact parting operations. */
 export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:MoldSettings,onProgress?:(s:string)=>void):MoldBuild {
   const s=parseMoldSettings(settings)
-  // Only the temporary geometry-worker copy is repaired, never the stored
-  // scan/reference or STEP source. Always surface exactly what changed.
-  const repaired=repairMoldTarget(targetMesh,s.repairTarget,s.repairHoleSize,onProgress)
-  targetMesh=repaired.mesh
-  check(targetMesh,'Target')
+  const warnings:string[]=[]
+  if(s.mode==='silicone-box'){
+    // Unlike a direct-negative cavity or conformal shell, a silicone
+    // containment box never uses the target as a Boolean cutter. Only its
+    // bounding coordinates are required. Validating/repairing target faces
+    // here incorrectly rejects open STL/STEP parts and ordinary scans.
+    if(targetMesh.positions.length%3||!targetMesh.positions.length||
+       targetMesh.positions.some(x=>!Number.isFinite(x))){
+      throw new Error('Cannot calculate silicone-box bounds from invalid target coordinates.')
+    }
+  }else{
+    // Repair ONLY a temporary target for geometry actually using its faces.
+    const repaired=repairMoldTarget(targetMesh,s.repairTarget,s.repairHoleSize,onProgress)
+    targetMesh=repaired.mesh
+    check(targetMesh,'Target')
+    warnings.push(...repaired.warnings)
+  }
   const plan=planMold(targetMesh,s)
   const heap:Manifold[]=[]
   const keep=(x:Manifold):Manifold=>{heap.push(x);return x}
-  const warnings:string[]=[...repaired.warnings]
   try{
     let solid:Manifold
     onProgress?.('Constructing full-height tooling from the source solid…')

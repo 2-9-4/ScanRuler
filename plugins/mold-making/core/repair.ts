@@ -65,6 +65,7 @@ export function repairMoldTarget(
   // mask a more specific error (e.g. an exactly zero-area face also makes
   // some edge counts appear nonmanifold) and make the toggle nonfunctional.
   if(!enabled)return {mesh:input,warnings:[],removedFaces:0,weldedVertices:0,filledHoles:0}
+  const sourceTopology=closedness(idx,p.length/3)
   let removedFaces=0,weldedVertices=0,filledHoles=0
   let mesh=input
   if(enabled){
@@ -118,7 +119,10 @@ export function repairMoldTarget(
     const sizes=border?.loops.map(loop=>loopSize(mesh.positions,loop.vertices))??[]
     const largest=sizes.length?Math.max(...sizes):null
     const detail=largest===null?'':` Largest open rim: ${largest.toPrecision(3)} mm across.`
-    throw new Error(`Target is not watertight (${topology.open} boundary edges, ${topology.bad} nonmanifold edges).${detail} ${enabled?'Auto-repair could not safely close the mesh. Increase Mold Making\'s maximum small-hole size only if the missing surface really belongs there; otherwise use Mesh Tools → Fill holes → Use for analysis.':'Enable Repair small mesh defects in Mold Making, or use Mesh Tools → Fill holes → Use for analysis.'}`)
+    const cleanupDetail=removedFaces>0&&topology.open>sourceTopology.open
+      ?` Mesh Tools may report the original as closed because removing ${removedFaces} zero-area triangles in the temporary mold copy exposed ${topology.open-sourceTopology.open} additional open edges.`
+      :''
+    throw new Error(`Target is not watertight (${topology.open} boundary edges, ${topology.bad} nonmanifold edges).${detail}${cleanupDetail} ${enabled?'Auto-repair could not safely close the mesh. Increase Mold Making\'s maximum small-hole size only if the missing surface really belongs there; otherwise use Mesh Tools → Fill holes → Use for analysis.':'Enable Repair small mesh defects in Mold Making, or use Mesh Tools → Fill holes → Use for analysis.'}`)
   }
   const warnings:string[]=[]
   if(removedFaces||weldedVertices||filledHoles){

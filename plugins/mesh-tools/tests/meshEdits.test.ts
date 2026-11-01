@@ -222,6 +222,24 @@ describe('cutting with a plane', () => {
 })
 
 describe('filling holes', () => {
+  it('reports unmatched boundary chains even when no closed hole rims exist', () => {
+    // Two open triangles share a same-direction edge. The loose edges do
+    // not form a closed, directed rim that Fill holes can patch.
+    const pos=new Float32Array([0,0,0, 1,0,0, 0,1,0, 0,-1,0])
+    const idx=new Uint32Array([0,1,2, 0,1,3])
+    const {survey}=surveyHoles(pos,idx,4,5)
+    expect(survey.rims).toBe(0)
+    expect(survey.openEdges).toBeGreaterThan(0)
+    expect(survey.strayEdges).toBeGreaterThan(0)
+    // The UI must not infer watertightness from zero *closed loops*.
+  })
+  it('reports zero open and nonmanifold edges for a closed mesh',()=>{
+    const g=box()
+    const {survey}=surveyHoles(g.positions,g.indices,g.vertexCount,5)
+    expect(survey.openEdges).toBe(0)
+    expect(survey.nonmanifoldEdges).toBe(0)
+    expect(survey.strayEdges).toBe(0)
+  })
   /** A ball of radius 10 with a cap cut off its top, 7 across. */
   const holedBall = () => {
     const s = icosphere(4, 10)
