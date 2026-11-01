@@ -100,16 +100,17 @@ export function liftCollapsedClosedMesh(input:SolidMesh):{mesh:SolidMesh;adjuste
     if(!tangent)return null
     const start=[pos[v*3],pos[v*3+1],pos[v*3+2]]
     let solved=false
+    tryDirections:
     for(const sign of [1,-1])for(const scale of [1,2,4,8,16]){
       const delta=Math.min(step*scale,0.001) // at most one micron in mm
       for(let k=0;k<3;k++)pos[v*3+k]=start[k]+sign*delta*tangent[k]
       // Do not create any new zero-area neighboring faces or fail to fix
       // this face. Topology remains identical; only one coordinate moves.
-      if(around.every(face=>!collapsed(pos,idx[face],idx[face+1],idx[face+2])||
-        badFaces.includes(face))){
-        if(!collapsed(pos,tri[0],tri[1],tri[2])){
-          solved=true;break
-        }
+      if(!collapsed(pos,tri[0],tri[1],tri[2]) &&
+         around.every(face=>!collapsed(pos,idx[face],idx[face+1],idx[face+2])||
+            badFaces.includes(face))){
+        solved=true
+        break tryDirections
       }
     }
     if(!solved)return null
