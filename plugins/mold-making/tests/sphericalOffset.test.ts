@@ -4,6 +4,7 @@ import Module,{type ManifoldToplevel} from 'manifold-3d'
 import { boxSolid } from '../core/geometry'
 import { createSphericalDistanceField,sphericalOffset,sphericalOffsetGrid } from '../core/sphericalOffset'
 import { closedness } from '../../mesh-tools/core/boolean'
+import { orientForSignedDistance } from '../core/meshOrientation'
 
 let wasm:ManifoldToplevel
 beforeAll(async()=>{wasm=await Module();wasm.setup()})
@@ -48,6 +49,21 @@ describe('Spherical solid clearance (Minkowski dilation by a ball)',()=>{
         [-0.1,-0.1,5],[-0.1,0.1,5],[-0.1,-0.1,-0.1],
         [10.1,10.1,5],[5,5,-0.01],
       ])expect(field.sdf(point)).toBeLessThan(0)
+    }finally{field.dispose()}
+  })
+  it('repairs inconsistent face winding in the SDF copy without changing the original',()=>{
+    const broken=cube.indices.slice()
+    const tmp=broken[1];broken[1]=broken[2];broken[2]=tmp
+    const before=broken.slice()
+    const normalized=orientForSignedDistance(broken,cube.positions.length/3)
+    expect(normalized.flippedFaces).toBe(1)
+    expect(normalized.indices).toEqual(cube.indices)
+    expect(broken).toEqual(before)
+    const field=createSphericalDistanceField({positions:cube.positions,indices:broken})
+    try{
+      expect(field.sdf([5,5,0.1])).toBeGreaterThan(0)
+      expect(field.sdf([5,5,-0.1])).toBeLessThan(0)
+      expect(field.sdf([-0.1,-0.1,5])).toBeLessThan(0)
     }finally{field.dispose()}
   })
   it('retains one solid at concave corners instead of producing loose offset islands',()=>{
