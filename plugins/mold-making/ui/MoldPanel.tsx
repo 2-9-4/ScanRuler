@@ -321,8 +321,11 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
         :`${material.wall.toFixed(2)} mm walls, ${material.base.toFixed(2)} mm base`}.
         Extra margins add material on top of these calculated requirements and may be zero.</p>
     </div>
-    {mode==='direct'&&parts>1&&<div className="group" data-test="mold-casting-channels">
+    {(mode==='direct'&&parts>1||pourEnabled||ventsEnabled)&&<div className="group" data-test="mold-casting-channels">
       <div className="sec-head">5. Pouring and venting (optional)</div>
+      {(mode!=='direct'||parts===1)&&<p className="hint mold-warning" role="alert">
+        Channels require a multipart direct mold. Disable pour/vents here before generating a silicone box or single-sided impression.
+      </p>}
       <p className="hint">Optional straight vertical channels from the top exterior into the casting cavity. XY fractions refer to the master bounding box, not the printed mold. Each must hit the real master surface and avoid a parting seam; invalid placement blocks generation. Channels are cut before splitting.</p>
       <label className="kv"><span className="name">Add vertical pour sprue</span>
         <input type="checkbox" data-test="mold-pour-enabled" checked={pourEnabled}
