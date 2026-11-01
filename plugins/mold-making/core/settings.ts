@@ -69,7 +69,7 @@ export const DEFAULT_MOLD_SETTINGS: Readonly<MoldSettings> = Object.freeze({
   keyStyle: 'tapered-key',
   keyPlacement: 'auto',
   keyPositions: [0.22, 0.78],
-  keyPoints: [[0.12,0.15],[0.88,0.15],[0.12,0.85],[0.88,0.85]],
+  keyPoints: [[0.12,0.15],[0.88,0.15],[0.12,0.85],[0.88,0.85]] as [number,number][],
   keyDiameter: 3,
   keyDepth: 3,
   keyClearance: 0.2,
