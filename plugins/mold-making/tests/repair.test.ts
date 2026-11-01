@@ -58,6 +58,16 @@ describe('Mold Making non-destructive source repair',()=>{
     expect(result.filledHoles).toBe(1)
     expect(result.warnings.join(' ')).toMatch(/patched 1 small holes/)
   })
+  it('fills a 1.65 mm-wide complete gap at the new 2 mm default',()=>{
+    const narrow=boxSolid({min:[0,0,0],max:[1.65,0.8,4]})
+    const open={positions:narrow.positions,
+      indices:Uint32Array.from([...narrow.indices.slice(0,6),...narrow.indices.slice(12)])}
+    expect(()=>repairMoldTarget(open,true,1)).toThrow(/configured 1 mm patch limit/)
+    const repaired=repairMoldTarget(open,true,2)
+    closed(repaired)
+    expect(repaired.filledHoles).toBe(1)
+    expect(open.indices.length).toBe(narrow.indices.length-6)
+  })
   it('never fills large openings without increasing the explicit safety limit',()=>{
     const hole={positions:cube.positions,
       indices:Uint32Array.from([...cube.indices.slice(0,6),...cube.indices.slice(12)])}
