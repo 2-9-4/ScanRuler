@@ -133,7 +133,7 @@ export function moldMaterial(s:MoldSettings,targetHeight?:number,targetWidth?:nu
     base:s.mode==='direct'?direct:Math.max(2,wallMin+0.5),
     wall:s.parts===4?Math.max(wallMin,4.5):wallMin,
   }
-  if(v&&targetHeight!==undefined&&Number.isFinite(targetHeight)&&s.clampTabCount>0){
+  if((v||(s.parts===3&&s.keys))&&targetHeight!==undefined&&Number.isFinite(targetHeight)&&s.clampTabCount>0){
     const tab=clampHardware(s)
     const pitch=tab.width+Math.max(2,tab.width*0.25)
     const needed=s.clampTabCount*pitch+4
@@ -668,7 +668,7 @@ function addContourVSeam(
     ?seamSpan:[outer.min[2],outer.max[2]]
   const availableZ=verticalSpan[1]-verticalSpan[0]
   const tabCount=seamSpan&&seamSpanAxis==='z'&&axis!=='z'
-    ?Math.min(s.clampTabCount,Math.floor(availableZ/(s.clampTabWidth+2)))
+    ?Math.min(s.clampTabCount,Math.floor(availableZ/(clampHardware(s).width+2)))
     :s.clampTabCount
   const zPitch=tabCount?availableZ/tabCount:0
   const tab=clampHardware(s)
