@@ -23,6 +23,33 @@ describe('Mold Making non-destructive source repair',()=>{
     expect(malformed.indices).toEqual(originalIndices)
     expect(result.mesh.indices.length).toBe(cube.indices.length)
   })
+  it('preserves indexed watertight topology when a surface triangle is collapsed',()=>{
+    // Move an existing corner onto the adjacent edge. Its original index
+    // topology remains perfectly closed, but one or more faces become
+    // geometrically collinear. Deleting those faces makes holes.
+    const positions=cube.positions.slice()
+    positions[0]=10
+    positions[1]=5
+    const input={positions,indices:cube.indices}
+    expect(closedness(input.indices,input.positions.length/3)).toEqual({open:0,bad:0})
+    const before=positions.slice()
+    const repaired=repairMoldTarget(input,true,2)
+    expect(repaired.adjustedVertices).toBeGreaterThan(0)
+    expect(repaired.removedFaces).toBe(0)
+    expect(repaired.mesh.indices).toBe(input.indices)
+    expect(repaired.warnings.join(' ')).toMatch(/preserving all triangles/)
+    closed(repaired)
+    expect(input.positions).toEqual(before)
+    for(let t=0;t<input.indices.length;t+=3){
+      const {positions:p,indices:ix}=repaired.mesh
+      const a=ix[t]*3,b=ix[t+1]*3,c=ix[t+2]*3
+      const u=[p[b]-p[a],p[b+1]-p[a+1],p[b+2]-p[a+2]]
+      const v=[p[c]-p[a],p[c+1]-p[a+1],p[c+2]-p[a+2]]
+      expect(Math.hypot(u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0])).toBeGreaterThan(0)
+    }
+    const moved=Array.from(repaired.mesh.positions).map((x,i)=>Math.abs(x-before[i]))
+    expect(Math.max(...moved)).toBeLessThan(0.0011)
+  })
   it('does not remove zero-area triangles when repair is switched off',()=>{
     const malformed={
       positions:cube.positions,
