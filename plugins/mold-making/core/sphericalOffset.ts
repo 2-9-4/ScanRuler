@@ -49,7 +49,7 @@ export function sphericalOffsetGrid(mesh:SolidMesh,d:number,quality:OffsetQualit
   if(samples(h)>preset.maxSamples){
     let lo=h,hi=preset.maxGrid
     if(samples(hi)>preset.maxSamples)throw new Error(
-      `The ${quality} spherical offset on this model exceeds its ${preset.maxSamples.toLocaleString()} cell budget even at ${preset.maxGrid} mm grid spacing. Use a smaller model or separate surfaces; the old vertex-normal algorithm will not be used as a fallback.`)
+      `The ${quality} spherical offset on this model needs too many distance-field cells: exceeds its ${preset.maxSamples.toLocaleString()} cell budget even at ${preset.maxGrid} mm grid spacing. Use a smaller model or separate surfaces; the old vertex-normal algorithm will not be used as a fallback.`)
     for(let k=0;k<28;k++){
       const m=(lo+hi)/2
       if(samples(m)>preset.maxSamples)lo=m
