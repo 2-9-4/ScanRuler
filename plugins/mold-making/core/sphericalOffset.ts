@@ -207,6 +207,33 @@ export function createSphericalDistanceField(mesh:SolidMesh,onProgress?:(message
   }
 }
 
+/** A proper outward morphological dilation cannot have MORE connected
+ * components than its source: thickening can join pieces, never split one.
+ * Verify this without creating an extra Manifold just to count components.
+ */
+function sourceComponentCount(mesh:SolidMesh):number {
+  const n=mesh.positions.length/3
+  const parent=new Int32Array(n)
+  const used=new Uint8Array(n)
+  for(let i=0;i<n;i++)parent[i]=i
+  const root=(i:number):number=>{
+    while(parent[i]!==i){parent[i]=parent[parent[i]];i=parent[i]}
+    return i
+  }
+  const join=(a:number,b:number)=>{
+    const x=root(a),y=root(b)
+    if(x!==y)parent[y]=x
+  }
+  for(let t=0;t<mesh.indices.length;t+=3){
+    const a=mesh.indices[t],b=mesh.indices[t+1],c=mesh.indices[t+2]
+    used[a]=1;used[b]=1;used[c]=1
+    join(a,b);join(b,c)
+  }
+  const roots=new Set<number>()
+  for(let i=0;i<n;i++)if(used[i])roots.add(root(i))
+  return roots.size
+}
+
 export function sphericalOffset(
   wasm:ManifoldToplevel,mesh:SolidMesh,d:number,
   onProgress?:(message:string,fraction?:number)=>void,
@@ -249,6 +276,19 @@ export function sphericalOffset(
     if(solid.status()!=='NoError'||solid.isEmpty()){
       solid.delete()
       throw new Error('Spherical distance-field offset produced no valid closed solid.')
+    }
+    // Topological invariant: the d-neighborhood of an original connected
+    // solid is connected. Floating islands here are a BAD offset, not
+    // legitimate extra printable mold pieces. Reject it before subtracting
+    // it from the mold block or applying registration.
+    const components=solid.decompose()
+    let count=0
+    try{count=components.length}
+    finally{for(const component of components)component.delete()}
+    const sourceCount=sourceComponentCount(mesh)
+    if(count>sourceCount){
+      solid.delete()
+      throw new Error(`Spherical offset generated ${count} disconnected solids from ${sourceCount} input component(s). This is a corrupted distance-field result, not printable tooling; no mold was exported. Try a different offset quality or supply this model as a regression fixture.`)
     }
     const before=signedVolume(mesh.positions,mesh.indices),after=solid.volume()
     if(!(after>before)){
