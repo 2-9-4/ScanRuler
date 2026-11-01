@@ -123,12 +123,12 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
     </div>
     <div className="group">
       <div className="sec-head">3. Parting and registration</div>
-      <label className="kv"><span className="name">Printed components</span>
+      <label className="kv"><span className="name">Split into</span>
         <select data-test="mold-part-count" value={parts}
           onChange={e=>setParts(Number(e.target.value) as PartCount)}>
-          <option value={1}>One-sided / one piece</option>
-          <option value={2}>Two split parts</option>
-          <option value={4}>Four split parts</option>
+          <option value={1}>1 part — one-sided impression</option>
+          <option value={2}>2 parts — two mating halves</option>
+          <option value={4}>4 parts — quartered mold</option>
         </select></label>
       {multi&&<>
         <label className="kv"><span className="name">Primary parting axis</span>

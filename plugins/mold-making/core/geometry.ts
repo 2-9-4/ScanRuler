@@ -401,7 +401,19 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
     // Repair ONLY a temporary target for geometry actually using its faces.
     const repaired=repairMoldTarget(targetMesh,s.repairTarget,s.repairHoleSize,onProgress)
     targetMesh=repaired.mesh
-    check(targetMesh,'Target')
+    // Make the effective setting unambiguous. A persisted project may have
+    // repairTarget=false even though automatic repair defaults to true in
+    // fresh projects. When repair is on, the preflight should have handled
+    // every exactly collapsed face; a failure here is a repair regression.
+    try{
+      check(targetMesh,s.repairTarget?'Target':'Target (automatic repair OFF)')
+    }catch(error){
+      const message=error instanceof Error?error.message:String(error)
+      if(s.repairTarget&&/zero-area triangle|degenerate triangle indices/.test(message)){
+        throw new Error(`Automatic target repair was ON but validation still failed: ${message} Please report this with the source mesh; the mold was not generated.`)
+      }
+      throw error
+    }
     warnings.push(...repaired.warnings)
   }
   const plan=planMold(targetMesh,s)
