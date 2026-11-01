@@ -66,6 +66,16 @@ export interface MoldSettings {
   tabCapturedNuts: boolean
   tabNutAcrossFlats: number
   tabNutDepth: number
+  /** Optional vertical casting channels for closed multipart direct molds. */
+  pourEnabled:boolean
+  pourDiameter:number
+  pourFunnelDiameter:number
+  pourFunnelDepth:number
+  /** Normalized XY target bounds; explicit points never move automatically. */
+  pourPoint:[number,number]
+  ventsEnabled:boolean
+  ventDiameter:number
+  ventPoints:[number,number][]
   /** Silicone box *interior wall* draft, degrees, widening at the opening. */
   boxDraftDeg: number
   /** Display-only gap between printed components; not applied to STL parts. */
@@ -113,6 +123,14 @@ export const DEFAULT_MOLD_SETTINGS: Readonly<MoldSettings> = Object.freeze({
   tabCapturedNuts: false,
   tabNutAcrossFlats: 7.2,
   tabNutDepth: 3.5,
+  pourEnabled:false,
+  pourDiameter:3,
+  pourFunnelDiameter:7,
+  pourFunnelDepth:3,
+  pourPoint:[0.25,0.25] as [number,number],
+  ventsEnabled:false,
+  ventDiameter:1.2,
+  ventPoints:[[0.75,0.75]] as [number,number][],
   boxDraftDeg: 1,
   previewGap: 10,
 })
@@ -126,12 +144,14 @@ export const MOLD_DIMENSIONS: readonly MoldDimension[] = [
   'vSeamWidth', 'vSeamHeight', 'vSeamSpacing', 'vSeamClearance',
   'clampTabCount', 'clampTabWidth', 'clampTabProjection', 'clampTabThickness',
   'topBottomTabCount', 'tabBoltDiameter', 'tabNutAcrossFlats', 'tabNutDepth',
+  'pourDiameter','pourFunnelDiameter','pourFunnelDepth','ventDiameter',
   'boxDraftDeg', 'previewGap',
 ]
 export const MOLD_SETTING_KEYS: readonly (keyof MoldSettings)[] = [
   'source', 'mode', ...MOLD_DIMENSIONS, 'offsetQuality', 'repairTarget', 'parts', 'splitAxis', 'boxShape', 'keys',
   'keyStyle', 'keyPlacement', 'keyPositions', 'keyPoints',
   'topBottomTabs','tabBoltHoles','tabCapturedNuts',
+  'pourEnabled','pourPoint','ventsEnabled','ventPoints',
 ]
 export function validMoldDimension(key: MoldDimension, value: number): boolean {
   if (!Number.isFinite(value)) return false
@@ -159,6 +179,21 @@ export function parseMoldSettings(value: unknown): MoldSettings {
   if (parsed.boxShape !== 'rectangular' && parsed.boxShape !== 'cylindrical') throw new Error('Invalid box shape.')
   if (typeof parsed.repairTarget !== 'boolean') throw new Error('Invalid mesh repair setting.')
   if (typeof parsed.keys !== 'boolean') throw new Error('Invalid alignment keys setting.')
+  if(typeof parsed.pourEnabled!=='boolean'||typeof parsed.ventsEnabled!=='boolean')
+    throw new Error('Invalid casting channel enable setting.')
+  const validPoint=(point:unknown):point is [number,number]=>Array.isArray(point)&&
+    point.length===2&&point.every(x=>typeof x==='number'&&Number.isFinite(x)&&x>=0.01&&x<=0.99)
+  if(!validPoint(parsed.pourPoint))throw new Error('Pour XY position must contain two 1–99% fractions.')
+  if(!Array.isArray(parsed.ventPoints)||parsed.ventPoints.length>8||
+    parsed.ventPoints.some(p=>!validPoint(p)))
+    throw new Error('Vent XY positions must be 1–99% fractions (at most eight).')
+  if(parsed.ventsEnabled&&parsed.ventPoints.length===0)
+    throw new Error('Add at least one vent position or disable air vents.')
+  if(parsed.pourEnabled&&parsed.pourFunnelDiameter<parsed.pourDiameter)
+    throw new Error('Pour funnel diameter must be at least the sprue diameter.')
+  if((parsed.pourEnabled||parsed.ventsEnabled)&&
+    (parsed.mode!=='direct'||parsed.parts===1))
+    throw new Error('Casting channels currently require a multipart direct-print mold. Disable them for silicone boxes and one-piece impressions.')
   if (typeof parsed.topBottomTabs !== 'boolean' || typeof parsed.tabBoltHoles !== 'boolean' || typeof parsed.tabCapturedNuts !== 'boolean') throw new Error('Invalid clamp-fastener options.')
   if (!(['v-seam','printed-pin', 'tapered-key', 'metal-dowel'] as const).includes(parsed.keyStyle)) throw new Error('Invalid registration feature shape.')
   if (parsed.keyPlacement !== 'auto' && parsed.keyPlacement !== 'manual') throw new Error('Invalid registration placement mode.')
@@ -182,7 +217,9 @@ export function parseMoldSettings(value: unknown): MoldSettings {
     }
   }
   // No future/unknown fields leak into the store.
-  return Object.fromEntries(MOLD_SETTING_KEYS.map(key => [key, key==='keyPositions'?[...parsed.keyPositions]:key==='keyPoints'?parsed.keyPoints.map(p=>[...p]):parsed[key]])) as unknown as MoldSettings
+  return Object.fromEntries(MOLD_SETTING_KEYS.map(key => [key, key==='keyPositions'?[...parsed.keyPositions]:key==='keyPoints'?parsed.keyPoints.map(p=>[...p]):
+    key==='pourPoint'?[...parsed.pourPoint]:
+    key==='ventPoints'?parsed.ventPoints.map(p=>[...p]):parsed[key]])) as unknown as MoldSettings
 }
 
 export const MOLD_MODE_LABELS: Readonly<Record<MoldMode,string>> = {
