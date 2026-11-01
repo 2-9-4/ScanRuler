@@ -14,6 +14,7 @@ import type { SolidMesh } from '../../../src/app/solids'
 import type { OffsetQuality } from './settings'
 import { extentOf } from '../../../src/core/geometry/bounds'
 import { signedVolume } from '../../mesh-tools/core/hollow'
+import { orientForSignedDistance } from './meshOrientation'
 
 export interface SphericalOffsetReport {
   gridMm: number
@@ -73,7 +74,9 @@ export function createSphericalDistanceField(mesh:SolidMesh,onProgress?:(message
   onProgress?.('Indexing source triangles for spherical clearance…')
   const geometry=new BufferGeometry()
   geometry.setAttribute('position',new BufferAttribute(mesh.positions,3))
-  geometry.setIndex(new BufferAttribute(mesh.indices.slice(),1))
+  const oriented=orientForSignedDistance(mesh.indices,mesh.positions.length/3)
+  if(oriented.flippedFaces)onProgress?.(`Corrected ${oriented.flippedFaces} reversed triangle faces in the temporary distance field…`)
+  geometry.setIndex(new BufferAttribute(oriented.indices.slice(),1))
   const bvh=new MeshBVH(geometry,{maxLeafTris:12})
   const index=geometry.getIndex()!
   // A face normal alone is NOT a valid sign test when the nearest point
