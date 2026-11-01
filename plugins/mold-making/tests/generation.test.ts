@@ -2,7 +2,7 @@
 // Regression tests for complete-height cavities, separately manifold parts,
 // registration, cylindrical boxes and preservation of sub-mm geometry.
 import {beforeAll,describe,expect,it} from 'vitest'
-import Module,{type ManifoldToplevel} from 'manifold-3d'
+import Module,{type ManifoldToplevel,type Manifold} from 'manifold-3d'
 import {DEFAULT_MOLD_SETTINGS} from '../core/settings'
 import {boxSolid,buildMold,planMold,seamPositions,registrationSites,toPart} from '../core/geometry'
 import {closedness} from '../../mesh-tools/core/boolean'
@@ -82,6 +82,34 @@ describe('Mold Making assembly',()=>{
     const short=seamPositions(0,9,settings)
     expect(short).toHaveLength(1)
     expect(short[0]).toBeCloseTo(4.5)
+  })
+  it('does not fail the main mold because a detached artifact exports as zero-volume',()=>{
+    const main=wasm.Manifold.cube([8,8,8])
+    // A generated Boolean island may have a nonzero kernel volume, but
+    // collapse entirely when written into Float32 mesh coordinates.
+    const emptySimplified={isEmpty:()=>true,status:()=> 'NoError',delete:()=>{}}
+    const invalid={
+      volume:()=>45.1,
+      getMesh:()=>({
+        vertProperties:new Float32Array([0,0,0,1,0,0,0,1,0]),
+        triVerts:new Uint32Array([0,1,2]),
+      }),
+      simplify:()=>emptySimplified,
+      delete:()=>{},
+    } as unknown as Manifold
+    const composite={
+      isEmpty:()=>false,status:()=> 'NoError',
+      decompose:()=>[main,invalid],
+    } as unknown as Manifold
+    const warnings:string[]=[],detached:ReturnType<typeof toPart>[]=[]
+    try{
+      const part=toPart(composite,'Mold part 1',warnings,detached)
+      expect(part.volumeMm3).toBeCloseTo(512)
+      intact([part])
+      expect(detached).toHaveLength(0)
+      expect(warnings.join(' ')).toMatch(/excluded an invalid detached artifact/)
+      expect(warnings.join(' ')).toMatch(/45\.1/)
+    }finally{main.delete()}
   })
   it('distributes registration across both tangent axes, including above the cavity',()=>{
     const plan=planMold(master,DEFAULT_MOLD_SETTINGS)
