@@ -855,7 +855,7 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
         }
       }
         if(s.keys){
-        if(s.mode==='silicone-box')warnings.push('Registration is placed on external wall bosses at multiple heights. Printed pins require assembled clearance; metal dowel holes require separate hardware.')
+        if(s.mode==='silicone-box'&&!(s.keyStyle==='v-seam'&&s.parts===2))warnings.push('Registration is placed on external wall bosses at multiple heights. Printed pins require assembled clearance; metal dowel holes require separate hardware.')
         if(s.keyStyle==='v-seam'&&s.parts===4)warnings.push('Four-part molds currently use discrete pins or bosses instead of a continuous V-seam; use two parts for the V-seam.')
         if(s.keyStyle==='v-seam'&&s.parts===2)warnings.push(s.mode==='direct'?'A continuous contour-following triangular tongue-and-groove with exterior clamp ears provides registration; verify the clamping force and cast release before manufacturing.':'A wall-supported U-shaped triangular tongue-and-groove with exterior clamp ears registers the silicone box while leaving the pouring opening unobstructed.')
         else warnings.push(s.keyStyle==='metal-dowel'?
