@@ -62,8 +62,8 @@ export function sphericalOffsetGrid(mesh:SolidMesh,d:number,quality:OffsetQualit
 }
 
 /** Precompute and retain the BVH, reordered triangle normals, and query
- * scratch buffers for all offsets of the same source (particularly the two
- * offset surfaces of thin negative shells). Dispose when generation ends.
+ * edge/vertex pseudonormals and query scratch buffers for one offset.
+ * Dispose when generation ends.
  */
 export interface SphericalDistanceField {
   sdf(v:readonly number[]):number
@@ -76,10 +76,30 @@ export function createSphericalDistanceField(mesh:SolidMesh,onProgress?:(message
   geometry.setIndex(new BufferAttribute(mesh.indices.slice(),1))
   const bvh=new MeshBVH(geometry,{maxLeafTris:12})
   const index=geometry.getIndex()!
+  // A face normal alone is NOT a valid sign test when the nearest point
+  // lies on an edge or corner. Around a sharp concave edge, either incident
+  // face can return the wrong inside/outside sign, creating disconnected
+  // level-set islands regardless of grid resolution.
+  //
+  // Use angle-weighted pseudonormals at vertices and the sum of both
+  // incident face normals at edges. On an oriented closed 2-manifold, the
+  // dot with the nearest point's feature pseudonormal gives the correct
+  // local sign even for nonconvex sharp features.
+  const faces=index.count/3
+  const vertexCount=mesh.positions.length/3
   const normals=new Float32Array(index.count)
+  const vertexNormals=new Float64Array(mesh.positions.length)
+  // Three edge normals (a-b, b-c, c-a) per triangle.
+  const edgeNormals=new Float32Array(index.count*3)
+  const firstEdge=new Map<number,number>()
   const p=mesh.positions
-  for(let face=0;face<index.count/3;face++){
-    const a=index.getX(face*3)*3,b=index.getX(face*3+1)*3,c=index.getX(face*3+2)*3
+  const angle=(u0:number,u1:number,u2:number,v0:number,v1:number,v2:number):number=>{
+    const l=Math.hypot(u0,u1,u2)*Math.hypot(v0,v1,v2)
+    return l>0?Math.acos(Math.max(-1,Math.min(1,(u0*v0+u1*v1+u2*v2)/l))):0
+  }
+  for(let face=0;face<faces;face++){
+    const ia=index.getX(face*3),ib=index.getX(face*3+1),ic=index.getX(face*3+2)
+    const a=ia*3,b=ib*3,c=ic*3
     const ux=p[b]-p[a],uy=p[b+1]-p[a+1],uz=p[b+2]-p[a+2]
     const vx=p[c]-p[a],vy=p[c+1]-p[a+1],vz=p[c+2]-p[a+2]
     const x=uy*vz-uz*vy,y=uz*vx-ux*vz,z=ux*vy-uy*vx
@@ -88,14 +108,43 @@ export function createSphericalDistanceField(mesh:SolidMesh,onProgress?:(message
       geometry.dispose()
       throw new Error(`Spherical offset needs nondegenerate source faces (triangle ${face}).`)
     }
-    normals[face*3]=x/length
-    normals[face*3+1]=y/length
-    normals[face*3+2]=z/length
+    const nx=x/length,ny=y/length,nz=z/length
+    normals[face*3]=nx;normals[face*3+1]=ny;normals[face*3+2]=nz
+    const weights=[
+      angle(ux,uy,uz,vx,vy,vz),
+      angle(p[a]-p[b],p[a+1]-p[b+1],p[a+2]-p[b+2],
+        p[c]-p[b],p[c+1]-p[b+1],p[c+2]-p[b+2]),
+      angle(p[a]-p[c],p[a+1]-p[c+1],p[a+2]-p[c+2],
+        p[b]-p[c],p[b+1]-p[c+1],p[b+2]-p[c+2]),
+    ]
+    for(const [corner,id] of [ia,ib,ic].entries()){
+      vertexNormals[id*3]+=weights[corner]*nx
+      vertexNormals[id*3+1]+=weights[corner]*ny
+      vertexNormals[id*3+2]+=weights[corner]*nz
+    }
+    for(const [slot,pair] of [[ia,ib],[ib,ic],[ic,ia]].entries()){
+      const e=face*3+slot,ptr=e*3
+      edgeNormals[ptr]=nx;edgeNormals[ptr+1]=ny;edgeNormals[ptr+2]=nz
+      // Numeric key is exact for practical meshes (<~95 million vertices).
+      const lo=Math.min(pair[0],pair[1]),hi=Math.max(pair[0],pair[1])
+      const key=lo*vertexCount+hi
+      const other=firstEdge.get(key)
+      if(other===undefined)firstEdge.set(key,e)
+      else {
+        const o=other*3
+        edgeNormals[ptr]+=edgeNormals[o]
+        edgeNormals[ptr+1]+=edgeNormals[o+1]
+        edgeNormals[ptr+2]+=edgeNormals[o+2]
+        edgeNormals[o]+=nx;edgeNormals[o+1]+=ny;edgeNormals[o+2]+=nz
+      }
+    }
   }
+  firstEdge.clear()
   const query=new Vector3()
   const closest={point:new Vector3(),distance:0,faceIndex:0}
   const warmTriangle=new Triangle(new Vector3(),new Vector3(),new Vector3())
   const warmPoint=new Vector3()
+  const bary=new Vector3()
   let previousFace=-1
   return {
     sdf(v:readonly number[]):number{
@@ -125,10 +174,33 @@ export function createSphericalDistanceField(mesh:SolidMesh,onProgress?:(message
       }
       previousFace=closest.faceIndex
       const face=closest.faceIndex*3
+      const ia=index.getX(face),ib=index.getX(face+1),ic=index.getX(face+2)
+      const a=ia*3,b=ib*3,c=ic*3
+      warmTriangle.a.set(p[a],p[a+1],p[a+2])
+      warmTriangle.b.set(p[b],p[b+1],p[b+2])
+      warmTriangle.c.set(p[c],p[c+1],p[c+2])
+      warmTriangle.getBarycoord(closest.point,bary)
+      const threshold=1e-6
+      const onA=bary.x<=threshold,onB=bary.y<=threshold,onC=bary.z<=threshold
+      let nx=normals[face],ny=normals[face+1],nz=normals[face+2]
+      if((onA?1:0)+(onB?1:0)+(onC?1:0)>=2){
+        // Nearest point is a mesh vertex: angle-weighted pseudonormal.
+        const vertex=bary.x>=bary.y&&bary.x>=bary.z?ia:bary.y>=bary.z?ib:ic
+        const v=vertex*3
+        if(Math.hypot(vertexNormals[v],vertexNormals[v+1],vertexNormals[v+2])>1e-10){
+          nx=vertexNormals[v];ny=vertexNormals[v+1];nz=vertexNormals[v+2]
+        }
+      }else if(onA||onB||onC){
+        // Edge slots are (a,b), (b,c), (c,a), respectively.
+        const edge=closest.faceIndex*9+(onC?0:onA?3:6)
+        if(Math.hypot(edgeNormals[edge],edgeNormals[edge+1],edgeNormals[edge+2])>1e-10){
+          nx=edgeNormals[edge];ny=edgeNormals[edge+1];nz=edgeNormals[edge+2]
+        }
+      }
       const dx=query.x-closest.point.x
       const dy=query.y-closest.point.y
       const dz=query.z-closest.point.z
-      const dot=dx*normals[face]+dy*normals[face+1]+dz*normals[face+2]
+      const dot=dx*nx+dy*ny+dz*nz
       return dot<0?closest.distance:-closest.distance
     },
     dispose(){geometry.dispose()},
@@ -148,7 +220,7 @@ export function sphericalOffset(
     min:[min[0]-pad,min[1]-pad,min[2]-pad] as [number,number,number],
     max:[max[0]+pad,max[1]+pad,max[2]+pad] as [number,number,number],
   }
-  // The shared field lets two-shell generation index its triangles once.
+  // A supplied field avoids rebuilding the BVH for repeated queries.
   const ownField=!sharedField
   const field=sharedField??createSphericalDistanceField(mesh,onProgress)
   try{
