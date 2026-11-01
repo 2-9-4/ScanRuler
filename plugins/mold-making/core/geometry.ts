@@ -129,9 +129,9 @@ export function moldMaterial(s:MoldSettings,targetHeight?:number):{side:number;b
   // Otherwise adding "extra" base material merely reduces the automatic
   // padding and appears to have no effect until a threshold is crossed.
   const material={
-    side:direct,
+    side:s.parts===4?Math.max(direct,5):direct,
     base:s.mode==='direct'?direct:Math.max(2,wallMin+0.5),
-    wall:wallMin,
+    wall:s.parts===4?Math.max(wallMin,4.5):wallMin,
   }
   if(v&&targetHeight!==undefined&&Number.isFinite(targetHeight)&&s.clampTabCount>0){
     const tab=clampHardware(s)
@@ -981,6 +981,29 @@ function keyFourParts(
   }
   return registered
 }
+/** Bevel the four exterior vertical block corners before splitting.
+ * Chamfered planar faces print on the bed more reliably than knife-edge
+ * rectangular corners. Keep 1+ mm of wall between a cavity and the bevel.
+ */
+export function chamferOuterCorners(
+  solid:Manifold,plan:MoldPlan,s:MoldSettings,keep:(m:Manifold)=>Manifold,
+):Manifold{
+  if(s.parts!==4||plan.cylinder||plan.radialOuter)return solid
+  const reserve=s.mode==='direct'?plan.material.side:plan.material.wall
+  const bevel=Math.max(0,Math.min(3.5,reserve-1.3))
+  if(bevel<0.5)return solid
+  let result=solid
+  for(const sx of [-1,1])for(const sy of [-1,1]){
+    const x=sx<0?plan.outer.min[0]:plan.outer.max[0]
+    const y=sy<0?plan.outer.min[1]:plan.outer.max[1]
+    const bound=sx*x+sy*y-bevel
+    const [chip,inside]=result.splitByPlane([sx,sy,0],bound)
+    keep(chip);keep(inside)
+    if(inside.isEmpty())throw new Error('Exterior corner chamfer removed the entire tooling block.')
+    result=inside
+  }
+  return result
+}
 /** Full-height negative, then one or two exact parting operations. */
 export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:MoldSettings,onProgress?:(s:string,fraction?:number)=>void):MoldBuild {
   const s=parseMoldSettings(settings)
@@ -1072,6 +1095,7 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
         solid=keep(block.subtract(positive))
       }
     }
+    solid=chamferOuterCorners(solid,plan,s,keep)
     if(solid.isEmpty())throw new Error('The mold is empty. Increase the wall or margins.')
     let pieces:Manifold[]=[solid]
     const extent=extentOf(targetMesh.positions)
