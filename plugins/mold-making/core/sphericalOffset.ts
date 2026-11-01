@@ -8,7 +8,7 @@
 // Querying a MeshBVH avoids scanning every triangle at every sample.
 // This is a sampled approximation, not an exact analytical Minkowski sum.
 import type { Manifold, ManifoldToplevel } from 'manifold-3d'
-import { BufferAttribute, BufferGeometry, Vector3 } from 'three'
+import { BufferAttribute, BufferGeometry, Triangle, Vector3 } from 'three'
 import { MeshBVH } from 'three-mesh-bvh'
 import type { SolidMesh } from '../../../src/app/solids'
 import type { OffsetQuality } from './settings'
@@ -94,12 +94,37 @@ export function createSphericalDistanceField(mesh:SolidMesh,onProgress?:(message
   }
   const query=new Vector3()
   const closest={point:new Vector3(),distance:0,faceIndex:0}
+  const warmTriangle=new Triangle(new Vector3(),new Vector3(),new Vector3())
+  const warmPoint=new Vector3()
+  let previousFace=-1
   return {
     sdf(v:readonly number[]):number{
       query.set(v[0],v[1],v[2])
-      const nearest=bvh.closestPointToPoint(query,closest)
-      if(!nearest)throw new Error('No closest triangle found while evaluating spherical clearance.')
-      const face=nearest.faceIndex*3
+      // Level-set calls are spatially coherent: use the previous nearest
+      // triangle as a proven upper bound for the next BVH nearest search.
+      // This prunes distant branches while remaining EXACT: the true
+      // nearest surface distance cannot exceed the candidate's distance.
+      let limit=Infinity
+      if(previousFace>=0){
+        const i=previousFace*3
+        const a=index.getX(i)*3,b=index.getX(i+1)*3,c=index.getX(i+2)*3
+        warmTriangle.a.set(p[a],p[a+1],p[a+2])
+        warmTriangle.b.set(p[b],p[b+1],p[b+2])
+        warmTriangle.c.set(p[c],p[c+1],p[c+2])
+        warmTriangle.closestPointToPoint(query,warmPoint)
+        limit=query.distanceTo(warmPoint)+1e-5
+      }
+      const nearest=bvh.closestPointToPoint(query,closest,0,limit)
+      if(!nearest){
+        if(previousFace<0)throw new Error('No closest triangle found while evaluating spherical clearance.')
+        // All BVH triangles were farther than the last face. That face
+        // itself is in the mesh, so it is an exact closest-point candidate.
+        closest.point.copy(warmPoint)
+        closest.distance=query.distanceTo(warmPoint)
+        closest.faceIndex=previousFace
+      }
+      previousFace=closest.faceIndex
+      const face=closest.faceIndex*3
       const dx=query.x-nearest.point.x
       const dy=query.y-nearest.point.y
       const dz=query.z-nearest.point.z
