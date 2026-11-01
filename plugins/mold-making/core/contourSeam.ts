@@ -203,15 +203,33 @@ export function triangularContourTube(
   // These stations give the ridge and the matching groove real chamfered
   // end edges without introducing zero-width/degenerate triangles.
   const bevel=Math.min(0.8,halfWidth*0.35,(front-back)*0.25)
-  const stations:P[]=closed?[...path]:[...path]
+  const stations:P[]=[...path]
   if(!closed){
-    const lead=distance(path[0],path[1])
-    const tail=distance(path[path.length-2],path[path.length-1])
+    // Chamfer hard corners in the *path* as well as the open end edges:
+    // a vertical wall turning into a flat floor should have a short 45°
+    // diagonal transition, not a sharp 90° miter in the V sidewall.
+    // Rounded silhouette paths with gentle turns remain unmodified.
+    const beveled:P[]=[path[0]]
+    for(let i=1;i<path.length-1;i++){
+      const a=path[i-1],b=path[i],c=path[i+1]
+      const ux=b[0]-a[0],uy=b[1]-a[1],vx=c[0]-b[0],vy=c[1]-b[1]
+      const la=Math.hypot(ux,uy),lb=Math.hypot(vx,vy)
+      const cosine=la>0&&lb>0?(ux*vx+uy*vy)/(la*lb):1
+      if(cosine<0.5&&la>1.5&&lb>1.5){
+        const trim=Math.min(1,la*0.2,lb*0.2)
+        beveled.push([b[0]-ux/la*trim,b[1]-uy/la*trim],
+          [b[0]+vx/lb*trim,b[1]+vy/lb*trim])
+      }else beveled.push(b)
+    }
+    beveled.push(path[path.length-1])
+    stations.splice(0,stations.length,...beveled)
+    const lead=distance(stations[0],stations[1])
+    const tail=distance(stations[stations.length-2],stations[stations.length-1])
     const interpolate=(a:P,b:P,d:number):P=>[
       a[0]+(b[0]-a[0])*d,a[1]+(b[1]-a[1])*d]
-    stations.splice(1,0,interpolate(path[0],path[1],Math.min(bevel/lead,0.35)))
+    stations.splice(1,0,interpolate(stations[0],stations[1],Math.min(bevel/lead,0.35)))
     const n=stations.length
-    stations.splice(n-1,0,interpolate(path[path.length-1],path[path.length-2],Math.min(bevel/tail,0.35)))
+    stations.splice(n-1,0,interpolate(stations[n-1],stations[n-2],Math.min(bevel/tail,0.35)))
   }
   const [k,u,v]=planeAxes(axis)
   const pos=new Float32Array(stations.length*count*3)
