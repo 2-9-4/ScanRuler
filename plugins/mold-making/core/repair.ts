@@ -60,6 +60,11 @@ export function repairMoldTarget(
   if(p.length%3||idx.length%3||idx.length===0)throw new Error('Target mesh has invalid coordinate/triangle arrays.')
   for(let i=0;i<p.length;i++)if(!Number.isFinite(p[i]))throw new Error(`Target contains non-finite coordinate ${i}.`)
   for(let i=0;i<idx.length;i++)if(idx[i]>=p.length/3)throw new Error(`Target triangle index ${i} is out of bounds.`)
+  // When repair is disabled, leave both geometry and topology diagnostics
+  // to the caller's normal validation. Checking connectivity here would
+  // mask a more specific error (e.g. an exactly zero-area face also makes
+  // some edge counts appear nonmanifold) and make the toggle nonfunctional.
+  if(!enabled)return {mesh:input,warnings:[],removedFaces:0,weldedVertices:0,filledHoles:0}
   let removedFaces=0,weldedVertices=0,filledHoles=0
   let mesh=input
   if(enabled){
