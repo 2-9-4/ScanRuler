@@ -8,6 +8,7 @@ import {
 
 interface MoldState extends MoldSettings {
   setSource(source: MoldSource): void
+  setRepairTarget(repairTarget: boolean): void
   setMode(mode: MoldMode): void
   setParts(parts: PartCount): void
   setSplitAxis(splitAxis: SplitAxis): void
@@ -21,6 +22,7 @@ interface MoldState extends MoldSettings {
 export const useMold = create<MoldState>()((set)=>({
   ...DEFAULT_MOLD_SETTINGS,
   setSource: (source) => set({source}),
+  setRepairTarget: (repairTarget) => set({repairTarget}),
   setMode: (mode) => set({mode}),
   setParts: (parts) => set({parts}),
   setSplitAxis: (splitAxis) => set({splitAxis}),
