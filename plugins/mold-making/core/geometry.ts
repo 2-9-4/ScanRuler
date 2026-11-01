@@ -95,6 +95,7 @@ export interface MoldPlan {
   cylinder:{cx:number;cy:number;outerR:number;innerR:number}|null
   /** The repaired input, read only while computing direct-mold contours. */
   target?:Triangles
+  radialOuter?:{cx:number;cy:number;radius:number}
 }
 export function planMold(target:Triangles,settings:MoldSettings):MoldPlan {
   const s=parseMoldSettings(settings)
@@ -125,6 +126,15 @@ export function planMold(target:Triangles,settings:MoldSettings):MoldPlan {
   if(s.mode==='direct'){
     if(s.sideMargin<=s.clearance)throw new Error('Outer margin must exceed cavity clearance.')
     if(s.baseThickness<=s.clearance)throw new Error('Cavity clearance must be smaller than base/top thickness, or the cutter breaks through the outside. Increase base thickness.')
+    if(s.parts===3){
+      // Round outside makes the three 120° sectors rotationally equivalent
+      // in their outer tooling, unlike cutting an ordinary XY rectangle.
+      const radius=Math.hypot(size[0]/2,size[1]/2)+s.sideMargin
+      return {outer:{min:[cx-radius,cy-radius,min[2]-s.baseThickness],
+        max:[cx+radius,cy+radius,max[2]+s.baseThickness]},
+        innerBox:null,cylinder:null,openingZ:null,target,
+        radialOuter:{cx,cy,radius}}
+    }
     return {outer:{min:[min[0]-s.sideMargin,min[1]-s.sideMargin,min[2]-s.baseThickness],
       max:[max[0]+s.sideMargin,max[1]+s.sideMargin,max[2]+s.baseThickness]},
       innerBox:null,cylinder:null,openingZ:s.parts===1?center(min[2],max[2]):null,target}
@@ -725,7 +735,13 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
             throw new Error(`Clearance ${s.clearance} mm breaks through the mold's ${['X','Y','Z'][axis]} wall (${Math.min(lower,upper).toFixed(3)} mm left). Increase outer margin/base thickness or decrease clearance.`)
           }
         }
-        solid=keep(toManifold(wasm,boxSolid(plan.outer),keep).subtract(positive))
+        const block=plan.radialOuter
+          ?keep(wasm.Manifold.cylinder(
+            plan.outer.max[2]-plan.outer.min[2],
+            plan.radialOuter.radius,plan.radialOuter.radius,192,
+          ).translate([plan.radialOuter.cx,plan.radialOuter.cy,plan.outer.min[2]]))
+          :toManifold(wasm,boxSolid(plan.outer),keep)
+        solid=keep(block.subtract(positive))
       }
     }
     if(solid.isEmpty())throw new Error('The mold is empty. Increase the wall or margins.')
