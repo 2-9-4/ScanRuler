@@ -1006,8 +1006,9 @@ export function chamferOuterCorners(
   for(const sx of [-1,1])for(const sy of [-1,1]){
     const x=sx<0?plan.outer.min[0]:plan.outer.max[0]
     const y=sy<0?plan.outer.min[1]:plan.outer.max[1]
-    const bound=sx*x+sy*y-bevel
-    const [chip,inside]=result.splitByPlane([sx,sy,0],bound)
+    const scale=Math.SQRT2
+    const bound=(sx*x+sy*y-bevel)/scale
+    const [chip,inside]=result.splitByPlane([sx/scale,sy/scale,0],bound)
     keep(chip);keep(inside)
     if(inside.isEmpty())throw new Error('Exterior corner chamfer removed the entire tooling block.')
     result=inside
