@@ -39,6 +39,8 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
   const boxShape=useMold(s=>s.boxShape),keys=useMold(s=>s.keys)
   const keyStyle=useMold(s=>s.keyStyle),keyPlacement=useMold(s=>s.keyPlacement)
   const keyPositions=useMold(s=>s.keyPositions)
+  const repairTarget=useMold(s=>s.repairTarget)
+  const repairHoleSize=useMold(s=>s.repairHoleSize)
   const clearance=useMold(s=>s.clearance)
   const sideMargin=useMold(s=>s.sideMargin)
   const baseThickness=useMold(s=>s.baseThickness)
@@ -50,7 +52,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
   const keyClearance=useMold(s=>s.keyClearance)
   const boxDraftDeg=useMold(s=>s.boxDraftDeg)
   const previewGap=useMold(s=>s.previewGap)
-  const values={clearance,sideMargin,baseThickness,wallThickness,siliconeThickness,splitPosition,
+  const values={clearance,repairHoleSize,sideMargin,baseThickness,wallThickness,siliconeThickness,splitPosition,
     keyDiameter,keyDepth,keyClearance,boxDraftDeg,previewGap}
   const setSource=useMold(s=>s.setSource),setMode=useMold(s=>s.setMode)
   const setParts=useMold(s=>s.setParts),setSplitAxis=useMold(s=>s.setSplitAxis)
@@ -58,6 +60,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
   const setKeyStyle=useMold(s=>s.setKeyStyle),setKeyPlacement=useMold(s=>s.setKeyPlacement)
   const setKeyPositions=useMold(s=>s.setKeyPositions)
   const setDimension=useMold(s=>s.setDimension)
+  const setRepairTarget=useMold(s=>s.setRepairTarget)
   const active=source==='scan'?scanName:refName
   const multi=parts>1
   const fields=FIELDS.filter(({key})=>{
@@ -86,6 +89,17 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
         <ModelSlot role="Target reference" name={refName} detail="CAD or mesh reference"
           dotColor="#8b9099" busy={busy} accept={REFERENCE_ACCEPT}
           formats={REFERENCE_FORMATS} onOpen={onOpenReference}/>}
+      <label className="kv"><span className="name">Repair small mesh defects</span>
+        <input type="checkbox" data-test="mold-repair-target"
+          checked={repairTarget} onChange={e=>setRepairTarget(e.target.checked)}/>
+      </label>
+      {repairTarget&&<label className="kv" title="Only complete holes smaller than this across are patched. Large or ambiguous missing areas cause an error, not an automatic edit.">
+        <span className="name">Max repair hole size (mm)</span>
+        <input type="number" min={0.001} step={0.1} data-test="mold-repair-hole-size"
+          value={repairHoleSize}
+          onChange={e=>{if(e.target.value!=='')setDimension('repairHoleSize',Number(e.target.value))}}/>
+      </label>}
+      <p className="hint">Before generating, remove exactly zero-area faces, weld identical duplicate vertices and fill small closed holes on a temporary copy. The original scan/STEP remains unchanged. Repairs appear in output warnings; inspect them before printing.</p>
     </div>
     <div className="group">
       <div className="sec-head">2. Mold type</div>

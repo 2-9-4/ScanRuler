@@ -19,6 +19,17 @@ const intact=(parts:ReturnType<typeof buildMold>['parts'])=>{
   }
 }
 describe('Mold Making assembly',()=>{
+  it('auto-repairs a collapsed input face before a manifold mold build',()=>{
+    const malformed={positions:master.positions,
+      indices:Uint32Array.from([...master.indices,0,1,1])}
+    const before=malformed.indices.slice()
+    const result=buildMold(wasm,malformed,noKeys)
+    intact(result.parts)
+    expect(result.warnings.join(' ')).toMatch(/removed 1 exactly zero-area/)
+    expect(malformed.indices).toEqual(before)
+    expect(()=>buildMold(wasm,malformed,{...noKeys,repairTarget:false}))
+      .toThrow(/zero-area triangle/)
+  })
   it('retains every millimeter of the target in two distinct full-height rigid pieces',()=>{
     const m=buildMold(wasm,master,noKeys)
     expect(m.parts).toHaveLength(2)

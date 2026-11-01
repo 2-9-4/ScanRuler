@@ -7,6 +7,7 @@ import { extentOf } from '../../../src/core/geometry/bounds'
 import { closedness, type Triangles } from '../../mesh-tools/core/boolean'
 import { offsetMesh } from '../../mesh-tools/core/offset'
 import { signedVolume } from '../../mesh-tools/core/hollow'
+import { repairMoldTarget } from './repair'
 import { parseMoldSettings, type MoldSettings, type SplitAxis } from './settings'
 
 type Vec3 = [number,number,number]
@@ -63,10 +64,10 @@ function check(mesh:Triangles,what:string):void {
     const vx=p[c]-p[a],vy=p[c+1]-p[a+1],vz=p[c+2]-p[a+2]
     const crossX=uy*vz-uz*vy,crossY=uz*vx-ux*vz,crossZ=ux*vy-uy*vx
     const area2=Math.hypot(crossX,crossY,crossZ)
-    if(area2===0)throw new Error(`${what} has a zero-area triangle at face ${i/3}. No geometry was silently discarded.`)
+    if(area2===0)throw new Error(`${what} has a zero-area triangle at face ${i/3}. Enable 'Repair small mesh defects' in Mold Making, or repair the source in an external mesh editor.`)
   }
   const c=closedness(mesh.indices,n)
-  if(c.open||c.bad)throw new Error(`${what} is not watertight (${c.open} boundary edges, ${c.bad} nonmanifold edges). Repair it in Mesh Tools.`)
+  if(c.open||c.bad)throw new Error(`${what} is not watertight (${c.open} boundary edges, ${c.bad} nonmanifold edges). Use Mesh Tools → Fill holes, then 'Use for analysis' (or enable Mold Making's small-defect repair).`)
   if(!(signedVolume(mesh.positions,mesh.indices)>EPS))throw new Error(`${what} is inside-out or zero-volume.`)
 }
 export interface MoldPlan {
@@ -292,11 +293,15 @@ function keyFourParts(
 /** Full-height negative, then one or two exact parting operations. */
 export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:MoldSettings,onProgress?:(s:string)=>void):MoldBuild {
   const s=parseMoldSettings(settings)
+  // Only the temporary geometry-worker copy is repaired, never the stored
+  // scan/reference or STEP source. Always surface exactly what changed.
+  const repaired=repairMoldTarget(targetMesh,s.repairTarget,s.repairHoleSize,onProgress)
+  targetMesh=repaired.mesh
   check(targetMesh,'Target')
   const plan=planMold(targetMesh,s)
   const heap:Manifold[]=[]
   const keep=(x:Manifold):Manifold=>{heap.push(x);return x}
-  const warnings:string[]=[]
+  const warnings:string[]=[...repaired.warnings]
   try{
     let solid:Manifold
     onProgress?.('Constructing full-height tooling from the source solid…')
