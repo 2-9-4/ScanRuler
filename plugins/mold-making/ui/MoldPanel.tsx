@@ -104,10 +104,17 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
   const tabNutAcrossFlats=useMold(s=>s.tabNutAcrossFlats),tabNutDepth=useMold(s=>s.tabNutDepth)
   const boxDraftDeg=useMold(s=>s.boxDraftDeg)
   const previewGap=useMold(s=>s.previewGap)
+  const pourEnabled=useMold(s=>s.pourEnabled),ventsEnabled=useMold(s=>s.ventsEnabled)
+  const pourPoint=useMold(s=>s.pourPoint),ventPoints=useMold(s=>s.ventPoints)
+  const pourDiameter=useMold(s=>s.pourDiameter)
+  const pourFunnelDiameter=useMold(s=>s.pourFunnelDiameter)
+  const pourFunnelDepth=useMold(s=>s.pourFunnelDepth)
+  const ventDiameter=useMold(s=>s.ventDiameter)
   const values={clearance,repairHoleSize,sideMargin,baseThickness,wallThickness,siliconeThickness,splitPosition,
     keyDiameter,keyDepth,keyClearance,vSeamWidth,vSeamHeight,vSeamSpacing,vSeamClearance,
     clampTabCount,clampTabWidth,clampTabProjection,clampTabThickness,
-    topBottomTabCount,tabBoltDiameter,tabNutAcrossFlats,tabNutDepth,boxDraftDeg,previewGap}
+    topBottomTabCount,tabBoltDiameter,tabNutAcrossFlats,tabNutDepth,boxDraftDeg,previewGap,
+    pourDiameter,pourFunnelDiameter,pourFunnelDepth,ventDiameter}
   const setSource=useMold(s=>s.setSource),setMode=useMold(s=>s.setMode)
   const setParts=useMold(s=>s.setParts),setSplitAxis=useMold(s=>s.setSplitAxis)
   const setBoxShape=useMold(s=>s.setBoxShape),setKeys=useMold(s=>s.setKeys)
@@ -120,6 +127,10 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
   const setDimension=useMold(s=>s.setDimension)
   const setRepairTarget=useMold(s=>s.setRepairTarget)
   const setOffsetQuality=useMold(s=>s.setOffsetQuality)
+  const setPourEnabled=useMold(s=>s.setPourEnabled)
+  const setVentsEnabled=useMold(s=>s.setVentsEnabled)
+  const setPourPoint=useMold(s=>s.setPourPoint)
+  const setVentPoints=useMold(s=>s.setVentPoints)
   const active=source==='scan'?scanName:refName
   const multi=parts>1
   const usesV=keys&&multi&&keyStyle==='v-seam'
@@ -310,8 +321,48 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
         :`${material.wall.toFixed(2)} mm walls, ${material.base.toFixed(2)} mm base`}.
         Extra margins add material on top of these calculated requirements and may be zero.</p>
     </div>
+    {mode==='direct'&&parts>1&&<div className="group" data-test="mold-casting-channels">
+      <div className="sec-head">5. Pouring and venting (optional)</div>
+      <p className="hint">Optional straight vertical channels from the top exterior into the casting cavity. XY fractions refer to the master bounding box, not the printed mold. Each must hit the real master surface and avoid a parting seam; invalid placement blocks generation. Channels are cut before splitting.</p>
+      <label className="kv"><span className="name">Add vertical pour sprue</span>
+        <input type="checkbox" data-test="mold-pour-enabled" checked={pourEnabled}
+          onChange={e=>setPourEnabled(e.target.checked)}/></label>
+      {pourEnabled&&<>
+        {fieldInput({key:'pourDiameter',label:'Pour bore diameter (mm)',help:'Diameter of the vertical channel that enters the casting cavity.'})}
+        {fieldInput({key:'pourFunnelDiameter',label:'Pour funnel mouth diameter (mm)',help:'Diameter at the top surface. Must not be smaller than the bore.'})}
+        {fieldInput({key:'pourFunnelDepth',label:'Pour funnel depth (mm)',help:'Depth of the conical mouth below the top surface. Must fit the roof.'})}
+        <div className="kv"><span className="name">Pour XY position (fraction 0–1)</span>
+          <span>
+            <input aria-label="Pour X" data-test="mold-pour-x" type="number" min={0.01} max={0.99} step={0.05}
+              value={pourPoint[0]} onChange={e=>setPourPoint([Number(e.target.value),pourPoint[1]])}/>
+            <input aria-label="Pour Y" data-test="mold-pour-y" type="number" min={0.01} max={0.99} step={0.05}
+              value={pourPoint[1]} onChange={e=>setPourPoint([pourPoint[0],Number(e.target.value)])}/>
+          </span>
+        </div>
+      </>}
+      <label className="kv"><span className="name">Add vertical air vents</span>
+        <input type="checkbox" data-test="mold-vents-enabled" checked={ventsEnabled}
+          onChange={e=>setVentsEnabled(e.target.checked)}/></label>
+      {ventsEnabled&&<>
+        {fieldInput({key:'ventDiameter',label:'Air vent bore diameter (mm)',help:'Each vent must reach the actual casting cavity without cutting a parting seam.'})}
+        {ventPoints.map(([x,y],i)=><div className="kv" key={i}>
+          <span className="name">Air vent {i+1} XY (fraction 0–1)</span>
+          <span>
+            <input aria-label={`Vent ${i+1} X`} data-test={`mold-vent-${i}-x`} type="number" min={0.01} max={0.99} step={0.05}
+              value={x} onChange={e=>setVentPoints(ventPoints.map((p,j)=>j===i?[Number(e.target.value),y]:p))}/>
+            <input aria-label={`Vent ${i+1} Y`} data-test={`mold-vent-${i}-y`} type="number" min={0.01} max={0.99} step={0.05}
+              value={y} onChange={e=>setVentPoints(ventPoints.map((p,j)=>j===i?[x,Number(e.target.value)]:p))}/>
+            {ventPoints.length>1&&<button type="button"
+              onClick={()=>setVentPoints(ventPoints.filter((_,j)=>j!==i))}>Remove</button>}
+          </span>
+        </div>)}
+        {ventPoints.length<8&&<button type="button"
+          onClick={()=>setVentPoints([...ventPoints,[0.3,0.7]])}>Add vent</button>}
+      </>}
+      <p className="hint">These are vertical-only bores. Horizontal gates, automatic high-point air-trap detection, risers, and silicone master-mount channels remain roadmap items. Assess fill direction, silicone/metal safety, vent sizing and parting seals before manufacture.</p>
+    </div>}
     <div className="group">
-      <div className="sec-head">5. Generate, inspect &amp; export</div>
+      <div className="sec-head">6. Generate, inspect &amp; export</div>
       {mode!=='silicone-box'&&<p className="hint">Positive clearance enlarges the cavity by a spherical distance-field offset, rounding sharp corners rather than pushing vertices along their normals. Very small features may be lost at the reported sampling resolution; inspect the resulting cavity. Zero clearance is exact.</p>}
       <p className="hint">
         {mode==='silicone-box'?'Printable containment box; you still must mount and seal the master. Draft applies to the box interior only.':
