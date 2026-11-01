@@ -2,13 +2,14 @@
 import { create } from 'zustand'
 import {
   DEFAULT_MOLD_SETTINGS, MOLD_SETTING_KEYS, validMoldDimension,
-  type BoxShape, type KeyStyle, type KeyPlacement, type MoldDimension, type MoldMode, type MoldSettings,
+  type BoxShape, type KeyStyle, type KeyPlacement, type MoldDimension, type MoldMode, type MoldSettings, type OffsetQuality,
   type MoldSource, type PartCount, type SplitAxis,
 } from '../core/settings'
 
 interface MoldState extends MoldSettings {
   setSource(source: MoldSource): void
   setRepairTarget(repairTarget: boolean): void
+  setOffsetQuality(offsetQuality: OffsetQuality): void
   setMode(mode: MoldMode): void
   setParts(parts: PartCount): void
   setSplitAxis(splitAxis: SplitAxis): void
@@ -23,6 +24,7 @@ export const useMold = create<MoldState>()((set)=>({
   ...DEFAULT_MOLD_SETTINGS,
   setSource: (source) => set({source}),
   setRepairTarget: (repairTarget) => set({repairTarget}),
+  setOffsetQuality: (offsetQuality) => set({offsetQuality}),
   setMode: (mode) => set({mode}),
   setParts: (parts) => set({parts}),
   setSplitAxis: (splitAxis) => set({splitAxis}),
