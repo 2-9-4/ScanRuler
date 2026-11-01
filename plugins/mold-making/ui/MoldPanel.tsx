@@ -349,15 +349,15 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
           <span className="name">Air vent {i+1} XY (fraction 0–1)</span>
           <span>
             <input aria-label={`Vent ${i+1} X`} data-test={`mold-vent-${i}-x`} type="number" min={0.01} max={0.99} step={0.05}
-              value={x} onChange={e=>setVentPoints(ventPoints.map((p,j)=>j===i?[Number(e.target.value),y]:p))}/>
+              value={x} onChange={e=>setVentPoints(ventPoints.map((p,j)=>j===i?([Number(e.target.value),y] as [number,number]):p))}/>
             <input aria-label={`Vent ${i+1} Y`} data-test={`mold-vent-${i}-y`} type="number" min={0.01} max={0.99} step={0.05}
-              value={y} onChange={e=>setVentPoints(ventPoints.map((p,j)=>j===i?[x,Number(e.target.value)]:p))}/>
+              value={y} onChange={e=>setVentPoints(ventPoints.map((p,j)=>j===i?([x,Number(e.target.value)] as [number,number]):p))}/>
             {ventPoints.length>1&&<button type="button"
               onClick={()=>setVentPoints(ventPoints.filter((_,j)=>j!==i))}>Remove</button>}
           </span>
         </div>)}
         {ventPoints.length<8&&<button type="button"
-          onClick={()=>setVentPoints([...ventPoints,[0.3,0.7]])}>Add vent</button>}
+          onClick={()=>setVentPoints([...ventPoints,[0.3,0.7] as [number,number]])}>Add vent</button>}
       </>}
       <p className="hint">These are vertical-only bores. Horizontal gates, automatic high-point air-trap detection, risers, and silicone master-mount channels remain roadmap items. Assess fill direction, silicone/metal safety, vent sizing and parting seals before manufacture.</p>
     </div>}
