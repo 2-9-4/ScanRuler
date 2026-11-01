@@ -97,7 +97,7 @@ export class MoldPreview {
         // Section through the master, perpendicular to the first parting
         // plane, so both mating sections and the cavity are visible together.
         const normal:[number,number,number]=this.splitAxis==='x'?[0,1,0]:[1,0,0]
-        const basisU:[number,number,number]=this.splitAxis==='x'?[1,0,0]:[0,1,0]
+        const basisU:[number,number,number]=this.splitAxis==='x'?[-1,0,0]:[0,1,0]
         const basisV:[number,number,number]=[0,0,1]
         const section:SectionFrame={origin,normal,basisU,basisV}
         this.scene.setSectionView(section)
@@ -107,7 +107,7 @@ export class MoldPreview {
   }
   setGap(gap:number):void {
     if(!Number.isFinite(gap)||gap<0)return
-    if(this.viewMode==='exploded')this.explodeGap=gap
+    this.explodeGap=gap
     const displayed=this.viewMode==='section'?0:Math.max(gap,1)
     this.parts.forEach((p,i)=>{
       // At zero the assembly is closed. Positive gap means a separated parts
@@ -118,6 +118,15 @@ export class MoldPreview {
   }
   setVisible(visible:boolean):void {
     this.group.visible=visible
+    if(!visible){
+      // A section view belongs to the mold workspace, not to whichever
+      // workspace is opened next.
+      this.scene.setSectionView(null)
+      if(this.source==='reference'&&this.priorNominal!==null)
+        this.scene.setNominalVisible(this.priorNominal)
+      else if(this.source==='scan'&&this.priorScan!==null)
+        this.scene.setScanVisible(this.priorScan)
+    }else if(this.bounds)this.setMode(this.viewMode)
     this.host.invalidate()
   }
   clear():void {
