@@ -5,8 +5,8 @@ import {moldSection} from '../app/projectSection'
 import {useMold} from '../state/moldStore'
 
 describe('Mold Making configuration',()=>{
-  it('has three processes and complete split tooling defaults',()=>{
-    expect(new Set(MOLD_MODES).size).toBe(3)
+  it('has two processes and complete split tooling defaults',()=>{
+    expect(new Set(MOLD_MODES).size).toBe(2)
     expect(DEFAULT_MOLD_SETTINGS.parts).toBe(2)
     expect(DEFAULT_MOLD_SETTINGS.clearance).toBe(0)
     expect(DEFAULT_MOLD_SETTINGS.offsetQuality).toBe('balanced')
@@ -20,6 +20,13 @@ describe('Mold Making configuration',()=>{
     expect(()=>parseMoldSettings({...saved,offsetQuality:'ultra'})).toThrow(/quality/)
     const legacy=Object.fromEntries(Object.entries(saved).filter(([key])=>key!=='offsetQuality'))
     expect(parseMoldSettings(legacy).offsetQuality).toBe('balanced')
+  })
+  it('migrates removed thin-shell projects into direct mold settings',()=>{
+    const old={...DEFAULT_MOLD_SETTINGS,mode:'thin-negative-shell'}
+    const parsed=parseMoldSettings(old)
+    expect(parsed.mode).toBe('direct')
+    expect(MOLD_MODES).not.toContain('thin-negative-shell')
+    expect(parsed.clearance).toBe(old.clearance)
   })
   it('persists manually editable metal-dowel hole locations',()=>{
     const s={...DEFAULT_MOLD_SETTINGS,keyStyle:'metal-dowel' as const,
