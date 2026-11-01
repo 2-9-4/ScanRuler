@@ -454,9 +454,10 @@ function keyFourParts(
   return registered
 }
 /** Full-height negative, then one or two exact parting operations. */
-export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:MoldSettings,onProgress?:(s:string)=>void):MoldBuild {
+export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:MoldSettings,onProgress?:(s:string,fraction?:number)=>void):MoldBuild {
   const s=parseMoldSettings(settings)
   const warnings:string[]=[]
+  onProgress?.('Checking source geometry and mold settings…',0.06)
   if(s.mode==='silicone-box'){
     // Unlike a direct-negative cavity or conformal shell, a silicone
     // containment box never uses the target as a Boolean cutter. Only its
@@ -493,7 +494,7 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
   const fieldRef:{current:SphericalDistanceField|null}={current:null}
   try{
     let solid:Manifold
-    onProgress?.('Constructing full-height tooling from the source solid…')
+    onProgress?.('Constructing full-height tooling from the source solid…',0.13)
     if(s.mode==='silicone-box'){
       const out=plan.outer,inn=plan.innerBox!
       let body:Manifold,empty:Manifold
@@ -546,7 +547,7 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
       pieces=[keep(solid.trimByPlane([0,0,-1],-plan.openingZ!))]
       warnings.push('One-piece mode reproduces only the bottom half; select 2 or 4 parts for a complete cavity.')
     }else if(s.parts!==1){
-      onProgress?.('Cutting exact parting planes; applying mating pins and pockets…')
+      onProgress?.('Cutting exact parting planes; applying mating pins and pockets…',0.84)
       const a=s.splitAxis,k=axisIndex(a)
       if(s.parts===4&&a==='z'&&s.keys)throw new Error('Four-part Z-first tooling with pins is not yet supported. Choose X/Y as the primary parting axis, or disable pins.')
       const firstAt=extent.min[k]+(extent.max[k]-extent.min[k])*s.splitPosition
@@ -557,7 +558,7 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
         pieces=split(wasm,pieces,second,secondAt,s,plan,keep,false)
         // Secondary split runs on the unkeyed bodies. Add interfaces once
         // every final component exists. Prevents cuts across existing keys.
-        if(s.keys&&s.mode!=='thin-negative-shell'){
+        if(s.keys){
           pieces=keyFourParts(wasm,pieces,a,firstAt,second,secondAt,s,plan,keep)
         }
       }
@@ -570,9 +571,13 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
       warnings.push('Splits do not guarantee demoldability: inspect the target for trapped undercuts and add a sprue or vent before casting.')
     }
     const loose:MoldPart[]=[]
-    const mainParts=pieces.map((x,i)=>toPart(x,`Mold part ${i+1}`,warnings,loose))
+    const mainParts=pieces.map((x,i)=>{
+      onProgress?.(`Checking and exporting mold component ${i+1} of ${pieces.length}…`,0.90+0.08*i/pieces.length)
+      return toPart(x,`Mold part ${i+1}`,warnings,loose)
+    })
     if(mainParts.length!==s.parts)throw new Error('Part count mismatch: a component disappeared during splitting.')
     const parts=[...mainParts,...loose]
+    onProgress?.('Preparing printable components for export…',0.99)
     return {parts,kind:s.mode,warnings,openingZ:plan.openingZ,
       volumeMm3:parts.reduce((v,p)=>v+p.volumeMm3,0),
       positions:parts[0].positions,indices:parts[0].indices}
