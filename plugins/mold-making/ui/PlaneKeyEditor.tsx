@@ -17,6 +17,7 @@ interface Props {
   baseThickness:number
   diameter:number
   clearance:number
+  cavityClearance:number
 }
 const LX=48,RX=432,TY=36,BY=322,W=480,H=370
 const clamp=(v:number)=>Math.max(0.01,Math.min(0.99,v))
@@ -27,7 +28,7 @@ const coords=(clientX:number,clientY:number,el:SVGSVGElement):Point=>{
   const x=(clientX-r.left)/r.width*W,y=(clientY-r.top)/r.height*H
   return [round((x-LX)/(RX-LX)),round((BY-y)/(BY-TY))]
 }
-export function PlaneKeyEditor({points,axis,manual,onChange,onManual,bounds,sideMargin,baseThickness,diameter,clearance}:Props){
+export function PlaneKeyEditor({points,axis,manual,onChange,onManual,bounds,sideMargin,baseThickness,diameter,clearance,cavityClearance}:Props){
   const drag=useRef<number|null>(null)
   const canvas=useRef<SVGSVGElement|null>(null)
   const dimensions:readonly [number,number]=axis==='x'?[1,2]:axis==='y'?[0,2]:[0,1]
@@ -67,7 +68,7 @@ export function PlaneKeyEditor({points,axis,manual,onChange,onManual,bounds,side
     const ty=[bounds!.min[dimensions[1]],bounds!.max[dimensions[1]]]
     const dx=Math.max(tx[0]-x,0,x-tx[1]),dy=Math.max(ty[0]-y,0,y-ty[1])
     const inset=diameter/2+clearance+0.75
-    return Math.hypot(dx,dy)<=diameter/2+2*clearance+0.5||
+    return Math.hypot(dx,dy)<=diameter/2+clearance+cavityClearance+0.5||
       x<ext[0][0]+inset||x>ext[0][1]-inset||
       y<ext[1][0]+inset||y>ext[1][1]-inset
   }
