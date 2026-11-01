@@ -14,6 +14,10 @@ export interface MoldSettings {
   source: MoldSource
   mode: MoldMode
   clearance: number
+  /** Automatically repair exact zero-area faces and very small open rims on a copy. */
+  repairTarget: boolean
+  /** Maximum edge-to-edge span of an open rim allowed for automatic patching. */
+  repairHoleSize: number
   sideMargin: number
   baseThickness: number
   wallThickness: number
@@ -45,6 +49,8 @@ export const DEFAULT_MOLD_SETTINGS: Readonly<MoldSettings> = Object.freeze({
   // A positive clearance grows the target cutter, enlarging the void.
   // Clearance is a deliberate opt-in operation.
   clearance: 0,
+  repairTarget: true,
+  repairHoleSize: 1,
   sideMargin: 8,
   baseThickness: 4,
   wallThickness: 3,
@@ -68,11 +74,11 @@ export type MoldDimension = Exclude<{
   [K in keyof MoldSettings]: MoldSettings[K] extends number ? K : never
 }[keyof MoldSettings], 'parts'>
 export const MOLD_DIMENSIONS: readonly MoldDimension[] = [
-  'clearance', 'sideMargin', 'baseThickness', 'wallThickness', 'siliconeThickness',
+  'clearance', 'repairHoleSize', 'sideMargin', 'baseThickness', 'wallThickness', 'siliconeThickness',
   'splitPosition', 'keyDiameter', 'keyDepth', 'keyClearance', 'boxDraftDeg', 'previewGap',
 ]
 export const MOLD_SETTING_KEYS: readonly (keyof MoldSettings)[] = [
-  'source', 'mode', ...MOLD_DIMENSIONS, 'parts', 'splitAxis', 'boxShape', 'keys',
+  'source', 'mode', ...MOLD_DIMENSIONS, 'repairTarget', 'parts', 'splitAxis', 'boxShape', 'keys',
   'keyStyle', 'keyPlacement', 'keyPositions',
 ]
 export function validMoldDimension(key: MoldDimension, value: number): boolean {
@@ -93,6 +99,7 @@ export function parseMoldSettings(value: unknown): MoldSettings {
   if (parsed.parts !== 1 && parsed.parts !== 2 && parsed.parts !== 4) throw new Error('Parts must be 1, 2 or 4.')
   if (!(['x','y','z'] as const).includes(parsed.splitAxis)) throw new Error('Split axis must be X, Y, or Z.')
   if (parsed.boxShape !== 'rectangular' && parsed.boxShape !== 'cylindrical') throw new Error('Invalid box shape.')
+  if (typeof parsed.repairTarget !== 'boolean') throw new Error('Invalid mesh repair setting.')
   if (typeof parsed.keys !== 'boolean') throw new Error('Invalid alignment keys setting.')
   if (!(['printed-pin', 'tapered-key', 'metal-dowel'] as const).includes(parsed.keyStyle)) throw new Error('Invalid registration feature shape.')
   if (parsed.keyPlacement !== 'auto' && parsed.keyPlacement !== 'manual') throw new Error('Invalid registration placement mode.')
