@@ -230,7 +230,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
           {(usesV||parts===3)&&<div className="mold-feature-section">
             <div className="sec-head">Clamping tabs · exterior ears</div>
             {TAB_FIELDS.map(fieldInput)}
-            {parts!==3&&<><label className="kv"><span className="name">Add top and bottom clamp tabs</span>
+            {(parts===4||splitAxis!=='z')&&<><label className="kv"><span className="name">Add top and bottom clamp tabs</span>
               <input type="checkbox" data-test="mold-top-bottom-tabs" checked={topBottomTabs}
                 onChange={e=>setTopBottomTabs(e.target.checked)}/></label>
               {topBottomTabs&&EXTRA_TAB_FIELDS.map(fieldInput)}</>}
