@@ -13,6 +13,7 @@ export interface MoldRepairReport {
   mesh: SolidMesh
   warnings: string[]
   removedFaces: number
+  adjustedVertices: number
   weldedVertices: number
   filledHoles: number
 }
@@ -22,6 +23,101 @@ function collapsed(p:Float32Array,ia:number,ib:number,ic:number):boolean {
   const ux=p[b]-p[a],uy=p[b+1]-p[a+1],uz=p[b+2]-p[a+2]
   const vx=p[c]-p[a],vy=p[c+1]-p[a+1],vz=p[c+2]-p[a+2]
   return (uy*vz-uz*vy)===0&&(uz*vx-ux*vz)===0&&(ux*vy-uy*vx)===0
+}
+/**
+ * A mesh can be topologically watertight while a few of its triangles have
+ * exactly zero area (a collapsed vertex in the source tessellation).
+ * Deleting those faces OPENS the previously closed surface. Instead make the
+ * smallest Float32-representable change needed to lift the affected vertex
+ * away from its edge, approximately in the neighboring surface tangent plane.
+ *
+ * This only runs for an otherwise CLOSED indexed mesh, never for an open
+ * sheet or repeated-index triangle. Keep the original vertex/face numbering.
+ * If we cannot mend every face with a submicron adjustment, return null:
+ * don't silently carve a hole in a previously watertight source.
+ */
+export function liftCollapsedClosedMesh(input:SolidMesh):{mesh:SolidMesh;adjustedVertices:number}|null {
+  const original=input.positions,idx=input.indices,n=original.length/3
+  const badFaces:number[]=[]
+  for(let t=0;t<idx.length;t+=3){
+    const a=idx[t],b=idx[t+1],c=idx[t+2]
+    if(a===b||a===c||b===c)return null
+    if(collapsed(original,a,b,c))badFaces.push(t)
+  }
+  if(badFaces.length===0)return {mesh:input,adjustedVertices:0}
+  const pos=new Float32Array(original)
+  const moved=new Set<number>()
+  // Gather only the adjacency needed by faces that may require adjustment.
+  const affected=new Set<number>()
+  for(const t of badFaces)for(let k=0;k<3;k++)affected.add(idx[t+k])
+  const neighbors=new Map<number,number[]>()
+  for(const v of affected)neighbors.set(v,[])
+  for(let t=0;t<idx.length;t+=3)for(let k=0;k<3;k++)
+    neighbors.get(idx[t+k])?.push(t)
+  const min=[Infinity,Infinity,Infinity],max=[-Infinity,-Infinity,-Infinity]
+  for(let i=0;i<pos.length;i+=3)for(let k=0;k<3;k++){
+    min[k]=Math.min(min[k],pos[i+k]);max[k]=Math.max(max[k],pos[i+k])
+  }
+  const extent=Math.hypot(max[0]-min[0],max[1]-min[1],max[2]-min[2])
+  // Float32 spacing can be ~1e-5 mm on a 100 mm object. Use enough for
+  // rounding while remaining far below ordinary printing tolerance.
+  const step=Math.max(1e-6,extent*1e-6)
+  const unit=(v:number[]):number[]|null=>{
+    const l=Math.hypot(v[0],v[1],v[2])
+    return l>0?v.map(x=>x/l):null
+  }
+  for(const t of badFaces){
+    const tri=[idx[t],idx[t+1],idx[t+2]]
+    if(!collapsed(pos,tri[0],tri[1],tri[2]))continue
+    // Move the vertex opposite the longest edge: for a collinear triangle
+    // this is the vertex between the endpoints, minimizing distortion.
+    let best=0,distance=-1
+    for(let k=0;k<3;k++){
+      const a=tri[(k+1)%3]*3,b=tri[(k+2)%3]*3
+      const d=(pos[a]-pos[b])**2+(pos[a+1]-pos[b+1])**2+(pos[a+2]-pos[b+2])**2
+      if(d>distance){distance=d;best=k}
+    }
+    if(distance<=0)return null // all corners coincide: cannot lift one vertex
+    const v=tri[best],a=tri[(best+1)%3],b=tri[(best+2)%3]
+    const edge=unit([pos[b*3]-pos[a*3],pos[b*3+1]-pos[a*3+1],pos[b*3+2]-pos[a*3+2]])
+    if(!edge)return null
+    // Average nonzero neighboring triangle normals to infer the surface
+    // tangent. If their sum cancels, choose any perpendicular to the edge.
+    const avg=[0,0,0],around=neighbors.get(v)??[]
+    for(const face of around){
+      const x=idx[face]*3,y=idx[face+1]*3,z=idx[face+2]*3
+      const u=[pos[y]-pos[x],pos[y+1]-pos[x+1],pos[y+2]-pos[x+2]]
+      const w=[pos[z]-pos[x],pos[z+1]-pos[x+1],pos[z+2]-pos[x+2]]
+      const normal=unit([u[1]*w[2]-u[2]*w[1],u[2]*w[0]-u[0]*w[2],u[0]*w[1]-u[1]*w[0]])
+      if(normal)for(let k=0;k<3;k++)avg[k]+=normal[k]
+    }
+    const cross=(x:number[],y:number[])=>[
+      x[1]*y[2]-x[2]*y[1],
+      x[2]*y[0]-x[0]*y[2],
+      x[0]*y[1]-x[1]*y[0]]
+    const tangent=unit(cross(avg,edge))??unit(cross(
+      Math.abs(edge[0])<0.8?[1,0,0]:[0,1,0],edge))
+    if(!tangent)return null
+    const start=[pos[v*3],pos[v*3+1],pos[v*3+2]]
+    let solved=false
+    for(const sign of [1,-1])for(const scale of [1,2,4,8,16]){
+      const delta=Math.min(step*scale,0.001) // at most one micron in mm
+      for(let k=0;k<3;k++)pos[v*3+k]=start[k]+sign*delta*tangent[k]
+      // Do not create any new zero-area neighboring faces or fail to fix
+      // this face. Topology remains identical; only one coordinate moves.
+      if(around.every(face=>!collapsed(pos,idx[face],idx[face+1],idx[face+2])||
+        badFaces.includes(face))){
+        if(!collapsed(pos,tri[0],tri[1],tri[2])){
+          solved=true;break
+        }
+      }
+    }
+    if(!solved)return null
+    moved.add(v)
+  }
+  for(let t=0;t<idx.length;t+=3)
+    if(collapsed(pos,idx[t],idx[t+1],idx[t+2]))return null
+  return {mesh:{positions:pos,indices:idx},adjustedVertices:moved.size}
 }
 /** Reindex exactly coincident vertices, but do not move or smooth anything.
  * Reject the candidate if it creates non-manifold edges or fails to improve
@@ -64,9 +160,19 @@ export function repairMoldTarget(
   // to the caller's normal validation. Checking connectivity here would
   // mask a more specific error (e.g. an exactly zero-area face also makes
   // some edge counts appear nonmanifold) and make the toggle nonfunctional.
-  if(!enabled)return {mesh:input,warnings:[],removedFaces:0,weldedVertices:0,filledHoles:0}
+  if(!enabled)return {mesh:input,warnings:[],removedFaces:0,adjustedVertices:0,weldedVertices:0,filledHoles:0}
   const sourceTopology=closedness(idx,p.length/3)
-  let removedFaces=0,weldedVertices=0,filledHoles=0
+  let removedFaces=0,adjustedVertices=0,weldedVertices=0,filledHoles=0
+  if(sourceTopology.open===0&&sourceTopology.bad===0){
+    const lifted=liftCollapsedClosedMesh(input)
+    if(!lifted)throw new Error('The target is indexed watertight but contains collapsed triangles that cannot safely be lifted by at most 0.001 mm. The source was left unchanged; inspect the affected faces or use an external mesh repair tool.')
+    if(lifted.adjustedVertices){
+      onProgress?.(`Lifted ${lifted.adjustedVertices} collapsed target vertices by at most 0.001 mm without opening the closed mesh.`)
+      return {mesh:lifted.mesh,
+        warnings:[`Temporary target repair: nudged ${lifted.adjustedVertices} vertices by at most 0.001 mm to fix zero-area faces while preserving all triangles and watertight topology. Original source unchanged; inspect the cavity.`],
+        removedFaces:0,adjustedVertices:lifted.adjustedVertices,weldedVertices:0,filledHoles:0}
+    }
+  }
   let mesh=input
   if(enabled){
     const kept:number[]=[]
@@ -138,5 +244,5 @@ export function repairMoldTarget(
   if(removedFaces||weldedVertices||filledHoles){
     warnings.push(`Temporary target mesh repair: removed ${removedFaces} exactly zero-area triangles, welded ${weldedVertices} exactly coincident vertices, patched ${filledHoles} small holes. Original source unchanged. Inspect the cavity near repaired regions before printing.`)
   }
-  return {mesh,warnings,removedFaces,weldedVertices,filledHoles}
+  return {mesh,warnings,removedFaces,adjustedVertices,weldedVertices,filledHoles}
 }
