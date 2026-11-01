@@ -7,7 +7,7 @@ import { extentOf } from '../../../src/core/geometry/bounds'
 import { closedness, type Triangles } from '../../mesh-tools/core/boolean'
 import { signedVolume } from '../../mesh-tools/core/hollow'
 import { repairMoldTarget } from './repair'
-import { sphericalOffset } from './sphericalOffset'
+import { createSphericalDistanceField, sphericalOffset, type SphericalDistanceField } from './sphericalOffset'
 import { parseMoldSettings, type MoldSettings, type SplitAxis } from './settings'
 
 type Vec3 = [number,number,number]
@@ -412,6 +412,9 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
   const plan=planMold(targetMesh,s)
   const heap:Manifold[]=[]
   const keep=(x:Manifold):Manifold=>{heap.push(x);return x}
+  // One triangle BVH per generation, not once per clearance radius.
+  // Thin negative shells compute two concentric offsets from the same input.
+  const fieldRef:{current:SphericalDistanceField|null}={current:null}
   try{
     let solid:Manifold
     onProgress?.('Constructing full-height tooling from the source solid…')
@@ -436,8 +439,9 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
       // spherical clearance rounds convex corners and avoids per-vertex
       // normal spikes. Zero clearance keeps the original cutter exactly.
       const dilate=(distance:number):Manifold=>{
-        const {solid,report}=sphericalOffset(wasm,targetMesh,distance,onProgress)
-        warnings.push(`Spherical distance-field offset ${distance} mm sampled at ${report.gridMm.toFixed(3)} mm grid spacing (surface refinement tolerance ${report.toleranceMm.toFixed(3)} mm). This is an approximation: details smaller than the grid may be lost. Inspect the cavity before printing.`)
+        fieldRef.current??=createSphericalDistanceField(targetMesh,onProgress)
+        const {solid,report}=sphericalOffset(wasm,targetMesh,distance,onProgress,s.offsetQuality,fieldRef.current)
+        warnings.push(`Spherical distance-field offset ${distance} mm (${s.offsetQuality}) used a ${report.gridMm.toFixed(3)} mm grid (${report.gridSamples.toLocaleString()} samples; refinement tolerance ${report.toleranceMm.toFixed(3)} mm). Small features below this spacing may be lost; inspect the cavity before printing.`)
         return keep(solid)
       }
       const positive=s.clearance>0?dilate(s.clearance):toManifold(wasm,targetMesh,keep)
@@ -501,5 +505,8 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
     return {parts,kind:s.mode,warnings,openingZ:plan.openingZ,
       volumeMm3:parts.reduce((v,p)=>v+p.volumeMm3,0),
       positions:parts[0].positions,indices:parts[0].indices}
-  }finally{for(let i=heap.length-1;i>=0;i--)heap[i].delete()}
+  }finally{
+    fieldRef.current?.dispose()
+    for(let i=heap.length-1;i>=0;i--)heap[i].delete()
+  }
 }

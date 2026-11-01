@@ -11,6 +11,7 @@ import type { Manifold, ManifoldToplevel } from 'manifold-3d'
 import { BufferAttribute, BufferGeometry, Vector3 } from 'three'
 import { MeshBVH } from 'three-mesh-bvh'
 import type { SolidMesh } from '../../../src/app/solids'
+import type { OffsetQuality } from './settings'
 import { extentOf } from '../../../src/core/geometry/bounds'
 import { signedVolume } from '../../mesh-tools/core/hollow'
 
@@ -20,58 +21,58 @@ export interface SphericalOffsetReport {
   toleranceMm: number
 }
 
-const MAX_GRID_SAMPLES=8_000_000
-const MIN_GRID_MM=0.12
-const MAX_GRID_MM=0.8
-
-/** Select a sampling grid within a predictable worker memory budget. The
- * vertex positions returned by levelSet are refined to a smaller tolerance,
- * but narrow details smaller than the grid still cannot be guaranteed.
+/** Keep Fast responsive on ordinary consumer hardware. A modest grid also
+ * means fewer expensive BVH closest-point callbacks inside Manifold.levelSet.
+ * Fine remains an explicit opt-in for tiny source detail.
  */
-export function sphericalOffsetGrid(mesh:SolidMesh,d:number):SphericalOffsetReport {
+const QUALITY:Record<OffsetQuality,{minGrid:number;maxGrid:number;maxSamples:number;tolerance:number}>={
+  fast:{minGrid:0.65,maxGrid:2.5,maxSamples:200_000,tolerance:0.2},
+  balanced:{minGrid:0.32,maxGrid:1.8,maxSamples:850_000,tolerance:0.09},
+  fine:{minGrid:0.12,maxGrid:0.8,maxSamples:6_000_000,tolerance:0.035},
+}
+
+/** Grid budget trades execution time against geometric detail. 
+ * The actual spacing depends on the *whole* model bounding box, not just the
+ * offset radius. LevelSet's refinement improves intersections but cannot
+ * recover details below the grid spacing.
+ */
+export function sphericalOffsetGrid(mesh:SolidMesh,d:number,quality:OffsetQuality='balanced'):SphericalOffsetReport {
   if(!(d>0)||!Number.isFinite(d))throw new Error('A spherical clearance must be positive.')
+  const preset=QUALITY[quality]
+  if(!preset)throw new Error('Unknown spherical offset quality.')
   const {min,max}=extentOf(mesh.positions)
-  const padding=d+2
-  const span=min.map((v,k)=>max[k]-v+2*padding)
+  const pad=d+2
+  const span=min.map((v,k)=>max[k]-v+2*pad)
   if(span.some(v=>!Number.isFinite(v)||v<=0))throw new Error('Invalid mesh bounds for spherical offset.')
   const samples=(h:number)=>span.reduce((n,x)=>n*(Math.ceil(x/h)+2),1)
-  // Sampled rounded corners need more than a single cell across the radius.
-  // If the model is too large, enlarge the grid only up to the quality cap.
-  let h=Math.max(MIN_GRID_MM,Math.min(0.3,d/2))
-  if(samples(h)>MAX_GRID_SAMPLES){
-    let lo=h,hi=MAX_GRID_MM
-    if(samples(hi)>MAX_GRID_SAMPLES)throw new Error(
-      `Spherical clearance ${d} mm on this large model needs too many distance-field cells even at ${MAX_GRID_MM} mm resolution. Reduce the model's bounds or use a CAD offset on the original STEP solid; ScanRuler will not substitute the jagged vertex-normal algorithm.`)
+  let h=preset.minGrid
+  if(samples(h)>preset.maxSamples){
+    let lo=h,hi=preset.maxGrid
+    if(samples(hi)>preset.maxSamples)throw new Error(
+      `The ${quality} spherical offset on this model needs too many distance-field cells: exceeds its ${preset.maxSamples.toLocaleString()} cell budget even at ${preset.maxGrid} mm grid spacing. Use a smaller model or separate surfaces; the old vertex-normal algorithm will not be used as a fallback.`)
     for(let k=0;k<28;k++){
       const m=(lo+hi)/2
-      if(samples(m)>MAX_GRID_SAMPLES)lo=m
+      if(samples(m)>preset.maxSamples)lo=m
       else hi=m
     }
     h=hi
   }
-  const gridSamples=Math.ceil(samples(h))
-  // At modest grid spacing, Manifold refines crossings toward the distance
-  // surface; this does not fix features smaller than the sample grid.
-  const toleranceMm=Math.min(0.05,h/5,Math.max(0.01,d/8))
-  return {gridMm:h,gridSamples,toleranceMm}
+  const toleranceMm=Math.min(preset.tolerance,h*(quality==='fast'?0.35:quality==='balanced'?0.2:0.12))
+  return {gridMm:h,gridSamples:Math.ceil(samples(h)),toleranceMm}
 }
 
-export function sphericalOffset(
-  wasm:ManifoldToplevel,mesh:SolidMesh,d:number,
-  onProgress?:(message:string)=>void,
-):{solid:Manifold;report:SphericalOffsetReport} {
-  const report=sphericalOffsetGrid(mesh,d)
-  const {min,max}=extentOf(mesh.positions)
-  const pad=d+2
-  const bounds={
-    min:[min[0]-pad,min[1]-pad,min[2]-pad] as [number,number,number],
-    max:[max[0]+pad,max[1]+pad,max[2]+pad] as [number,number,number],
-  }
-  onProgress?.(`Sampling spherical clearance at ${report.gridMm.toFixed(3)} mm spacing (${report.gridSamples.toLocaleString()} points)…`)
+/** Precompute and retain the BVH, reordered triangle normals, and query
+ * scratch buffers for all offsets of the same source (particularly the two
+ * offset surfaces of thin negative shells). Dispose when generation ends.
+ */
+export interface SphericalDistanceField {
+  sdf(v:readonly number[]):number
+  dispose():void
+}
+export function createSphericalDistanceField(mesh:SolidMesh,onProgress?:(message:string)=>void):SphericalDistanceField {
+  onProgress?.('Indexing source triangles for spherical clearance…')
   const geometry=new BufferGeometry()
   geometry.setAttribute('position',new BufferAttribute(mesh.positions,3))
-  // BVH reorders triangle indices while building. Keep the user's data
-  // untouched, and calculate face normals AFTER reordering.
   geometry.setIndex(new BufferAttribute(mesh.indices.slice(),1))
   const bvh=new MeshBVH(geometry,{maxLeafTris:12})
   const index=geometry.getIndex()!
@@ -93,25 +94,42 @@ export function sphericalOffset(
   }
   const query=new Vector3()
   const closest={point:new Vector3(),distance:0,faceIndex:0}
-  // The shortest distance to the actual triangle surface is Euclidean.
-  // Its sign comes from the outward triangle orientation at the nearest
-  // point. ScanRuler already checks matching winding and positive volume.
-  const sdf=(v:readonly number[]):number=>{
-    query.set(v[0],v[1],v[2])
-    const nearest=bvh.closestPointToPoint(query,closest)
-    if(!nearest)throw new Error('No closest triangle found while evaluating spherical clearance.')
-    const face=nearest.faceIndex*3
-    const dx=query.x-nearest.point.x
-    const dy=query.y-nearest.point.y
-    const dz=query.z-nearest.point.z
-    const dot=dx*normals[face]+dy*normals[face+1]+dz*normals[face+2]
-    // Manifold levelSet's convention: positive inside, negative outside.
-    return dot<0?nearest.distance:-nearest.distance
+  return {
+    sdf(v:readonly number[]):number{
+      query.set(v[0],v[1],v[2])
+      const nearest=bvh.closestPointToPoint(query,closest)
+      if(!nearest)throw new Error('No closest triangle found while evaluating spherical clearance.')
+      const face=nearest.faceIndex*3
+      const dx=query.x-nearest.point.x
+      const dy=query.y-nearest.point.y
+      const dz=query.z-nearest.point.z
+      const dot=dx*normals[face]+dy*normals[face+1]+dz*normals[face+2]
+      return dot<0?nearest.distance:-nearest.distance
+    },
+    dispose(){geometry.dispose()},
   }
+}
+
+export function sphericalOffset(
+  wasm:ManifoldToplevel,mesh:SolidMesh,d:number,
+  onProgress?:(message:string)=>void,
+  quality:OffsetQuality='balanced',
+  sharedField?:SphericalDistanceField,
+):{solid:Manifold;report:SphericalOffsetReport} {
+  const report=sphericalOffsetGrid(mesh,d,quality)
+  const {min,max}=extentOf(mesh.positions)
+  const pad=d+2
+  const bounds={
+    min:[min[0]-pad,min[1]-pad,min[2]-pad] as [number,number,number],
+    max:[max[0]+pad,max[1]+pad,max[2]+pad] as [number,number,number],
+  }
+  // The shared field lets two-shell generation index its triangles once.
+  const ownField=!sharedField
+  const field=sharedField??createSphericalDistanceField(mesh,onProgress)
   try{
-    // Level zero is the original surface. A negative level moves the surface
-    // OUT by distance d, i.e. the spherical dilation of the target solid.
-    const solid=wasm.Manifold.levelSet(sdf,bounds,report.gridMm,-d,report.toleranceMm)
+    onProgress?.(`Sampling ${quality} spherical clearance at ${report.gridMm.toFixed(3)} mm spacing (${report.gridSamples.toLocaleString()} points)…`)
+    // Inside is positive. Negative isolevel expands the source solid.
+    const solid=wasm.Manifold.levelSet(field.sdf,bounds,report.gridMm,-d,report.toleranceMm)
     if(solid.status()!=='NoError'||solid.isEmpty()){
       solid.delete()
       throw new Error('Spherical distance-field offset produced no valid closed solid.')
@@ -119,20 +137,18 @@ export function sphericalOffset(
     const before=signedVolume(mesh.positions,mesh.indices),after=solid.volume()
     if(!(after>before)){
       solid.delete()
-      throw new Error(`Spherical offset ${d} mm did not enlarge the master volume (${before.toFixed(3)} → ${after.toFixed(3)} mm³). Check source face orientation and geometry; no mold was exported.`)
+      throw new Error(`Spherical offset ${d} mm did not enlarge the master volume (${before.toFixed(3)} → ${after.toFixed(3)} mm³). Check source orientation; no mold exported.`)
     }
     const grown=solid.boundingBox()
     for(let k=0;k<3;k++){
-      // Reconstructed bounds should grow outwards by approximately d.
-      // A grossly inconsistent bound indicates wrong sign or a broken SDF.
       if(grown.min[k]>min[k]-d+report.gridMm*2 ||
          grown.max[k]<max[k]+d-report.gridMm*2){
         solid.delete()
-        throw new Error('Spherical offset did not expand the target on every axis; check face orientation and input mesh topology.')
+        throw new Error('Spherical offset did not expand the target on every axis; check source face orientation and topology.')
       }
     }
     return {solid,report}
   }finally{
-    geometry.dispose()
+    if(ownField)field.dispose()
   }
 }

@@ -2,7 +2,7 @@
 import { beforeAll,describe,expect,it } from 'vitest'
 import Module,{type ManifoldToplevel} from 'manifold-3d'
 import { boxSolid } from '../core/geometry'
-import { sphericalOffset,sphericalOffsetGrid } from '../core/sphericalOffset'
+import { createSphericalDistanceField,sphericalOffset,sphericalOffsetGrid } from '../core/sphericalOffset'
 import { closedness } from '../../mesh-tools/core/boolean'
 
 let wasm:ManifoldToplevel
@@ -37,6 +37,32 @@ describe('Spherical solid clearance (Minkowski dilation by a ball)',()=>{
       expect(closedness(new Uint32Array(output.triVerts),
         output.vertProperties.length/3)).toEqual({open:0,bad:0})
     }finally{solid.delete()}
+  })
+  it('uses predictable, increasing cell budgets for Fast/Balanced/Fine',()=>{
+    const big=boxSolid({min:[0,0,0],max:[80,70,60]})
+    const fast=sphericalOffsetGrid(big,0.5,'fast')
+    const balanced=sphericalOffsetGrid(big,0.5,'balanced')
+    const fine=sphericalOffsetGrid(big,0.5,'fine')
+    expect(fast.gridSamples).toBeLessThanOrEqual(200_000)
+    expect(balanced.gridSamples).toBeLessThanOrEqual(850_000)
+    expect(fine.gridSamples).toBeLessThanOrEqual(6_000_000)
+    expect(fast.gridSamples).toBeLessThan(balanced.gridSamples)
+    expect(balanced.gridSamples).toBeLessThan(fine.gridSamples)
+    expect(fast.gridMm).toBeGreaterThan(balanced.gridMm)
+    expect(balanced.gridMm).toBeGreaterThan(fine.gridMm)
+  })
+  it('allows multiple offsets to reuse a single prepared triangle field',()=>{
+    const field=createSphericalDistanceField(cube)
+    try{
+      for(const d of [0.5,1]){
+        const {solid,report}=sphericalOffset(wasm,cube,d,undefined,'fast',field)
+        try{
+          expect(solid.volume()).toBeGreaterThan(1000)
+          expect(report.gridSamples).toBeLessThanOrEqual(200_000)
+          expect(solid.status()).toBe('NoError')
+        }finally{solid.delete()}
+      }
+    }finally{field.dispose()}
   })
   it('never mutates the original mesh while sampling',()=>{
     const pos=cube.positions.slice(),ind=cube.indices.slice()

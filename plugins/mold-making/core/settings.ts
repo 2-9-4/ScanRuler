@@ -8,12 +8,15 @@ export type SplitAxis = 'x' | 'y' | 'z'
 export type BoxShape = 'rectangular' | 'cylindrical'
 export type KeyStyle = 'printed-pin' | 'tapered-key' | 'metal-dowel'
 export type KeyPlacement = 'auto' | 'manual'
+export type OffsetQuality = 'fast' | 'balanced' | 'fine'
 export type PartCount = 1 | 2 | 4
 
 export interface MoldSettings {
   source: MoldSource
   mode: MoldMode
   clearance: number
+  /** Sampling resolution for spherical mold clearance (and shell wall). */
+  offsetQuality: OffsetQuality
   /** Automatically repair exact zero-area faces and very small open rims on a copy. */
   repairTarget: boolean
   /** Maximum edge-to-edge span of an open rim allowed for automatic patching. */
@@ -49,6 +52,7 @@ export const DEFAULT_MOLD_SETTINGS: Readonly<MoldSettings> = Object.freeze({
   // A positive clearance grows the target cutter, enlarging the void.
   // Clearance is a deliberate opt-in operation.
   clearance: 0,
+  offsetQuality: 'balanced',
   repairTarget: true,
   repairHoleSize: 2,
   sideMargin: 8,
@@ -78,7 +82,7 @@ export const MOLD_DIMENSIONS: readonly MoldDimension[] = [
   'splitPosition', 'keyDiameter', 'keyDepth', 'keyClearance', 'boxDraftDeg', 'previewGap',
 ]
 export const MOLD_SETTING_KEYS: readonly (keyof MoldSettings)[] = [
-  'source', 'mode', ...MOLD_DIMENSIONS, 'repairTarget', 'parts', 'splitAxis', 'boxShape', 'keys',
+  'source', 'mode', ...MOLD_DIMENSIONS, 'offsetQuality', 'repairTarget', 'parts', 'splitAxis', 'boxShape', 'keys',
   'keyStyle', 'keyPlacement', 'keyPositions',
 ]
 export function validMoldDimension(key: MoldDimension, value: number): boolean {
@@ -94,6 +98,7 @@ export function parseMoldSettings(value: unknown): MoldSettings {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Malformed mold-making settings.')
   const raw = value as Record<string, unknown>
   const parsed = { ...DEFAULT_MOLD_SETTINGS, ...raw } as MoldSettings
+  if (!(['fast','balanced','fine'] as const).includes(parsed.offsetQuality)) throw new Error('Invalid spherical offset quality.')
   if (parsed.source !== 'scan' && parsed.source !== 'reference') throw new Error('Malformed mold target source.')
   if (!MOLD_MODES.includes(parsed.mode)) throw new Error('Malformed mold mode.')
   if (parsed.parts !== 1 && parsed.parts !== 2 && parsed.parts !== 4) throw new Error('Parts must be 1, 2 or 4.')
