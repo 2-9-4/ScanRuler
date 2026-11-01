@@ -20,9 +20,15 @@ const plugin: WorkerPlugin = {
         ? ctx.takeStaged(p.stagedId as number)
         : null
     if (!source) throw new Error('Load a target before generating a mold.')
-    ctx.progress('Loading the existing mesh Boolean engine…')
+    ctx.progress('Loading the existing mesh Boolean engine…',0.02)
     const wasm = await loadManifold()
-    const made = buildMold(wasm, source, settings, ctx.progress)
+    let lastFraction=0.03
+    const report=(status:string,fraction?:number)=>{
+      if(fraction!==undefined)lastFraction=Math.max(lastFraction,Math.min(0.99,fraction))
+      ctx.progress(status,lastFraction)
+    }
+    const made = buildMold(wasm, source, settings, report)
+    ctx.progress('Mold geometry ready.',1)
     return {
       result: made,
       transfer: [made.positions.buffer, made.indices.buffer],
