@@ -230,7 +230,10 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
       </div>}
       {error&&<p className="hint" role="alert" data-test="mold-error">{error}</p>}
       {generated&&<div data-test="mold-result">
-        <div className="kv"><span className="name">Exportable solids</span><b>{generated.parts.length}</b></div>
+        <div className="kv"><span className="name">{generated.printable?'Exportable solids':'Preview-only solids'}</span><b>{generated.parts.length}</b></div>
+        {!generated.printable&&<p className="hint mold-warning" role="alert">
+          NOT PRINTABLE: fragmented geometry was detected. Export is disabled. These parts are provided only to inspect the failure.
+        </p>
         {generated.parts.some(p=>p.name.includes('detached'))&&<p className="hint mold-warning" role="alert">
           Detached solids were found and preserved as separate files. Review the loose pieces in the slicer; they are not guaranteed to belong in the mold.
         </p>}
@@ -241,10 +244,10 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
         <div className="kv"><span className="name">Total material</span><b>{(generated.volumeMm3/1000).toFixed(1)} cm³</b></div>
         {generated.parts.map((p,i)=><div key={i} className="kv">
           <span className="name">{p.name} · {Math.round(p.indices.length/3).toLocaleString('en-US')} faces</span>
-          <button type="button" data-test={`mold-export-part-${i+1}`}
+          <button type="button" disabled={!generated.printable} data-test={`mold-export-part-${i+1}`}
             onClick={()=>onExport('stl',i)}>STL</button>
         </div>)}
-        <button type="button" data-test="mold-export-3mf" onClick={()=>onExport('3mf')}>Export all parts · 3MF</button>
+        <button type="button" disabled={!generated.printable} data-test="mold-export-3mf" onClick={()=>onExport('3mf')}>Export all parts · 3MF</button>
         {generated.warnings.map((w,i)=><p key={i} className="hint">{w}</p>)}
       </div>}
     </div>
