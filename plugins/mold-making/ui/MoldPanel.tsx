@@ -226,6 +226,8 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
           {usesV&&<div className="mold-feature-section">
             <div className="sec-head">V-seam · profile and spacing</div>
             {V_FIELDS.map(fieldInput)}
+          </div>}
+          {(usesV||parts===3)&&<div className="mold-feature-section">
             <div className="sec-head">Clamping tabs · exterior ears</div>
             {TAB_FIELDS.map(fieldInput)}
             {parts!==3&&<><label className="kv"><span className="name">Add top and bottom clamp tabs</span>
