@@ -112,7 +112,7 @@ export function moldMaterial(s:MoldSettings,targetHeight?:number):{side:number;b
   const clearance=s.mode==='direct'?s.clearance:0
   const direct=Math.max(2,clearance+2,pinLand+clearance,vLand+clearance)
   const wallMin=v?Math.max(2,s.vSeamWidth+2*s.vSeamClearance+s.vSeamSpacing+2.5):
-    s.keys?Math.max(2,s.keyDiameter+2*s.keyClearance+2):2
+    s.keys?Math.max(2,s.keyDiameter+2*s.keyClearance+(s.parts===3?3.5:2)):2
   // Size structural land and tab spacing WITHOUT user extras first.
   // Otherwise adding "extra" base material merely reduces the automatic
   // padding and appears to have no effect until a threshold is crossed.
