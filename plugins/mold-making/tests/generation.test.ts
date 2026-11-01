@@ -439,6 +439,8 @@ describe('Mold Making assembly',()=>{
     expect(withEars.parts).toHaveLength(3)
     expect(withEars.printable).toBe(true)
     intact(withEars.parts)
+    expect(noEars.warnings.join(' ')).toMatch(/no exterior clamp tabs/)
+    expect(withEars.warnings.join(' ')).toMatch(/2 paired exterior clamp tabs per radial interface/)
     expect(withEars.volumeMm3).toBeGreaterThan(noEars.volumeMm3)
     const outer=planMold(target,{...DEFAULT_MOLD_SETTINGS,parts:3}).radialOuter!.radius
     expect(withEars.parts.some(p=>{
