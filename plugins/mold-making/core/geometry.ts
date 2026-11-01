@@ -107,9 +107,7 @@ export function planMold(target:Triangles,settings:MoldSettings):MoldPlan {
       max:[max[0]+s.sideMargin,max[1]+s.sideMargin,max[2]+s.baseThickness]},
       innerBox:null,cylinder:null,openingZ:s.parts===1?center(min[2],max[2]):null}
   }
-  const m=s.clearance+s.wallThickness+2
-  return {outer:{min:[min[0]-m,min[1]-m,min[2]-m],max:[max[0]+m,max[1]+m,max[2]+m]},
-    innerBox:null,cylinder:null,openingZ:s.parts===1?center(min[2],max[2]):null}
+  throw new Error('Unrecognized mold type.')
 }
 function toManifold(wasm:ManifoldToplevel,mesh:Triangles,keep:(m:Manifold)=>Manifold):Manifold {
   check(mesh,'Target or tooling solid')
@@ -186,7 +184,7 @@ function validatedPartMesh(solid:Manifold,name:string,warnings:string[]):Triangl
  * Trim ONLY sub-millimetre dust below a very small volume budget, explicitly
  * reporting it; substantial components remain an actionable error.
  */
-export function toPart(solid:Manifold,name:string,warnings:string[]=[]):MoldPart {
+export function toPart(solid:Manifold,name:string,warnings:string[]=[],detachedParts:MoldPart[]=[]):MoldPart {
   if(solid.isEmpty()||solid.status()!=='NoError')throw new Error(`${name} was empty after the Boolean.`)
   const islands=solid.decompose()
   try {
@@ -194,13 +192,27 @@ export function toPart(solid:Manifold,name:string,warnings:string[]=[]):MoldPart
     const sorted=islands.map(part=>({part,volume:Math.abs(part.volume())}))
       .sort((a,b)=>b.volume-a.volume)
     const primary=sorted[0],others=sorted.slice(1)
-    const discarded=others.reduce((v,p)=>v+p.volume,0)
     // Anything large enough to be a real printed feature or that changes
     // measurable tooling volume must remain a visible, actionable error.
     const perIslandLimit=Math.min(0.5,primary.volume*1e-5)
-    if(others.some(p=>p.volume>perIslandLimit) || discarded>Math.min(1,primary.volume*2e-5)){
-      const volumes=sorted.map(p=>p.volume.toPrecision(4)).join(', ')
-      throw new Error(`${name} contains ${islands.length} disconnected solids (volumes: ${volumes} mm³). The mold would export loose printable pieces. Disable registration to determine whether keys cause the fragments; otherwise increase wall/base thickness or move the parting plane. Substantial geometry was not discarded.`)
+    // Do not discard valuable material or block the entire mold on loose
+    // Boolean islands. Export each nontrivial island as a separate named
+    // solid and make it visibly clear that manual cleanup is required.
+    // Tiny numerical debris alone is filtered within the old tight budget.
+    const detachedBefore=detachedParts.length
+    let discardedDust=0,dustCount=0
+    for(const island of others){
+      const trivial=island.volume<=perIslandLimit&&
+        discardedDust+island.volume<=Math.min(1,primary.volume*2e-5)
+      if(trivial){discardedDust+=island.volume;dustCount++;continue}
+      const label=`${name} — detached ${detachedParts.length-detachedBefore+1}`
+      const standalone=validatedPartMesh(island.part,label,warnings)
+      detachedParts.push({name:label,...standalone,
+        volumeMm3:signedVolume(standalone.positions,standalone.indices)})
+    }
+    const added=detachedParts.slice(detachedBefore)
+    if(added.length){
+      warnings.push(`${name}: ${added.length} disconnected printable islands (${added.map(p=>p.volumeMm3.toPrecision(4)).join(', ')} mm³) were preserved as individually exported loose parts. They may be unwanted Boolean fragments, detached pins or real tooling features. Inspect/delete them in the slicer before printing; the assembly is NOT guaranteed.`)
     }
     // The Manifold kernel can produce tiny collapsed triangles when
     // converting a valid CSG/level-set result into Float32 mesh output.
@@ -208,7 +220,7 @@ export function toPart(solid:Manifold,name:string,warnings:string[]=[]):MoldPart
     // cannot fix them. Preserve connectivity and keep the correction
     // below a strict manufacturing-scale tolerance.
     const exported=validatedPartMesh(primary.part,name,warnings)
-    if(others.length)warnings.push(`${name}: excluded ${others.length} microscopic detached Boolean artifacts totalling ${discarded.toPrecision(3)} mm³ (each ≤${perIslandLimit.toPrecision(3)} mm³). Inspect the mold near intersections before printing.`)
+    if(dustCount)warnings.push(`${name}: excluded ${dustCount} microscopic Boolean dust islands totalling ${discardedDust.toPrecision(3)} mm³ (each ≤${perIslandLimit.toPrecision(3)} mm³).`)
     return {name,...exported,volumeMm3:signedVolume(exported.positions,exported.indices)}
   }finally{for(const island of islands)island.delete()}
 }
@@ -222,22 +234,25 @@ export function seamPositions(
   const r=s.keyDiameter/2+s.keyClearance
   const inset=r+0.75
   const stride=2*r+0.75
-  if(hi-lo<=inset*2)throw new Error('No safe room for alignment features along this seam. Reduce the diameter or use another split.')
+  const width=hi-lo
+  if(width<=2*inset)throw new Error('No safe room for alignment features along this seam. Reduce the diameter or use another split.')
+  if(s.keyPlacement==='auto'){
+    // Two widely separated keys restrain rotation and cost far fewer CSG
+    // operations than the previous 5-key pattern. On a short seam, fit a
+    // single centered registration feature instead of creating collisions.
+    const a=Math.max(lo+inset,lo+width*0.22)
+    const b=Math.min(hi-inset,lo+width*0.78)
+    return b-a>=stride?[a,b]:[center(lo+inset,hi-inset)]
+  }
   const chosen:number[]=[]
-  const options=[...s.keyPositions].sort((a,b)=>a-b)
-  for(const fraction of options){
-    const x=lo+(hi-lo)*fraction
+  for(const fraction of [...s.keyPositions].sort((a,b)=>a-b)){
+    const x=lo+width*fraction
     if(x<lo+inset||x>hi-inset||chosen.some(y=>Math.abs(x-y)<stride)){
-      if(s.keyPlacement==='manual'){
-        throw new Error(`Alignment feature at ${Math.round(fraction*100)}% overlaps an edge or another feature on this seam. Move or remove it.`)
-      }
-      continue
+      throw new Error(`Alignment key at ${Math.round(fraction*100)}% overlaps an edge or another feature. Drag the pin further away, reduce diameter, or remove it.`)
     }
     chosen.push(x)
   }
-  if(chosen.length<(s.keyPlacement==='auto'?2:1)){
-    throw new Error('Insufficient space for the requested alignment features. Reduce diameter, move keys, or disable alignment.')
-  }
+  if(!chosen.length)throw new Error('Add at least one manual alignment pin.')
   return chosen
 }
 function pinSolid(
@@ -275,7 +290,7 @@ function addBoxWallKeys(
   const available=top-innerBottom
   const zInset=bossRadius+0.5
   if(available<=2*zInset)throw new Error('Silicone box wall too short for registration bosses; increase its height or reduce registration diameter.')
-  const candidates=s.keyPlacement==='manual'?[...s.keyPositions].sort((a,b)=>a-b):[0.27,0.73]
+  const candidates=s.keyPlacement==='manual'?[...s.keyPositions].sort((a,b)=>a-b):[0.24,0.76]
   const heights:number[]=[]
   const minZ=innerBottom+zInset,maxZ=top-zInset
   for(const fraction of candidates){
@@ -348,7 +363,6 @@ function addKeys(
 ):[Manifold,Manifold] {
   // Key geometry sits in the backing base, not against casting surfaces.
   // Metal dowel mode cuts blind clearance sockets on BOTH mating halves.
-  if(s.mode==='thin-negative-shell')return [negative,positive]
   if(s.mode==='silicone-box')return addBoxWallKeys(wasm,negative,positive,axis,split,s,plan,keep,seamSpan)
   if(s.baseThickness<s.keyDiameter+2*s.keyClearance+0.2)throw new Error('Base too thin for registration features. Increase base or reduce dowel diameter.')
   const base=plan.outer,idx=axisIndex(axis),z=base.min[2]+s.baseThickness/2
@@ -373,7 +387,7 @@ function addKeys(
     }
   }
   let a=negative,b=positive
-  const L=s.keyDepth,embed=Math.min(0.5,L*0.25)
+  const L=s.keyDepth,embed=Math.min(1.0,L*0.4)
   const radial=s.keyClearance,r=s.keyDiameter/2
   for(const p of locations){
     if(s.keyStyle==='metal-dowel'){
@@ -442,11 +456,12 @@ function keyFourParts(
   return registered
 }
 /** Full-height negative, then one or two exact parting operations. */
-export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:MoldSettings,onProgress?:(s:string)=>void):MoldBuild {
+export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:MoldSettings,onProgress?:(s:string,fraction?:number)=>void):MoldBuild {
   const s=parseMoldSettings(settings)
   const warnings:string[]=[]
+  onProgress?.('Checking source geometry and mold settings…',0.06)
   if(s.mode==='silicone-box'){
-    // Unlike a direct-negative cavity or conformal shell, a silicone
+    // Unlike a direct-negative cavity, a silicone
     // containment box never uses the target as a Boolean cutter. Only its
     // bounding coordinates are required. Validating/repairing target faces
     // here incorrectly rejects open STL/STEP parts and ordinary scans.
@@ -481,7 +496,7 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
   const fieldRef:{current:SphericalDistanceField|null}={current:null}
   try{
     let solid:Manifold
-    onProgress?.('Constructing full-height tooling from the source solid…')
+    onProgress?.('Constructing full-height tooling from the source solid…',0.13)
     if(s.mode==='silicone-box'){
       const out=plan.outer,inn=plan.innerBox!
       let body:Manifold,empty:Manifold
@@ -509,7 +524,7 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
         return keep(solid)
       }
       const positive=s.clearance>0?dilate(s.clearance):toManifold(wasm,targetMesh,keep)
-      if(s.mode==='direct'){
+      {
         // The offset cutter may move *more* than d at a sharp corner.
         // Check its actual Manifold bounds against every outside wall, not
         // just sideMargin > clearance. Avoid accidental through-holes.
@@ -523,12 +538,6 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
           }
         }
         solid=keep(toManifold(wasm,boxSolid(plan.outer),keep).subtract(positive))
-      }else{
-        const skin=dilate(s.clearance+s.wallThickness)
-        const outerVolume=skin.volume(),innerVolume=positive.volume()
-        if(outerVolume<=innerVolume)throw new Error('Shell offset lost its enclosing material. Increase shell thickness or fix target geometry.')
-        solid=keep(skin.subtract(positive))
-        warnings.push('Thin shells use sampled spherical distance-field dilation, not vertex-normal offsets. Inspect fine features, small concavities, and disconnected regions before printing.')
       }
     }
     if(solid.isEmpty())throw new Error('The mold is empty. Increase the wall or margins.')
@@ -540,9 +549,9 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
       pieces=[keep(solid.trimByPlane([0,0,-1],-plan.openingZ!))]
       warnings.push('One-piece mode reproduces only the bottom half; select 2 or 4 parts for a complete cavity.')
     }else if(s.parts!==1){
-      onProgress?.('Cutting exact parting planes; applying mating pins and pockets…')
+      onProgress?.('Cutting exact parting planes; applying mating pins and pockets…',0.84)
       const a=s.splitAxis,k=axisIndex(a)
-      if(s.parts===4&&a==='z'&&s.keys&&s.mode!=='thin-negative-shell')throw new Error('Four-part Z-first tooling with pins is not yet supported. Choose X/Y as the primary parting axis, or disable pins.')
+      if(s.parts===4&&a==='z'&&s.keys)throw new Error('Four-part Z-first tooling with pins is not yet supported. Choose X/Y as the primary parting axis, or disable pins.')
       const firstAt=extent.min[k]+(extent.max[k]-extent.min[k])*s.splitPosition
       pieces=split(wasm,pieces,a,firstAt,s,plan,keep,s.parts===2&&s.keys)
       if(s.parts===4){
@@ -551,12 +560,11 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
         pieces=split(wasm,pieces,second,secondAt,s,plan,keep,false)
         // Secondary split runs on the unkeyed bodies. Add interfaces once
         // every final component exists. Prevents cuts across existing keys.
-        if(s.keys&&s.mode!=='thin-negative-shell'){
+        if(s.keys){
           pieces=keyFourParts(wasm,pieces,a,firstAt,second,secondAt,s,plan,keep)
         }
       }
-      if(s.keys&&s.mode==='thin-negative-shell')warnings.push('Registration on thin conformal shells is not implemented; use an external clamp/jacket.')
-      if(s.keys&&s.mode!=='thin-negative-shell'){
+        if(s.keys){
         if(s.mode==='silicone-box')warnings.push('Registration is placed on external wall bosses at multiple heights. Printed pins require assembled clearance; metal dowel holes require separate hardware.')
         warnings.push(s.keyStyle==='metal-dowel'?
           `Paired blind sockets are sized for ${s.keyDiameter} mm metal dowels, with ${s.keyClearance} mm radial fit clearance. Insert separate dowels during assembly.`:
@@ -564,8 +572,14 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
       }
       warnings.push('Splits do not guarantee demoldability: inspect the target for trapped undercuts and add a sprue or vent before casting.')
     }
-    const parts=pieces.map((x,i)=>toPart(x,`Mold part ${i+1}`,warnings))
-    if(parts.length!==s.parts)throw new Error('Part count mismatch: a component disappeared during splitting.')
+    const loose:MoldPart[]=[]
+    const mainParts=pieces.map((x,i)=>{
+      onProgress?.(`Checking and exporting mold component ${i+1} of ${pieces.length}…`,0.90+0.08*i/pieces.length)
+      return toPart(x,`Mold part ${i+1}`,warnings,loose)
+    })
+    if(mainParts.length!==s.parts)throw new Error('Part count mismatch: a component disappeared during splitting.')
+    const parts=[...mainParts,...loose]
+    onProgress?.('Preparing printable components for export…',0.99)
     return {parts,kind:s.mode,warnings,openingZ:plan.openingZ,
       volumeMm3:parts.reduce((v,p)=>v+p.volumeMm3,0),
       positions:parts[0].positions,indices:parts[0].indices}

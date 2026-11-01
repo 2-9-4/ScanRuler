@@ -8,7 +8,7 @@
 // Querying a MeshBVH avoids scanning every triangle at every sample.
 // This is a sampled approximation, not an exact analytical Minkowski sum.
 import type { Manifold, ManifoldToplevel } from 'manifold-3d'
-import { BufferAttribute, BufferGeometry, Vector3 } from 'three'
+import { BufferAttribute, BufferGeometry, Triangle, Vector3 } from 'three'
 import { MeshBVH } from 'three-mesh-bvh'
 import type { SolidMesh } from '../../../src/app/solids'
 import type { OffsetQuality } from './settings'
@@ -26,7 +26,7 @@ export interface SphericalOffsetReport {
  * Fine remains an explicit opt-in for tiny source detail.
  */
 const QUALITY:Record<OffsetQuality,{minGrid:number;maxGrid:number;maxSamples:number;tolerance:number}>={
-  fast:{minGrid:0.65,maxGrid:2.5,maxSamples:200_000,tolerance:0.2},
+  fast:{minGrid:0.9,maxGrid:4,maxSamples:80_000,tolerance:0.25},
   balanced:{minGrid:0.32,maxGrid:1.8,maxSamples:850_000,tolerance:0.09},
   fine:{minGrid:0.12,maxGrid:0.8,maxSamples:6_000_000,tolerance:0.035},
 }
@@ -69,7 +69,7 @@ export interface SphericalDistanceField {
   sdf(v:readonly number[]):number
   dispose():void
 }
-export function createSphericalDistanceField(mesh:SolidMesh,onProgress?:(message:string)=>void):SphericalDistanceField {
+export function createSphericalDistanceField(mesh:SolidMesh,onProgress?:(message:string,fraction?:number)=>void):SphericalDistanceField {
   onProgress?.('Indexing source triangles for spherical clearance…')
   const geometry=new BufferGeometry()
   geometry.setAttribute('position',new BufferAttribute(mesh.positions,3))
@@ -94,17 +94,42 @@ export function createSphericalDistanceField(mesh:SolidMesh,onProgress?:(message
   }
   const query=new Vector3()
   const closest={point:new Vector3(),distance:0,faceIndex:0}
+  const warmTriangle=new Triangle(new Vector3(),new Vector3(),new Vector3())
+  const warmPoint=new Vector3()
+  let previousFace=-1
   return {
     sdf(v:readonly number[]):number{
       query.set(v[0],v[1],v[2])
-      const nearest=bvh.closestPointToPoint(query,closest)
-      if(!nearest)throw new Error('No closest triangle found while evaluating spherical clearance.')
-      const face=nearest.faceIndex*3
-      const dx=query.x-nearest.point.x
-      const dy=query.y-nearest.point.y
-      const dz=query.z-nearest.point.z
+      // Level-set calls are spatially coherent: use the previous nearest
+      // triangle as a proven upper bound for the next BVH nearest search.
+      // This prunes distant branches while remaining EXACT: the true
+      // nearest surface distance cannot exceed the candidate's distance.
+      let limit=Infinity
+      if(previousFace>=0){
+        const i=previousFace*3
+        const a=index.getX(i)*3,b=index.getX(i+1)*3,c=index.getX(i+2)*3
+        warmTriangle.a.set(p[a],p[a+1],p[a+2])
+        warmTriangle.b.set(p[b],p[b+1],p[b+2])
+        warmTriangle.c.set(p[c],p[c+1],p[c+2])
+        warmTriangle.closestPointToPoint(query,warmPoint)
+        limit=query.distanceTo(warmPoint)+1e-5
+      }
+      const nearest=bvh.closestPointToPoint(query,closest,0,limit)
+      if(!nearest){
+        if(previousFace<0)throw new Error('No closest triangle found while evaluating spherical clearance.')
+        // All BVH triangles were farther than the last face. That face
+        // itself is in the mesh, so it is an exact closest-point candidate.
+        closest.point.copy(warmPoint)
+        closest.distance=query.distanceTo(warmPoint)
+        closest.faceIndex=previousFace
+      }
+      previousFace=closest.faceIndex
+      const face=closest.faceIndex*3
+      const dx=query.x-closest.point.x
+      const dy=query.y-closest.point.y
+      const dz=query.z-closest.point.z
       const dot=dx*normals[face]+dy*normals[face+1]+dz*normals[face+2]
-      return dot<0?nearest.distance:-nearest.distance
+      return dot<0?closest.distance:-closest.distance
     },
     dispose(){geometry.dispose()},
   }
@@ -112,7 +137,7 @@ export function createSphericalDistanceField(mesh:SolidMesh,onProgress?:(message
 
 export function sphericalOffset(
   wasm:ManifoldToplevel,mesh:SolidMesh,d:number,
-  onProgress?:(message:string)=>void,
+  onProgress?:(message:string,fraction?:number)=>void,
   quality:OffsetQuality='balanced',
   sharedField?:SphericalDistanceField,
 ):{solid:Manifold;report:SphericalOffsetReport} {
@@ -127,9 +152,28 @@ export function sphericalOffset(
   const ownField=!sharedField
   const field=sharedField??createSphericalDistanceField(mesh,onProgress)
   try{
-    onProgress?.(`Sampling ${quality} spherical clearance at ${report.gridMm.toFixed(3)} mm spacing (${report.gridSamples.toLocaleString()} points)…`)
+    onProgress?.(`Sampling ${quality} spherical clearance at ${report.gridMm.toFixed(3)} mm spacing (${report.gridSamples.toLocaleString()} cells estimated)…`,0.16)
+    // The WASM kernel calls the signed-distance function synchronously.
+    // Report coarse, monotonic stages at about 1% intervals. The number
+    // of callback evaluations can exceed the nominal grid count because
+    // of surface refinement, so this is approximate progress, not an ETA.
+    let calls=0,lastBucket=-1
+    const sdf=(v:readonly number[]):number=>{
+      const result=field.sdf(v)
+      calls++
+      if((calls&1023)===0&&onProgress){
+        const portion=Math.min(0.98,calls/report.gridSamples)
+        const bucket=Math.floor(portion*60)
+        if(bucket>lastBucket){
+          lastBucket=bucket
+          onProgress(`Sampling mold clearance — ${calls.toLocaleString()} distance queries…`,0.16+0.63*portion)
+        }
+      }
+      return result
+    }
     // Inside is positive. Negative isolevel expands the source solid.
-    const solid=wasm.Manifold.levelSet(field.sdf,bounds,report.gridMm,-d,report.toleranceMm)
+    const solid=wasm.Manifold.levelSet(sdf,bounds,report.gridMm,-d,report.toleranceMm)
+    onProgress?.('Finalizing spherical-offset solid…',0.81)
     if(solid.status()!=='NoError'||solid.isEmpty()){
       solid.delete()
       throw new Error('Spherical distance-field offset produced no valid closed solid.')

@@ -43,13 +43,27 @@ describe('Spherical solid clearance (Minkowski dilation by a ball)',()=>{
     const fast=sphericalOffsetGrid(big,0.5,'fast')
     const balanced=sphericalOffsetGrid(big,0.5,'balanced')
     const fine=sphericalOffsetGrid(big,0.5,'fine')
-    expect(fast.gridSamples).toBeLessThanOrEqual(200_000)
+    expect(fast.gridSamples).toBeLessThanOrEqual(80_000)
     expect(balanced.gridSamples).toBeLessThanOrEqual(850_000)
     expect(fine.gridSamples).toBeLessThanOrEqual(6_000_000)
     expect(fast.gridSamples).toBeLessThan(balanced.gridSamples)
     expect(balanced.gridSamples).toBeLessThan(fine.gridSamples)
     expect(fast.gridMm).toBeGreaterThan(balanced.gridMm)
     expect(balanced.gridMm).toBeGreaterThan(fine.gridMm)
+  })
+  it('reports stage percentages while sampling an offset',()=>{
+    const updates:number[]=[]
+    const {solid}=sphericalOffset(wasm,cube,0.5,(_message,fraction)=>{
+      if(fraction!==undefined)updates.push(fraction)
+    },'fast')
+    try{
+      expect(updates.length).toBeGreaterThan(1)
+      expect(updates[0]).toBeGreaterThan(0)
+      expect(updates.at(-1)).toBeGreaterThanOrEqual(0.8)
+      for(let i=1;i<updates.length;i++){
+        expect(updates[i]).toBeGreaterThanOrEqual(updates[i-1])
+      }
+    }finally{solid.delete()}
   })
   it('allows multiple offsets to reuse a single prepared triangle field',()=>{
     const field=createSphericalDistanceField(cube)
@@ -58,7 +72,7 @@ describe('Spherical solid clearance (Minkowski dilation by a ball)',()=>{
         const {solid,report}=sphericalOffset(wasm,cube,d,undefined,'fast',field)
         try{
           expect(solid.volume()).toBeGreaterThan(1000)
-          expect(report.gridSamples).toBeLessThanOrEqual(200_000)
+          expect(report.gridSamples).toBeLessThanOrEqual(80_000)
           expect(solid.status()).toBe('NoError')
         }finally{solid.delete()}
       }
