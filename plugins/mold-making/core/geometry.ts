@@ -525,6 +525,7 @@ function addContourVSeam(
   wasm:ManifoldToplevel,negative:Manifold,positive:Manifold,
   axis:SplitAxis,split:number,s:MoldSettings,plan:MoldPlan,
   keep:(m:Manifold)=>Manifold,seamSpan?:readonly [number,number],
+  seamSpanAxis?:SplitAxis,
 ):[Manifold,Manifold] {
   const halfWidth=s.vSeamWidth/2,fit=s.vSeamClearance
   const [,u,v]=planeAxes(axis)
