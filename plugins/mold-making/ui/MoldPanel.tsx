@@ -233,7 +233,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
         <div className="kv"><span className="name">{generated.printable?'Exportable solids':'Preview-only solids'}</span><b>{generated.parts.length}</b></div>
         {!generated.printable&&<p className="hint mold-warning" role="alert">
           NOT PRINTABLE: fragmented geometry was detected. Export is disabled. These parts are provided only to inspect the failure.
-        </p>
+        </p>}
         {generated.parts.some(p=>p.name.includes('detached'))&&<p className="hint mold-warning" role="alert">
           Detached solids were found and preserved as separate files. Review the loose pieces in the slicer; they are not guaranteed to belong in the mold.
         </p>}
