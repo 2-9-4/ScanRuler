@@ -52,7 +52,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
   const keyClearance=useMold(s=>s.keyClearance)
   const boxDraftDeg=useMold(s=>s.boxDraftDeg)
   const previewGap=useMold(s=>s.previewGap)
-  const values={clearance,sideMargin,baseThickness,wallThickness,siliconeThickness,splitPosition,
+  const values={clearance,repairHoleSize,sideMargin,baseThickness,wallThickness,siliconeThickness,splitPosition,
     keyDiameter,keyDepth,keyClearance,boxDraftDeg,previewGap}
   const setSource=useMold(s=>s.setSource),setMode=useMold(s=>s.setMode)
   const setParts=useMold(s=>s.setParts),setSplitAxis=useMold(s=>s.setSplitAxis)
