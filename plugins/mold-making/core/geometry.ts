@@ -192,6 +192,98 @@ function pinSolid(
   const rotation:Vec3=axis==='x'?[0,90,0]:axis==='y'?[-90,0,0]:[0,0,0]
   return keep(keep(raw.rotate(rotation)).translate(centre))
 }
+/**
+ * A containment bucket is mostly hollow. Placing keys in a line across its
+ * bottom plate (as rigid molds do) neither aligns the tall walls nor provides
+ * enough material for reliable pins and sockets. Instead, make matched
+ * EXTERIOR mounting bosses at the two ends of each wall seam, at multiple
+ * heights. Both halves gain solid bosses before any sockets are subtracted.
+ *
+ * For a four-part bucket, seamSpan selects the end of each quadrant's seam,
+ * avoiding keys across the interior and the perpendicular parting line.
+ */
+function addBoxWallKeys(
+  wasm:ManifoldToplevel,negative:Manifold,positive:Manifold,
+  axis:SplitAxis,split:number,s:MoldSettings,plan:MoldPlan,
+  keep:(m:Manifold)=>Manifold,seamSpan?:readonly [number,number],
+):[Manifold,Manifold] {
+  if(axis==='z')throw new Error('Z split registration on a silicone box needs a separate flange; choose X/Y or turn off keys.')
+  const idx=axisIndex(axis),t=axis==='x'?1:0
+  const base=plan.outer
+  const mid=[center(base.min[0],base.max[0]),center(base.min[1],base.max[1])]
+  const r=s.keyDiameter/2,radial=s.keyClearance
+  const bossRadius=r+radial+1.25 // ≥1.25 mm material around every socket
+  const bossDepth=Math.max(s.keyDepth+0.8,bossRadius*1.6)
+  const innerBottom=plan.innerBox!.min[2],top=base.max[2]
+  const available=top-innerBottom
+  const zInset=bossRadius+0.5
+  if(available<=2*zInset)throw new Error('Silicone box wall too short for registration bosses; increase its height or reduce registration diameter.')
+  const candidates=s.keyPlacement==='manual'?[...s.keyPositions].sort((a,b)=>a-b):[0.27,0.73]
+  const heights:number[]=[]
+  const minZ=innerBottom+zInset,maxZ=top-zInset
+  for(const fraction of candidates){
+    const z=innerBottom+available*fraction
+    if(z<minZ||z>maxZ||heights.some(x=>Math.abs(x-z)<2*bossRadius+0.6)){
+      if(s.keyPlacement==='manual')
+        throw new Error(`Registration height ${Math.round(100*fraction)}% is too close to an edge or another boss. Adjust manual positions or decrease diameter.`)
+      continue
+    }
+    heights.push(z)
+  }
+  if(!heights.length&&s.keyPlacement==='auto')heights.push(center(minZ,maxZ))
+  if(!heights.length)throw new Error('No safe registration heights on this silicone box.')
+  // Move the boss centre out beyond the actual wall surface, leaving a
+  // substantial intersection with the wall but no intrusion into the cavity.
+  const wallPenetration=Math.min(bossRadius*0.75,s.wallThickness*0.7)
+  const overhang=bossRadius-wallPenetration
+  const sites:Vec3[]=[]
+  for(const sign of [-1,1]){
+    let edge:number
+    if(plan.cylinder){
+      const d=split-mid[idx]
+      const outer=plan.cylinder.outerR+overhang
+      if(Math.abs(d)>=outer)continue
+      edge=mid[t]+sign*Math.sqrt(outer*outer-d*d)
+    }else edge=sign<0?base.min[t]-overhang:base.max[t]+overhang
+    // A four-part seam ends at one outside wall; a two-part seam has both.
+    if(seamSpan&&(edge<seamSpan[0]-bossRadius-1||edge>seamSpan[1]+bossRadius+1))continue
+    for(const z of heights){
+      const p:Vec3=[mid[0],mid[1],z]
+      p[idx]=split
+      p[t]=edge
+      sites.push(p)
+    }
+  }
+  if(!sites.length)throw new Error('No external wall edge available for this silicone-box registration seam.')
+  let a=negative,b=positive
+  const bossHalf=bossDepth/2
+  for(const p of sites){
+    const negBoss:Vec3=[...p],posBoss:Vec3=[...p]
+    negBoss[idx]-=bossHalf
+    posBoss[idx]+=bossHalf
+    a=keep(a.add(pinSolid(wasm,axis,negBoss,bossDepth,bossRadius,bossRadius,keep)))
+    b=keep(b.add(pinSolid(wasm,axis,posBoss,bossDepth,bossRadius,bossRadius,keep)))
+    const L=s.keyDepth
+    if(s.keyStyle==='metal-dowel'){
+      const nc:Vec3=[...p],pc:Vec3=[...p]
+      nc[idx]-=L/2-0.15
+      pc[idx]+=L/2-0.15
+      a=keep(a.subtract(pinSolid(wasm,axis,nc,L+0.3,r+radial,r+radial,keep)))
+      b=keep(b.subtract(pinSolid(wasm,axis,pc,L+0.3,r+radial,r+radial,keep)))
+    }else{
+      const embed=Math.min(0.5,L*0.25)
+      const male:Vec3=[...p],female:Vec3=[...p]
+      male[idx]+=(L-embed)/2
+      female[idx]+=(L+2*radial+0.3)/2-0.15
+      const tapered=s.keyStyle==='tapered-key'
+      a=keep(a.add(pinSolid(wasm,axis,male,L+embed,r,tapered?r*0.7:r,keep)))
+      b=keep(b.subtract(pinSolid(wasm,axis,female,L+2*radial+0.3,
+        r+radial,tapered?r*0.7+radial:r+radial,keep)))
+    }
+    if(a.isEmpty()||b.isEmpty())throw new Error('Exterior registration boss failed. Reduce the dowel diameter/depth.')
+  }
+  return [a,b]
+}
 function addKeys(
   wasm:ManifoldToplevel,negative:Manifold,positive:Manifold,
   axis:SplitAxis,split:number,s:MoldSettings,plan:MoldPlan,keep:(m:Manifold)=>Manifold,
@@ -200,7 +292,7 @@ function addKeys(
   // Key geometry sits in the backing base, not against casting surfaces.
   // Metal dowel mode cuts blind clearance sockets on BOTH mating halves.
   if(s.mode==='thin-negative-shell')return [negative,positive]
-  if(s.mode==='silicone-box'&&axis==='z')throw new Error('Z split registration could pierce silicone box walls; choose X/Y or disable keys.')
+  if(s.mode==='silicone-box')return addBoxWallKeys(wasm,negative,positive,axis,split,s,plan,keep,seamSpan)
   if(s.baseThickness<s.keyDiameter+2*s.keyClearance+0.2)throw new Error('Base too thin for registration features. Increase base or reduce dowel diameter.')
   const base=plan.outer,idx=axisIndex(axis),z=base.min[2]+s.baseThickness/2
   const locations:Vec3[]=[]
@@ -385,6 +477,7 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
       }
       if(s.keys&&s.mode==='thin-negative-shell')warnings.push('Registration on thin conformal shells is not implemented; use an external clamp/jacket.')
       if(s.keys&&s.mode!=='thin-negative-shell'){
+        if(s.mode==='silicone-box')warnings.push('Registration is placed on external wall bosses at multiple heights. Printed pins require assembled clearance; metal dowel holes require separate hardware.')
         warnings.push(s.keyStyle==='metal-dowel'?
           `Paired blind sockets are sized for ${s.keyDiameter} mm metal dowels, with ${s.keyClearance} mm radial fit clearance. Insert separate dowels during assembly.`:
           `${s.keyStyle==='tapered-key'?'Tapered':'Straight'} printed registration pins and matching clearance sockets.`)
