@@ -234,6 +234,10 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
         {generated.parts.some(p=>p.name.includes('detached'))&&<p className="hint mold-warning" role="alert">
           Detached solids were found and preserved as separate files. Review the loose pieces in the slicer; they are not guaranteed to belong in the mold.
         </p>}
+        {generated.warnings.some(w=>w.includes('excluded an invalid detached artifact'))&&
+          <p className="hint mold-warning" role="alert">
+            Invalid detached Boolean fragments were excluded from export. The main mold remains available, but check its cavity and mating features carefully before printing.
+          </p>}
         <div className="kv"><span className="name">Total material</span><b>{(generated.volumeMm3/1000).toFixed(1)} cm³</b></div>
         {generated.parts.map((p,i)=><div key={i} className="kv">
           <span className="name">{p.name} · {Math.round(p.indices.length/3).toLocaleString('en-US')} faces</span>
