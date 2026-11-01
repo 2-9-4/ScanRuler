@@ -117,7 +117,7 @@ export const MOLD_SETTING_KEYS: readonly (keyof MoldSettings)[] = [
 export function validMoldDimension(key: MoldDimension, value: number): boolean {
   if (!Number.isFinite(value)) return false
   if (key === 'splitPosition') return value >= 0.1 && value <= 0.9
-  if (key === 'clampTabCount') return Number.isInteger(value) && value>=1 && value<=12
+  if (key === 'clampTabCount') return Number.isInteger(value) && value>=0 && value<=12
   if (key === 'boxDraftDeg') return value >= 0 && value <= 12
   if (key === 'previewGap' || key === 'clearance' || key === 'sideMargin' || key === 'baseThickness' ||
       key === 'wallThickness' || key === 'keyClearance' || key === 'vSeamClearance' || key === 'vSeamSpacing') {
