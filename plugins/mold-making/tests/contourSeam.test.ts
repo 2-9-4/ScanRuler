@@ -18,6 +18,16 @@ describe('Continuous V-seam geometry',()=>{
     expect(Math.min(...zs)).toBeCloseTo(-2.5,4)
     expect(Math.max(...zs)).toBeCloseTo(12.5,4)
   })
+  it('caps an open U-shaped wall seam into one watertight printable ridge',()=>{
+    for(const axis of ['x','y'] as const){
+      const path:[number,number][]=[[-12,20],[-12,-8],[12,-8],[12,20]]
+      const mesh=triangularContourTube(path,axis,0,1.2,-0.5,3,true)
+      expect(closedness(mesh.indices,mesh.positions.length/3)).toEqual({open:0,bad:0})
+      const open=triangularContourTube(path,axis,0,1.2,-0.5,3,false)
+      expect(closedness(open.indices,open.positions.length/3)).toEqual({open:0,bad:0})
+      expect(signedVolume(open.positions,open.indices)).toBeGreaterThan(0)
+    }
+  })
   it('creates a watertight outward-wound triangular loop on all three planes',()=>{
     for(const axis of ['x','y','z'] as const){
       const hull=projectedHull(cube,axis)
