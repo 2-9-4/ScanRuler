@@ -225,7 +225,9 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
             </select></label>
           {keyStyle==='metal-dowel'&&<p className="hint">Both halves receive blind holes. Insert separately purchased metal dowels during assembly. Diameter is the nominal hardware diameter.</p>}
           {keyStyle==='v-seam'&&<p className="hint">{parts===3
-            ?'Three vertical radial V-seams with truncated tips sit in the outside tooling wall. Radial clamp ears and optional bolt/nut pockets can secure all three mating interfaces.'
+            ?mode==='direct'
+              ?'Three radial C-shaped V-seams follow the model silhouette above, outside and below; the ends clear the common center hub.'
+              :'Three radial L-shaped V-seams follow the solid cylindrical sidewall and the bottom plate, leaving the pouring rim open and the central hub clear.'
             :parts===4
             ?'Open V-profiles follow each quarter interface and stop short of crossing parting planes. Exterior clamp ears are restricted to the relevant quadrant.'
             :mode==='direct'
