@@ -33,7 +33,7 @@ const V_FIELDS:readonly {key:MoldDimension;label:string;help:string}[]=[
   {key:'vSeamClearance',label:'V-groove fit clearance (mm)',help:'Extra width/depth for the female V-groove, independent of pin/dowel clearance.'},
 ]
 const TAB_FIELDS:readonly {key:MoldDimension;label:string;help:string}[]=[
-  {key:'clampTabCount',label:'Tabs per outside edge',help:'Number of clamping ears on each side of the seam. Two mating halves receive matching ears.'},
+  {key:'clampTabCount',label:'Side / radial tabs per edge',help:'Number of clamping ears along each exterior seam. For threefold molds these sit on the radial parting faces.'},
   {key:'clampTabWidth',label:'Tab width / height (mm)',help:'Size of each tab along its distributing edge.'},
   {key:'clampTabProjection',label:'Tab outside projection (mm)',help:'Distance tabs extend beyond the mold boundary for a clamp to grip.'},
   {key:'clampTabThickness',label:'Tab thickness per half (mm)',help:'Thickness of each tab in the mold opening direction.'},
@@ -121,8 +121,8 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
   const fieldInput=({key,label,help}:{key:MoldDimension;label:string;help:string})=><label key={key} className="kv" title={help}>
     <span className="name">{label}</span>
     <input type="number" data-test={`mold-${key}`} min={key==='splitPosition'?0.1:0}
-      max={key==='splitPosition'?0.9:key==='boxDraftDeg'?12:key==='clampTabCount'?12:100000}
-      step={key==='splitPosition'?0.05:key==='clampTabCount'?1:0.1} value={values[key]}
+      max={key==='splitPosition'?0.9:key==='boxDraftDeg'?12:(key==='clampTabCount'||key==='topBottomTabCount')?12:100000}
+      step={key==='splitPosition'?0.05:(key==='clampTabCount'||key==='topBottomTabCount')?1:0.1} value={values[key]}
       onChange={e=>{if(e.target.value!=='')setDimension(key,Number(e.target.value))}}/>
   </label>
   const fields=FIELDS.filter(({key})=>{
