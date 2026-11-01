@@ -104,7 +104,7 @@ export interface MoldPlan {
  */
 export function moldMaterial(s:MoldSettings,targetHeight?:number):{side:number;base:number;wall:number}{
   const v=s.keys&&s.parts===2&&s.keyStyle==='v-seam'
-  const pinLand=s.keys&&s.parts!==3
+  const pinLand=s.keys&&s.parts!==3&&!(s.parts===2&&s.keyStyle==='v-seam')
     ?s.keyDiameter+2*s.keyClearance+2.5:0
   // Margin includes space from target to the V-ridge's inner flank,
   // full profile width, groove fit, and at least 1.25 mm outside the groove.
