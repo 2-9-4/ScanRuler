@@ -232,22 +232,25 @@ export function seamPositions(
   const r=s.keyDiameter/2+s.keyClearance
   const inset=r+0.75
   const stride=2*r+0.75
-  if(hi-lo<=inset*2)throw new Error('No safe room for alignment features along this seam. Reduce the diameter or use another split.')
+  const width=hi-lo
+  if(width<=2*inset)throw new Error('No safe room for alignment features along this seam. Reduce the diameter or use another split.')
+  if(s.keyPlacement==='auto'){
+    // Two widely separated keys restrain rotation and cost far fewer CSG
+    // operations than the previous 5-key pattern. On a short seam, fit a
+    // single centered registration feature instead of creating collisions.
+    const a=Math.max(lo+inset,lo+width*0.22)
+    const b=Math.min(hi-inset,lo+width*0.78)
+    return b-a>=stride?[a,b]:[center(lo+inset,hi-inset)]
+  }
   const chosen:number[]=[]
-  const options=[...s.keyPositions].sort((a,b)=>a-b)
-  for(const fraction of options){
-    const x=lo+(hi-lo)*fraction
+  for(const fraction of [...s.keyPositions].sort((a,b)=>a-b)){
+    const x=lo+width*fraction
     if(x<lo+inset||x>hi-inset||chosen.some(y=>Math.abs(x-y)<stride)){
-      if(s.keyPlacement==='manual'){
-        throw new Error(`Alignment feature at ${Math.round(fraction*100)}% overlaps an edge or another feature on this seam. Move or remove it.`)
-      }
-      continue
+      throw new Error(`Alignment key at ${Math.round(fraction*100)}% overlaps an edge or another feature. Drag the pin further away, reduce diameter, or remove it.`)
     }
     chosen.push(x)
   }
-  if(chosen.length<(s.keyPlacement==='auto'?2:1)){
-    throw new Error('Insufficient space for the requested alignment features. Reduce diameter, move keys, or disable alignment.')
-  }
+  if(!chosen.length)throw new Error('Add at least one manual alignment pin.')
   return chosen
 }
 function pinSolid(
@@ -285,7 +288,7 @@ function addBoxWallKeys(
   const available=top-innerBottom
   const zInset=bossRadius+0.5
   if(available<=2*zInset)throw new Error('Silicone box wall too short for registration bosses; increase its height or reduce registration diameter.')
-  const candidates=s.keyPlacement==='manual'?[...s.keyPositions].sort((a,b)=>a-b):[0.27,0.73]
+  const candidates=s.keyPlacement==='manual'?[...s.keyPositions].sort((a,b)=>a-b):[0.24,0.76]
   const heights:number[]=[]
   const minZ=innerBottom+zInset,maxZ=top-zInset
   for(const fraction of candidates){
@@ -382,7 +385,7 @@ function addKeys(
     }
   }
   let a=negative,b=positive
-  const L=s.keyDepth,embed=Math.min(0.5,L*0.25)
+  const L=s.keyDepth,embed=Math.min(1.0,L*0.4)
   const radial=s.keyClearance,r=s.keyDiameter/2
   for(const p of locations){
     if(s.keyStyle==='metal-dowel'){
