@@ -95,6 +95,65 @@ describe('Mold Making assembly',()=>{
     expect(m.volumeMm3).toBeCloseTo(26*24*18-800,2)
     intact(m.parts)
   })
+  it('registers tall rectangular and cylindrical buckets using external wall bosses',()=>{
+    const solid=boxSolid({min:[-5,-4,0],max:[5,4,10]})
+    for(const shape of ['rectangular','cylindrical'] as const){
+      for(const keyStyle of ['tapered-key','metal-dowel'] as const){
+        const settings={...DEFAULT_MOLD_SETTINGS,mode:'silicone-box' as const,
+          boxShape:shape,keyStyle,parts:2 as const}
+        const made=buildMold(wasm,solid,settings)
+        expect(made.parts).toHaveLength(2)
+        intact(made.parts)
+        expect(made.warnings.join(' ')).toMatch(/external wall bosses/)
+        const b=planMold(solid,settings).outer
+        // Exterior bosses should be visible OUTSIDE the nominal bucket,
+        // including above the master height. Keys solely in the bottom
+        // plate would fail this test.
+        for(const part of made.parts){
+          let upperExterior=false
+          for(let i=0;i<part.positions.length;i+=3){
+            const y=part.positions[i+1],z=part.positions[i+2]
+            if(z>12 &&
+              (y<b.min[1]-0.1||y>b.max[1]+0.1))upperExterior=true
+          }
+          expect(upperExterior).toBe(true)
+        }
+      }
+    }
+  })
+  it('places registration at two heights on each exterior quadrant of a four-piece box',()=>{
+    for(const boxShape of ['rectangular','cylindrical'] as const){
+      const s={...DEFAULT_MOLD_SETTINGS,mode:'silicone-box' as const,
+        boxShape,parts:4 as const,keyStyle:'metal-dowel' as const}
+      const result=buildMold(wasm,master,s)
+      expect(result.parts).toHaveLength(4)
+      intact(result.parts)
+      const outer=planMold(master,s).outer
+      // The two parting axes should each have boss material exterior to
+      // their corresponding walls. Every quadrant receives two height pairs.
+      for(const part of result.parts){
+        let wallBoss=false
+        for(let i=0;i<part.positions.length;i+=3){
+          const x=part.positions[i],y=part.positions[i+1],z=part.positions[i+2]
+          if(z>12 &&
+            (x<outer.min[0]-0.15||x>outer.max[0]+0.15||
+             y<outer.min[1]-0.15||y>outer.max[1]+0.15)){
+            wallBoss=true;break
+          }
+        }
+        expect(wallBoss).toBe(true)
+      }
+    }
+  })
+  it('uses manual bucket registration positions as heights and rejects vertical overlaps',()=>{
+    const common={...DEFAULT_MOLD_SETTINGS,mode:'silicone-box' as const,
+      keyPlacement:'manual' as const,keyPositions:[0.25,0.75]}
+    const made=buildMold(wasm,master,common)
+    expect(made.parts).toHaveLength(2)
+    intact(made.parts)
+    expect(()=>buildMold(wasm,master,{...common,keyPositions:[0.25,0.26]}))
+      .toThrow(/Registration height.*too close/)
+  })
   it('creates four keyed halves without splitting through a pre-existing registration pin',()=>{
     const plain=buildMold(wasm,master,{...noKeys,parts:4})
     const keyed=buildMold(wasm,master,{...DEFAULT_MOLD_SETTINGS,parts:4})
