@@ -727,8 +727,12 @@ function addContourVSeam(
     const count=s.topBottomTabCount
     const span=hi-lo
     for(const sign of [-1,1])for(let i=0;i<count;i++){
-      const position=lo+span*(i+0.5)/count
       const end=sign<0?outer.min[2]:outer.max[2]
+      // Z-first four-piece molds have an internal horizontal seam:
+      // an ear on the other piece's outside end would be detached.
+      if(seamSpan&&seamSpanAxis==='z'&&
+        Math.abs((sign<0?seamSpan[0]:seamSpan[1])-end)>1e-4)continue
+      const position=lo+span*(i+0.5)/count
       const overlap=Math.max(2.5,Math.min(6,tab.thickness*0.6))
       const makeEar=(upper:boolean)=>{
         const low:Vec3=[...outer.min],high:Vec3=[...outer.max]
