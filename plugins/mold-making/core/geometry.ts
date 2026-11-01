@@ -102,6 +102,18 @@ export interface MoldPlan {
 /** Required printable structure PLUS optional additional material. Never
  * interpret the extra inputs as the minimum total backing dimension.
  */
+/** Effective ear dimensions must fit the optional hardware, without
+ * requiring the user to manually increase an unrelated backing field.
+ */
+export function clampHardware(s:MoldSettings){
+  const nuts=s.tabBoltHoles&&s.tabCapturedNuts
+  const clearance=nuts?s.tabNutAcrossFlats: s.tabBoltHoles?s.tabBoltDiameter:0
+  return {
+    width:Math.max(s.clampTabWidth,clearance+4),
+    projection:Math.max(s.clampTabProjection,clearance+5),
+    thickness:Math.max(s.clampTabThickness,nuts?s.tabNutDepth+2:2),
+  }
+}
 export function moldMaterial(s:MoldSettings,targetHeight?:number):{side:number;base:number;wall:number}{
   const v=s.keys&&s.parts!==1&&s.keyStyle==='v-seam'
   const pinLand=s.keys&&s.keyStyle!=='v-seam'
@@ -122,11 +134,17 @@ export function moldMaterial(s:MoldSettings,targetHeight?:number):{side:number;b
     wall:wallMin,
   }
   if(v&&s.parts!==3&&targetHeight!==undefined&&Number.isFinite(targetHeight)&&s.clampTabCount>0){
-    const pitch=s.clampTabWidth+Math.max(2,s.clampTabWidth*0.25)
+    const tab=clampHardware(s)
+    const pitch=tab.width+Math.max(2,tab.width*0.25)
     const needed=s.clampTabCount*pitch+4
     const span=targetHeight+(s.mode==='direct'?2*material.base:
       s.siliconeThickness+material.wall+material.base)
     if(span<needed)material.base+=(needed-span)/(s.mode==='direct'?2:1)
+  }
+  if(v&&s.topBottomTabs&&s.topBottomTabCount>0){
+    // Ears along the upper/lower outside rim must have adequate depth to
+    // anchor into the surrounding body even when the model is shallow.
+    material.base=Math.max(material.base,clampHardware(s).width*0.35+1.5)
   }
   // Extras must ALWAYS add material, even when the calculated requirement
   // is already dominated by tab spacing or a large V-seam.
@@ -520,6 +538,38 @@ function addBoxWallKeys(
  * floor: a closed silhouette ring would run through the empty silicone
  * cavity and create disconnected plastic.
  */
+/** Through-hole and optional captive hex pocket on an aligned pair
+ * of external clamp ears. Bore axis is perpendicular to the split plane.
+ * The pocket opens from the OUTSIDE of the negative half.
+ */
+function drillClampPair(
+  wasm:ManifoldToplevel,negative:Manifold,positive:Manifold,
+  axis:SplitAxis,split:number,ear:[number,number,number],
+  thickness:number,s:MoldSettings,keep:(m:Manifold)=>Manifold,
+):[Manifold,Manifold]{
+  if(!s.tabBoltHoles)return [negative,positive]
+  const bore=s.tabBoltDiameter/2
+  const bolt=pinSolid(wasm,axis,[...ear],thickness*2+1,bore,bore,keep)
+  let neg=keep(negative.subtract(bolt))
+  const pos=keep(positive.subtract(bolt))
+  if(s.tabCapturedNuts){
+    // A 6-sided prism has inradius R*cos(π/6), so this gives the
+    // requested across-flats dimension rather than across-corners.
+    const r=s.tabNutAcrossFlats/Math.sqrt(3)
+    const pocket=pinSolid(wasm,axis,
+      ear.map((v,i)=>i===axisIndex(axis)?split-thickness+s.tabNutDepth/2-0.05:v) as Vec3,
+      s.tabNutDepth+0.1,r,r,keep)
+    // pinSolid defaults to 32 sides; use an actual six-sided Manifold
+    // here, oriented along the same mating axis.
+    const raw=keep(wasm.Manifold.cylinder(s.tabNutDepth+0.1,r,r,6,true))
+    const rotation:Vec3=axis==='x'?[0,90,0]:axis==='y'?[-90,0,0]:[0,0,0]
+    const hex=keep(keep(raw.rotate(rotation)).translate(
+      ear.map((v,i)=>i===axisIndex(axis)?split-thickness+s.tabNutDepth/2-0.05:v) as Vec3))
+    void pocket
+    neg=keep(neg.subtract(hex))
+  }
+  return [neg,pos]
+}
 function addContourVSeam(
   wasm:ManifoldToplevel,negative:Manifold,positive:Manifold,
   axis:SplitAxis,split:number,s:MoldSettings,plan:MoldPlan,
