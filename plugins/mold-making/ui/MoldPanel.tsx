@@ -29,7 +29,7 @@ const PIN_FIELDS:readonly {key:MoldDimension;label:string;help:string}[]=[
 const V_FIELDS:readonly {key:MoldDimension;label:string;help:string}[]=[
   {key:'vSeamWidth',label:'V-ridge base width (mm)',help:'Full width of the triangular ridge, measured along the parting face.'},
   {key:'vSeamHeight',label:'V-ridge height (mm)',help:'How far the ridge projects into the matching half.'},
-  {key:'vSeamSpacing',label:'Space from model outline to ridge (mm)',help:'Distance from the projected model envelope to the nearest side of the V-ridge on direct molds. Silicone boxes follow their outer walls instead.'},
+  {key:'vSeamSpacing',label:'V-seam spacing from surface (mm)',help:'On direct molds, distance from the expanded cavity outline to the ridge inner side; on silicone boxes, additional inset from the outer wall.'},
   {key:'vSeamClearance',label:'V-groove fit clearance (mm)',help:'Extra width/depth for the female V-groove, independent of pin/dowel clearance.'},
 ]
 const TAB_FIELDS:readonly {key:MoldDimension;label:string;help:string}[]=[
@@ -95,7 +95,8 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
   const active=source==='scan'?scanName:refName
   const multi=parts>1
   const usesV=keys&&parts===2&&keyStyle==='v-seam'
-  const material=moldMaterial(moldSettings())
+  const usesPins=keys&&parts!==3&&!usesV
+  const material=moldMaterial(moldSettings(),targetBounds?targetBounds.max[2]-targetBounds.min[2]:undefined)
   const fieldInput=({key,label,help}:{key:MoldDimension;label:string;help:string})=><label key={key} className="kv" title={help}>
     <span className="name">{label}</span>
     <input type="number" data-test={`mold-${key}`} min={key==='splitPosition'?0.1:0}
@@ -203,12 +204,12 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
             :'Four-part silicone boxes retain discrete exterior wall bosses.'}</p>}
           {usesV&&<div className="mold-feature-section">
             <div className="sec-head">V-seam · profile and spacing</div>
-            {V_FIELDS.filter(f=>mode==='direct'||f.key!=='vSeamSpacing').map(fieldInput)}
+            {V_FIELDS.map(fieldInput)}
             <div className="sec-head">Clamping tabs · exterior ears</div>
             {TAB_FIELDS.map(fieldInput)}
             <p className="hint">All required backing is included automatically; additional material below is optional. The tabs are solid clamp ears, not predrilled bolt holes.</p>
           </div>}
-          {keyStyle!=='v-seam'&&<div className="mold-feature-section">
+          {usesPins&&<div className="mold-feature-section">
             <div className="sec-head">Pins and dowels · size and placement</div>
             {PIN_FIELDS.map(fieldInput)}
           <label className="kv"><span className="name">Key positions</span>
@@ -216,8 +217,8 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
               onChange={e=>setKeyPlacement(e.target.value as KeyPlacement)}>
               <option value="auto">Automatically distribute</option>
               <option value="manual">{mode==='silicone-box'?'Edit heights on exterior wall':'Edit positions along seam'}</option>
-            </select></label>}
-          {keyStyle!=='v-seam'&&(mode==='direct'?
+            </select></label>
+          {mode==='direct'?
             <PlaneKeyEditor points={keyPoints} axis={splitAxis}
               manual={keyPlacement==='manual'} onChange={setKeyPoints}
               onManual={()=>setKeyPlacement('manual')} bounds={targetBounds}
@@ -230,7 +231,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
               onManual={()=>setKeyPlacement('manual')}
               diameter={keyDiameter}
               vertical
-            />)}
+            />}
           </div>}
         </>}
       </>}
