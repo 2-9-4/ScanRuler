@@ -418,6 +418,18 @@ describe('Mold Making assembly',()=>{
     })
     expect(nuts.volumeMm3).toBeLessThan(sameSizeNoPocket.volumeMm3)
   })
+  it.each(['x','z'] as const)(
+    'keeps additional top/bottom bolted tabs attached on a %s-first four-piece mold',
+    splitAxis=>{
+      const options={...DEFAULT_MOLD_SETTINGS,parts:4 as const,
+        splitAxis,keyStyle:'v-seam' as const,clampTabCount:0,
+        topBottomTabs:true,topBottomTabCount:1,
+        tabBoltHoles:true,tabCapturedNuts:true}
+      const result=buildMold(wasm,master,options)
+      expect(result.parts).toHaveLength(4)
+      expect(result.printable).toBe(true)
+      intact(result.parts)
+    })
   it('adds radial clamp ears to all three mating interfaces',()=>{
     const target=boxSolid({min:[-5,-5,-5],max:[5,5,5]})
     const noEars=buildMold(wasm,target,{...DEFAULT_MOLD_SETTINGS,
