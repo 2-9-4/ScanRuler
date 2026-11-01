@@ -107,7 +107,8 @@ export interface MoldPlan {
  */
 export function clampHardware(s:MoldSettings){
   const nuts=s.tabBoltHoles&&s.tabCapturedNuts
-  const clearance=nuts?s.tabNutAcrossFlats: s.tabBoltHoles?s.tabBoltDiameter:0
+  const clearance=nuts?Math.max(s.tabNutAcrossFlats,s.tabBoltDiameter+1):
+    s.tabBoltHoles?s.tabBoltDiameter:0
   return {
     width:Math.max(s.clampTabWidth,clearance+4),
     projection:Math.max(s.clampTabProjection,clearance+5),
@@ -561,7 +562,7 @@ function drillClampPair(
   if(s.tabCapturedNuts){
     // A 6-sided prism has inradius R*cos(π/6), so this gives the
     // requested across-flats dimension rather than across-corners.
-    const r=s.tabNutAcrossFlats/Math.sqrt(3)
+    const r=Math.max(s.tabNutAcrossFlats,s.tabBoltDiameter+1)/Math.sqrt(3)
     // pinSolid defaults to 32 sides; use an actual six-sided Manifold
     // here, oriented along the same mating axis.
     const raw=keep(wasm.Manifold.cylinder(s.tabNutDepth+0.1,r,r,6,true))
@@ -910,7 +911,7 @@ function keyThreeParts(
             s.tabBoltDiameter/2,s.tabBoltDiameter/2,keep))
           male=keep(male.subtract(bore));female=keep(female.subtract(bore))
           if(s.tabCapturedNuts){
-            const r=s.tabNutAcrossFlats/Math.sqrt(3)
+            const r=Math.max(s.tabNutAcrossFlats,s.tabBoltDiameter+1)/Math.sqrt(3)
             const raw=keep(wasm.Manifold.cylinder(s.tabNutDepth+0.1,r,r,6,true))
             const hex=place(keep(keep(raw.rotate([-90,0,0])).translate(
               [centre[0],-tab.thickness+s.tabNutDepth/2-0.05,centre[2]])))
