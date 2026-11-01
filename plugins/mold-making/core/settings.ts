@@ -6,10 +6,10 @@ export type MoldMode = (typeof MOLD_MODES)[number]
 export type MoldSource = 'scan' | 'reference'
 export type SplitAxis = 'x' | 'y' | 'z'
 export type BoxShape = 'rectangular' | 'cylindrical'
-export type KeyStyle = 'printed-pin' | 'tapered-key' | 'metal-dowel'
+export type KeyStyle = 'v-seam' | 'printed-pin' | 'tapered-key' | 'metal-dowel'
 export type KeyPlacement = 'auto' | 'manual'
 export type OffsetQuality = 'fast' | 'balanced' | 'fine'
-export type PartCount = 1 | 2 | 4
+export type PartCount = 1 | 2 | 3 | 4
 
 export interface MoldSettings {
   source: MoldSource
@@ -66,7 +66,7 @@ export const DEFAULT_MOLD_SETTINGS: Readonly<MoldSettings> = Object.freeze({
   splitPosition: 0.5,
   boxShape: 'rectangular',
   keys: true,
-  keyStyle: 'tapered-key',
+  keyStyle: 'v-seam',
   keyPlacement: 'auto',
   keyPositions: [0.22, 0.78],
   keyPoints: [[0.12,0.15],[0.88,0.15],[0.12,0.85],[0.88,0.85]] as [number,number][],
@@ -107,12 +107,12 @@ export function parseMoldSettings(value: unknown): MoldSettings {
   // default to direct tooling. Geometry and clearance are not reused.
   if ((raw as Record<string,unknown>).mode === 'thin-negative-shell') parsed.mode='direct'
   if (!MOLD_MODES.includes(parsed.mode)) throw new Error('Malformed mold mode.')
-  if (parsed.parts !== 1 && parsed.parts !== 2 && parsed.parts !== 4) throw new Error('Parts must be 1, 2 or 4.')
+  if (parsed.parts !== 1 && parsed.parts !== 2 && parsed.parts !== 3 && parsed.parts !== 4) throw new Error('Parts must be 1, 2, 3 or 4.')
   if (!(['x','y','z'] as const).includes(parsed.splitAxis)) throw new Error('Split axis must be X, Y, or Z.')
   if (parsed.boxShape !== 'rectangular' && parsed.boxShape !== 'cylindrical') throw new Error('Invalid box shape.')
   if (typeof parsed.repairTarget !== 'boolean') throw new Error('Invalid mesh repair setting.')
   if (typeof parsed.keys !== 'boolean') throw new Error('Invalid alignment keys setting.')
-  if (!(['printed-pin', 'tapered-key', 'metal-dowel'] as const).includes(parsed.keyStyle)) throw new Error('Invalid registration feature shape.')
+  if (!(['v-seam','printed-pin', 'tapered-key', 'metal-dowel'] as const).includes(parsed.keyStyle)) throw new Error('Invalid registration feature shape.')
   if (parsed.keyPlacement !== 'auto' && parsed.keyPlacement !== 'manual') throw new Error('Invalid registration placement mode.')
   if (!Array.isArray(parsed.keyPositions) || parsed.keyPositions.length>12 ||
       parsed.keyPositions.some(v => typeof v!=='number' || !Number.isFinite(v) || v<0.01 || v>0.99)) {
