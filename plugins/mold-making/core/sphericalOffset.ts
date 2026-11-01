@@ -12,6 +12,7 @@ import { BufferAttribute, BufferGeometry, Vector3 } from 'three'
 import { MeshBVH } from 'three-mesh-bvh'
 import type { SolidMesh } from '../../../src/app/solids'
 import { extentOf } from '../../../src/core/geometry/bounds'
+import { signedVolume } from '../../mesh-tools/core/hollow'
 
 export interface SphericalOffsetReport {
   gridMm: number
@@ -98,7 +99,7 @@ export function sphericalOffset(
   const sdf=(v:readonly number[]):number=>{
     query.set(v[0],v[1],v[2])
     const nearest=bvh.closestPointToPoint(query,closest)
-    if(!nearest)return -Infinity
+    if(!nearest)throw new Error('No closest triangle found while evaluating spherical clearance.')
     const face=nearest.faceIndex*3
     const dx=query.x-nearest.point.x
     const dy=query.y-nearest.point.y
@@ -114,6 +115,21 @@ export function sphericalOffset(
     if(solid.status()!=='NoError'||solid.isEmpty()){
       solid.delete()
       throw new Error('Spherical distance-field offset produced no valid closed solid.')
+    }
+    const before=signedVolume(mesh.positions,mesh.indices),after=solid.volume()
+    if(!(after>before)){
+      solid.delete()
+      throw new Error(`Spherical offset ${d} mm did not enlarge the master volume (${before.toFixed(3)} → ${after.toFixed(3)} mm³). Check source face orientation and geometry; no mold was exported.`)
+    }
+    const grown=solid.boundingBox()
+    for(let k=0;k<3;k++){
+      // Reconstructed bounds should grow outwards by approximately d.
+      // A grossly inconsistent bound indicates wrong sign or a broken SDF.
+      if(grown.min[k]>min[k]-d+report.gridMm*2 ||
+         grown.max[k]<max[k]+d-report.gridMm*2){
+        solid.delete()
+        throw new Error('Spherical offset did not expand the target on every axis; check face orientation and input mesh topology.')
+      }
     }
     return {solid,report}
   }finally{
