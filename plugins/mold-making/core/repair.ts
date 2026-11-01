@@ -229,6 +229,7 @@ export function repairMoldTarget(
             if(collapsed(candidate.positions,candidate.indices[i],candidate.indices[i+1],candidate.indices[i+2])){
               invalid=true;break
             }
+          let patchNudges=0
           if(invalid){
             const fixed=liftCollapsedClosedMesh(candidate)
             if(!fixed){
@@ -236,13 +237,14 @@ export function repairMoldTarget(
               continue
             }
             candidate=fixed.mesh
-            adjustedVertices+=fixed.adjustedVertices
+            patchNudges=fixed.adjustedVertices
           }
           const c=closedness(candidate.indices,candidate.positions.length/3)
           if(!c.open&&!c.bad){
             mesh=candidate
             topology=c
             filledHoles=patch.report.filled
+            adjustedVertices+=patchNudges
             patchFailure=null
             break
           }
