@@ -99,7 +99,9 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
       setGenerated(made)
       setTargetBounds(made.targetBounds)
       host.sceneRef.current?.frameAll()
-      useStore.getState().setStatus('Generated a watertight mold component. Review the release and casting warnings before printing.')
+      useStore.getState().setStatus(made.printable
+        ?'Generated watertight mold parts. Review casting and release warnings before printing.'
+        :'Mold generation produced fragmented or invalid tooling. Preview only; export disabled.')
     } catch (e) {
       if (ticket === generation.current) {
         setError(e instanceof Error ? e.message : String(e))
@@ -115,6 +117,10 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
 
   const exportPart = (format: Extract<MeshFormat, 'stl' | '3mf'>, index?: number) => {
     if (!generated || generating) return
+    if (!generated.printable) {
+      setError('This mold contains detached or invalid generated solids. Export is disabled; the geometry must be fixed before printing.')
+      return
+    }
     const client = host.clientRef.current
     if (!client || generatedVersion.current !== (source === 'scan' ? client.scanVersion : client.nominalVersion)) {
       invalidate()
