@@ -4,6 +4,7 @@ import Module,{type ManifoldToplevel} from 'manifold-3d'
 import { boxSolid } from '../core/geometry'
 import { createSphericalDistanceField,sphericalOffset,sphericalOffsetGrid } from '../core/sphericalOffset'
 import { closedness } from '../../mesh-tools/core/boolean'
+import { orientForSignedDistance } from '../core/meshOrientation'
 
 let wasm:ManifoldToplevel
 beforeAll(async()=>{wasm=await Module();wasm.setup()})
@@ -37,6 +38,62 @@ describe('Spherical solid clearance (Minkowski dilation by a ball)',()=>{
       expect(closedness(new Uint32Array(output.triVerts),
         output.vertProperties.length/3)).toEqual({open:0,bad:0})
     }finally{solid.delete()}
+  })
+  it('classifies edge, vertex, interior and exterior nearest points correctly',()=>{
+    const field=createSphericalDistanceField(cube)
+    try{
+      for(const point of [
+        [5,5,5],[0.1,0.1,5],[0.1,0.1,0.1],[5,5,0.01],
+      ])expect(field.sdf(point)).toBeGreaterThan(0)
+      for(const point of [
+        [-0.1,-0.1,5],[-0.1,0.1,5],[-0.1,-0.1,-0.1],
+        [10.1,10.1,5],[5,5,-0.01],
+      ])expect(field.sdf(point)).toBeLessThan(0)
+    }finally{field.dispose()}
+  })
+  it('repairs inconsistent face winding in the SDF copy without changing the original',()=>{
+    const broken=cube.indices.slice()
+    const tmp=broken[1];broken[1]=broken[2];broken[2]=tmp
+    const before=broken.slice()
+    const normalized=orientForSignedDistance(broken,cube.positions.length/3)
+    expect(normalized.flippedFaces).toBe(1)
+    expect(normalized.indices).toEqual(cube.indices)
+    expect(broken).toEqual(before)
+    const field=createSphericalDistanceField({positions:cube.positions,indices:broken})
+    try{
+      expect(field.sdf([5,5,0.1])).toBeGreaterThan(0)
+      expect(field.sdf([5,5,-0.1])).toBeLessThan(0)
+      expect(field.sdf([-0.1,-0.1,5])).toBeLessThan(0)
+    }finally{field.dispose()}
+  })
+  it('retains one solid at concave corners instead of producing loose offset islands',()=>{
+    const a=wasm.Manifold.cube([12,4,8])
+    const b=wasm.Manifold.cube([4,12,8])
+    const l=a.add(b)
+    const m=l.getMesh()
+    const concave={
+      positions:new Float32Array(m.vertProperties),
+      indices:new Uint32Array(m.triVerts),
+    }
+    try{
+      const field=createSphericalDistanceField(concave)
+      try{
+        expect(field.sdf([2,2,4])).toBeGreaterThan(0)
+        expect(field.sdf([4.3,4.3,4])).toBeLessThan(0)
+        expect(field.sdf([5,2,4])).toBeGreaterThan(0)
+        expect(field.sdf([2,5,4])).toBeGreaterThan(0)
+      }finally{field.dispose()}
+      for(const quality of ['fast','balanced'] as const){
+        const result=sphericalOffset(wasm,concave,0.7,undefined,quality)
+        try{
+          expect(result.solid.status()).toBe('NoError')
+          const islands=result.solid.decompose()
+          try{expect(islands).toHaveLength(1)}
+          finally{for(const island of islands)island.delete()}
+          expect(result.solid.volume()).toBeGreaterThan(l.volume())
+        }finally{result.solid.delete()}
+      }
+    }finally{l.delete();a.delete();b.delete()}
   })
   it('uses predictable, increasing cell budgets for Fast/Balanced/Fine',()=>{
     const big=boxSolid({min:[0,0,0],max:[80,70,60]})
