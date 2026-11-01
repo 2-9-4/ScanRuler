@@ -17,7 +17,9 @@ describe('Mold Making configuration',()=>{
     expect(moldSection.collect({sources:{} as never,scanSaved:true,addMember(){}}).offsetQuality).toBe('fast')
     useMold.getState().setOffsetQuality('fine')
     expect(useMold.getState().offsetQuality).toBe('fine')
-    expect(()=>parseMoldSettings({...saved,offsetQuality:'ultra'})).toThrow(/quality/)\n    const {offsetQuality:_unused,...legacy}=saved\n    expect(parseMoldSettings(legacy).offsetQuality).toBe('balanced')
+    expect(()=>parseMoldSettings({...saved,offsetQuality:'ultra'})).toThrow(/quality/)
+    const legacy=Object.fromEntries(Object.entries(saved).filter(([key])=>key!=='offsetQuality'))
+    expect(parseMoldSettings(legacy).offsetQuality).toBe('balanced')
   })
   it('persists manually editable metal-dowel hole locations',()=>{
     const s={...DEFAULT_MOLD_SETTINGS,keyStyle:'metal-dowel' as const,
