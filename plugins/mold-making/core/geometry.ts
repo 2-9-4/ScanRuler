@@ -110,7 +110,7 @@ export function planMold(target:Triangles,settings:MoldSettings):MoldPlan {
     const bottom=min[2]-s.baseThickness,top=max[2]+s.siliconeThickness+s.wallThickness
     const innerBottom=min[2],innerTop=top+2
     const draft=(innerTop-innerBottom)*Math.tan(s.boxDraftDeg*Math.PI/180)
-    if(s.boxShape==='cylindrical'){
+    if(s.boxShape==='cylindrical'||s.parts===3){
       const innerR=Math.hypot(size[0]/2,size[1]/2)+s.siliconeThickness
       const outerR=innerR+draft+s.wallThickness
       return {outer:{min:[cx-outerR,cy-outerR,bottom],max:[cx+outerR,cy+outerR,top]},
