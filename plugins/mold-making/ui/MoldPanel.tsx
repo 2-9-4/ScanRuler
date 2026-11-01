@@ -194,7 +194,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
           <option value={4}>4 parts — quartered mold</option>
         </select></label>
       {multi&&<>
-        {parts===3&&<p className="hint">Threefold has three 120° radial mating planes. The V-seam and printed/dowel registration are supported on all three interfaces; radial clamp ears are not currently generated.</p>}
+        {parts===3&&<p className="hint">Threefold has three 120° radial mating planes. The V-seam and printed/dowel registration are supported on all three interfaces; clamp ears are available on the radial mating interfaces.</p>}
         {parts!==3&&<label className="kv"><span className="name">Primary parting axis</span>
           <select data-test="mold-split-axis" value={splitAxis}
             onChange={e=>setSplitAxis(e.target.value as SplitAxis)}>
@@ -217,7 +217,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
             </select></label>
           {keyStyle==='metal-dowel'&&<p className="hint">Both halves receive blind holes. Insert separately purchased metal dowels during assembly. Diameter is the nominal hardware diameter.</p>}
           {keyStyle==='v-seam'&&<p className="hint">{parts===3
-            ?'Three vertical radial V-seams with truncated tips sit in the outside tooling wall. Radial clamp tabs are not automatically generated.'
+            ?'Three vertical radial V-seams with truncated tips sit in the outside tooling wall. Radial clamp ears and optional bolt/nut pockets can secure all three mating interfaces.'
             :parts===4
             ?'Open V-profiles follow each quarter interface and stop short of crossing parting planes. Exterior clamp ears are restricted to the relevant quadrant.'
             :mode==='direct'
@@ -230,7 +230,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
           {(usesV||parts===3)&&<div className="mold-feature-section">
             <div className="sec-head">Clamping tabs · exterior ears</div>
             {TAB_FIELDS.map(fieldInput)}
-            {(parts===4||splitAxis!=='z')&&<><label className="kv"><span className="name">Add top and bottom clamp tabs</span>
+            {(parts!==3&&(parts===4||splitAxis!=='z'))&&<><label className="kv"><span className="name">Add top and bottom clamp tabs</span>
               <input type="checkbox" data-test="mold-top-bottom-tabs" checked={topBottomTabs}
                 onChange={e=>setTopBottomTabs(e.target.checked)}/></label>
               {topBottomTabs&&EXTRA_TAB_FIELDS.map(fieldInput)}</>}
@@ -326,7 +326,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
           <button type="button" role="radio" aria-checked={previewMode==='exploded'} className={previewMode==='exploded'?'on':undefined}
             onClick={()=>onPreviewModeChange('exploded')}>Exploded</button>
         </div>
-        <p className="hint">Assembled view opens the app's built-in Section view. Use the main Section toolbar to move, flip or close the cross-section; these buttons only control assembly layout.</p>
+        <p className="hint">Exploded view shows the original model between the tooling sections. Use the separation slider on the 3D viewport to expand or contract the parts; Assembled switches to the app's built-in Section view.</p>
         <div className="kv"><span className="name">{generated.printable?'Exportable solids':'Preview-only solids'}</span><b>{generated.parts.length}</b></div>
         {!generated.printable&&<p className="hint mold-warning" role="alert">
           NOT PRINTABLE: fragmented geometry was detected. Export is disabled. These parts are provided only to inspect the failure.
