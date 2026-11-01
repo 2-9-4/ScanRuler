@@ -9,7 +9,7 @@ import { useMold } from '../state/moldStore'
 import type { MoldBuild } from '../core/geometry'
 
 const FIELDS:readonly {key:MoldDimension;label:string;help:string}[]=[
-  {key:'clearance',label:'Cavity clearance (+ enlarges)',help:'Positive means larger cavity / more space around casting on each side. Zero keeps the original surface. Large offsets can merge fine features.'},
+  {key:'clearance',label:'Cavity clearance (+ enlarges)',help:'Positive means a spherical dilation of the target solid, enlarging the casting cavity. A signed-distance field is sampled to generate a closed offset; small features may be lost at the chosen grid resolution.'},
   {key:'sideMargin',label:'Outer margin',help:'Material beyond the target in X and Y, millimetres'},
   {key:'baseThickness',label:'Base / top material',help:'Solid material outside the target bounds'},
   {key:'wallThickness',label:'Printed wall',help:'Wall thickness of the silicone box or conformal shell'},
@@ -196,7 +196,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
     </div>
     <div className="group">
       <div className="sec-head">5. Generate, inspect &amp; export</div>
-      {mode!=='silicone-box'&&<p className="hint">Positive clearance enlarges the negative cavity, rather than shrinking the casting. High values can close narrow positive details; generation will reject detected folds and wall break-through.</p>}
+      {mode!=='silicone-box'&&<p className="hint">Positive clearance enlarges the cavity by a spherical distance-field offset, rounding sharp corners rather than pushing vertices along their normals. Very small features may be lost at the reported sampling resolution; inspect the resulting cavity. Zero clearance is exact.</p>}
       <p className="hint">
         {mode==='silicone-box'?'Printable containment box; you still must mount and seal the master. Draft applies to the box interior only.':
           parts===1?'Only one-piece molds cut the target at mid-height. Choose 2 or 4 to capture the whole model.':

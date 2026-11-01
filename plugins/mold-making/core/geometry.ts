@@ -5,9 +5,9 @@ import type { Manifold, ManifoldToplevel } from 'manifold-3d'
 import type { SolidMesh } from '../../../src/app/solids'
 import { extentOf } from '../../../src/core/geometry/bounds'
 import { closedness, type Triangles } from '../../mesh-tools/core/boolean'
-import { offsetMesh } from '../../mesh-tools/core/offset'
 import { signedVolume } from '../../mesh-tools/core/hollow'
 import { repairMoldTarget } from './repair'
+import { sphericalOffset } from './sphericalOffset'
 import { parseMoldSettings, type MoldSettings, type SplitAxis } from './settings'
 
 type Vec3 = [number,number,number]
@@ -147,28 +147,6 @@ export function toPart(solid:Manifold,name:string,warnings:string[]=[]):MoldPart
     if(others.length)warnings.push(`${name}: excluded ${others.length} microscopic detached Boolean artifacts totalling ${discarded.toPrecision(3)} mm³ (each ≤${perIslandLimit.toPrecision(3)} mm³). Inspect the mold near intersections before printing.`)
     return {name,positions,indices,volumeMm3:signedVolume(positions,indices)}
   }finally{for(const island of islands)island.delete()}
-}
-function offset(mesh:Triangles,d:number,warnings:string[]):Triangles {
-  if(d===0)return mesh
-  const before=signedVolume(mesh.positions,mesh.indices)
-  const m=offsetMesh(mesh.positions,mesh.indices,mesh.positions.length/3,{distance:d})
-  // The existing vertex-normal offset can merge folds and delete corners.
-  // In mold tooling, this would silently erase fine casting details.
-  if(m.report.merged>0){
-    throw new Error(`Clearance ${d} mm merged ${m.report.merged} source vertices and would lose cavity details. Reduce clearance, use 0 mm, or use a simplified target. No malformed mold was exported.`)
-  }
-  const result={positions:m.positions,indices:m.indices}
-  check(result,'Clearance-offset target')
-  const after=signedVolume(result.positions,result.indices)
-  // The cutter should always enlarge for +d; the rigid cavity should
-  // therefore grow, never shrink. Compare volumes before subtracting.
-  if(!(after>before)){
-    throw new Error(`Clearance ${d} mm decreased or failed to enlarge the target volume (${before.toFixed(2)} → ${after.toFixed(2)} mm³). The mesh offset folded over; mold generation was stopped.`)
-  }
-  if(m.report.relaxed>0){
-    warnings.push(`The ${d} mm normal-based clearance offset adjusted ${m.report.relaxed} vertices to mend folds. Verify the resulting cavity against the target; the algorithm is not a true solid dilation.`)
-  }
-  return result
 }
 /** Select seam coordinates, excluding too-close edges and collisions.
  * Auto dynamically fits as many keys as the seam supports. Manual entries
@@ -454,8 +432,15 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
       warnings.push('The master still needs a support/attachment and a silicone-tight seal. This is a printable box, not an automatically suspended master.')
       if(s.boxDraftDeg>0)warnings.push('Draft is applied to the silicone BOX interior, not the master/cast cavity.')
     }else{
-      if(s.clearance>0)warnings.push('Mesh offset clearance can merge gaps narrower than twice the clearance. Check fine features.')
-      const positive=toManifold(wasm,offset(targetMesh,s.clearance,warnings),keep)
+      // Use a solid-distance isosurface, not vertex-normal movement: a
+      // spherical clearance rounds convex corners and avoids per-vertex
+      // normal spikes. Zero clearance keeps the original cutter exactly.
+      const dilate=(distance:number):Manifold=>{
+        const {solid,report}=sphericalOffset(wasm,targetMesh,distance,onProgress)
+        warnings.push(`Spherical distance-field offset ${distance} mm sampled at ${report.gridMm.toFixed(3)} mm grid spacing (surface refinement tolerance ${report.toleranceMm.toFixed(3)} mm). This is an approximation: details smaller than the grid may be lost. Inspect the cavity before printing.`)
+        return keep(solid)
+      }
+      const positive=s.clearance>0?dilate(s.clearance):toManifold(wasm,targetMesh,keep)
       if(s.mode==='direct'){
         // The offset cutter may move *more* than d at a sharp corner.
         // Check its actual Manifold bounds against every outside wall, not
@@ -471,11 +456,11 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
         }
         solid=keep(toManifold(wasm,boxSolid(plan.outer),keep).subtract(positive))
       }else{
-        const skin=toManifold(wasm,offset(targetMesh,s.clearance+s.wallThickness,warnings),keep)
+        const skin=dilate(s.clearance+s.wallThickness)
         const outerVolume=skin.volume(),innerVolume=positive.volume()
         if(outerVolume<=innerVolume)throw new Error('Shell offset lost its enclosing material. Increase shell thickness or fix target geometry.')
         solid=keep(skin.subtract(positive))
-        warnings.push('Thin shells use normal-based surface offsets. Small features and tight concavities can fail; verify the result before printing.')
+        warnings.push('Thin shells use sampled spherical distance-field dilation, not vertex-normal offsets. Inspect fine features, small concavities, and disconnected regions before printing.')
       }
     }
     if(solid.isEmpty())throw new Error('The mold is empty. Increase the wall or margins.')
