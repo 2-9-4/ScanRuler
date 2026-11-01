@@ -8,7 +8,7 @@ import { closedness, type Triangles } from '../../mesh-tools/core/boolean'
 import { repairMoldTarget, liftCollapsedClosedMesh } from './repair'
 import { createSphericalDistanceField, sphericalOffset, type SphericalDistanceField } from './sphericalOffset'
 import { parseMoldSettings, type MoldSettings, type SplitAxis } from './settings'
-import { projectedHull,contourAround,contourSegment,triangularContourTube,planeAxes } from './contourSeam'
+import { projectedHull,contourAround,contourSegment,radialSeamContour,triangularContourTube,planeAxes } from './contourSeam'
 
 type Vec3 = [number,number,number]
 export type Limits = { min:Vec3; max:Vec3 }
@@ -921,15 +921,26 @@ function keyThreeParts(
       }
     }
     if(s.keyStyle==='v-seam'){
-      // An open vertical ribbon with capped ends. Trimmed V tips provide
-      // the assembly lead-in at all three radial parting interfaces.
-      // Wrap the V across the radial face: inward wall, lower land,
-      // outer wall. This follows the casting envelope much closer to the
-      // hub than the previous single thin vertical strip.
+      // Direct tooling needs an outward-facing C (top -> radial outside ->
+      // bottom) enveloping the model on EACH radial parting face. The old
+      // inner-wall -> floor -> outer-wall U sat entirely outside the model,
+      // leaving a misleading bottom strip and no registration over its top.
+      // An open silicone containment bucket is different: it has no upper
+      // wall, so its wall/floor U must remain open at the pouring rim.
       const outerLand=outside-hw-fit-0.8
-      const path:[number,number][]=outerLand-radius>1
-        ?[[radius,z1],[radius,z0],[outerLand,z0],[outerLand,z1]]
-        :[[radius,z0],[radius,(z0+z1)/2],[radius,z1]]
+      const hubSetback=Math.max(hw+fit+1.5,2*(hw+fit+0.8)/Math.sqrt(3))
+      const path:[number,number][]=s.mode==='direct'
+        ?radialSeamContour(plan.target!,angle*Math.PI/180,cx,cy,
+          s.vSeamSpacing+hw+fit+0.8,hubSetback,Math.max(2,s.vSeamWidth*2))
+        :outerLand-radius>1
+          ?[[radius,z1],[radius,z0],[outerLand,z0],[outerLand,z1]]
+          :[[radius,z0],[radius,(z0+z1)/2],[radius,z1]]
+      // Keep the entire V-profile in actual tooling backing, including its
+      // width on the rotated face, rather than accepting a thin edge strip.
+      const rim=hw+fit+0.35
+      if(path.some(([r,z])=>r-rim<=0||r+rim>=outside||
+         z-rim<=plan.outer.min[2]||z+rim>=plan.outer.max[2]))
+        throw new Error('Radial V-seam does not fit inside the tooling backing. Increase the side margin or base thickness.')
       const embed=Math.min(0.6,s.vSeamHeight*0.25)
       const tongue=place(toManifold(wasm,triangularContourTube(
         path,'y',0,hw,-embed,s.vSeamHeight,false,0.24),keep))
