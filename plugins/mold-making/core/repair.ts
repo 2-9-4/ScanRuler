@@ -45,6 +45,7 @@ export function liftCollapsedClosedMesh(input:SolidMesh):{mesh:SolidMesh;adjuste
     if(collapsed(original,a,b,c))badFaces.push(t)
   }
   if(badFaces.length===0)return {mesh:input,adjustedVertices:0}
+  const badSet=new Set(badFaces)
   const pos=new Float32Array(original)
   const moved=new Set<number>()
   // Gather only the adjacency needed by faces that may require adjustment.
@@ -108,7 +109,7 @@ export function liftCollapsedClosedMesh(input:SolidMesh):{mesh:SolidMesh;adjuste
       // this face. Topology remains identical; only one coordinate moves.
       if(!collapsed(pos,tri[0],tri[1],tri[2]) &&
          around.every(face=>!collapsed(pos,idx[face],idx[face+1],idx[face+2])||
-            badFaces.includes(face))){
+            badSet.has(face))){
         solved=true
         break tryDirections
       }
