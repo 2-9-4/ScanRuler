@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Explicit tooling choices and per-part export; no hidden mid-height cut.
+import { useState } from 'react'
+import { volumeMassCost } from '../core/materialEstimate'
 import { SCAN_ACCEPT,REFERENCE_ACCEPT,REFERENCE_FORMATS } from '../../../src/core/formats'
 import { ModelSlot } from '../../../src/ui/ModelSlot'
 import { useStore } from '../../../src/state/store'
@@ -62,6 +64,12 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
   generating:boolean
   error:string|null
 }) {
+  // Estimate inputs are local to the readout: changing them never
+  // regenerates, reshapes or invalidates a working mold.
+  const [printDensity,setPrintDensity]=useState(1.24)
+  const [printCostKg,setPrintCostKg]=useState(25)
+  const [siliconeDensity,setSiliconeDensity]=useState(1.1)
+  const [siliconeCostKg,setSiliconeCostKg]=useState(35)
   const scanName=useStore(s=>s.fileName)
   const tris=useStore(s=>s.triangleCount)
   const refName=useDeviation(s=>s.nominalName)
@@ -339,6 +347,55 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
             Invalid detached Boolean fragments were excluded from export. The main mold remains available, but check its cavity and mating features carefully before printing.
           </p>}
         <div className="kv"><span className="name">Total material</span><b>{(generated.volumeMm3/1000).toFixed(1)} cm³</b></div>
+        <details data-test="mold-material-estimate">
+          <summary>Material quantity &amp; cost estimates</summary>
+          <p className="hint">Informational estimates only. Tooling volume assumes fully solid printed material; slicer infill, supports, failed prints, resin loss and purge are excluded. Adjust local material assumptions below.</p>
+          <label className="kv"><span className="name">Printed material density (g/cm³)</span>
+            <input type="number" min={0.01} step={0.01} value={printDensity}
+              onChange={e=>setPrintDensity(Number(e.target.value))}/></label>
+          <label className="kv"><span className="name">Printed material price ($/kg)</span>
+            <input type="number" min={0} step={1} value={printCostKg}
+              onChange={e=>setPrintCostKg(Number(e.target.value))}/></label>
+          {printDensity>0&&printCostKg>=0&&(()=>{
+            const estimate=volumeMassCost(generated.volumeMm3,printDensity,printCostKg)
+            return <div className="kv" data-test="mold-print-estimate">
+              <span className="name">Fully-solid tooling · estimated mass/cost</span>
+              <b>{estimate.grams.toFixed(1)} g / ${estimate.cost.toFixed(2)}</b>
+            </div>
+          })()}
+          {generated.materialEstimate?.nominalCastingCavityMm3!==null&&
+            generated.materialEstimate?.nominalCastingCavityMm3!==undefined&&
+            <div className="kv"><span className="name">Nominal casting void</span>
+              <b>{(generated.materialEstimate.nominalCastingCavityMm3/1000).toFixed(2)} cm³</b></div>}
+          {generated.materialEstimate?.grossSiliconeCapacityMm3!==null&&
+            generated.materialEstimate?.grossSiliconeCapacityMm3!==undefined&&<>
+              <div className="kv"><span className="name">Silicone box capacity to rim (gross)</span>
+                <b>{(generated.materialEstimate.grossSiliconeCapacityMm3/1000).toFixed(1)} cm³</b></div>
+              {generated.materialEstimate.netSiliconeMm3!==null&&
+                <div className="kv" data-test="mold-silicone-net">
+                  <span className="name">Estimated silicone after master displacement</span>
+                  <b>{(generated.materialEstimate.netSiliconeMm3!/1000).toFixed(1)} cm³</b>
+                </div>}
+              {generated.materialEstimate.netSiliconeMm3===null&&
+                <p className="hint">Net silicone quantity unavailable: the source is open, not outward-wound or lacks valid solid volume. Gross capacity is an upper bound before the master is inserted.</p>}
+              <label className="kv"><span className="name">Silicone density (g/cm³)</span>
+                <input type="number" min={0.01} step={0.01} value={siliconeDensity}
+                  onChange={e=>setSiliconeDensity(Number(e.target.value))}/></label>
+              <label className="kv"><span className="name">Silicone price ($/kg)</span>
+                <input type="number" min={0} step={1} value={siliconeCostKg}
+                  onChange={e=>setSiliconeCostKg(Number(e.target.value))}/></label>
+              {siliconeDensity>0&&siliconeCostKg>=0&&(()=>{
+                const v=generated.materialEstimate.netSiliconeMm3??
+                  generated.materialEstimate.grossSiliconeCapacityMm3!
+                const estimate=volumeMassCost(v,siliconeDensity,siliconeCostKg)
+                return <div className="kv" data-test="mold-silicone-estimate">
+                  <span className="name">{generated.materialEstimate.netSiliconeMm3===null?'Gross upper-bound':'Net estimate'} · silicone mass/cost</span>
+                  <b>{estimate.grams.toFixed(1)} g / ${estimate.cost.toFixed(2)}</b>
+                </div>
+              })()}
+              <p className="hint">Capacity assumes fill to the top rim; actual fill level, funnels, air pockets, master supports, overpour and process waste are not included. Master displacement is subtracted only for a closed, positively oriented mesh.</p>
+            </>}
+        </details>
         {generated.parts.map((p,i)=><div key={i} className="kv">
           <span className="name">{p.name} · {Math.round(p.indices.length/3).toLocaleString('en-US')} faces</span>
           <button type="button" disabled={!generated.printable} data-test={`mold-export-part-${i+1}`}
