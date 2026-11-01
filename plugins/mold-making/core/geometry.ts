@@ -510,6 +510,31 @@ function split(
   }
   return out
 }
+/** Three radial 120-degree sectors around the model's XY bounding
+ * centre. Intersect two outward-facing half-planes per sector; unlike a
+ * 3-way sequence of straight X/Y cuts this gives exact threefold layout.
+ * Adjacent sectors share their unsplit radial interfaces, with no overlap.
+ */
+export function splitThreefold(
+  solid:Manifold,plan:MoldPlan,keep:(m:Manifold)=>Manifold,
+):Manifold[] {
+  const cx=center(plan.outer.min[0],plan.outer.max[0])
+  const cy=center(plan.outer.min[1],plan.outer.max[1])
+  const result:Manifold[]=[]
+  for(let sector=0;sector<3;sector++){
+    const lo=sector*2*Math.PI/3,hi=(sector+1)*2*Math.PI/3
+    const left:Vec3=[-Math.sin(lo),Math.cos(lo),0]
+    const right:Vec3=[Math.sin(hi),-Math.cos(hi),0]
+    const [withinLeft,discardLeft]=solid.splitByPlane(left,left[0]*cx+left[1]*cy)
+    keep(withinLeft);keep(discardLeft)
+    const [wedge,discardRight]=withinLeft.splitByPlane(right,right[0]*cx+right[1]*cy)
+    keep(wedge);keep(discardRight)
+    if(wedge.isEmpty()||wedge.status()!=='NoError')
+      throw new Error(`Threefold radial sector ${sector+1} is empty or invalid. Check model bounds and parting symmetry.`)
+    result.push(wedge)
+  }
+  return result
+}
 /** Four-part parts are split *before* any pins are added, so the second
  * plane cannot shear a pre-existing pin or socket into degenerate faces.
  * Then pin each adjacent pair on each finished mating interface. */
@@ -631,6 +656,11 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
       // retain the entire target volume.
       pieces=[keep(solid.trimByPlane([0,0,-1],-plan.openingZ!))]
       warnings.push('One-piece mode reproduces only the bottom half; select 2 or 4 parts for a complete cavity.')
+    }else if(s.parts===3){
+      onProgress?.('Cutting three 120° radial mold sectors around the Z axis…',0.84)
+      pieces=splitThreefold(solid,plan,keep)
+      if(s.keys)warnings.push('Threefold radial tooling currently has NO automatic registration: choose external clamping or disable alignment. It is not the same as a threefold-symmetric master; verify your master geometry separately.')
+      warnings.push('Threefold molds are three radial wedges around the XY center. Verify demolding, cavity clearances and corner release before printing.')
     }else if(s.parts!==1){
       onProgress?.('Cutting exact parting planes; applying mating pins and pockets…',0.84)
       const a=s.splitAxis,k=axisIndex(a)
