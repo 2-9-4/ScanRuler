@@ -36,6 +36,8 @@ export interface MoldSettings {
   /** Auto candidates span a seam. Manual positions are fractions 0..1. */
   keyPlacement: KeyPlacement
   keyPositions: number[]
+  /** Direct molds: 2D normalized (horizontal,vertical) positions in the parting plane. */
+  keyPoints: [number,number][]
   keyDiameter: number
   keyDepth: number
   keyClearance: number
@@ -67,6 +69,7 @@ export const DEFAULT_MOLD_SETTINGS: Readonly<MoldSettings> = Object.freeze({
   keyStyle: 'tapered-key',
   keyPlacement: 'auto',
   keyPositions: [0.22, 0.78],
+  keyPoints: [[0.12,0.15],[0.88,0.15],[0.12,0.85],[0.88,0.85]],
   keyDiameter: 3,
   keyDepth: 3,
   keyClearance: 0.2,
@@ -83,7 +86,7 @@ export const MOLD_DIMENSIONS: readonly MoldDimension[] = [
 ]
 export const MOLD_SETTING_KEYS: readonly (keyof MoldSettings)[] = [
   'source', 'mode', ...MOLD_DIMENSIONS, 'offsetQuality', 'repairTarget', 'parts', 'splitAxis', 'boxShape', 'keys',
-  'keyStyle', 'keyPlacement', 'keyPositions',
+  'keyStyle', 'keyPlacement', 'keyPositions', 'keyPoints',
 ]
 export function validMoldDimension(key: MoldDimension, value: number): boolean {
   if (!Number.isFinite(value)) return false
@@ -116,14 +119,22 @@ export function parseMoldSettings(value: unknown): MoldSettings {
     throw new Error('Alignment key positions must be 1–99% along the seam, up to twelve entries.')
   }
   if (new Set(parsed.keyPositions).size !== parsed.keyPositions.length) throw new Error('Alignment positions must be distinct.')
-  if(parsed.keys&&parsed.keyPlacement==='manual'&&parsed.keyPositions.length===0)throw new Error('Add manual alignment positions or disable registration.')
+  if(!Array.isArray(parsed.keyPoints)||parsed.keyPoints.length>16||parsed.keyPoints.some(
+    point=>!Array.isArray(point)||point.length!==2||point.some(v=>typeof v!=='number'||!Number.isFinite(v)||v<0.01||v>0.99)
+  ))throw new Error('Alignment points must be pairs of fractions between 1% and 99%.')
+  if(new Set(parsed.keyPoints.map(p=>p.join(','))).size!==parsed.keyPoints.length)
+    throw new Error('Alignment points must have distinct coordinates.')
+  if(parsed.keys&&parsed.keyPlacement==='manual'&&parsed.keyPoints.length===0)
+    throw new Error('Add manual alignment points or disable registration.')
+  if(parsed.keys&&parsed.keyPlacement==='manual'&&parsed.mode==='silicone-box'&&parsed.keyPositions.length===0)
+    throw new Error('Add manual registration heights or disable registration.')
   for (const key of MOLD_DIMENSIONS) {
     if (typeof parsed[key] !== 'number' || !validMoldDimension(key, parsed[key])) {
       throw new Error(`Invalid mold setting: ${key}`)
     }
   }
   // No future/unknown fields leak into the store.
-  return Object.fromEntries(MOLD_SETTING_KEYS.map(key => [key, key==='keyPositions'?[...parsed.keyPositions]:parsed[key]])) as unknown as MoldSettings
+  return Object.fromEntries(MOLD_SETTING_KEYS.map(key => [key, key==='keyPositions'?[...parsed.keyPositions]:key==='keyPoints'?parsed.keyPoints.map(p=>[...p]):parsed[key]])) as unknown as MoldSettings
 }
 
 export const MOLD_MODE_LABELS: Readonly<Record<MoldMode,string>> = {
