@@ -166,10 +166,14 @@ describe('Mold Making assembly',()=>{
   })
   it('cuts connected optional pour, funnel and vent bores without changing default tooling',()=>{
     const base={...DEFAULT_MOLD_SETTINGS,keys:false}
-    const plain=buildMold(wasm,master,base)
-    const settings={...base,pourEnabled:true,ventsEnabled:true,
-      pourPoint:[0.25,0.25] as [number,number],
-      ventPoints:[[0.75,0.75]] as [number,number][]}
+    const settings={...base,pourEnabled:true,ventsEnabled:true}
+    // Compare identical exterior blocks; enabling a funnel automatically
+    // increases roof thickness instead of hollowing through the top face.
+    const withChannelPlan=planMold(master,settings)
+    const withoutPlan=planMold(master,base)
+    const matched={...base,
+      baseThickness:withChannelPlan.material.base-withoutPlan.material.base}
+    const plain=buildMold(wasm,master,matched)
     const drilled=buildMold(wasm,master,settings)
     expect(drilled.printable).toBe(true)
     expect(drilled.parts).toHaveLength(2)
@@ -178,7 +182,7 @@ describe('Mold Making assembly',()=>{
     expect(drilled.warnings.join(' ')).toMatch(/1 vertical pour channel\(s\) and 1 air vent\(s\)/)
     expect(plain.warnings.join(' ')).not.toMatch(/vertical pour channel/)
     // Shared geometry is not mutated by optional channel generation.
-    expect(buildMold(wasm,master,base).volumeMm3).toBeCloseTo(plain.volumeMm3,3)
+    expect(buildMold(wasm,master,matched).volumeMm3).toBeCloseTo(plain.volumeMm3,3)
   })
   it('rejects pouring through a parting interface or oversized funnel rather than corrupting keys',()=>{
     const common={...DEFAULT_MOLD_SETTINGS,keys:false,pourEnabled:true}
