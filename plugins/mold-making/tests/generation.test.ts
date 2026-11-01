@@ -394,18 +394,19 @@ describe('Mold Making assembly',()=>{
     expect(made.volumeMm3).toBeLessThan(expectedVolume*1.04)
     expect(made.warnings.join(' ')).toMatch(/mating registration on all three radial interfaces/)
   })
-  it('has a continuous V interface on each of the four quarter seams',()=>{
-    const settings={...DEFAULT_MOLD_SETTINGS,parts:4 as const,
-      keyStyle:'v-seam' as const,clampTabCount:0}
-    const blank=buildMold(wasm,master,matchedBlank(master,settings))
-    const made=buildMold(wasm,master,settings)
-    expect(made.parts).toHaveLength(4)
-    expect(made.printable).toBe(true)
-    intact(made.parts)
-    expect(made.warnings.join(' ')).toMatch(/open, flat-tipped V-ridge/)
-    // V-ridges/grooves change surface material, not the entire outer block.
-    expect(Math.abs(made.volumeMm3-blank.volumeMm3)).toBeLessThan(blank.volumeMm3*0.08)
-  })
+  it.each(['x','y','z'] as const)(
+    'registers four quarter mold interfaces with open V-ridges for a %s-first split',
+    splitAxis=>{
+      const settings={...DEFAULT_MOLD_SETTINGS,parts:4 as const,
+        splitAxis,keyStyle:'v-seam' as const,clampTabCount:0}
+      const blank=buildMold(wasm,master,matchedBlank(master,settings))
+      const made=buildMold(wasm,master,settings)
+      expect(made.parts).toHaveLength(4)
+      expect(made.printable).toBe(true)
+      intact(made.parts)
+      expect(made.warnings.join(' ')).toMatch(/open, flat-tipped V-ridge/)
+      expect(Math.abs(made.volumeMm3-blank.volumeMm3)).toBeLessThan(blank.volumeMm3*0.08)
+    })
   it.each(['v-seam','printed-pin','tapered-key','metal-dowel'] as const)(
     'registers all three radial mating interfaces using %s',keyStyle=>{
       const target=boxSolid({min:[-5,-5,-5],max:[5,5,5]})
