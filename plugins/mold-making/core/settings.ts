@@ -98,7 +98,7 @@ export const DEFAULT_MOLD_SETTINGS: Readonly<MoldSettings> = Object.freeze({
   keyDiameter: 3,
   keyDepth: 3,
   keyClearance: 0.2,
-  vSeamWidth: 2.4,
+  vSeamWidth: 4.8,
   vSeamHeight: 2.4,
   vSeamSpacing: 1.5,
   vSeamClearance: 0.2,
