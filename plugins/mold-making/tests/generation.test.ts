@@ -102,14 +102,12 @@ describe('Mold Making assembly',()=>{
       decompose:()=>[main,invalid],
     } as unknown as Manifold
     const warnings:string[]=[],detached:ReturnType<typeof toPart>[]=[]
-    try{
-      const part=toPart(composite,'Mold part 1',warnings,detached)
-      expect(part.volumeMm3).toBeCloseTo(512)
-      intact([part])
-      expect(detached).toHaveLength(0)
-      expect(warnings.join(' ')).toMatch(/excluded an invalid detached artifact/)
-      expect(warnings.join(' ')).toMatch(/45\.1/)
-    }finally{main.delete()}
+    const part=toPart(composite,'Mold part 1',warnings,detached)
+    expect(part.volumeMm3).toBeCloseTo(512)
+    intact([part])
+    expect(detached).toHaveLength(0)
+    expect(warnings.join(' ')).toMatch(/excluded an invalid detached artifact/)
+    expect(warnings.join(' ')).toMatch(/45\.1/)
   })
   it('distributes registration across both tangent axes, including above the cavity',()=>{
     const plan=planMold(master,DEFAULT_MOLD_SETTINGS)
