@@ -19,6 +19,10 @@ interface MoldState extends MoldSettings {
   setTopBottomTabs(value:boolean):void
   setTabBoltHoles(value:boolean):void
   setTabCapturedNuts(value:boolean):void
+  setPourEnabled(value:boolean):void
+  setVentsEnabled(value:boolean):void
+  setPourPoint(point:[number,number]):void
+  setVentPoints(points:[number,number][]):void
   setKeyPlacement(keyPlacement: KeyPlacement): void
   setKeyPositions(keyPositions: number[]): void
   setKeyPoints(keyPoints: [number,number][]): void
@@ -38,6 +42,17 @@ export const useMold = create<MoldState>()((set)=>({
   setTopBottomTabs:(topBottomTabs)=>set({topBottomTabs}),
   setTabBoltHoles:(tabBoltHoles)=>set({tabBoltHoles,tabCapturedNuts:tabBoltHoles?useMold.getState().tabCapturedNuts:false}),
   setTabCapturedNuts:(tabCapturedNuts)=>set({tabCapturedNuts}),
+  setPourEnabled:(pourEnabled)=>set({pourEnabled}),
+  setVentsEnabled:(ventsEnabled)=>set({ventsEnabled}),
+  setPourPoint:(pourPoint)=>{
+    if(pourPoint.length!==2||pourPoint.some(x=>!Number.isFinite(x)||x<0.01||x>0.99))return
+    set({pourPoint:[...pourPoint] as [number,number]})
+  },
+  setVentPoints:(ventPoints)=>{
+    if(!ventPoints.length||ventPoints.length>8||ventPoints.some(p=>p.length!==2||
+      p.some(x=>!Number.isFinite(x)||x<0.01||x>0.99)))return
+    set({ventPoints:ventPoints.map(p=>[...p] as [number,number])})
+  },
   setKeyPlacement: (keyPlacement) => set({keyPlacement}),
   setKeyPositions: (keyPositions) => {
     if (keyPositions.length>12 || keyPositions.some(x=>!Number.isFinite(x)||x<0.01||x>0.99) ||
@@ -57,5 +72,7 @@ export const useMold = create<MoldState>()((set)=>({
 }))
 export function moldSettings(): MoldSettings {
   const s = useMold.getState()
-  return Object.fromEntries(MOLD_SETTING_KEYS.map(key => [key,key==='keyPositions'?[...s.keyPositions]:key==='keyPoints'?s.keyPoints.map(p=>[...p]):s[key]])) as unknown as MoldSettings
+  return Object.fromEntries(MOLD_SETTING_KEYS.map(key => [key,key==='keyPositions'?[...s.keyPositions]:key==='keyPoints'?s.keyPoints.map(p=>[...p]):
+    key==='pourPoint'?[...s.pourPoint]:
+    key==='ventPoints'?s.ventPoints.map(p=>[...p]):s[key]])) as unknown as MoldSettings
 }
