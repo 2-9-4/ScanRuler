@@ -113,6 +113,26 @@ describe('Mold Making configuration',()=>{
     expect(()=>parseMoldSettings({...configured,tabBoltHoles:'yes'})).toThrow()
     useMold.setState({...DEFAULT_MOLD_SETTINGS})
   })
+  it('round-trips optional pour and vent settings without changing old projects',()=>{
+    const recipe={...DEFAULT_MOLD_SETTINGS,pourEnabled:true,ventsEnabled:true,
+      pourDiameter:3.2,pourFunnelDiameter:6.4,pourFunnelDepth:4.2,
+      pourPoint:[0.14,0.31] as [number,number],
+      ventDiameter:1.4,ventPoints:[[0.7,0.2],[0.8,0.7]] as [number,number][]}
+    expect(parseMoldSettings(recipe)).toEqual(recipe)
+    moldSection.prepare(recipe,{manifest:{} as never,members:new Map()})()
+    expect(moldSection.collect({sources:{} as never,scanSaved:true,addMember(){}}))
+      .toEqual(recipe)
+    useMold.getState().setPourPoint([0.3,0.6])
+    expect(useMold.getState().pourPoint).toEqual([0.3,0.6])
+    useMold.getState().setVentPoints([[0.1,0.1],[0.9,0.9]])
+    expect(useMold.getState().ventPoints).toEqual([[0.1,0.1],[0.9,0.9]])
+    expect(()=>parseMoldSettings({...recipe,pourPoint:[1.1,0.5]})).toThrow(/Pour XY/)
+    expect(()=>parseMoldSettings({...recipe,ventPoints:[[0.4]]})).toThrow(/Vent XY/)
+    expect(()=>parseMoldSettings({...recipe,pourFunnelDiameter:2})).toThrow(/funnel diameter/)
+    expect(()=>parseMoldSettings({...recipe,mode:'silicone-box'})).toThrow(/multipart direct/)
+    expect(parseMoldSettings({...recipe,pourFunnelDepth:0}).pourFunnelDepth).toBe(0)
+    useMold.setState({...DEFAULT_MOLD_SETTINGS})
+  })
   it('resets a project lacking settings',()=>{
     useMold.getState().setMode('silicone-box')
     moldSection.prepare(undefined,{manifest:{} as never,members:new Map()})()
