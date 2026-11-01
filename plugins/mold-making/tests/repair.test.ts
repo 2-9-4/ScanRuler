@@ -37,7 +37,9 @@ describe('Mold Making non-destructive source repair',()=>{
     expect(repaired.adjustedVertices).toBeGreaterThan(0)
     expect(repaired.removedFaces).toBe(0)
     expect(repaired.mesh.indices).toBe(input.indices)
-    expect(repaired.warnings.join(' ')).toMatch(/preserving all triangles/)
+    // The topology guarantee is asserted structurally above. Do not bind
+    // this test to incidental prose in the user-facing repair summary.
+    expect(repaired.warnings.join(' ')).toMatch(/adjusted 1 collapsed vertices/)
     closed(repaired)
     expect(input.positions).toEqual(before)
     for(let t=0;t<input.indices.length;t+=3){
