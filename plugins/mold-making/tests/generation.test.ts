@@ -53,6 +53,42 @@ describe('Mold Making assembly',()=>{
     expect(m.volumeMm3).toBeCloseTo(26*24*18-10*8*10,2)
     intact(m.parts)
   })
+  it('builds a silicone containment box from an OPEN scan without any mesh repair',()=>{
+    // Two triangles removed from a face: four boundary edges.
+    const open={positions:master.positions,
+      indices:Uint32Array.from([...master.indices.slice(0,6),...master.indices.slice(12)])}
+    expect(closedness(open.indices,open.positions.length/3).open).toBe(4)
+    for(const boxShape of ['rectangular','cylindrical'] as const){
+      const made=buildMold(wasm,open,{...DEFAULT_MOLD_SETTINGS,
+        mode:'silicone-box',boxShape,repairTarget:false})
+      expect(made.parts).toHaveLength(2)
+      intact(made.parts)
+      expect(made.warnings.join(' ')).not.toMatch(/Temporary target mesh repair/)
+    }
+  })
+  it('does not inspect degenerate triangles when sizing a silicone box',()=>{
+    const broken={positions:master.positions,
+      indices:Uint32Array.from([...master.indices,0,1,1])}
+    const original=broken.indices.slice()
+    const made=buildMold(wasm,broken,{...DEFAULT_MOLD_SETTINGS,
+      mode:'silicone-box',parts:1,repairTarget:true})
+    intact(made.parts)
+    expect(made.parts).toHaveLength(1)
+    expect(broken.indices).toEqual(original)
+  })
+  it('allows a silicone box around a vertex cloud with no triangle connectivity',()=>{
+    const points={positions:master.positions,indices:new Uint32Array(0)}
+    const made=buildMold(wasm,points,{...DEFAULT_MOLD_SETTINGS,
+      mode:'silicone-box',parts:1,keys:false})
+    expect(made.parts).toHaveLength(1)
+    intact(made.parts)
+  })
+  it('still rejects open targets for actual cast-negative cavities',()=>{
+    const open={positions:master.positions,
+      indices:Uint32Array.from([...master.indices.slice(0,6),...master.indices.slice(12)])}
+    expect(()=>buildMold(wasm,open,{...noKeys,repairTarget:false}))
+      .toThrow(/not watertight/)
+  })
   it('generates four separate rigid blocks with no coincident combined STL',()=>{
     const m=buildMold(wasm,master,{...noKeys,parts:4})
     expect(m.parts).toHaveLength(4)
