@@ -113,18 +113,26 @@ export function moldMaterial(s:MoldSettings,targetHeight?:number):{side:number;b
   const direct=Math.max(2,clearance+2,pinLand+clearance,vLand+clearance)
   const wallMin=v?Math.max(2,s.vSeamWidth+2*s.vSeamClearance+s.vSeamSpacing+2.5):
     s.keys&&s.parts!==3?Math.max(2,s.keyDiameter+2*s.keyClearance+2):2
+  // Size structural land and tab spacing WITHOUT user extras first.
+  // Otherwise adding "extra" base material merely reduces the automatic
+  // padding and appears to have no effect until a threshold is crossed.
   const material={
-    side:direct+s.sideMargin,
-    base:(s.mode==='direct'?direct:Math.max(2,wallMin+0.5))+s.baseThickness,
-    wall:wallMin+s.wallThickness,
+    side:direct,
+    base:s.mode==='direct'?direct:Math.max(2,wallMin+0.5),
+    wall:wallMin,
   }
-  if(v&&targetHeight!==undefined&&Number.isFinite(targetHeight)){
+  if(v&&targetHeight!==undefined&&Number.isFinite(targetHeight)&&s.clampTabCount>0){
     const pitch=s.clampTabWidth+Math.max(2,s.clampTabWidth*0.25)
     const needed=s.clampTabCount*pitch+4
     const span=targetHeight+(s.mode==='direct'?2*material.base:
       s.siliconeThickness+material.wall+material.base)
     if(span<needed)material.base+=(needed-span)/(s.mode==='direct'?2:1)
   }
+  // Extras must ALWAYS add material, even when the calculated requirement
+  // is already dominated by tab spacing or a large V-seam.
+  material.side+=s.sideMargin
+  material.base+=s.baseThickness
+  material.wall+=s.wallThickness
   return material
 }
 export function planMold(target:Triangles,settings:MoldSettings):MoldPlan {
