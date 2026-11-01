@@ -144,6 +144,10 @@ export function moldMaterial(s:MoldSettings,targetHeight?:number,targetWidth?:nu
     base:s.mode==='direct'?direct:Math.max(2,wallMin+0.5),
     wall:s.parts===4?Math.max(wallMin,4.5):wallMin,
   }
+  // A requested conical pour entry needs a real roof above the cavity.
+  // Grow the computed backing only when the optional feature is enabled.
+  if(s.mode==='direct'&&s.pourEnabled)
+    material.base=Math.max(material.base,s.pourFunnelDepth+s.clearance+1.5)
   if((v||(s.parts===3&&s.keys))&&targetHeight!==undefined&&Number.isFinite(targetHeight)&&s.clampTabCount>0){
     const tab=clampHardware(s)
     const pitch=tab.width+Math.max(2,tab.width*0.25)
