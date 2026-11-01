@@ -431,7 +431,6 @@ function addBoxWallKeys(
   wasm:ManifoldToplevel,negative:Manifold,positive:Manifold,
   axis:SplitAxis,split:number,s:MoldSettings,plan:MoldPlan,
   keep:(m:Manifold)=>Manifold,seamSpan?:readonly [number,number],
-  seamSpanAxis?:SplitAxis,
 ):[Manifold,Manifold] {
   if(axis==='z')throw new Error('Z split registration on a silicone box needs a separate flange; choose X/Y or turn off keys.')
   const idx=axisIndex(axis),t=axis==='x'?1:0
