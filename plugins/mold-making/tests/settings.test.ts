@@ -14,7 +14,7 @@ describe('Mold Making configuration',()=>{
   it('preserves quality through project settings and applies the default to legacy projects',()=>{
     const saved={...DEFAULT_MOLD_SETTINGS,offsetQuality:'fast' as const}
     moldSection.prepare(saved,{manifest:{} as never,members:new Map()})()
-    expect(moldSection.collect({sources:{} as never,scanSaved:true,addMember(){}}).offsetQuality).toBe('fast')
+    expect(moldSection.collect({sources:{} as never,scanSaved:true,addMember(){}})?.offsetQuality).toBe('fast')
     useMold.getState().setOffsetQuality('fine')
     expect(useMold.getState().offsetQuality).toBe('fine')
     expect(()=>parseMoldSettings({...saved,offsetQuality:'ultra'})).toThrow(/quality/)
