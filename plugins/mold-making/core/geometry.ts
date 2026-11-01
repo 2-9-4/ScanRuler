@@ -431,6 +431,7 @@ function addBoxWallKeys(
   wasm:ManifoldToplevel,negative:Manifold,positive:Manifold,
   axis:SplitAxis,split:number,s:MoldSettings,plan:MoldPlan,
   keep:(m:Manifold)=>Manifold,seamSpan?:readonly [number,number],
+  seamSpanAxis?:SplitAxis,
 ):[Manifold,Manifold] {
   if(axis==='z')throw new Error('Z split registration on a silicone box needs a separate flange; choose X/Y or turn off keys.')
   const idx=axisIndex(axis),t=axis==='x'?1:0
@@ -577,14 +578,17 @@ function addContourVSeam(
     closed=false
   }
   if(seamSpan){
-    // Only this quadrant owns the relevant interval. Stop the open V
-    // short of the perpendicular seam to avoid intersecting registration
-    // ribs from a neighboring quadrant.
+    // Clip along the OTHER parting axis, which can be the vertical
+    // coordinate of this plane (Z-first fourfold). In all cases end the
+    // ridge short of the perpendicular interface.
+    const clipAxis=seamSpanAxis?axisIndex(seamSpanAxis):u
+    const alongV=clipAxis===v
     const trim=halfWidth+fit+0.8
-    const lo=seamSpan[0]>outer.min[u]+1e-4?seamSpan[0]+trim:seamSpan[0]
-    const hi=seamSpan[1]<outer.max[u]-1e-4?seamSpan[1]-trim:seamSpan[1]
-    const clipped=contourSegment(path,lo,hi,closed)
-    path=clipped.path
+    const lo=seamSpan[0]>outer.min[clipAxis]+1e-4?seamSpan[0]+trim:seamSpan[0]
+    const hi=seamSpan[1]<outer.max[clipAxis]-1e-4?seamSpan[1]-trim:seamSpan[1]
+    const oriented=alongV?path.map(([a,b]):[number,number]=>[b,a]):path
+    const clipped=contourSegment(oriented,lo,hi,closed)
+    path=alongV?clipped.path.map(([a,b]):[number,number]=>[b,a]):clipped.path
     closed=clipped.closed
   }
   const safety=halfWidth+fit+0.65
@@ -608,16 +612,21 @@ function addContourVSeam(
   const k=axisIndex(axis),t=axis==='x'?1:0
   const mid=[center(outer.min[0],outer.max[0]),center(outer.min[1],outer.max[1])]
   const sideTangent=axis==='z'?0:t
-  const totalHeight=outer.max[2]-outer.min[2]
-  const zPitch=totalHeight/s.clampTabCount
-  for(const sign of [-1,1])for(let i=0;i<s.clampTabCount;i++){
+  const verticalSpan=seamSpan&&seamSpanAxis==='z'&&axis!=='z'
+    ?seamSpan:[outer.min[2],outer.max[2]]
+  const availableZ=verticalSpan[1]-verticalSpan[0]
+  const tabCount=seamSpan&&seamSpanAxis==='z'&&axis!=='z'
+    ?Math.min(s.clampTabCount,Math.floor(availableZ/(s.clampTabWidth+2)))
+    :s.clampTabCount
+  const zPitch=tabCount?availableZ/tabCount:0
+  for(const sign of [-1,1])for(let i=0;i<tabCount;i++){
     let edge=sign<0?outer.min[sideTangent]:outer.max[sideTangent]
-    if(seamSpan&&(edge<seamSpan[0]-1e-4||edge>seamSpan[1]+1e-4))continue
+    if(seamSpan&&seamSpanAxis!=='z'&&(edge<seamSpan[0]-1e-4||edge>seamSpan[1]+1e-4))continue
     if(plan.cylinder&&axis!=='z'){
       const dx=split-mid[k],r=plan.cylinder.outerR
       edge=mid[sideTangent]+sign*Math.sqrt(Math.max(0,r*r-dx*dx))
     }
-    const z=outer.min[2]+zPitch*(i+0.5)
+    const z=verticalSpan[0]+zPitch*(i+0.5)
     const tabWidth=s.clampTabWidth
     const thickness=Math.max(2,s.clampTabThickness)
     const makeTab=(upper:boolean):Manifold=>{
@@ -657,11 +666,11 @@ function addContourVSeam(
 function addKeys(
   wasm:ManifoldToplevel,negative:Manifold,positive:Manifold,
   axis:SplitAxis,split:number,s:MoldSettings,plan:MoldPlan,keep:(m:Manifold)=>Manifold,
-  seamSpan?:readonly [number,number],
+  seamSpan?:readonly [number,number],seamSpanAxis?:SplitAxis,
 ):[Manifold,Manifold] {
   // Registration is placed on material around the projected cavity in both parting-plane axes.
   // Metal dowel mode cuts blind clearance sockets on BOTH mating halves.
-  if(s.keyStyle==='v-seam')return addContourVSeam(wasm,negative,positive,axis,split,s,plan,keep,seamSpan)
+  if(s.keyStyle==='v-seam')return addContourVSeam(wasm,negative,positive,axis,split,s,plan,keep,seamSpan,seamSpanAxis)
   if(s.mode==='silicone-box')return addBoxWallKeys(wasm,negative,positive,axis,split,s,plan,keep,seamSpan)
   const idx=axisIndex(axis)
   const locations=registrationSites(axis,split,s,plan,seamSpan)
@@ -820,17 +829,17 @@ function keyFourParts(
   // Always measure key locations on the ORIGINAL four parts. Otherwise
   // first-seam pins extend the bounding boxes and move second-seam keys.
   const initial=pieces.map(p=>p.boundingBox())
-  const span=(i:number,j:number,axis:SplitAxis):readonly [number,number]=>{
-    const tangent=axis==='x'?1:0
+  const span=(i:number,j:number,otherAxis:SplitAxis):readonly [number,number]=>{
+    const tangent=axisIndex(otherAxis)
     return [Math.max(initial[i].min[tangent],initial[j].min[tangent]),
       Math.min(initial[i].max[tangent],initial[j].max[tangent])]
   }
   for(const [i,j] of [[0,2],[1,3]]){
-    const [low,high]=addKeys(wasm,registered[i],registered[j],first,firstAt,s,plan,keep,span(i,j,first))
+    const [low,high]=addKeys(wasm,registered[i],registered[j],first,firstAt,s,plan,keep,span(i,j,second),second)
     registered[i]=low;registered[j]=high
   }
   for(const [i,j] of [[0,1],[2,3]]){
-    const [low,high]=addKeys(wasm,registered[i],registered[j],second,secondAt,s,plan,keep,span(i,j,second))
+    const [low,high]=addKeys(wasm,registered[i],registered[j],second,secondAt,s,plan,keep,span(i,j,first),first)
     registered[i]=low;registered[j]=high
   }
   return registered
