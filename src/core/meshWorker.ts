@@ -255,7 +255,7 @@ const scanReplaced = () => {
 }
 
 /** What the worker lends a plugin's request. */
-const contextOf = (progress: (t: string) => void): WorkerContext => ({
+const contextOf = (progress: (t: string, fraction?: number) => void): WorkerContext => ({
   scan: () => graph,
   takeStaged: (id) => {
     const g = stagedScans.get(id)
