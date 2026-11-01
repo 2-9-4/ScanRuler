@@ -430,6 +430,25 @@ describe('Mold Making assembly',()=>{
       expect(result.printable).toBe(true)
       intact(result.parts)
     })
+  it('builds three independently closed silicone-box wedges with supported L seams',()=>{
+    const target=boxSolid({min:[-5,-5,-5],max:[5,5,5]})
+    for(const count of [0,2]){
+      const settings={...DEFAULT_MOLD_SETTINGS,mode:'silicone-box' as const,
+        boxShape:'cylindrical' as const,parts:3 as const,keys:true,
+        keyStyle:'v-seam' as const,clampTabCount:count}
+      const made=buildMold(wasm,target,settings)
+      expect(made.printable).toBe(true)
+      expect(made.parts).toHaveLength(3)
+      intact(made.parts)
+      const plan=planMold(target,settings)
+      // The L groove runs on the solid bucket floor, inside the cylindrical
+      // wall; neither mesh may occupy the empty silicone volume there.
+      const floor=plan.outer.min[2]+settings.vSeamWidth/2+
+        settings.vSeamClearance+0.8
+      expect(floor).toBeLessThan(plan.innerBox!.min[2])
+      expect(made.warnings.join(' ')).toMatch(/mating registration on all three radial interfaces/)
+    }
+  })
   it('adds radial clamp ears to all three mating interfaces',()=>{
     const target=boxSolid({min:[-5,-5,-5],max:[5,5,5]})
     const noEars=buildMold(wasm,target,{...DEFAULT_MOLD_SETTINGS,
