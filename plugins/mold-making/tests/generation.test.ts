@@ -58,16 +58,30 @@ describe('Mold Making assembly',()=>{
       expect(warnings.join(' ')).toMatch(/microscopic detached Boolean artifacts/)
     }finally{combined.delete();fleck.delete();base.delete()}
   })
-  it('rejects meaningful disconnected mold islands with volumes instead of exporting them',()=>{
+  it('preserves nontrivial disconnected mold islands as distinct printable components',()=>{
     const base=wasm.Manifold.cube([8,8,8])
     const island=wasm.Manifold.cube([1,1,1]).translate([15,0,0])
     const combined=base.add(island)
     try{
-      const warnings:string[]=[]
-      expect(()=>toPart(combined,'Mold part 1',warnings))
-        .toThrow(/2 disconnected solids \(volumes: .* mm³\)/)
-      expect(warnings).toEqual([])
+      const warnings:string[]=[],detached:ReturnType<typeof toPart>[]=[]
+      const primary=toPart(combined,'Mold part 1',warnings,detached)
+      intact([primary,...detached])
+      expect(primary.volumeMm3).toBeCloseTo(512,2)
+      expect(detached).toHaveLength(1)
+      expect(detached[0].volumeMm3).toBeCloseTo(1,3)
+      expect(detached[0].name).toMatch(/detached/)
+      expect(warnings.join(' ')).toMatch(/individually exported loose parts/)
     }finally{combined.delete();island.delete();base.delete()}
+  })
+  it('defaults to two widely spaced alignment keys and safely falls back to one for a short seam',()=>{
+    const settings={...DEFAULT_MOLD_SETTINGS,keyPlacement:'auto' as const}
+    const normal=seamPositions(0,50,settings)
+    expect(normal).toHaveLength(2)
+    expect(normal[0]).toBeLessThan(15)
+    expect(normal[1]).toBeGreaterThan(35)
+    const short=seamPositions(0,9,settings)
+    expect(short).toHaveLength(1)
+    expect(short[0]).toBeCloseTo(4.5)
   })
   it('retains every millimeter of the target in two distinct full-height rigid pieces',()=>{
     const m=buildMold(wasm,master,noKeys)
