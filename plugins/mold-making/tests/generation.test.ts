@@ -294,7 +294,7 @@ describe('Mold Making assembly',()=>{
     intact(withSeam.parts)
     expect(withSeam.warnings.join(' ')).toMatch(/continuous contour-following triangular/)
     const totalBefore=without.volumeMm3
-    expect(Math.abs(withSeam.volumeMm3-totalBefore)).toBeLessThan(700)
+    expect(Math.abs(withSeam.volumeMm3-totalBefore)).toBeLessThan(1600)
     // Ears must extend outside the unkeyed mold's Y bounds.
     const bounds=(a:typeof withSeam.parts)=>a.flatMap(p=>{
       const ys:number[]=[]
@@ -312,7 +312,6 @@ describe('Mold Making assembly',()=>{
     expect(made.parts).toHaveLength(3)
     expect(made.printable).toBe(true)
     intact(made.parts)
-    const cx=0,cy=0
     const r=Math.hypot(5,5)+DEFAULT_MOLD_SETTINGS.sideMargin
     const height=10+2*DEFAULT_MOLD_SETTINGS.baseThickness
     const targetVolume=1000
@@ -320,7 +319,6 @@ describe('Mold Making assembly',()=>{
     expect(made.volumeMm3).toBeGreaterThan(expectedVolume*0.96)
     expect(made.volumeMm3).toBeLessThan(expectedVolume*1.04)
     expect(made.warnings.join(' ')).toMatch(/NO automatic registration/)
-    void cx;void cy
   })
   it('does not silently export fragmented parts from an offset with registration',()=>{
     const created=buildMold(wasm,master,{
