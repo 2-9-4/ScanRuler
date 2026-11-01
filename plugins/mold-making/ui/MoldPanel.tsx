@@ -166,7 +166,11 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
               <option value="metal-dowel">Matching holes for metal dowels</option>
             </select></label>
           {keyStyle==='metal-dowel'&&<p className="hint">Both halves receive blind holes. Insert separately purchased metal dowels during assembly. Diameter is the nominal hardware diameter.</p>}
-          {keyStyle==='v-seam'&&<p className="hint">A continuous triangular tongue-and-groove follows a coarse projected outline of the target, inset from the outer mold edges. Tabs extend outside the mold for external clamps. Pin positions do not apply.</p>}
+          {keyStyle==='v-seam'&&<p className="hint">{mode==='direct'&&parts===2
+            ?'A continuous triangular tongue-and-groove follows a coarse projected outline of the target, inset from the outer mold edges. Paired ears extend outside the mold for external clamps; pin positions do not apply.'
+            :mode==='direct'
+            ?'Continuous contour seams currently require two mold parts. Four-part direct molds use the earlier discrete pins instead.'
+            :'Continuous contour seams currently require a two-part direct mold. Silicone boxes retain their external wall-boss registration.'}</p>}
           {keyStyle!=='v-seam'&&<label className="kv"><span className="name">Key positions</span>
             <select data-test="mold-key-placement" value={keyPlacement}
               onChange={e=>setKeyPlacement(e.target.value as KeyPlacement)}>
