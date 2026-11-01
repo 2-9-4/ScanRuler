@@ -12,18 +12,11 @@ const cross=(o:P,a:P,b:P)=>(a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0])
 const distance=(a:P,b:P)=>Math.hypot(a[0]-b[0],a[1]-b[1])
 export const planeAxes=(axis:SplitAxis):[number,number,number]=>axis==='x'?[0,1,2]:axis==='y'?[1,0,2]:[2,0,1]
 
-/** Convex projected boundary, counterclockwise. Samples a capped number of
- * vertices because this is only the coarse outline, not a precision cavity.
- */
-export function projectedHull(mesh:SolidMesh,axis:SplitAxis):P[]{
-  const [,u,v]=planeAxes(axis),p=mesh.positions
-  const stride=Math.max(1,Math.ceil(p.length/3/30_000))
-  const seen=new Map<string,P>()
-  for(let i=0;i<p.length/3;i+=stride){
-    const a=p[3*i+u],b=p[3*i+v]
-    if(Number.isFinite(a)&&Number.isFinite(b))seen.set(`${a},${b}`,[a,b])
-  }
-  const points=[...seen.values()].sort((a,b)=>a[0]-b[0]||a[1]-b[1])
+/** Counterclockwise convex hull of arbitrary 2D points. Also used for the
+ * radial/vertical silhouettes of threefold molds, whose projected axes are
+ * not one of the three world-aligned parting planes. */
+function convexHull(input:readonly P[]):P[]{
+  const points=[...input].sort((a,b)=>a[0]-b[0]||a[1]-b[1])
   if(points.length<3)throw new Error('Cannot follow the silhouette: projected target has fewer than three distinct points.')
   const lower:P[]=[],upper:P[]=[]
   for(const p of points){
@@ -39,6 +32,20 @@ export function projectedHull(mesh:SolidMesh,axis:SplitAxis):P[]{
   const hull=[...lower,...upper]
   if(hull.length<3)throw new Error('Cannot build a contour registration seam from a flat projection.')
   return hull
+}
+
+/** Convex projected boundary, counterclockwise. Samples a capped number of
+ * vertices because this is only the coarse outline, not a precision cavity.
+ */
+export function projectedHull(mesh:SolidMesh,axis:SplitAxis):P[]{
+  const [,u,v]=planeAxes(axis),p=mesh.positions
+  const stride=Math.max(1,Math.ceil(p.length/3/30_000))
+  const seen=new Map<string,P>()
+  for(let i=0;i<p.length/3;i+=stride){
+    const a=p[3*i+u],b=p[3*i+v]
+    if(Number.isFinite(a)&&Number.isFinite(b))seen.set(`${a},${b}`,[a,b])
+  }
+  return convexHull([...seen.values()])
 }
 
 /** Rounded outward parallel curve of a convex silhouette. No miter spikes at
@@ -131,6 +138,37 @@ export function contourSegment(
       (selected[0][1]+selected[1][1])/2])
   }
   return {path:selected,closed:false}
+}
+
+/** Open C-shaped contour on a threefold radial parting face (radius, Z).
+ * Project the model along the radial ray, conservatively enveloping its
+ * silhouette, then keep the outward-facing arc of its rounded offset.
+ * The open ends stop before the three seams converge at the central hub.
+ *
+ * Unlike a U-shaped wall seam, the two arms of this C lie ABOVE and BELOW
+ * the target and its spine lies OUTSIDE its radial extent. A bare segment
+ * across the underside of the outer land would not wrap the casting.
+ */
+export function radialSeamContour(
+  mesh:SolidMesh,angleRadians:number,cx:number,cy:number,
+  offset:number,hubSetback:number,spacing=3,
+):P[]{
+  if(!Number.isFinite(angleRadians)||!(hubSetback>0))
+    throw new Error('Invalid radial seam projection or hub setback.')
+  const c=Math.cos(angleRadians),s=Math.sin(angleRadians)
+  const p=mesh.positions
+  const stride=Math.max(1,Math.ceil(p.length/3/30_000))
+  const seen=new Map<string,P>()
+  for(let i=0;i<p.length/3;i+=stride){
+    const r=(p[3*i]-cx)*c+(p[3*i+1]-cy)*s,z=p[3*i+2]
+    if(Number.isFinite(r)&&Number.isFinite(z))
+      seen.set(`${r},${z}`,[r,z])
+  }
+  const outline=contourAround(convexHull([...seen.values()]),offset,spacing)
+  // A convex outline gives one long outer arc, open toward the shared hub.
+  const result=contourSegment(outline,hubSetback,Number.POSITIVE_INFINITY).path
+  if(result[0][1]<result[result.length-1][1])result.reverse()
+  return result
 }
 
 /** Single closed triangular tube following a ring in the parting plane.
