@@ -50,6 +50,33 @@ describe('Mold Making non-destructive source repair',()=>{
     const moved=Array.from(repaired.mesh.positions).map((x,i)=>Math.abs(x-before[i]))
     expect(Math.max(...moved)).toBeLessThan(0.0011)
   })
+  it('repairs a collapsed face on an already open mesh before patching its hole',()=>{
+    // Retain the source indices of a collapsed triangle. If we remove that
+    // face prematurely, we create an additional opening unrelated to the
+    // original top-face gap.
+    const positions=cube.positions.slice()
+    positions[0]=10
+    positions[1]=5
+    const open={positions,indices:Uint32Array.from([
+      ...cube.indices.slice(0,6),...cube.indices.slice(12),
+    ])}
+    const sourceIndices=open.indices.slice()
+    expect(closedness(open.indices,open.positions.length/3).open).toBe(4)
+    const repaired=repairMoldTarget(open,true,20)
+    expect(repaired.removedFaces).toBe(0)
+    expect(repaired.adjustedVertices).toBeGreaterThan(0)
+    expect(repaired.filledHoles).toBe(1)
+    closed(repaired)
+    expect(open.indices).toEqual(sourceIndices)
+    expect(open.positions).toEqual(positions)
+    for(let i=0;i<repaired.mesh.indices.length;i+=3){
+      const {positions:p,indices:ix}=repaired.mesh
+      const a=ix[i]*3,b=ix[i+1]*3,c=ix[i+2]*3
+      const u=[p[b]-p[a],p[b+1]-p[a+1],p[b+2]-p[a+2]]
+      const v=[p[c]-p[a],p[c+1]-p[a+1],p[c+2]-p[a+2]]
+      expect(Math.hypot(u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0])).toBeGreaterThan(0)
+    }
+  })
   it('does not remove zero-area triangles when repair is switched off',()=>{
     const malformed={
       positions:cube.positions,

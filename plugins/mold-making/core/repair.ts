@@ -165,18 +165,20 @@ export function repairMoldTarget(
   if(!enabled)return {mesh:input,warnings:[],removedFaces:0,adjustedVertices:0,weldedVertices:0,filledHoles:0}
   const sourceTopology=closedness(idx,p.length/3)
   let removedFaces=0,adjustedVertices=0,weldedVertices=0,filledHoles=0
-  if(sourceTopology.open===0&&sourceTopology.bad===0){
-    const lifted=liftCollapsedClosedMesh(input)
-    if(!lifted)throw new Error('The target is indexed watertight but contains collapsed triangles that cannot safely be lifted by at most 0.001 mm. The source was left unchanged; inspect the affected faces or use an external mesh repair tool.')
-    if(lifted.adjustedVertices){
-      onProgress?.(`Lifted ${lifted.adjustedVertices} collapsed target vertices by at most 0.001 mm without opening the closed mesh.`)
-      return {mesh:lifted.mesh,
-        warnings:[`Temporary target repair: nudged ${lifted.adjustedVertices} vertices by at most 0.001 mm to fix zero-area faces while preserving all triangles and watertight topology. Original source unchanged; inspect the cavity.`],
-        removedFaces:0,adjustedVertices:lifted.adjustedVertices,weldedVertices:0,filledHoles:0}
-    }
-  }
+  // Lift collapsed faces before considering removal even for an open source.
+  // Deleting otherwise well-connected faces can create entirely new holes.
   let mesh=input
-  if(enabled){
+  const lifted=liftCollapsedClosedMesh(input)
+  if(lifted){
+    mesh=lifted.mesh
+    adjustedVertices=lifted.adjustedVertices
+    if(adjustedVertices)onProgress?.(`Repaired ${adjustedVertices} collapsed vertices without deleting faces…`)
+  }else if(sourceTopology.open===0&&sourceTopology.bad===0){
+    throw new Error('The source is watertight by indices but its zero-area faces cannot be repaired by a submicron vertex adjustment. Deleting them would introduce holes, so no mold was generated.')
+  }
+  // Face removal is a fallback ONLY for originally open meshes where a
+  // conservative vertex adjustment cannot preserve the existing faces.
+  if(!lifted){
     const kept:number[]=[]
     for(let i=0;i<idx.length;i+=3){
       if(collapsed(p,idx[i],idx[i+1],idx[i+2]))removedFaces++
@@ -184,7 +186,7 @@ export function repairMoldTarget(
     }
     if(!kept.length)throw new Error('The target has no nonzero-area triangles to form a mold.')
     if(removedFaces){
-      onProgress?.(`Removing ${removedFaces} exactly zero-area triangles from a temporary mold target…`)
+      onProgress?.(`Removing ${removedFaces} exactly zero-area triangles from an already-open temporary target…`)
       const cleaned=compactEdit(p,new Uint32Array(kept),p.length/3)
       mesh={positions:cleaned.positions,indices:cleaned.indices}
     }
@@ -211,19 +213,45 @@ export function repairMoldTarget(
     // opening and must be repaired manually.
     if(border.stray===0&&sizes.length>0&&sizes.every(size=>size<maxHoleMm)){
       onProgress?.(`Patching ${sizes.length} tiny boundary loops on the temporary mold target…`)
-      try{
-        const patch=fillHoles(mesh.positions,mesh.indices,mesh.positions.length/3,maxHoleMm,'flat',onProgress)
-        if(patch.report.failed===0&&patch.report.left===0){
-          const candidate={positions:patch.positions,indices:patch.indices}
+      // The patch solver can produce exactly collinear triangles after
+      // Float32 rounding. Topological closedness alone is insufficient:
+      // recheck geometric degeneracy before accepting a filled target.
+      for(const mode of ['flat','curved'] as const){
+        try{
+          const patch=fillHoles(mesh.positions,mesh.indices,mesh.positions.length/3,maxHoleMm,mode,onProgress)
+          if(patch.report.failed||patch.report.left){
+            patchFailure=`${patch.report.failed} hole patches failed and ${patch.report.left} rims were left open (${mode}).`
+            continue
+          }
+          let candidate:SolidMesh={positions:patch.positions,indices:patch.indices}
+          let invalid=false
+          for(let i=0;i<candidate.indices.length;i+=3)
+            if(collapsed(candidate.positions,candidate.indices[i],candidate.indices[i+1],candidate.indices[i+2])){
+              invalid=true;break
+            }
+          let patchNudges=0
+          if(invalid){
+            const fixed=liftCollapsedClosedMesh(candidate)
+            if(!fixed){
+              patchFailure=`The ${mode} hole patches contain zero-area triangles that cannot be safely lifted without changing connectivity.`
+              continue
+            }
+            candidate=fixed.mesh
+            patchNudges=fixed.adjustedVertices
+          }
           const c=closedness(candidate.indices,candidate.positions.length/3)
           if(!c.open&&!c.bad){
             mesh=candidate
             topology=c
             filledHoles=patch.report.filled
-          }else patchFailure=`Generated patches still have ${c.open} open and ${c.bad} nonmanifold edges.`
-        }else patchFailure=`${patch.report.failed} hole patches failed and ${patch.report.left} rims were left open.`
-      }catch(error){
-        patchFailure=error instanceof Error?error.message:String(error)
+            adjustedVertices+=patchNudges
+            patchFailure=null
+            break
+          }
+          patchFailure=`Generated ${mode} patches still have ${c.open} open and ${c.bad} nonmanifold edges.`
+        }catch(error){
+          patchFailure=error instanceof Error?error.message:String(error)
+        }
       }
     }
   }
@@ -242,9 +270,17 @@ export function repairMoldTarget(
       :''
     throw new Error(`Target is not watertight (${topology.open} boundary edges, ${topology.bad} nonmanifold edges).${detail}${reason}${cleanupDetail} ${enabled?'Auto-repair could not safely close the mesh. Increase Mold Making\'s maximum small-hole size only if the missing surface really belongs there; otherwise use Mesh Tools → Fill holes → Use for analysis.':'Enable Repair small mesh defects in Mold Making, or use Mesh Tools → Fill holes → Use for analysis.'}`)
   }
+  // Invariant: no accepted repaired mesh may contain zero-area triangles,
+  // even if it is topologically closed. Otherwise check() will issue the
+  // misleading suggestion to enable a repair that already ran.
+  for(let i=0;i<mesh.indices.length;i+=3){
+    const {positions:q,indices:faces}=mesh
+    if(collapsed(q,faces[i],faces[i+1],faces[i+2]))
+      throw new Error(`Automatic repair could not eliminate zero-area face ${i/3} in the temporary target. Source unchanged. Please supply the STL for a targeted mesh repair; increasing the hole size will not help.`)
+  }
   const warnings:string[]=[]
-  if(removedFaces||weldedVertices||filledHoles){
-    warnings.push(`Temporary target mesh repair: removed ${removedFaces} exactly zero-area triangles, welded ${weldedVertices} exactly coincident vertices, patched ${filledHoles} small holes. Original source unchanged. Inspect the cavity near repaired regions before printing.`)
+  if(removedFaces||adjustedVertices||weldedVertices||filledHoles){
+    warnings.push(`Temporary target mesh repair: adjusted ${adjustedVertices} collapsed vertices (≤0.001 mm), removed ${removedFaces} exactly zero-area faces, welded ${weldedVertices} coincident vertices, patched ${filledHoles} small holes. Original source unchanged; inspect repaired cavity surfaces.`)
   }
   return {mesh,warnings,removedFaces,adjustedVertices,weldedVertices,filledHoles}
 }

@@ -119,19 +119,34 @@ function toManifold(wasm:ManifoldToplevel,mesh:Triangles,keep:(m:Manifold)=>Mani
   if(solid.status()!=='NoError'||solid.isEmpty())throw new Error('Solid was rejected by the geometry kernel.')
   return solid
 }
-function toPart(solid:Manifold,name:string):MoldPart {
+/** Export only one physically connected solid per STL. Manifold Boolean
+ * operations can leave tiny isolated slivers after complex intersections.
+ * Trim ONLY sub-millimetre dust below a very small volume budget, explicitly
+ * reporting it; substantial components remain an actionable error.
+ */
+export function toPart(solid:Manifold,name:string,warnings:string[]=[]):MoldPart {
   if(solid.isEmpty()||solid.status()!=='NoError')throw new Error(`${name} was empty after the Boolean.`)
-  // A disconnected pin/fragment can be individually watertight yet be an
-  // unprintable loose piece. Enforce exactly one solid body per STL.
   const islands=solid.decompose()
   try {
-    if(islands.length!==1)throw new Error(`${name} contains ${islands.length} disconnected solids. Move the split or turn off keys.`)
+    if(!islands.length)throw new Error(`${name} has no printable connected body.`)
+    const sorted=islands.map(part=>({part,volume:Math.abs(part.volume())}))
+      .sort((a,b)=>b.volume-a.volume)
+    const primary=sorted[0],others=sorted.slice(1)
+    const discarded=others.reduce((v,p)=>v+p.volume,0)
+    // Anything large enough to be a real printed feature or that changes
+    // measurable tooling volume must remain a visible, actionable error.
+    const perIslandLimit=Math.min(0.5,primary.volume*1e-5)
+    if(others.some(p=>p.volume>perIslandLimit) || discarded>Math.min(1,primary.volume*2e-5)){
+      const volumes=sorted.map(p=>p.volume.toPrecision(4)).join(', ')
+      throw new Error(`${name} contains ${islands.length} disconnected solids (volumes: ${volumes} mm³). The mold would export loose printable pieces. Disable registration to determine whether keys cause the fragments; otherwise increase wall/base thickness or move the parting plane. Substantial geometry was not discarded.`)
+    }
+    const m=primary.part.getMesh()
+    const positions=new Float32Array(m.vertProperties)
+    const indices=new Uint32Array(m.triVerts)
+    check({positions,indices},name)
+    if(others.length)warnings.push(`${name}: excluded ${others.length} microscopic detached Boolean artifacts totalling ${discarded.toPrecision(3)} mm³ (each ≤${perIslandLimit.toPrecision(3)} mm³). Inspect the mold near intersections before printing.`)
+    return {name,positions,indices,volumeMm3:signedVolume(positions,indices)}
   }finally{for(const island of islands)island.delete()}
-  const m=solid.getMesh()
-  const positions=new Float32Array(m.vertProperties)
-  const indices=new Uint32Array(m.triVerts)
-  check({positions,indices},name)
-  return {name,positions,indices,volumeMm3:signedVolume(positions,indices)}
 }
 function offset(mesh:Triangles,d:number,warnings:string[]):Triangles {
   if(d===0)return mesh
@@ -496,7 +511,7 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
       }
       warnings.push('Splits do not guarantee demoldability: inspect the target for trapped undercuts and add a sprue or vent before casting.')
     }
-    const parts=pieces.map((x,i)=>toPart(x,`Mold part ${i+1}`))
+    const parts=pieces.map((x,i)=>toPart(x,`Mold part ${i+1}`,warnings))
     if(parts.length!==s.parts)throw new Error('Part count mismatch: a component disappeared during splitting.')
     return {parts,kind:s.mode,warnings,openingZ:plan.openingZ,
       volumeMm3:parts.reduce((v,p)=>v+p.volumeMm3,0),
