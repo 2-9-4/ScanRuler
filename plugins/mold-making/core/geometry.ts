@@ -281,6 +281,61 @@ export function seamPositions(
   if(!chosen.length)throw new Error('Add at least one manual alignment pin.')
   return chosen
 }
+/** Registration sites in the parting PLANE, not in one bottom-Z row.
+ * Direct molds get keys in the solid backing surrounding the projected
+ * target's conservative bounding rectangle. That prevents keys crossing
+ * the casting cavity, even on an undercut mesh.
+ */
+export function registrationSites(
+  axis:SplitAxis,split:number,s:MoldSettings,plan:MoldPlan,
+  seamSpan?:readonly [number,number],
+):Vec3[] {
+  const k=axisIndex(axis),u=axis==='x'?1:0,v=axis==='z'?1:2
+  const outer=plan.outer
+  const u0=seamSpan?.[0]??outer.min[u],u1=seamSpan?.[1]??outer.max[u]
+  const v0=outer.min[v],v1=outer.max[v]
+  const radius=s.keyDiameter/2+s.keyClearance
+  const inset=radius+0.75
+  if(u1-u0<=2*inset||v1-v0<=2*inset)
+    throw new Error('No room for registration keys in the selected parting plane. Increase the outer margin or reduce the key diameter.')
+  const targetLo=[outer.min[0]+s.sideMargin,outer.min[1]+s.sideMargin,outer.min[2]+s.baseThickness]
+  const targetHi=[outer.max[0]-s.sideMargin,outer.max[1]-s.sideMargin,outer.max[2]-s.baseThickness]
+  const safe=(a:number,b:number)=>{
+    if(a<u0+inset-1e-6||a>u1-inset+1e-6||b<v0+inset-1e-6||b>v1-inset+1e-6)return false
+    const du=Math.max(targetLo[u]-a,0,a-targetHi[u])
+    const dv=Math.max(targetLo[v]-b,0,b-targetHi[v])
+    // No pin/socket cylinder may penetrate the projected master. An extra
+    // 0.5mm land protects the cavity from Boolean edge coincidences.
+    return Math.hypot(du,dv)>radius+s.clearance+0.5
+  }
+  const spanU=u1-u0,spanV=v1-v0
+  const coords=s.keyPlacement==='manual'
+    ? s.keyPoints.map(([a,b])=>[u0+a*spanU,v0+b*spanV] as [number,number])
+    : [
+        [u0+inset,v0+inset],[u1-inset,v0+inset],
+        [u0+inset,v1-inset],[u1-inset,v1-inset],
+      ] as [number,number][]
+  const chosen:[number,number][]=[]
+  const separation=2*radius+0.75
+  for(const [a,b] of coords){
+    if(!safe(a,b)){
+      if(s.keyPlacement==='manual')throw new Error(
+        'Registration point is outside safe solid backing or overlaps the projected casting cavity. Move it toward an outer corner, reduce its diameter, or increase mold margins.')
+      continue
+    }
+    if(chosen.some(([x,y])=>Math.hypot(x-a,y-b)<separation)){
+      if(s.keyPlacement==='manual')throw new Error('Registration points overlap. Spread them farther apart in the 2D editor.')
+      continue
+    }
+    chosen.push([a,b])
+  }
+  if(!chosen.length)throw new Error('No safe registration location on this seam. Increase the backing or outer margin, or adjust the parting axis.')
+  return chosen.map(([a,b])=>{
+    const p:Vec3=[center(outer.min[0],outer.max[0]),center(outer.min[1],outer.max[1]),center(outer.min[2],outer.max[2])]
+    p[k]=split;p[u]=a;p[v]=b
+    return p
+  })
+}
 function pinSolid(
   wasm:ManifoldToplevel,axis:SplitAxis,centre:Vec3,length:number,
   radiusLow:number,radiusHigh:number,
@@ -390,28 +445,8 @@ function addKeys(
   // Key geometry sits in the backing base, not against casting surfaces.
   // Metal dowel mode cuts blind clearance sockets on BOTH mating halves.
   if(s.mode==='silicone-box')return addBoxWallKeys(wasm,negative,positive,axis,split,s,plan,keep,seamSpan)
-  if(s.baseThickness<s.keyDiameter+2*s.keyClearance+0.2)throw new Error('Base too thin for registration features. Increase base or reduce dowel diameter.')
-  const base=plan.outer,idx=axisIndex(axis),z=base.min[2]+s.baseThickness/2
-  const locations:Vec3[]=[]
-  if(axis==='z'){
-    const cy=center(base.min[1],base.max[1]),cx=center(base.min[0],base.max[0])
-    const radius=(plan.cylinder?.outerR??(base.max[0]-base.min[0])/2)
-    const rx=radius-s.keyDiameter/2-s.keyClearance-1.2
-    if(rx<s.keyDiameter)throw new Error('Not enough exterior wall for Z-parting registration.')
-    locations.push([cx-rx,cy,split],[cx+rx,cy,split])
-  }else{
-    const n:SplitAxis=axis==='x'?'y':'x',t=axisIndex(n)
-    const a=negative.boundingBox(),b=positive.boundingBox()
-    const lo=seamSpan?.[0]??Math.max(a.min[t],b.min[t])
-    const hi=seamSpan?.[1]??Math.min(a.max[t],b.max[t])
-    const coords=seamPositions(lo,hi,s)
-    for(const x of coords){
-      const p:Vec3=[center(base.min[0],base.max[0]),center(base.min[1],base.max[1]),z]
-      p[idx]=split
-      p[t]=x
-      locations.push(p)
-    }
-  }
+  const idx=axisIndex(axis)
+  const locations=registrationSites(axis,split,s,plan,seamSpan)
   let a=negative,b=positive
   const L=s.keyDepth,embed=Math.min(1.0,L*0.4)
   const radial=s.keyClearance,r=s.keyDiameter/2
