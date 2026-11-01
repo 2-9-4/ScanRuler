@@ -10,6 +10,10 @@ function settingsChanged(a:MoldSettings,b:MoldSettings):boolean {
       return a.keyPositions.length!==b.keyPositions.length ||
         a.keyPositions.some((x,i)=>x!==b.keyPositions[i])
     }
+    if(k==='keyPoints'){
+      return a.keyPoints.length!==b.keyPoints.length ||
+        a.keyPoints.some((point,i)=>point[0]!==b.keyPoints[i][0]||point[1]!==b.keyPoints[i][1])
+    }
     return a[k]!==b[k]
   })
 }
