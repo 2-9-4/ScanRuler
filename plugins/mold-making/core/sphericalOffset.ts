@@ -26,7 +26,7 @@ export interface SphericalOffsetReport {
  * Fine remains an explicit opt-in for tiny source detail.
  */
 const QUALITY:Record<OffsetQuality,{minGrid:number;maxGrid:number;maxSamples:number;tolerance:number}>={
-  fast:{minGrid:0.65,maxGrid:2.5,maxSamples:200_000,tolerance:0.2},
+  fast:{minGrid:0.9,maxGrid:4,maxSamples:80_000,tolerance:0.25},
   balanced:{minGrid:0.32,maxGrid:1.8,maxSamples:850_000,tolerance:0.09},
   fine:{minGrid:0.12,maxGrid:0.8,maxSamples:6_000_000,tolerance:0.035},
 }
