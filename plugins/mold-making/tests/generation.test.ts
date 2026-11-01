@@ -449,12 +449,17 @@ describe('Mold Making assembly',()=>{
   })
   it('cuts three 120-degree radial sectors of cylindrical tooling',()=>{
     const target=boxSolid({min:[-5,-5,-5],max:[5,5,5]})
-    const made=buildMold(wasm,target,{...DEFAULT_MOLD_SETTINGS,
-      parts:3,keyStyle:'v-seam',keys:true,clearance:0})
+    // Measure only the cylindrical tooling and radial registration here.
+    // Exterior clamp ears add substantial *intentional* material; those
+    // are covered independently by the radial clamp-tab regression.
+    const settings={...DEFAULT_MOLD_SETTINGS,
+      parts:3 as const,keyStyle:'v-seam' as const,keys:true,
+      clearance:0,clampTabCount:0}
+    const made=buildMold(wasm,target,settings)
     expect(made.parts).toHaveLength(3)
     expect(made.printable).toBe(true)
     intact(made.parts)
-    const planned=planMold(target,{...DEFAULT_MOLD_SETTINGS,parts:3})
+    const planned=planMold(target,settings)
     const r=Math.hypot(5,5)+planned.material.side
     const height=10+2*planned.material.base
     const targetVolume=1000
