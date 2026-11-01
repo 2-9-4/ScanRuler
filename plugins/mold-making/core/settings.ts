@@ -114,7 +114,7 @@ export const DEFAULT_MOLD_SETTINGS: Readonly<MoldSettings> = Object.freeze({
   tabNutAcrossFlats: 7.2,
   tabNutDepth: 3.5,
   boxDraftDeg: 1,
-  previewGap: 3,
+  previewGap: 10,
 })
 
 export type MoldDimension = Exclude<{
