@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {describe,expect,it} from 'vitest'
 import {boxSolid} from '../core/geometry'
-import {contourAround,contourSegment,projectedHull,triangularContourTube} from '../core/contourSeam'
+import {contourAround,contourSegment,projectedHull,radialSeamContour,triangularContourTube} from '../core/contourSeam'
 import {closedness} from '../../mesh-tools/core/boolean'
 import {signedVolume} from '../../mesh-tools/core/hollow'
 
@@ -17,6 +17,36 @@ describe('Continuous V-seam geometry',()=>{
     expect(Math.max(...ys)).toBeCloseTo(6.5,4)
     expect(Math.min(...zs)).toBeCloseTo(-2.5,4)
     expect(Math.max(...zs)).toBeCloseTo(12.5,4)
+  })
+  it('wraps all three radial direct-mold interfaces in a C above, outside and below the master',()=>{
+    const target=boxSolid({min:[-5,-5,-5],max:[5,5,5]})
+    const offset=3.7,hub=2.9
+    for(const degrees of [0,120,240]){
+      const angle=degrees*Math.PI/180,c=Math.cos(angle),s=Math.sin(angle)
+      const extent=Math.max(...Array.from({length:target.positions.length/3},(_,i)=>
+        target.positions[3*i]*c+target.positions[3*i+1]*s))
+      const path=radialSeamContour(target,angle,0,0,offset,hub,3)
+      expect(path.length).toBeGreaterThan(12)
+      // A C opens toward the central hub at TWO different elevations.
+      // The prior U ended twice above the model, at different radii.
+      expect(path[0][0]).toBeCloseTo(hub,4)
+      expect(path[path.length-1][0]).toBeCloseTo(hub,4)
+      expect(path[0][1]).toBeGreaterThan(7)
+      expect(path[path.length-1][1]).toBeLessThan(-7)
+      // One curved spine must run radially OUTSIDE the target midway up.
+      expect(path.some(([r,z])=>r>extent+2&&Math.abs(z)<1)).toBe(true)
+      // No intermediate part of the ridge may cross the master projection.
+      expect(path.every(([r,z])=>z>5||z< -5||r>extent)).toBe(true)
+      const tube=triangularContourTube(path,'y',0,1.2,-0.6,2.4,false,0.24)
+      expect(closedness(tube.indices,tube.positions.length/3)).toEqual({open:0,bad:0})
+      expect(signedVolume(tube.positions,tube.indices)).toBeGreaterThan(0)
+      // Each station retains the full, finite width of the V base.
+      for(let i=0;i<path.length;i++){
+        const p=tube.positions,j=i*12
+        const width=Math.hypot(p[j]-p[j+3],p[j+1]-p[j+4],p[j+2]-p[j+5])
+        expect(width).toBeCloseTo(2.4,4)
+      }
+    }
   })
   it('caps an open U-shaped wall seam into one watertight printable ridge',()=>{
     for(const axis of ['x','y'] as const){
