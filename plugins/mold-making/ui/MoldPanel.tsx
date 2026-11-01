@@ -70,6 +70,8 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
   const [printCostKg,setPrintCostKg]=useState(25)
   const [siliconeDensity,setSiliconeDensity]=useState(1.1)
   const [siliconeCostKg,setSiliconeCostKg]=useState(35)
+  const [castingDensity,setCastingDensity]=useState(1.1)
+  const [castingCostKg,setCastingCostKg]=useState(25)
   const scanName=useStore(s=>s.fileName)
   const tris=useStore(s=>s.triangleCount)
   const refName=useDeviation(s=>s.nominalName)
@@ -420,9 +422,25 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
             </div>
           })()}
           {generated.materialEstimate?.nominalCastingCavityMm3!==null&&
-            generated.materialEstimate?.nominalCastingCavityMm3!==undefined&&
-            <div className="kv"><span className="name">Nominal casting void</span>
-              <b>{(generated.materialEstimate.nominalCastingCavityMm3/1000).toFixed(2)} cm³</b></div>}
+            generated.materialEstimate?.nominalCastingCavityMm3!==undefined&&<>
+              <div className="kv"><span className="name">Nominal casting void</span>
+                <b>{(generated.materialEstimate.nominalCastingCavityMm3/1000).toFixed(2)} cm³</b></div>
+              <label className="kv"><span className="name">Cast material density (g/cm³)</span>
+                <input type="number" min={0.01} step={0.01} value={castingDensity}
+                  onChange={e=>setCastingDensity(Number(e.target.value))}/></label>
+              <label className="kv"><span className="name">Cast material price ($/kg)</span>
+                <input type="number" min={0} step={1} value={castingCostKg}
+                  onChange={e=>setCastingCostKg(Number(e.target.value))}/></label>
+              {castingDensity>0&&castingCostKg>=0&&(()=>{
+                const v=generated.materialEstimate.nominalCastingCavityMm3!
+                const estimate=volumeMassCost(v,castingDensity,castingCostKg)
+                return <div className="kv" data-test="mold-casting-estimate">
+                  <span className="name">Nominal casting mass/cost</span>
+                  <b>{estimate.grams.toFixed(1)} g / ${estimate.cost.toFixed(2)}</b>
+                </div>
+              })()}
+              <p className="hint">Nominal casting volume follows the actual solid cavity cutter, including intentional clearance; it excludes sprue, vent and overpour material, shrinkage, and waste.</p>
+            </>}
           {generated.materialEstimate?.grossSiliconeCapacityMm3!==null&&
             generated.materialEstimate?.grossSiliconeCapacityMm3!==undefined&&<>
               <div className="kv"><span className="name">Silicone box capacity to rim (gross)</span>
