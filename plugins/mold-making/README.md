@@ -110,8 +110,10 @@ The default 3D result view is the **assembled mold with the original
 source model visible and a section plane perpendicular to the primary
 parting plane**. Toggle to an exploded preview in the mold panel; only
 the separate mold pieces are included in STL/3MF export. The assembled preview opens the application’s native section-view store,
-including its existing interactive plane gizmo and ViewBar controls, and
-restores the previous section-view state when leaving the workspace.
+including its existing interactive plane gizmo and ViewBar controls. The
+mold meshes use ScanRuler's native `CapSet` to close the sectioned faces
+with the same stencil caps as other scene layers, rather than just clipping
+open surface shells. The previous section-view state is restored on exit.
 
 **Threefold** splits use three vertical 120-degree radial sectors around the
 target's XY bounds center, with a cylindrical outside for direct mold
