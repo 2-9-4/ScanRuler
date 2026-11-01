@@ -182,9 +182,11 @@ export function createSphericalDistanceField(mesh:SolidMesh,onProgress?:(message
       warmTriangle.a.set(p[a],p[a+1],p[a+2])
       warmTriangle.b.set(p[b],p[b+1],p[b+2])
       warmTriangle.c.set(p[c],p[c+1],p[c+2])
-      warmTriangle.getBarycoord(closest.point,bary)
+      const validBary=warmTriangle.getBarycoord(closest.point,bary)!==null
       const threshold=1e-6
-      const onA=bary.x<=threshold,onB=bary.y<=threshold,onC=bary.z<=threshold
+      const onA=validBary&&bary.x<=threshold
+      const onB=validBary&&bary.y<=threshold
+      const onC=validBary&&bary.z<=threshold
       let nx=normals[face],ny=normals[face+1],nz=normals[face+2]
       if((onA?1:0)+(onB?1:0)+(onC?1:0)>=2){
         // Nearest point is a mesh vertex: angle-weighted pseudonormal.
