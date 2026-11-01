@@ -80,7 +80,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
   return <aside className="panel" data-test="mold-making-panel">
     <div className="group">
       <div className="sec-head">1. Target</div>
-      <p className="hint">{mode==='silicone-box'?'Containment boxes need only the target bounding dimensions; open or nonmanifold meshes are allowed.':'Direct cavity and thin-shell molds require a watertight target; use a valid solid or repair the scan first.'} The original model is never modified.</p>
+      <p className="hint">{mode==='silicone-box'?'Containment boxes need only the target bounding dimensions; open or nonmanifold meshes are allowed.':'Direct molds require a watertight target; use a valid solid or repair the scan first.'} The original model is never modified.</p>
       <div className="kindrow featurekeys" role="radiogroup" aria-label="Target source">
         <button type="button" role="radio" aria-checked={source==='scan'} className={source==='scan'?'on':undefined}
           onClick={()=>setSource('scan')}>Scan / model</button>
@@ -170,7 +170,6 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
             diameter={keyDiameter}
             vertical={mode==='silicone-box'}
           />
-        </>}
         </>}
       </>}
     </div>
