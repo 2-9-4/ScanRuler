@@ -68,3 +68,44 @@ Boolean fragments, are explicitly **preview-only**. Exporting their STL or
 mold. Tiny numerical dust below the existing strict budget may still be
 filtered. If the tool remains preview-only, inspect the model and provide a
 reproduction mesh; do not print the fragmented output.
+
+## Contour registration and preview (2026-10)
+
+The default **two-piece direct mold** now uses a continuous V-profile
+tongue-and-groove. It follows a convex rough silhouette projected into the
+parting plane with rounded corners rather than placing isolated pins in block
+corners. This is deliberately an **outer approximation** of the target's
+projected geometry; small concavities are not followed, so the registration
+does not enter the cast cavity. The ridge is backed by solid material and the
+socket includes radial fit clearance. Two paired exterior ears on each
+mating half permit applying external clamps (no automatic holes or clamp
+hardware specification). If the outline and backing thickness cannot
+accommodate the profile, generation refuses to create unsafe material.
+
+This contour method is currently implemented for **two-part direct
+molds**. Four-part direct molds retain discrete registration instead of
+a continuous V seam, and threefold radial sectors currently have **no
+automatic registration**; these limitations are reported in the UI and
+output warnings. Silicone containment boxes retain their exterior
+registration bosses rather than adding a contour V.
+
+The default 3D result view is the **assembled mold with the original
+source model visible and a section plane perpendicular to the primary
+parting plane**. Toggle to an exploded preview in the mold panel; only
+the separate mold pieces are included in STL/3MF export. The sectional
+view uses the main viewport's section clipping and temporarily changes
+source visibility.
+
+**Threefold** splits use three vertical 120-degree radial sectors around the
+target's XY bounds center, with a cylindrical outside for direct mold
+tooling. This is a threefold **mold layout**; it does not duplicate or
+symmetrize an asymmetric input model. Check radial demoldability. The
+current threefold layout does not generate mating registration.
+
+**Voxelization:** positive clearance already uses a sampled signed
+distance field (a voxel-like scalar grid) before a Manifold isosurface.
+The primary cavity and all split, key and box Booleans remain
+surface/Manifold operations. Coarse voxel Booleans may accelerate
+operations but introduce quantization and higher memory usage; this
+change does not replace the exact split planes or final export geometry
+with raw occupied voxels.

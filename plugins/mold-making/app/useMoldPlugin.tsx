@@ -14,7 +14,7 @@ import { fileSafe } from '../../../src/core/project/manifest'
 import { moldSettings, useMold } from '../state/moldStore'
 import { MOLD_SETTING_KEYS } from '../core/settings'
 import type { MoldBuild, Limits } from '../core/geometry'
-import { MoldPreview } from '../viewer/moldPreview'
+import { MoldPreview, type MoldPreviewMode } from '../viewer/moldPreview'
 import { MoldPanel } from '../ui/MoldPanel'
 
 const NO_CREASE = { mode: 'off' as const, angleDeg: 30 }
@@ -28,6 +28,7 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
   const [targetBounds, setTargetBounds] = useState<Limits|null>(null)
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [previewMode,setPreviewMode] = useState<MoldPreviewMode>('section')
   const preview = useRef<MoldPreview | null>(null)
   const generation = useRef(0)
   const generatedVersion = useRef<number | null>(null)
@@ -94,7 +95,8 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
       if (!preview.current && host.sceneRef.current) {
         preview.current = new MoldPreview(host.sceneRef.current, invalidate)
       }
-      preview.current?.set(made, settings.source, settings.previewGap)
+      setPreviewMode('section')
+      preview.current?.set(made, settings.source, settings.previewGap,'section',settings.splitAxis)
       generatedVersion.current = selectedVersion
       setGenerated(made)
       setTargetBounds(made.targetBounds)
@@ -113,6 +115,11 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
       busy.current = false
       setGenerating(false)
     }
+  }
+
+  const changePreviewMode=(next:MoldPreviewMode)=>{
+    setPreviewMode(next)
+    preview.current?.setMode(next)
   }
 
   const exportPart = (format: Extract<MeshFormat, 'stl' | '3mf'>, index?: number) => {
@@ -169,7 +176,7 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
       title: 'Mold Making',
       blurb: 'Import a STEP or scanned model, split direct molds into 2 or 4 parts, or build rectangular/cylindrical silicone boxes with keys and drafted interior walls.',
     },
-    hideScan: !!generated && source === 'scan' && inWorkspace,
+    hideScan: false,
     canSave: !!referenceName && source === 'reference',
     panel: inWorkspace ? (
       <MoldPanel
@@ -178,6 +185,8 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
         onGenerate={() => void runGenerate()}
         onExport={exportPart}
         generated={generated}
+        previewMode={previewMode}
+        onPreviewModeChange={changePreviewMode}
         targetBounds={targetBounds}
         generating={generating}
         error={error}

@@ -286,6 +286,40 @@ describe('Mold Making assembly',()=>{
     }
     expect(made.warnings.join(' ')).not.toMatch(/source repair was OFF/i)
   })
+  it('builds a continuous V-ridge and matching groove around the projected outline with external clamping ears',()=>{
+    const without=buildMold(wasm,master,{...DEFAULT_MOLD_SETTINGS,keys:false})
+    const withSeam=buildMold(wasm,master,{...DEFAULT_MOLD_SETTINGS,keyStyle:'v-seam'})
+    expect(withSeam.parts).toHaveLength(2)
+    expect(withSeam.printable).toBe(true)
+    intact(withSeam.parts)
+    expect(withSeam.warnings.join(' ')).toMatch(/continuous contour-following triangular/)
+    const totalBefore=without.volumeMm3
+    expect(Math.abs(withSeam.volumeMm3-totalBefore)).toBeLessThan(1600)
+    // Ears must extend outside the unkeyed mold's Y bounds.
+    const bounds=(a:typeof withSeam.parts)=>a.flatMap(p=>{
+      const ys:number[]=[]
+      for(let i=1;i<p.positions.length;i+=3)ys.push(p.positions[i])
+      return [Math.min(...ys),Math.max(...ys)]
+    })
+    const before=bounds(without.parts),after=bounds(withSeam.parts)
+    expect(Math.min(...after)).toBeLessThan(Math.min(...before)-1)
+    expect(Math.max(...after)).toBeGreaterThan(Math.max(...before)+1)
+  })
+  it('cuts three 120-degree radial sectors of cylindrical tooling',()=>{
+    const target=boxSolid({min:[-5,-5,-5],max:[5,5,5]})
+    const made=buildMold(wasm,target,{...DEFAULT_MOLD_SETTINGS,
+      parts:3,keyStyle:'v-seam',keys:true,clearance:0})
+    expect(made.parts).toHaveLength(3)
+    expect(made.printable).toBe(true)
+    intact(made.parts)
+    const r=Math.hypot(5,5)+DEFAULT_MOLD_SETTINGS.sideMargin
+    const height=10+2*DEFAULT_MOLD_SETTINGS.baseThickness
+    const targetVolume=1000
+    const expectedVolume=Math.PI*r*r*height-targetVolume
+    expect(made.volumeMm3).toBeGreaterThan(expectedVolume*0.96)
+    expect(made.volumeMm3).toBeLessThan(expectedVolume*1.04)
+    expect(made.warnings.join(' ')).toMatch(/NO automatic registration/)
+  })
   it('does not silently export fragmented parts from an offset with registration',()=>{
     const created=buildMold(wasm,master,{
       ...DEFAULT_MOLD_SETTINGS,clearance:0.5,offsetQuality:'balanced',
@@ -356,7 +390,7 @@ describe('Mold Making assembly',()=>{
   })
   it('adds physical pins and corresponding negative pockets',()=>{
     const plain=buildMold(wasm,master,noKeys)
-    const keyed=buildMold(wasm,master,DEFAULT_MOLD_SETTINGS)
+    const keyed=buildMold(wasm,master,{...DEFAULT_MOLD_SETTINGS,keyStyle:'tapered-key'})
     expect(keyed.parts).toHaveLength(2)
     intact(keyed.parts)
     expect(keyed.parts[0].volumeMm3).toBeGreaterThan(plain.parts[0].volumeMm3)
