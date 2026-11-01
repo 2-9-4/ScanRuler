@@ -133,7 +133,7 @@ export function moldMaterial(s:MoldSettings,targetHeight?:number):{side:number;b
     base:s.mode==='direct'?direct:Math.max(2,wallMin+0.5),
     wall:wallMin,
   }
-  if(v&&s.parts!==3&&targetHeight!==undefined&&Number.isFinite(targetHeight)&&s.clampTabCount>0){
+  if(v&&targetHeight!==undefined&&Number.isFinite(targetHeight)&&s.clampTabCount>0){
     const tab=clampHardware(s)
     const pitch=tab.width+Math.max(2,tab.width*0.25)
     const needed=s.clampTabCount*pitch+4
@@ -141,7 +141,7 @@ export function moldMaterial(s:MoldSettings,targetHeight?:number):{side:number;b
       s.siliconeThickness+material.wall+material.base)
     if(span<needed)material.base+=(needed-span)/(s.mode==='direct'?2:1)
   }
-  if(v&&s.topBottomTabs&&s.topBottomTabCount>0){
+  if(v&&s.parts!==3&&s.topBottomTabs&&s.topBottomTabCount>0){
     // Ears along the upper/lower outside rim must have adequate depth to
     // anchor into the surrounding body even when the model is shallow.
     material.base=Math.max(material.base,clampHardware(s).width*0.35+1.5)
@@ -556,16 +556,12 @@ function drillClampPair(
     // A 6-sided prism has inradius R*cos(π/6), so this gives the
     // requested across-flats dimension rather than across-corners.
     const r=s.tabNutAcrossFlats/Math.sqrt(3)
-    const pocket=pinSolid(wasm,axis,
-      ear.map((v,i)=>i===axisIndex(axis)?split-thickness+s.tabNutDepth/2-0.05:v) as Vec3,
-      s.tabNutDepth+0.1,r,r,keep)
     // pinSolid defaults to 32 sides; use an actual six-sided Manifold
     // here, oriented along the same mating axis.
     const raw=keep(wasm.Manifold.cylinder(s.tabNutDepth+0.1,r,r,6,true))
     const rotation:Vec3=axis==='x'?[0,90,0]:axis==='y'?[-90,0,0]:[0,0,0]
     const hex=keep(keep(raw.rotate(rotation)).translate(
       ear.map((v,i)=>i===axisIndex(axis)?split-thickness+s.tabNutDepth/2-0.05:v) as Vec3))
-    void pocket
     neg=keep(neg.subtract(hex))
   }
   return [neg,pos]
@@ -853,26 +849,76 @@ function keyThreeParts(
       (target.max[1]-target.min[1])/2)+s.clearance:0
   const hw=s.keyStyle==='v-seam'?s.vSeamWidth/2:s.keyDiameter/2
   const fit=s.keyStyle==='v-seam'?s.vSeamClearance:s.keyClearance
-  const radius=cavityRadius+(s.keyStyle==='v-seam'?s.vSeamSpacing:1.25)+hw+0.65
   const outside=plan.radialOuter?.radius??plan.cylinder?.outerR??0
-  if(radius+hw+fit+0.3>=outside)
-    throw new Error('Radial registration does not fit inside the computed exterior land.')
+  const hull=plan.target?projectedHull(plan.target,'z'):null
+  const intersectionRadius=(angle:number):number=>{
+    if(!hull)return cavityRadius
+    const direction:[number,number]=[Math.cos(angle),Math.sin(angle)]
+    let furthest=0
+    for(let i=0;i<hull.length;i++){
+      const p=hull[i],q=hull[(i+1)%hull.length]
+      const dx=q[0]-p[0],dy=q[1]-p[1]
+      const px=p[0]-cx,py=p[1]-cy
+      const cross=direction[0]*dy-direction[1]*dx
+      if(Math.abs(cross)<1e-10)continue
+      const r=(px*dy-py*dx)/cross
+      const t=(px*direction[1]-py*direction[0])/cross
+      if(t>=-1e-8&&t<=1+1e-8&&r>=0)furthest=Math.max(furthest,r)
+    }
+    return furthest||cavityRadius
+  }
   const z0=plan.outer.min[2]+Math.max(hw+fit+0.8,1.5)
   const z1=plan.outer.max[2]-Math.max(hw+fit+0.8,1.5)
   if(z1-z0<=Math.max(1,hw))
     throw new Error('Radial registration needs additional vertical backing.')
   for(let seam=0;seam<3;seam++){
     const angle=120*seam
+    const radius=intersectionRadius(angle*Math.PI/180)+
+      (s.mode==='direct'?s.clearance:0)+
+      (s.keyStyle==='v-seam'?s.vSeamSpacing:1.25)+hw+fit+0.8
+    if(radius+hw+fit+0.3>=outside)
+      throw new Error('Radial registration does not fit inside the computed exterior land.')
     const negative=(seam+2)%3,positive=seam
     const place=(m:Manifold):Manifold=>
       keep(keep(m.rotate([0,0,angle])).translate([cx,cy,0]))
     let male=out[negative],female=out[positive]
+    if(s.clampTabCount>0){
+      const tab=clampHardware(s)
+      const height=plan.outer.max[2]-plan.outer.min[2]
+      for(let i=0;i<s.clampTabCount;i++){
+        const z=plan.outer.min[2]+height*(i+0.5)/s.clampTabCount
+        const overlap=Math.max(3,tab.thickness*0.6)
+        const pad=(positiveSide:boolean)=>place(toManifold(wasm,boxSolid({
+          min:[outside-overlap,positiveSide?0:-tab.thickness,z-tab.width/2],
+          max:[outside+tab.projection,positiveSide?tab.thickness:0,z+tab.width/2],
+        }),keep))
+        male=keep(male.add(pad(false)))
+        female=keep(female.add(pad(true)))
+        const centre:Vec3=[outside+tab.projection*0.55,0,z]
+        if(s.tabBoltHoles){
+          const bore=place(pinSolid(wasm,'y',centre,2*tab.thickness+1,
+            s.tabBoltDiameter/2,s.tabBoltDiameter/2,keep))
+          male=keep(male.subtract(bore));female=keep(female.subtract(bore))
+          if(s.tabCapturedNuts){
+            const r=s.tabNutAcrossFlats/Math.sqrt(3)
+            const raw=keep(wasm.Manifold.cylinder(s.tabNutDepth+0.1,r,r,6,true))
+            const hex=place(keep(keep(raw.rotate([-90,0,0])).translate(
+              [centre[0],-tab.thickness+s.tabNutDepth/2-0.05,centre[2]])))
+            male=keep(male.subtract(hex))
+          }
+        }
+      }
+    }
     if(s.keyStyle==='v-seam'){
       // An open vertical ribbon with capped ends. Trimmed V tips provide
       // the assembly lead-in at all three radial parting interfaces.
-      const path:[number,number][]=[
-        [radius,z0],[radius,(z0+z1)/2],[radius,z1],
-      ]
+      // Wrap the V across the radial face: inward wall, lower land,
+      // outer wall. This follows the casting envelope much closer to the
+      // hub than the previous single thin vertical strip.
+      const outerLand=outside-hw-fit-0.8
+      const path:[number,number][]=outerLand-radius>1
+        ?[[radius,z1],[radius,z0],[outerLand,z0],[outerLand,z1]]
+        :[[radius,z0],[radius,(z0+z1)/2],[radius,z1]]
       const embed=Math.min(0.6,s.vSeamHeight*0.25)
       const tongue=place(toManifold(wasm,triangularContourTube(
         path,'y',0,hw,-embed,s.vSeamHeight,false,0.24),keep))
