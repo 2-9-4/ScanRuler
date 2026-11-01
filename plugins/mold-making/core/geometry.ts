@@ -8,7 +8,7 @@ import { closedness, type Triangles } from '../../mesh-tools/core/boolean'
 import { repairMoldTarget, liftCollapsedClosedMesh } from './repair'
 import { createSphericalDistanceField, sphericalOffset, type SphericalDistanceField } from './sphericalOffset'
 import { parseMoldSettings, type MoldSettings, type SplitAxis } from './settings'
-import { projectedHull,contourAround,triangularContourTube,planeAxes } from './contourSeam'
+import { projectedHull,contourAround,contourSegment,triangularContourTube,planeAxes } from './contourSeam'
 
 type Vec3 = [number,number,number]
 export type Limits = { min:Vec3; max:Vec3 }
@@ -103,8 +103,8 @@ export interface MoldPlan {
  * interpret the extra inputs as the minimum total backing dimension.
  */
 export function moldMaterial(s:MoldSettings,targetHeight?:number):{side:number;base:number;wall:number}{
-  const v=s.keys&&s.parts===2&&s.keyStyle==='v-seam'
-  const pinLand=s.keys&&s.parts!==3&&!(s.parts===2&&s.keyStyle==='v-seam')
+  const v=s.keys&&s.parts!==1&&s.keyStyle==='v-seam'
+  const pinLand=s.keys&&s.parts!==3&&s.keyStyle!=='v-seam'
     ?s.keyDiameter+2*s.keyClearance+2.5:0
   // Margin includes space from target to the V-ridge's inner flank,
   // full profile width, groove fit, and at least 1.25 mm outside the groove.
@@ -523,7 +523,7 @@ function addBoxWallKeys(
 function addContourVSeam(
   wasm:ManifoldToplevel,negative:Manifold,positive:Manifold,
   axis:SplitAxis,split:number,s:MoldSettings,plan:MoldPlan,
-  keep:(m:Manifold)=>Manifold,
+  keep:(m:Manifold)=>Manifold,seamSpan?:readonly [number,number],
 ):[Manifold,Manifold] {
   const halfWidth=s.vSeamWidth/2,fit=s.vSeamClearance
   const [,u,v]=planeAxes(axis)
@@ -576,6 +576,17 @@ function addContourVSeam(
       [edgeHi-inset,bottom],[edgeHi-inset,top]]
     closed=false
   }
+  if(seamSpan){
+    // Only this quadrant owns the relevant interval. Stop the open V
+    // short of the perpendicular seam to avoid intersecting registration
+    // ribs from a neighboring quadrant.
+    const trim=halfWidth+fit+0.8
+    const lo=seamSpan[0]>outer.min[u]+1e-4?seamSpan[0]+trim:seamSpan[0]
+    const hi=seamSpan[1]<outer.max[u]-1e-4?seamSpan[1]-trim:seamSpan[1]
+    const clipped=contourSegment(path,lo,hi,closed)
+    path=clipped.path
+    closed=clipped.closed
+  }
   const safety=halfWidth+fit+0.65
   for(const [a,b] of path){
     if(a-safety<outer.min[u]-1e-6||a+safety>outer.max[u]+1e-6||
@@ -585,12 +596,15 @@ function addContourVSeam(
   }
   const embed=Math.min(0.6,s.vSeamHeight*0.25)
   const tongue=toManifold(wasm,triangularContourTube(
-    path,axis,split,halfWidth,-embed,s.vSeamHeight,closed),keep)
+    path,axis,split,halfWidth,-embed,s.vSeamHeight,closed,0.24),keep)
   const groove=toManifold(wasm,triangularContourTube(
     path,axis,split,halfWidth+fit,-0.18,
     s.vSeamHeight+fit+0.3,closed),keep)
-  let neg=keep(negative.add(tongue))
-  let pos=keep(positive.subtract(groove))
+  // Construct the exterior clamp ears FIRST. Subtracting the groove last
+  // keeps it open even where a tab overlaps the seam near the exterior:
+  // previously unioning tabs AFTER the subtraction partially filled it.
+  let neg=negative
+  let pos=positive
   const k=axisIndex(axis),t=axis==='x'?1:0
   const mid=[center(outer.min[0],outer.max[0]),center(outer.min[1],outer.max[1])]
   const sideTangent=axis==='z'?0:t
@@ -598,6 +612,7 @@ function addContourVSeam(
   const zPitch=totalHeight/s.clampTabCount
   for(const sign of [-1,1])for(let i=0;i<s.clampTabCount;i++){
     let edge=sign<0?outer.min[sideTangent]:outer.max[sideTangent]
+    if(seamSpan&&(edge<seamSpan[0]-1e-4||edge>seamSpan[1]+1e-4))continue
     if(plan.cylinder&&axis!=='z'){
       const dx=split-mid[k],r=plan.cylinder.outerR
       edge=mid[sideTangent]+sign*Math.sqrt(Math.max(0,r*r-dx*dx))
@@ -634,6 +649,8 @@ function addContourVSeam(
     neg=keep(neg.add(makeTab(false)))
     pos=keep(pos.add(makeTab(true)))
   }
+  neg=keep(neg.add(tongue))
+  pos=keep(pos.subtract(groove))
   if(neg.isEmpty()||pos.isEmpty())throw new Error('V seam Boolean returned an empty part.')
   return [neg,pos]
 }
@@ -644,7 +661,7 @@ function addKeys(
 ):[Manifold,Manifold] {
   // Registration is placed on material around the projected cavity in both parting-plane axes.
   // Metal dowel mode cuts blind clearance sockets on BOTH mating halves.
-  if(s.keyStyle==='v-seam'&&s.parts===2)return addContourVSeam(wasm,negative,positive,axis,split,s,plan,keep)
+  if(s.keyStyle==='v-seam')return addContourVSeam(wasm,negative,positive,axis,split,s,plan,keep,seamSpan)
   if(s.mode==='silicone-box')return addBoxWallKeys(wasm,negative,positive,axis,split,s,plan,keep,seamSpan)
   const idx=axisIndex(axis)
   const locations=registrationSites(axis,split,s,plan,seamSpan)
@@ -849,7 +866,7 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
     }else if(s.parts!==1){
       onProgress?.('Cutting exact parting planes; applying mating pins and pockets…',0.84)
       const a=s.splitAxis,k=axisIndex(a)
-      if(s.parts===4&&a==='z'&&s.keys)throw new Error('Four-part Z-first tooling with pins is not yet supported. Choose X/Y as the primary parting axis, or disable pins.')
+      if(s.parts===4&&a==='z'&&s.keys&&s.keyStyle!=='v-seam')throw new Error('Four-part Z-first tooling with pins is not yet supported. Choose X/Y as the primary parting axis, use a V-seam, or disable pins.')
       const firstAt=extent.min[k]+(extent.max[k]-extent.min[k])*s.splitPosition
       pieces=split(wasm,pieces,a,firstAt,s,plan,keep,s.parts===2&&s.keys)
       if(s.parts===4){
@@ -864,7 +881,7 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
       }
         if(s.keys){
         if(s.mode==='silicone-box'&&!(s.keyStyle==='v-seam'&&s.parts===2))warnings.push('Registration is placed on external wall bosses at multiple heights. Printed pins require assembled clearance; metal dowel holes require separate hardware.')
-        if(s.keyStyle==='v-seam'&&s.parts===4)warnings.push('Four-part molds currently use discrete pins or bosses instead of a continuous V-seam; use two parts for the V-seam.')
+        if(s.keyStyle==='v-seam'&&s.parts===4)warnings.push('Each of the four adjoining seams receives its own open, flat-tipped V-ridge and matching groove, set back from perpendicular parting planes.')
         if(s.keyStyle==='v-seam'&&s.parts===2)warnings.push(s.mode==='direct'?'A continuous contour-following triangular tongue-and-groove with exterior clamp ears provides registration; verify the clamping force and cast release before manufacturing.':'A wall-supported U-shaped triangular tongue-and-groove with exterior clamp ears registers the silicone box while leaving the pouring opening unobstructed.')
         else warnings.push(s.keyStyle==='metal-dowel'?
           `Paired blind sockets are sized for ${s.keyDiameter} mm metal dowels, with ${s.keyClearance} mm radial fit clearance. Insert separate dowels during assembly.`:
