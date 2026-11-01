@@ -4315,3 +4315,9 @@ button.x:disabled {
   border: 1px solid var(--amber);
   border-radius: var(--r);
 }
+
+@media (max-width: 430px) {
+  [data-test="mold-making-panel"] .kindrow.featurekeys {
+    grid-template-columns: 1fr;
+  }
+}
