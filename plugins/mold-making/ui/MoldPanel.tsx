@@ -75,7 +75,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
   return <aside className="panel" data-test="mold-making-panel">
     <div className="group">
       <div className="sec-head">1. Target</div>
-      <p className="hint">Import STEP/STP directly, or use an existing scanned watertight mesh. The original model is never modified.</p>
+      <p className="hint">{mode==='silicone-box'?'Containment boxes need only the target bounding dimensions; open or nonmanifold meshes are allowed.':'Direct cavity and thin-shell molds require a watertight target; use a valid solid or repair the scan first.'} The original model is never modified.</p>
       <div className="kindrow featurekeys" role="radiogroup" aria-label="Target source">
         <button type="button" role="radio" aria-checked={source==='scan'} className={source==='scan'?'on':undefined}
           onClick={()=>setSource('scan')}>Scan / model</button>
@@ -89,17 +89,23 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
         <ModelSlot role="Target reference" name={refName} detail="CAD or mesh reference"
           dotColor="#8b9099" busy={busy} accept={REFERENCE_ACCEPT}
           formats={REFERENCE_FORMATS} onOpen={onOpenReference}/>}
-      <label className="kv"><span className="name">Repair small mesh defects</span>
-        <input type="checkbox" data-test="mold-repair-target"
-          checked={repairTarget} onChange={e=>setRepairTarget(e.target.checked)}/>
-      </label>
-      {repairTarget&&<label className="kv" title="Only complete holes smaller than this across are patched. Large or ambiguous missing areas cause an error, not an automatic edit.">
-        <span className="name">Max repair hole size (mm)</span>
-        <input type="number" min={0.001} step={0.1} data-test="mold-repair-hole-size"
-          value={repairHoleSize}
-          onChange={e=>{if(e.target.value!=='')setDimension('repairHoleSize',Number(e.target.value))}}/>
-      </label>}
-      <p className="hint">Before generating, remove exactly zero-area faces, weld identical duplicate vertices and fill small closed holes on a temporary copy. The original scan/STEP remains unchanged. Repairs appear in output warnings; inspect them before printing.</p>
+      {mode==='silicone-box'?(
+        <p className="hint">Only the target bounds are used to size this container. Mesh topology, hole repair and cavity offsets do not affect the box.</p>
+      ):(
+        <>
+        <label className="kv"><span className="name">Repair small mesh defects</span>
+          <input type="checkbox" data-test="mold-repair-target"
+            checked={repairTarget} onChange={e=>setRepairTarget(e.target.checked)}/>
+        </label>
+        {repairTarget&&<label className="kv" title="Only complete holes smaller than this across are patched. Large or ambiguous missing areas cause an error, not an automatic edit.">
+          <span className="name">Max repair hole size (mm)</span>
+          <input type="number" min={0.001} step={0.1} data-test="mold-repair-hole-size"
+            value={repairHoleSize}
+            onChange={e=>{if(e.target.value!=='')setDimension('repairHoleSize',Number(e.target.value))}}/>
+        </label>}
+        <p className="hint">Before generating, remove exactly zero-area faces, weld identical duplicate vertices and fill small closed holes on a temporary copy. The original scan/STEP remains unchanged. Repairs appear in output warnings; inspect them before printing.</p>
+        </>
+      )}
     </div>
     <div className="group">
       <div className="sec-head">2. Mold type</div>
