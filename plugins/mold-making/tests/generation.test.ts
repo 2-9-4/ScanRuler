@@ -55,7 +55,7 @@ describe('Mold Making assembly',()=>{
       const part=toPart(combined,'Mold part 1',warnings)
       intact([part])
       expect(part.volumeMm3).toBeCloseTo(512,2)
-      expect(warnings.join(' ')).toMatch(/microscopic detached Boolean artifacts/)
+      expect(warnings.join(' ')).toMatch(/microscopic Boolean dust islands/)
     }finally{combined.delete();fleck.delete();base.delete()}
   })
   it('preserves nontrivial disconnected mold islands as distinct printable components',()=>{
