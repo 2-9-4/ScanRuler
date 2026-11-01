@@ -124,9 +124,9 @@ export function parseMoldSettings(value: unknown): MoldSettings {
   ))throw new Error('Alignment points must be pairs of fractions between 1% and 99%.')
   if(new Set(parsed.keyPoints.map(p=>p.join(','))).size!==parsed.keyPoints.length)
     throw new Error('Alignment points must have distinct coordinates.')
-  if(parsed.keys&&parsed.keyPlacement==='manual'&&parsed.mode==='direct'&&parsed.keyPoints.length===0)
+  if(parsed.keys&&parsed.parts!==3&&parsed.keyStyle!=='v-seam'&&parsed.keyPlacement==='manual'&&parsed.mode==='direct'&&parsed.keyPoints.length===0)
     throw new Error('Add manual alignment points or disable registration.')
-  if(parsed.keys&&parsed.keyPlacement==='manual'&&parsed.mode==='silicone-box'&&parsed.keyPositions.length===0)
+  if(parsed.keys&&parsed.parts!==3&&parsed.keyPlacement==='manual'&&parsed.mode==='silicone-box'&&parsed.keyPositions.length===0)
     throw new Error('Add manual registration heights or disable registration.')
   for (const key of MOLD_DIMENSIONS) {
     if (typeof parsed[key] !== 'number' || !validMoldDimension(key, parsed[key])) {
