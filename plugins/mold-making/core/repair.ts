@@ -165,20 +165,45 @@ export function repairMoldTarget(
   if(!enabled)return {mesh:input,warnings:[],removedFaces:0,adjustedVertices:0,weldedVertices:0,filledHoles:0}
   const sourceTopology=closedness(idx,p.length/3)
   let removedFaces=0,adjustedVertices=0,weldedVertices=0,filledHoles=0
-  // Lift collapsed faces before considering removal even for an open source.
-  // Deleting otherwise well-connected faces can create entirely new holes.
   let mesh=input
-  const lifted=liftCollapsedClosedMesh(input)
+  // A redundant zero-area face may actually CAUSE nonmanifold connectivity.
+  // Example: a perfectly closed box plus a collinear triangle sharing an
+  // already-used edge. Lifting that face does not fix its edge incidence;
+  // removing just the redundant face restores an exact closed solid.
+  // Prefer removal only if it completely fixes topology or strictly reduces
+  // invalid edge incidence without opening any new boundaries.
+  if(sourceTopology.open>0||sourceTopology.bad>0){
+    const kept:number[]=[]
+    let redundant=0
+    for(let i=0;i<idx.length;i+=3){
+      if(collapsed(p,idx[i],idx[i+1],idx[i+2]))redundant++
+      else kept.push(idx[i],idx[i+1],idx[i+2])
+    }
+    if(redundant&&kept.length){
+      const candidate={positions:p,indices:Uint32Array.from(kept)}
+      const c=closedness(candidate.indices,p.length/3)
+      if((c.open===0&&c.bad===0)||
+         (c.bad===0&&sourceTopology.bad>0&&c.open<=sourceTopology.open)){
+        const compact=compactEdit(candidate.positions,candidate.indices,p.length/3)
+        mesh={positions:compact.positions,indices:compact.indices}
+        removedFaces=redundant
+        onProgress?.(`Removed ${redundant} redundant zero-area triangles that caused invalid edge connectivity…`)
+      }
+    }
+  }
+  // Otherwise lift collapsed faces before considering removal, even on an
+  // open source. Deleting genuine source faces may create new holes.
+  const lifted=removedFaces>0?null:liftCollapsedClosedMesh(input)
   if(lifted){
     mesh=lifted.mesh
     adjustedVertices=lifted.adjustedVertices
     if(adjustedVertices)onProgress?.(`Repaired ${adjustedVertices} collapsed vertices without deleting faces…`)
-  }else if(sourceTopology.open===0&&sourceTopology.bad===0){
+  }else if(!removedFaces&&sourceTopology.open===0&&sourceTopology.bad===0){
     throw new Error('The source is watertight by indices but its zero-area faces cannot be repaired by a submicron vertex adjustment. Deleting them would introduce holes, so no mold was generated.')
   }
   // Face removal is a fallback ONLY for originally open meshes where a
   // conservative vertex adjustment cannot preserve the existing faces.
-  if(!lifted){
+  if(!lifted&&!removedFaces){
     const kept:number[]=[]
     for(let i=0;i<idx.length;i+=3){
       if(collapsed(p,idx[i],idx[i+1],idx[i+2]))removedFaces++
