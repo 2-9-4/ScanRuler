@@ -125,11 +125,11 @@ export function createSphericalDistanceField(mesh:SolidMesh,onProgress?:(message
       }
       previousFace=closest.faceIndex
       const face=closest.faceIndex*3
-      const dx=query.x-nearest.point.x
-      const dy=query.y-nearest.point.y
-      const dz=query.z-nearest.point.z
+      const dx=query.x-closest.point.x
+      const dy=query.y-closest.point.y
+      const dz=query.z-closest.point.z
       const dot=dx*normals[face]+dy*normals[face+1]+dz*normals[face+2]
-      return dot<0?nearest.distance:-nearest.distance
+      return dot<0?closest.distance:-closest.distance
     },
     dispose(){geometry.dispose()},
   }
