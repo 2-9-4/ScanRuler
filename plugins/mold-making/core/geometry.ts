@@ -669,6 +669,8 @@ function addContourVSeam(
     ?Math.min(s.clampTabCount,Math.floor(availableZ/(s.clampTabWidth+2)))
     :s.clampTabCount
   const zPitch=tabCount?availableZ/tabCount:0
+  const tab=clampHardware(s)
+  const fasteners:Vec3[]=[]
   for(const sign of [-1,1])for(let i=0;i<tabCount;i++){
     let edge=sign<0?outer.min[sideTangent]:outer.max[sideTangent]
     if(seamSpan&&seamSpanAxis!=='z'&&(edge<seamSpan[0]-1e-4||edge>seamSpan[1]+1e-4))continue
@@ -677,15 +679,15 @@ function addContourVSeam(
       edge=mid[sideTangent]+sign*Math.sqrt(Math.max(0,r*r-dx*dx))
     }
     const z=verticalSpan[0]+zPitch*(i+0.5)
-    const tabWidth=s.clampTabWidth
-    const thickness=Math.max(2,s.clampTabThickness)
+    const tabWidth=tab.width
+    const thickness=tab.thickness
     const makeTab=(upper:boolean):Manifold=>{
       const lo:Vec3=[...outer.min],hi:Vec3=[...outer.max]
       lo[k]=upper?split:split-thickness
       hi[k]=upper?split+thickness:split
-      const overlap=Math.max(2.5,Math.min(6,s.clampTabThickness*0.6))
-      lo[sideTangent]=sign<0?edge-s.clampTabProjection:edge-overlap
-      hi[sideTangent]=sign<0?edge+overlap:edge+s.clampTabProjection
+      const overlap=Math.max(2.5,Math.min(6,tab.thickness*0.6))
+      lo[sideTangent]=sign<0?edge-tab.projection:edge-overlap
+      hi[sideTangent]=sign<0?edge+overlap:edge+tab.projection
       if(axis==='z'){
         // Top/bottom halves: tabs spread along Y, on both X edges.
         // For a cylinder, use the local circle intersection rather than
@@ -707,6 +709,45 @@ function addContourVSeam(
     }
     neg=keep(neg.add(makeTab(false)))
     pos=keep(pos.add(makeTab(true)))
+    const hole:Vec3=[center(outer.min[0],outer.max[0]),
+      center(outer.min[1],outer.max[1]),z]
+    hole[k]=split
+    hole[sideTangent]=edge+sign*tab.projection*0.55
+    if(axis==='z')hole[1]=outer.min[1]+(outer.max[1]-outer.min[1])*(i+0.5)/s.clampTabCount
+    fasteners.push(hole)
+  }
+  if(s.topBottomTabs&&axis!=='z'&&s.topBottomTabCount>0){
+    // Upper and lower ears spread along the horizontal outside edges,
+    // not across the projected cavity or existing vertical clamp tabs.
+    const along=axis==='x'?1:0
+    const [lo,hi]=seamSpan&&seamSpanAxis===('xyz'[along] as SplitAxis)
+      ?seamSpan:[outer.min[along],outer.max[along]]
+    const count=s.topBottomTabCount
+    const span=hi-lo
+    for(const sign of [-1,1])for(let i=0;i<count;i++){
+      const position=lo+span*(i+0.5)/count
+      const end=sign<0?outer.min[2]:outer.max[2]
+      const overlap=Math.max(2.5,Math.min(6,tab.thickness*0.6))
+      const makeEar=(upper:boolean)=>{
+        const low:Vec3=[...outer.min],high:Vec3=[...outer.max]
+        low[k]=upper?split:split-tab.thickness
+        high[k]=upper?split+tab.thickness:split
+        low[along]=position-tab.width/2
+        high[along]=position+tab.width/2
+        low[2]=sign<0?end-tab.projection:end-overlap
+        high[2]=sign<0?end+overlap:end+tab.projection
+        return toManifold(wasm,boxSolid({min:low,max:high}),keep)
+      }
+      neg=keep(neg.add(makeEar(false)))
+      pos=keep(pos.add(makeEar(true)))
+      const hole:Vec3=[center(outer.min[0],outer.max[0]),
+        center(outer.min[1],outer.max[1]),end+sign*tab.projection*0.55]
+      hole[k]=split;hole[along]=position
+      fasteners.push(hole)
+    }
+  }
+  for(const centre of fasteners){
+    [neg,pos]=drillClampPair(wasm,neg,pos,axis,split,centre,tab.thickness,s,keep)
   }
   neg=keep(neg.add(tongue))
   pos=keep(pos.subtract(groove))
