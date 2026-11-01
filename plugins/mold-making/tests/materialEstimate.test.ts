@@ -47,6 +47,13 @@ describe('Mold material calculator (MOLD-014)',()=>{
     expect(made.materialEstimate.grossSiliconeCapacityMm3).toBeGreaterThan(800)
     expect(made.materialEstimate.masterDisplacementMm3).toBeNull()
     expect(made.materialEstimate.netSiliconeMm3).toBeNull()
+    // Containment geometry must remain buildable even when a reference
+    // scan has completely invalid face indices: bounds alone suffice.
+    const malformed=buildMold(wasm,{positions:target.positions,
+      indices:Uint32Array.of(0,999,2)},settings)
+    expect(malformed.printable).toBe(true)
+    expect(malformed.materialEstimate.masterDisplacementMm3).toBeNull()
+    expect(malformed.materialEstimate.netSiliconeMm3).toBeNull()
     const rigid=buildMold(wasm,target,{...DEFAULT_MOLD_SETTINGS,keys:false})
     expect(rigid.materialEstimate.nominalCastingCavityMm3).toBeCloseTo(800,2)
     expect(rigid.materialEstimate.grossSiliconeCapacityMm3).toBeNull()
