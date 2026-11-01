@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PluginHost, PluginRuntime } from '../../../src/plugins/api'
 import { useShell } from '../../../src/state/shellStore'
+import { useSectionView } from '../../../src/state/sectionViewStore'
 import { useStore } from '../../../src/state/store'
 import { useDeviation } from '../../../src/state/deviationStore'
 import { onScan } from '../../../src/app/scanEvents'
@@ -30,11 +31,16 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
   const [error, setError] = useState<string | null>(null)
   const [previewMode,setPreviewMode] = useState<MoldPreviewMode>('section')
   const preview = useRef<MoldPreview | null>(null)
+  const priorSection=useRef<ReturnType<typeof useSectionView.getState>|null>(null)
   const generation = useRef(0)
   const generatedVersion = useRef<number | null>(null)
   const busy = useRef(false)
 
   const invalidate = useCallback(() => {
+    if(priorSection.current){
+      useSectionView.setState(priorSection.current)
+      priorSection.current=null
+    }
     generation.current++
     setGenerated(null)
     generatedVersion.current = null
@@ -51,8 +57,36 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
     return () => { offMold(); offScan() }
   }, [invalidate])
   useEffect(() => { setTargetBounds(null); invalidate() }, [scanName, referenceName, invalidate])
-  useEffect(() => () => { preview.current?.dispose(); preview.current = null }, [])
-  useEffect(() => { preview.current?.setVisible(inWorkspace) }, [inWorkspace, generated])
+  useEffect(() => () => {
+    if(priorSection.current)useSectionView.setState(priorSection.current)
+    priorSection.current=null
+    preview.current?.dispose(); preview.current = null
+  }, [])
+  useEffect(() => {
+    preview.current?.setVisible(inWorkspace)
+    if(!inWorkspace){
+      if(priorSection.current){
+        useSectionView.setState(priorSection.current)
+        priorSection.current=null
+      }
+      return
+    }
+    if(!generated)return
+    if(!priorSection.current)priorSection.current=useSectionView.getState()
+    if(previewMode==='exploded'){
+      useSectionView.getState().close()
+      return
+    }
+    // The native section-view store owns the plane, its interactive gizmo,
+    // labels and the main ViewBar controls. Scene sync updates the viewport.
+    const b=generated.targetBounds
+    const centre:[number,number,number]=b.min.map((v,i)=>(v+b.max[i])/2) as [number,number,number]
+    const sectionAxis=useMold.getState().splitAxis==='x'?'y':'x'
+    const view=useSectionView.getState()
+    view.open([0,0,-1],centre)
+    view.setRef(sectionAxis,[0,0,-1])
+    view.setOffset(centre[sectionAxis==='x'?0:1])
+  },[inWorkspace,generated,previewMode])
   useEffect(() => useDeviation.subscribe((s,prev) => {
     if (s.nominalName !== prev.nominalName || s.nominalBusy !== prev.nominalBusy || s.nominalStep !== prev.nominalStep) invalidate()
   }), [invalidate])
@@ -96,7 +130,7 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
         preview.current = new MoldPreview(host.sceneRef.current, invalidate)
       }
       setPreviewMode('section')
-      preview.current?.set(made, settings.source, settings.previewGap,'section',settings.splitAxis)
+      preview.current?.set(made, settings.source, settings.previewGap,'section')
       generatedVersion.current = selectedVersion
       setGenerated(made)
       setTargetBounds(made.targetBounds)
