@@ -155,10 +155,10 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
             <select data-test="mold-key-placement" value={keyPlacement}
               onChange={e=>setKeyPlacement(e.target.value as KeyPlacement)}>
               <option value="auto">Automatically distribute</option>
-              <option value="manual">Edit positions along seam</option>
+              <option value="manual">{mode==='silicone-box'?'Edit heights on exterior wall':'Edit positions along seam'}</option>
             </select></label>
           {keyPlacement==='manual'&&<>
-            <p className="hint">Positions are percentages along each mating seam, measured from the smaller coordinate. The same pattern is applied to every split interface; invalid overlaps show an error rather than moving your keys.</p>
+            <p className="hint">{mode==='silicone-box'?'Each percentage sets a height from the base of the containment wall. Matching bosses are placed at the outside ends of each seam; adjust these heights if they interfere with other hardware.':'Positions are percentages along each mating seam, measured from the smaller coordinate. The same pattern is applied to every split interface.'} Invalid overlaps show an error rather than moving your keys.</p>
             {keyPositions.map((value,index)=><div className="kv" key={index}>
               <label className="name" htmlFor={`mold-key-${index}`}>Feature {index+1} · %</label>
               <input id={`mold-key-${index}`} data-test={`mold-key-position-${index}`}
