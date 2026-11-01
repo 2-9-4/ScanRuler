@@ -171,7 +171,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
               manual={keyPlacement==='manual'} onChange={setKeyPoints}
               onManual={()=>setKeyPlacement('manual')} bounds={targetBounds}
               sideMargin={sideMargin} baseThickness={baseThickness}
-              diameter={keyDiameter} clearance={keyClearance}/>
+              diameter={keyDiameter} clearance={keyClearance} cavityClearance={clearance}/>
             :<KeyPositionEditor
               positions={keyPositions}
               manual={keyPlacement==='manual'}
