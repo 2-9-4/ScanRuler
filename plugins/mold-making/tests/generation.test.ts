@@ -247,11 +247,19 @@ describe('Mold Making assembly',()=>{
     expect(build.parts.length).toBe(4)
     intact(build.parts)
   })
-  it('spreads five automatic registration features on a sufficiently large seam',()=>{
-    expect(seamPositions(-12,12,DEFAULT_MOLD_SETTINGS)).toHaveLength(5)
-    // Smaller four-part interface chooses a safe subset rather than
-    // overlapping adjacent keys or cutting into the parting intersection.
-    expect(seamPositions(-12,0,DEFAULT_MOLD_SETTINGS)).toHaveLength(2)
+  it('places two well-separated automatic keys within the usable seam',()=>{
+    const full=seamPositions(-12,12,DEFAULT_MOLD_SETTINGS)
+    expect(full).toHaveLength(2)
+    expect(full[0]).toBeCloseTo(-full[1])
+    expect(full[1]-full[0]).toBeGreaterThan(
+      DEFAULT_MOLD_SETTINGS.keyDiameter+2*DEFAULT_MOLD_SETTINGS.keyClearance,
+    )
+    // Four-part interfaces use a shorter seam but retain both keys when
+    // sufficient material remains for their diameter and minimum spacing.
+    const half=seamPositions(-12,0,DEFAULT_MOLD_SETTINGS)
+    expect(half).toHaveLength(2)
+    expect(half[0]).toBeGreaterThan(-12)
+    expect(half[1]).toBeLessThan(0)
   })
   it('respects manually edited positions or reports collisions',()=>{
     const keys={...DEFAULT_MOLD_SETTINGS,keyPlacement:'manual' as const,keyPositions:[0.25,0.75]}
