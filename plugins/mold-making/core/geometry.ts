@@ -8,6 +8,7 @@ import { closedness, type Triangles } from '../../mesh-tools/core/boolean'
 import { repairMoldTarget, liftCollapsedClosedMesh } from './repair'
 import { createSphericalDistanceField, sphericalOffset, type SphericalDistanceField } from './sphericalOffset'
 import { parseMoldSettings, type MoldSettings, type SplitAxis } from './settings'
+import {siliconeBoxCapacityMm3} from './materialEstimate'
 import { projectedHull,contourAround,contourSegment,radialSeamContour,radialSiliconeLSeam,triangularContourTube,planeAxes } from './contourSeam'
 
 type Vec3 = [number,number,number]
@@ -19,6 +20,14 @@ export interface MoldBuild {
   /** False if disconnected or invalid output material was found. Export is blocked. */
   printable:boolean
   targetBounds:Limits
+  /** Read-only estimates; never affect actual tooling meshes. Nullable
+   * quantities deliberately distinguish open scans from valid solids. */
+  materialEstimate:{
+    nominalCastingCavityMm3:number|null
+    grossSiliconeCapacityMm3:number|null
+    masterDisplacementMm3:number|null
+    netSiliconeMm3:number|null
+  }
   /** First component only. Never join touching parts into an invalid mesh. */
   positions:Float32Array; indices:Uint32Array
 }
@@ -1066,6 +1075,7 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
   const fieldRef:{current:SphericalDistanceField|null}={current:null}
   try{
     let solid:Manifold
+    let nominalCastingCavityMm3:number|null=null
     onProgress?.('Constructing full-height tooling from the source solid…',0.13)
     if(s.mode==='silicone-box'){
       const out=plan.outer,inn=plan.innerBox!
@@ -1094,6 +1104,7 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
         return keep(solid)
       }
       const positive=s.clearance>0?dilate(s.clearance):toManifold(wasm,targetMesh,keep)
+      nominalCastingCavityMm3=Math.abs(positive.volume())
       {
         // The offset cutter may move *more* than d at a sharp corner.
         // Check its actual Manifold bounds against every outside wall, not
@@ -1174,8 +1185,22 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
       'NOT PRINTABLE: the mold contains disconnected tooling material or an invalid generated fragment. These parts are preview-only; export is disabled. This cannot be fixed by increasing SDF resolution alone. Inspect the geometry and revise the cavity/split/registration.'
     )
     onProgress?.('Preparing mold components for inspection…',0.99)
+    const grossSiliconeCapacityMm3=s.mode==='silicone-box'
+      ?siliconeBoxCapacityMm3(plan,s.boxDraftDeg):null
+    // Silicone-box input may be an OPEN scan or vertex cloud: never claim
+    // a net-pour volume from its bounding box or from an unsigned mesh.
+    const edges=targetMesh.indices.length
+      ?closedness(targetMesh.indices,targetMesh.positions.length/3):null
+    const master=edges&&edges.open===0&&edges.bad===0
+      ?stableVolume(targetMesh):null
+    const masterDisplacementMm3=master!==null&&master>0?master:null
+    const netSiliconeMm3=grossSiliconeCapacityMm3!==null&&
+      masterDisplacementMm3!==null
+      ?Math.max(0,grossSiliconeCapacityMm3-masterDisplacementMm3):null
     return {parts,printable,kind:s.mode,warnings,openingZ:plan.openingZ,targetBounds:extentOf(targetMesh.positions),
       volumeMm3:parts.reduce((v,p)=>v+p.volumeMm3,0),
+      materialEstimate:{nominalCastingCavityMm3,grossSiliconeCapacityMm3,
+        masterDisplacementMm3,netSiliconeMm3},
       positions:parts[0].positions,indices:parts[0].indices}
   }finally{
     fieldRef.current?.dispose()
