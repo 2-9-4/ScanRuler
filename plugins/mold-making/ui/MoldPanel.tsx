@@ -6,8 +6,9 @@ import { useStore } from '../../../src/state/store'
 import { useDeviation } from '../../../src/state/deviationStore'
 import { MOLD_MODES,MOLD_MODE_LABELS,type MoldDimension,type PartCount,type SplitAxis,type BoxShape, type KeyStyle, type KeyPlacement, type OffsetQuality } from '../core/settings'
 import { useMold } from '../state/moldStore'
-import type { MoldBuild } from '../core/geometry'
+import type { MoldBuild, Limits } from '../core/geometry'
 import { KeyPositionEditor } from './KeyPositionEditor'
+import { PlaneKeyEditor } from './PlaneKeyEditor'
 
 const FIELDS:readonly {key:MoldDimension;label:string;help:string}[]=[
   {key:'clearance',label:'Cavity clearance (+ enlarges)',help:'Positive means a spherical dilation of the target solid, enlarging the casting cavity. A signed-distance field is sampled to generate a closed offset; small features may be lost at the chosen grid resolution.'},
@@ -22,12 +23,13 @@ const FIELDS:readonly {key:MoldDimension;label:string;help:string}[]=[
   {key:'boxDraftDeg',label:'Interior wall draft (°)',help:'Silicone containment-box wall taper; does not change the master cavity'},
   {key:'previewGap',label:'Exploded view gap',help:'Spacing between parts in the viewport. Zero shows assembled geometry.'},
 ]
-export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,generated,generating,error}:{
+export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,generated,targetBounds,generating,error}:{
   onOpenScan:(file:File)=>void
   onOpenReference:(file:File)=>void
   onGenerate:()=>void
   onExport:(format:'stl'|'3mf',index?:number)=>void
   generated:MoldBuild|null
+  targetBounds:Limits|null
   generating:boolean
   error:string|null
 }) {
@@ -42,6 +44,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
   const boxShape=useMold(s=>s.boxShape),keys=useMold(s=>s.keys)
   const keyStyle=useMold(s=>s.keyStyle),keyPlacement=useMold(s=>s.keyPlacement)
   const keyPositions=useMold(s=>s.keyPositions)
+  const keyPoints=useMold(s=>s.keyPoints)
   const offsetQuality=useMold(s=>s.offsetQuality)
   const repairTarget=useMold(s=>s.repairTarget)
   const repairHoleSize=useMold(s=>s.repairHoleSize)
@@ -63,6 +66,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
   const setBoxShape=useMold(s=>s.setBoxShape),setKeys=useMold(s=>s.setKeys)
   const setKeyStyle=useMold(s=>s.setKeyStyle),setKeyPlacement=useMold(s=>s.setKeyPlacement)
   const setKeyPositions=useMold(s=>s.setKeyPositions)
+  const setKeyPoints=useMold(s=>s.setKeyPoints)
   const setDimension=useMold(s=>s.setDimension)
   const setRepairTarget=useMold(s=>s.setRepairTarget)
   const setOffsetQuality=useMold(s=>s.setOffsetQuality)
@@ -162,14 +166,20 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
               <option value="auto">Automatically distribute</option>
               <option value="manual">{mode==='silicone-box'?'Edit heights on exterior wall':'Edit positions along seam'}</option>
             </select></label>
-          <KeyPositionEditor
-            positions={keyPositions}
-            manual={keyPlacement==='manual'}
-            onChange={next=>setKeyPositions(next)}
-            onManual={()=>setKeyPlacement('manual')}
-            diameter={keyDiameter}
-            vertical={mode==='silicone-box'}
-          />
+          {mode==='direct'?
+            <PlaneKeyEditor points={keyPoints} axis={splitAxis}
+              manual={keyPlacement==='manual'} onChange={setKeyPoints}
+              onManual={()=>setKeyPlacement('manual')} bounds={targetBounds}
+              sideMargin={sideMargin} baseThickness={baseThickness}
+              diameter={keyDiameter} clearance={keyClearance}/>
+            :<KeyPositionEditor
+              positions={keyPositions}
+              manual={keyPlacement==='manual'}
+              onChange={next=>setKeyPositions(next)}
+              onManual={()=>setKeyPlacement('manual')}
+              diameter={keyDiameter}
+              vertical
+            />}
         </>}
       </>}
     </div>
