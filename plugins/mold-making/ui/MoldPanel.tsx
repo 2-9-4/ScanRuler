@@ -125,7 +125,8 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,genera
         {MOLD_MODES.map(x=><button key={x} type="button" role="radio" aria-checked={mode===x}
           className={mode===x?'on':undefined} onClick={()=>setMode(x)}>{MOLD_MODE_LABELS[x]}</button>)}
       </div>
-      {mode==='silicone-box'&&
+      {mode==='silicone-box'&&parts===3&&<p className="hint">Threefold forces a cylindrical containment box for rotationally spaced 120° sectors.</p>}
+      {mode==='silicone-box'&&parts!==3&&
         <label className="kv"><span className="name">Box outline</span>
           <select data-test="mold-box-shape" value={boxShape}
             onChange={e=>setBoxShape(e.target.value as BoxShape)}>
