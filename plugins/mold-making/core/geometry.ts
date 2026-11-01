@@ -46,6 +46,23 @@ export function draftedBox(limits:Limits,topExpansion:number):Triangles {
   }
   return m
 }
+/** Origin-relative signed volume avoids cancellation for tiny islands
+ * far from the world origin: tetrahedra are measured from a nearby vertex.
+ */
+function stableVolume(mesh:Triangles):number {
+  const p=mesh.positions,idx=mesh.indices
+  if(p.length<3||idx.length===0)return 0
+  const ox=p[0],oy=p[1],oz=p[2]
+  let volume6=0
+  for(let t=0;t<idx.length;t+=3){
+    const a=idx[t]*3,b=idx[t+1]*3,c=idx[t+2]*3
+    const ax=p[a]-ox,ay=p[a+1]-oy,az=p[a+2]-oz
+    const bx=p[b]-ox,by=p[b+1]-oy,bz=p[b+2]-oz
+    const cx=p[c]-ox,cy=p[c+1]-oy,cz=p[c+2]-oz
+    volume6+=ax*(by*cz-bz*cy)+ay*(bz*cx-bx*cz)+az*(bx*cy-by*cx)
+  }
+  return volume6/6
+}
 function check(mesh:Triangles,what:string):void {
   const n=mesh.positions.length/3
   if(!n||!Number.isInteger(n)||mesh.indices.length===0||mesh.indices.length%3)throw new Error(`${what}: invalid triangles.`)
@@ -68,7 +85,7 @@ function check(mesh:Triangles,what:string):void {
   }
   const c=closedness(mesh.indices,n)
   if(c.open||c.bad)throw new Error(`${what} is not watertight (${c.open} boundary edges, ${c.bad} nonmanifold edges). Use Mesh Tools → Fill holes, then 'Use for analysis' (or enable Mold Making's small-defect repair).`)
-  if(!(signedVolume(mesh.positions,mesh.indices)>EPS))throw new Error(`${what} is inside-out or zero-volume.`)
+  if(!(stableVolume(mesh)>EPS))throw new Error(`${what} is inside-out or zero-volume.`)
 }
 export interface MoldPlan {
   outer:Limits; innerBox:Limits|null; openingZ:number|null
@@ -143,7 +160,7 @@ function validatedPartMesh(solid:Manifold,name:string,warnings:string[]):Triangl
   const maxVolumeChange=Math.max(0.01,originalVolume*1e-4)
   const accept=(candidate:Triangles,reason:string):Triangles=>{
     check(candidate,name)
-    const difference=Math.abs(signedVolume(candidate.positions,candidate.indices)-originalVolume)
+    const difference=Math.abs(stableVolume(candidate)-originalVolume)
     if(difference>maxVolumeChange){
       throw new Error(`${name} output cleanup would change material volume by ${difference.toPrecision(4)} mm³ (limit ${maxVolumeChange.toPrecision(4)} mm³).`)
     }
@@ -206,9 +223,18 @@ export function toPart(solid:Manifold,name:string,warnings:string[]=[],detachedP
         discardedDust+island.volume<=Math.min(1,primary.volume*2e-5)
       if(trivial){discardedDust+=island.volume;dustCount++;continue}
       const label=`${name} — detached ${detachedParts.length-detachedBefore+1}`
-      const standalone=validatedPartMesh(island.part,label,warnings)
-      detachedParts.push({name:label,...standalone,
-        volumeMm3:signedVolume(standalone.positions,standalone.indices)})
+      // Detached slivers are frequently zero-volume at Float32 export
+      // precision even when the Manifold kernel reports positive volume.
+      // Such fragments must NEVER abort an otherwise valid main mold, but
+      // also must not be silently exported as printable geometry.
+      try {
+        const standalone=validatedPartMesh(island.part,label,warnings)
+        detachedParts.push({name:label,...standalone,
+          volumeMm3:stableVolume(standalone)})
+      }catch(error){
+        const reason=error instanceof Error?error.message:String(error)
+        warnings.push(`${label}: excluded an invalid detached artifact (kernel volume ${island.volume.toPrecision(4)} mm³; ${reason}). Main mold preserved; inspect cavity and registration before printing.`)
+      }
     }
     const added=detachedParts.slice(detachedBefore)
     if(added.length){
@@ -221,7 +247,7 @@ export function toPart(solid:Manifold,name:string,warnings:string[]=[],detachedP
     // below a strict manufacturing-scale tolerance.
     const exported=validatedPartMesh(primary.part,name,warnings)
     if(dustCount)warnings.push(`${name}: excluded ${dustCount} microscopic Boolean dust islands totalling ${discardedDust.toPrecision(3)} mm³ (each ≤${perIslandLimit.toPrecision(3)} mm³).`)
-    return {name,...exported,volumeMm3:signedVolume(exported.positions,exported.indices)}
+    return {name,...exported,volumeMm3:stableVolume(exported)}
   }finally{for(const island of islands)island.delete()}
 }
 /** Select seam coordinates, excluding too-close edges and collisions.
