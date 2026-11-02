@@ -91,7 +91,9 @@ export class MoldGuides {
       geo.setAttribute('position',new THREE.BufferAttribute(mesh.positions,3))
       geo.setIndex(new THREE.BufferAttribute(mesh.indices,1))
       geo.computeVertexNormals()
-      this.sourceMesh=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({visible:false,side:THREE.DoubleSide}))
+      this.sourceMesh=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({
+        transparent:true,opacity:0,colorWrite:false,depthWrite:false,side:THREE.DoubleSide,
+      }))
       this.group.add(this.sourceMesh)
     }
     this.updateObjects()
