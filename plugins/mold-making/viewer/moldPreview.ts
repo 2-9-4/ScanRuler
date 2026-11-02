@@ -102,7 +102,8 @@ export class MoldPreview {
         }
         this.host.setPickRay(at.x,at.y)
         const hit=this.host.raycaster.intersectObject(this.draftMesh,false)[0]
-        const id=hit?.faceIndex===undefined?undefined:this.draftVisible[hit.faceIndex]
+        const faceIndex=hit?.faceIndex
+        const id=faceIndex===undefined?undefined:this.draftVisible[faceIndex]
         if(id===undefined||!this.draftData){this.emitDraftHover(null);return false}
         const angleDeg=this.draftData.angleDeg[id]
         this.emitDraftHover({
