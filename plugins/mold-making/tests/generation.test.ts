@@ -262,6 +262,23 @@ describe('Mold Making assembly',()=>{
     expect(planMold(master,settings).innerBox!.min[2])
       .toBeLessThan(planMold(master,{...settings,mountEnabled:false}).innerBox!.min[2])
   })
+  it('anchors top and bottom silicone bucket clamp ears in the actual outer walls',()=>{
+    const target=boxSolid({min:[-20,-20,0],max:[20,20,20]})
+    for(const boxShape of ['rectangular','cylindrical'] as const){
+      const s={...DEFAULT_MOLD_SETTINGS,mode:'silicone-box' as const,
+        parts:2 as const,boxShape,splitAxis:'x' as const,
+        keys:true,keyStyle:'v-seam' as const,
+        clampTabCount:0,topBottomTabs:true,topBottomTabCount:3,
+        tabBoltHoles:false}
+      const result=buildMold(wasm,target,s)
+      // Tabs floating in the open bucket cause detached islands and
+      // previously made export unavailable or manufactured loose ears.
+      expect(result.parts).toHaveLength(2)
+      expect(result.printable).toBe(true)
+      expect(result.warnings.join(' ')).not.toMatch(/detached|fragmented/)
+      intact(result.parts)
+    }
+  })
   it('creates a bottom through-hole and a keyed external master post on rigid direct tooling',()=>{
     const settings={...DEFAULT_MOLD_SETTINGS,keys:false,parts:2 as const,
       mountEnabled:true,mountPoint:[0,0,0] as [number,number,number],
