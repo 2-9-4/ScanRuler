@@ -204,6 +204,20 @@ describe('Mold Making assembly',()=>{
       expect(result.warnings.join(' ')).toMatch(/1 vertical pour channel/)
     }
   })
+  it('screens two-piece mold source normals without changing the generated tooling',()=>{
+    const settings={...DEFAULT_MOLD_SETTINGS,keys:false}
+    const ordinary=buildMold(wasm,master,settings)
+    const assessed=buildMold(wasm,master,{...settings,analyzeDraft:true,
+      minimumDraftDeg:3})
+    expect(ordinary.draftAnalysis).toBeNull()
+    expect(assessed.draftAnalysis).not.toBeNull()
+    expect(assessed.draftAnalysis!.axis).toBe('x')
+    expect(assessed.draftAnalysis!.reverseFacingMm2).toBeCloseTo(0,5)
+    expect(assessed.draftAnalysis!.lowDraftMm2).toBeGreaterThan(0)
+    expect(assessed.parts).toHaveLength(ordinary.parts.length)
+    expect(assessed.volumeMm3).toBeCloseTo(ordinary.volumeMm3,5)
+    intact(assessed.parts)
+  })
   it('builds a silicone containment box from an OPEN scan without any mesh repair',()=>{
     // Two triangles removed from a face: four boundary edges.
     const open={positions:master.positions,
