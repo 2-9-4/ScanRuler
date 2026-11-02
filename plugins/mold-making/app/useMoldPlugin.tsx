@@ -64,11 +64,12 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
 
   useEffect(() => {
     const offMold = useMold.subscribe((s, prev) => {
-      if(MOLD_SETTING_KEYS.some(k=>k!=='previewGap'&&s[k]!==prev[k])){
+      const geometryChanged=MOLD_SETTING_KEYS.some(k=>k!=='previewGap'&&s[k]!==prev[k])
+      if(geometryChanged){
         invalidate()
         setPreviewRevision(n=>n+1)
+        guides.current?.updateSettings(moldSettings())
       }else if(s.previewGap!==prev.previewGap)preview.current?.setGap(s.previewGap)
-      guides.current?.updateSettings(moldSettings())
     })
     const offScan = onScan({ loaded: invalidate, swapped: invalidate })
     return () => { offMold(); offScan() }
