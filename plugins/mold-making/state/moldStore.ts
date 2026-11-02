@@ -22,6 +22,8 @@ interface MoldState extends MoldSettings {
   setPourEnabled(value:boolean):void
   setVentsEnabled(value:boolean):void
   setAnalyzeDraft(value:boolean):void
+  setMountEnabled(value:boolean):void
+  setMountContact(point:[number,number,number],normal:[number,number,number]):void
   setPourPoint(point:[number,number]):void
   setVentPoints(points:[number,number][]):void
   setKeyPlacement(keyPlacement: KeyPlacement): void
@@ -46,6 +48,13 @@ export const useMold = create<MoldState>()((set)=>({
   setPourEnabled:(pourEnabled)=>set({pourEnabled}),
   setVentsEnabled:(ventsEnabled)=>set({ventsEnabled}),
   setAnalyzeDraft:(analyzeDraft)=>set({analyzeDraft}),
+  setMountEnabled:(mountEnabled)=>set({mountEnabled}),
+  setMountContact:(mountPoint,mountNormal)=>{
+    if(![...mountPoint,...mountNormal].every(Number.isFinite))return
+    const magnitude=Math.hypot(...mountNormal)
+    if(magnitude<1e-7)return
+    set({mountPoint:[...mountPoint],mountNormal:mountNormal.map(v=>v/magnitude) as [number,number,number]})
+  },
   setPourPoint:(pourPoint)=>{
     if(pourPoint.length!==2||pourPoint.some(x=>!Number.isFinite(x)||x<0.01||x>0.99))return
     set({pourPoint:[...pourPoint] as [number,number]})
@@ -76,5 +85,7 @@ export function moldSettings(): MoldSettings {
   const s = useMold.getState()
   return Object.fromEntries(MOLD_SETTING_KEYS.map(key => [key,key==='keyPositions'?[...s.keyPositions]:key==='keyPoints'?s.keyPoints.map(p=>[...p]):
     key==='pourPoint'?[...s.pourPoint]:
-    key==='ventPoints'?s.ventPoints.map(p=>[...p]):s[key]])) as unknown as MoldSettings
+    key==='ventPoints'?s.ventPoints.map(p=>[...p]):
+    key==='mountPoint'?(s.mountPoint?[...s.mountPoint]:null):
+    key==='mountNormal'?[...s.mountNormal]:s[key]])) as unknown as MoldSettings
 }
