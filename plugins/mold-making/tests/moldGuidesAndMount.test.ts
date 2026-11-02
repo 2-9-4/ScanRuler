@@ -54,11 +54,12 @@ describe('Pre-generation plane guides and glue-on master support',()=>{
   })
   it('makes a watertight, oriented, printable multi-section support without modifying the target',()=>{
     const untouched=cube.positions.slice()
-    const mesh=masterMountMesh(bounds,mounted)!
+    const outer=planMold(cube,mounted).outer
+    const mesh=masterMountMesh(bounds,mounted,outer)!
     expect(closedness(mesh.indices,mesh.positions.length/3)).toEqual({open:0,bad:0})
     expect(signedVolume(mesh.positions,mesh.indices)).toBeGreaterThan(0)
-    const planned=planMasterMount(bounds,mounted)!
-    expect(planned.floorZ).toBeCloseTo(-12)
+    const planned=planMasterMount(bounds,mounted,outer)!
+    expect(planned.floorZ).toBeCloseTo(outer.min[2])
     expect(planned.rings.at(-1)!.center).toEqual([0,0,-0.2])
     expect(planned.rings[0].hex).toBe(true)
     expect(planned.rings[2].hex).toBe(true)
@@ -76,7 +77,7 @@ describe('Pre-generation plane guides and glue-on master support',()=>{
   it('keeps the draft analyzer separate from pedestal/box geometry',()=>{
     const a=analyzeMoldDraft(cube,{...DEFAULT_MOLD_SETTINGS,parts:4})
     expect(a.regions).toHaveLength(4)
-    const orig=masterMountMesh(bounds,mounted)!
+    const orig=masterMountMesh(bounds,mounted,planMold(cube,mounted).outer)!
     expect(orig.indices.length).toBeGreaterThan(0)
   })
 })
