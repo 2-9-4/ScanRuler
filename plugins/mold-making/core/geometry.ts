@@ -11,6 +11,7 @@ import { parseMoldSettings, type MoldSettings, type SplitAxis } from './settings
 import {siliconeBoxCapacityMm3} from './materialEstimate'
 import {planVerticalChannels} from './pourChannels'
 import {masterMountMesh,MOUNT_HEX_RADIAL_CLEARANCE_MM,planMasterMount} from './masterMount'
+import {engraveInterfaceNumbers} from './interfaceLabels'
 import {analyzeMoldDraft,type DraftAnalysis} from './draftAnalysis'
 import {buildMoldDraftOverlay,type DraftOverlayData} from './draftOverlay'
 import { projectedHull,contourAround,contourSegment,radialSeamContour,radialSiliconeLSeam,triangularContourTube,planeAxes } from './contourSeam'
@@ -1259,6 +1260,8 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
       }
       warnings.push('Splits do not guarantee demoldability: inspect the target for trapped undercuts and add a sprue or vent before casting.')
     }
+    if(s.interfaceLabels&&pieces.length>1)
+      pieces=engraveInterfaceNumbers(wasm,pieces,plan,s,keep,warnings)
     const loose:MoldPart[]=[]
     const mainParts=pieces.map((x,i)=>{
       onProgress?.(`Checking and exporting mold component ${i+1} of ${pieces.length}…`,0.90+0.08*i/pieces.length)
