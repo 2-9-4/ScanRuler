@@ -5,7 +5,7 @@
 import type { WorkerPlugin } from '../../src/core/workerPluginApi'
 import { loadManifold } from '../mesh-tools/core/manifold'
 import { parseMoldSettings } from './core/settings'
-import { buildMold } from './core/geometry'
+import { buildMold,planMold } from './core/geometry'
 import { analyzeMoldDraft } from './core/draftAnalysis'
 import { buildMoldDraftOverlay } from './core/draftOverlay'
 import { extentOf } from '../../src/core/geometry/bounds'
@@ -27,13 +27,14 @@ const plugin: WorkerPlugin = {
       // Pure geometric UI preview: no Manifold initialization, repair,
       // Boolean execution or exported/printable part generation.
       const bounds=extentOf(source.positions)
+      const outerBounds=planMold(source,settings).outer
       const draftAnalysis=settings.analyzeDraft&&settings.mode==='direct'
         ?analyzeMoldDraft(source,settings):null
       const draftOverlay=draftAnalysis?buildMoldDraftOverlay(source,settings):null
       const sourcePositions=new Float32Array(source.positions)
       const sourceIndices=new Uint32Array(source.indices)
       return {
-        result:{targetBounds:bounds,draftAnalysis,draftOverlay,
+        result:{targetBounds:bounds,outerBounds,draftAnalysis,draftOverlay,
           sourcePositions,sourceIndices},
         transfer:[sourcePositions.buffer,sourceIndices.buffer,
           ...(draftOverlay?[
