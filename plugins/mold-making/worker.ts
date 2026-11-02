@@ -30,14 +30,16 @@ const plugin: WorkerPlugin = {
       const draftAnalysis=settings.analyzeDraft&&settings.mode==='direct'
         ?analyzeMoldDraft(source,settings):null
       const draftOverlay=draftAnalysis?buildMoldDraftOverlay(source,settings):null
+      const sourcePositions=new Float32Array(source.positions)
+      const sourceIndices=new Uint32Array(source.indices)
       return {
         result:{targetBounds:bounds,draftAnalysis,draftOverlay,
-          sourcePositions:new Float32Array(source.positions),
-          sourceIndices:new Uint32Array(source.indices)},
-        transfer:draftOverlay?[
-          draftOverlay.positions.buffer,draftOverlay.half.buffer,
-          draftOverlay.angleDeg.buffer,draftOverlay.sourceTriangle.buffer,
-        ]:[],
+          sourcePositions,sourceIndices},
+        transfer:[sourcePositions.buffer,sourceIndices.buffer,
+          ...(draftOverlay?[
+            draftOverlay.positions.buffer,draftOverlay.half.buffer,
+            draftOverlay.angleDeg.buffer,draftOverlay.sourceTriangle.buffer,
+          ]:[])],
       }
     }
     ctx.progress('Loading the existing mesh Boolean engine…',0.02)
