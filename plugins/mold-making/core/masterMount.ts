@@ -18,35 +18,38 @@ const normalize=(a:V3):V3=>{
   if(m<1e-9)throw new Error('Invalid mounting-face normal.')
   return scale(a,1/m)
 }
-interface Ring {center:V3;radius:number;up:V3}
-export function planMasterMount(bounds:Bounds,s:MoldSettings):{rings:Ring[];floorZ:number}|null{
+interface Ring {center:V3;radius:number;up:V3;hex?:boolean}
+export const MOUNT_HEX_RADIAL_CLEARANCE_MM=0.25
+/** The source contact pad stays inside the mold; a hex-keyed stem crosses
+ * the bottom wall and an exterior shoulder prevents insertion past its stop. */
+export function planMasterMount(bounds:Bounds,s:MoldSettings,outer?:Bounds):{rings:Ring[];floorZ:number}|null{
   if(!s.mountEnabled)return null
   const p=s.mountPoint
-  if(!p||s.mode!=='silicone-box')throw new Error('Pick a model base face in silicone-box mode.')
+  if(!p)throw new Error('Pick a model base face before building the mounting fixture.')
   const n=normalize(s.mountNormal)
   if(n[2]>-0.5)throw new Error('Pick a downward-facing, reasonably flat underside for a glue-on mounting pad.')
   if(p.some((v,i)=>v<bounds.min[i]-1e-4||v>bounds.max[i]+1e-4))
     throw new Error('The selected mounting point lies outside the source model bounds.')
-  const floorZ=bounds.min[2]-s.mountHeight
+  const floorZ=outer?.min[2]??bounds.min[2]-s.mountHeight
   const contactZ=p[2]+n[2]*0.2
-  if(contactZ-floorZ<4)throw new Error('Mount is too short for a foot, stem and glue pad. Increase support height.')
+  if(contactZ-floorZ<4)throw new Error('Mount is too short for a foot, stem and glue pad. Increase support height or choose a lower face.')
   if(s.mountFootDiameter<s.mountStemDiameter||s.mountPadDiameter<s.mountStemDiameter)
     throw new Error('Mount pad and foot must be at least the stem diameter.')
   const footR=s.mountFootDiameter/2,stemR=s.mountStemDiameter/2,padR=s.mountPadDiameter/2
-  // The support must sit INSIDE the box, not poke through its side wall.
-  // Rectangular XY clearance is a conservative bound for circular boxes.
-  const available=Math.min(
-    p[0]-bounds.min[0]+s.siliconeThickness,
-    bounds.max[0]-p[0]+s.siliconeThickness,
-    p[1]-bounds.min[1]+s.siliconeThickness,
-    bounds.max[1]-p[1]+s.siliconeThickness)
+  // The exterior foot must remain inside the actual tooling footprint.
+  // Rectangular bounds conservatively check a cylindrical box as well.
+  const shell=outer??bounds
+  const available=Math.min(p[0]-shell.min[0],shell.max[0]-p[0],
+    p[1]-shell.min[1],shell.max[1]-p[1])
   if(Math.max(footR,padR)+0.5>available)
-    throw new Error('Master mounting foot or pad would intersect a silicone box side wall. Choose an interior contact point or reduce its diameter.')
+    throw new Error('Master mounting foot or pad would intersect the tooling side wall. Move the contact point or reduce its diameter.')
   const rings:Ring[]=[
-    {center:[p[0],p[1],floorZ+0.25],radius:footR,up:[0,0,1]},
-    {center:[p[0],p[1],floorZ+1.5],radius:footR,up:[0,0,1]},
-    {center:[p[0],p[1],floorZ+2.5],radius:stemR,up:[0,0,1]},
-    {center:[p[0],p[1],p[2]+n[2]*3],radius:stemR,up:[0,0,1]},
+    // Stop/shoulder is EXTERNAL to the bottom wall. The keyed section
+    // begins inside the bore; it cannot rotate around the vertical axis.
+    {center:[p[0],p[1],floorZ-3],radius:footR,up:[0,0,1],hex:true},
+    {center:[p[0],p[1],floorZ-0.2],radius:footR,up:[0,0,1],hex:true},
+    {center:[p[0],p[1],floorZ+0.2],radius:stemR,up:[0,0,1],hex:true},
+    {center:[p[0],p[1],p[2]+n[2]*3],radius:stemR,up:[0,0,1],hex:true},
     {center:add(p,scale(n,2)),radius:padR,up:scale(n,-1)},
     {center:add(p,scale(n,0.2)),radius:padR,up:scale(n,-1)},
   ]
@@ -57,8 +60,8 @@ export function planMasterMount(bounds:Bounds,s:MoldSettings):{rings:Ring[];floo
 /** Winding is consistent along every circular cross section. The top cap
  * conforms to the picked face's tangent plane (not the bounding-box plane).
  */
-export function masterMountMesh(bounds:Bounds,s:MoldSettings):Triangles|null{
-  const plan=planMasterMount(bounds,s)
+export function masterMountMesh(bounds:Bounds,s:MoldSettings,outer?:Bounds):Triangles|null{
+  const plan=planMasterMount(bounds,s,outer)
   if(!plan)return null
   const sides=48,vertices:number[]=[],indices:number[]=[]
   for(const ring of plan.rings){
@@ -67,8 +70,12 @@ export function masterMountMesh(bounds:Bounds,s:MoldSettings):Triangles|null{
     const v=cross(up,u)
     for(let j=0;j<sides;j++){
       const theta=j*2*Math.PI/sides
-      const point=add(ring.center,add(scale(u,ring.radius*Math.cos(theta)),
-        scale(v,ring.radius*Math.sin(theta))))
+      // 48 subdivision vertices preserve the regular hex outline while
+      // allowing a smooth transition into the circular contact pad.
+      const t=theta%(Math.PI/3)-Math.PI/6
+      const shape=ring.hex?Math.cos(Math.PI/6)/Math.cos(t):1
+      const point=add(ring.center,add(scale(u,ring.radius*shape*Math.cos(theta)),
+        scale(v,ring.radius*shape*Math.sin(theta))))
       vertices.push(...point)
     }
   }
