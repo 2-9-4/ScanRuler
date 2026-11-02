@@ -11,7 +11,8 @@ import { moldSettings, useMold } from '../state/moldStore'
 import { moldMaterial, type MoldBuild, type Limits } from '../core/geometry'
 import { KeyPositionEditor } from './KeyPositionEditor'
 import { PlaneKeyEditor } from './PlaneKeyEditor'
-import type { MoldPreviewMode } from '../viewer/moldPreview'
+import type { MoldPreviewMode,DraftHover } from '../viewer/moldPreview'
+import type { DraftDisplayOptions } from '../core/draftOverlay'
 
 const FIELDS:readonly {key:MoldDimension;label:string;help:string}[]=[
   {key:'clearance',label:'Cavity clearance (+ enlarges)',help:'Positive means a spherical dilation of the target solid, enlarging the casting cavity. A signed-distance field is sampled to generate a closed offset; small features may be lost at the chosen grid resolution.'},
@@ -50,7 +51,7 @@ const NUT_FIELDS:readonly {key:MoldDimension;label:string;help:string}[]=[
   {key:'tabNutAcrossFlats',label:'Captured hex across flats (mm)',help:'Width between parallel flats of the nut, including fit allowance.'},
   {key:'tabNutDepth',label:'Captured nut pocket depth (mm)',help:'Recess depth from the outside face of the negative mold half.'},
 ]
-export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBoolean,onEditPart,generated,targetBounds,previewMode,onPreviewModeChange,generating,error}:{
+export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBoolean,onEditPart,generated,targetBounds,previewMode,onPreviewModeChange,draftDisplay,onDraftDisplayChange,draftHover,generating,error}:{
   onOpenScan:(file:File)=>void
   onOpenReference:(file:File)=>void
   onGenerate:()=>void
@@ -61,6 +62,9 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
   targetBounds:Limits|null
   previewMode:MoldPreviewMode
   onPreviewModeChange:(mode:MoldPreviewMode)=>void
+  draftDisplay:DraftDisplayOptions
+  onDraftDisplayChange:(options:DraftDisplayOptions)=>void
+  draftHover:DraftHover|null
   generating:boolean
   error:string|null
 }) {
@@ -423,6 +427,50 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
           </p>}
         {generated.draftAnalysis&&<details data-test="mold-draft-results" open>
           <summary>Source-mesh draft and possible undercuts</summary>
+          <label className="kv"><span className="name">Show problem colors on source model</span>
+            <input data-test="mold-draft-overlay-visible" type="checkbox"
+              checked={draftDisplay.show}
+              onChange={e=>onDraftDisplayChange({...draftDisplay,show:e.target.checked})}/></label>
+          {draftDisplay.show&&<>
+            <label className="kv"><span className="name">Show release half</span>
+              <select data-test="mold-draft-overlay-half" value={draftDisplay.view}
+                onChange={e=>onDraftDisplayChange({...draftDisplay,
+                  view:e.target.value as DraftDisplayOptions['view']})}>
+                <option value="both">Both halves</option>
+                <option value="negative">Negative (−{generated.draftAnalysis.axis.toUpperCase()})</option>
+                <option value="positive">Positive (+{generated.draftAnalysis.axis.toUpperCase()})</option>
+              </select></label>
+            <label className="kv"><span className="name">Color display</span>
+              <select data-test="mold-draft-overlay-color" value={draftDisplay.mode}
+                onChange={e=>onDraftDisplayChange({...draftDisplay,
+                  mode:e.target.value as DraftDisplayOptions['mode']})}>
+                <option value="classes">Red / amber / green classes</option>
+                <option value="heatmap">Continuous signed-angle heatmap</option>
+              </select></label>
+            <label className="kv"><span className="name">Highlight only problem faces</span>
+              <input data-test="mold-draft-overlay-problems-only" type="checkbox"
+                checked={draftDisplay.problemsOnly}
+                onChange={e=>onDraftDisplayChange({...draftDisplay,
+                  problemsOnly:e.target.checked})}/></label>
+            <label className="kv"><span className="name">On-screen minimum draft: {draftDisplay.thresholdDeg.toFixed(1)}°</span>
+              <input data-test="mold-draft-overlay-threshold" type="range"
+                min={0} max={30} step={0.5} value={draftDisplay.thresholdDeg}
+                onChange={e=>onDraftDisplayChange({...draftDisplay,
+                  thresholdDeg:Number(e.target.value)})}/></label>
+            <label className="kv"><span className="name">Highlight opacity: {Math.round(draftDisplay.opacity*100)}%</span>
+              <input data-test="mold-draft-overlay-opacity" type="range"
+                min={0.2} max={1} step={0.05} value={draftDisplay.opacity}
+                onChange={e=>onDraftDisplayChange({...draftDisplay,
+                  opacity:Number(e.target.value)})}/></label>
+            <p className="hint">Source model colors: red = reverse-facing / possible undercut; amber = below draft threshold; green = at or above threshold. Hover the colored model for triangle number and local signed draft. “Problems only” leaves the uncolored source as a backdrop.</p>
+            <div className="kv" data-test="mold-draft-hover-readout" role="status">
+              <span className="name">Hovered source face</span>
+              <b>{draftHover
+                ?`#${draftHover.sourceTriangle+1} · ${draftHover.half==='negative'?'−':'+'}${generated.draftAnalysis.axis.toUpperCase()} · ${draftHover.angleDeg.toFixed(2)}° · ${draftHover.classification==='reverse'?'possible undercut':draftHover.classification==='low'?'low draft':'adequate'}`
+                :'Move the pointer over a colored face'}</b>
+            </div>
+            <p className="hint">Changing these display controls does not regenerate the mold. Numerical totals below retain the generation-time draft threshold ({generated.draftAnalysis.minimumDraftDeg}°).</p>
+          </>}
           <p className="hint">Screened {generated.draftAnalysis.assessedTriangles.toLocaleString('en-US')} source triangles for two opposing release directions along {generated.draftAnalysis.axis.toUpperCase()}, split at {generated.draftAnalysis.splitAtMm.toFixed(2)} mm. Faces crossing the plane are split for the area calculations. Target positive draft: {generated.draftAnalysis.minimumDraftDeg}°.</p>
           <div className="kv"><span className="name">Potential reverse-facing (undercut) surface</span>
             <b>{generated.draftAnalysis.reverseFacingMm2.toFixed(1)} mm² ({(100*generated.draftAnalysis.reverseFacingMm2/Math.max(1e-9,generated.draftAnalysis.totalAreaMm2)).toFixed(1)}%)</b></div>
