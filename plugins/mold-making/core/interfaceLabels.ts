@@ -124,7 +124,8 @@ export function engraveInterfaceNumbers(
       let merged=cutters[0]
       for(let j=1;j<cutters.length;j++)merged=keep(merged.add(cutters[j]))
       const result=keep(out[i].subtract(merged))
-      if(result.isEmpty()||result.status()!=='NoError'){
+      if(result.isEmpty()||result.status()!=='NoError'||
+         out[i].volume()-result.volume()<0.0001){
         warnings.push(`Interface marking failed on mold part ${i+1}; original part preserved.`)
         continue
       }
