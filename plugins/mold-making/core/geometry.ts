@@ -156,8 +156,13 @@ export function moldMaterial(s:MoldSettings,targetHeight?:number,targetWidth?:nu
   // Grow the computed backing only when the optional feature is enabled.
   if(s.mode==='direct'&&s.pourEnabled)
     material.base=Math.max(material.base,s.pourFunnelDepth+s.clearance+1.5)
-  if(s.mode==='direct'&&s.mountEnabled)
+  if(s.mode==='direct'&&s.mountEnabled){
+    // The external stop must have physical clearance inside the overall
+    // mold footprint. Growing only the base thickness is insufficient on
+    // narrow or small source parts.
     material.base=Math.max(material.base,6+s.clearance)
+    material.side=Math.max(material.side,s.mountFootDiameter/2+1)
+  }
   if((v||(s.parts===3&&s.keys))&&targetHeight!==undefined&&Number.isFinite(targetHeight)&&s.clampTabCount>0){
     const tab=clampHardware(s)
     const pitch=tab.width+Math.max(2,tab.width*0.25)
