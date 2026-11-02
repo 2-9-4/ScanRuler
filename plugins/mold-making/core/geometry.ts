@@ -1291,7 +1291,7 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
         const inside=keep(pedestal.intersect(siliconeInterior))
         supportDisplacementInsideMm3=inside.isEmpty()?0:Math.max(0,inside.volume())
       }
-      parts.push(toPart(pedestal,'Glue-on master mounting pedestal',warnings))
+      parts.push(toPart(pedestal,'Hex-keyed master mounting post',warnings))
       warnings.push('A separate hex-keyed master mounting post was exported. Insert from outside through the base bore; glue the pad to the selected master underside, seal the through-wall penetration and check the exterior stop. The post is not part of the casting.')
     }
     const invalidOutput=warnings.some(w=>w.includes('excluded an invalid detached artifact'))
