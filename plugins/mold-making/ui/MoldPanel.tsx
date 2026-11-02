@@ -145,7 +145,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
   const fieldInput=({key,label,help}:{key:MoldDimension;label:string;help:string})=><label key={key} className="kv" title={help}>
     <span className="name">{label}</span>
     <input type="number" data-test={`mold-${key}`} min={key==='splitPosition'?0.1:0}
-      max={key==='splitPosition'?0.9:key==='boxDraftDeg'?12:(key==='clampTabCount'||key==='topBottomTabCount')?12:100000}
+      max={key==='splitPosition'?0.9:key==='boxDraftDeg'?12:key==='minimumDraftDeg'?30:(key==='clampTabCount'||key==='topBottomTabCount')?12:100000}
       step={key==='splitPosition'?0.05:(key==='clampTabCount'||key==='topBottomTabCount')?1:0.1} value={values[key]}
       onChange={e=>{if(e.target.value!=='')setDimension(key,Number(e.target.value))}}/>
   </label>
