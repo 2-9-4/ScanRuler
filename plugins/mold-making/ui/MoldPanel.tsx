@@ -110,11 +110,9 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
   const tabNutAcrossFlats=useMold(s=>s.tabNutAcrossFlats),tabNutDepth=useMold(s=>s.tabNutDepth)
   const boxDraftDeg=useMold(s=>s.boxDraftDeg)
   const previewGap=useMold(s=>s.previewGap)
-  const analyzeDraft=useMold(s=>s.analyzeDraft)
   const mountEnabled=useMold(s=>s.mountEnabled)
   const mountPoint=useMold(s=>s.mountPoint)
   const mountNormal=useMold(s=>s.mountNormal)
-  const minimumDraftDeg=useMold(s=>s.minimumDraftDeg)
   const pourEnabled=useMold(s=>s.pourEnabled),ventsEnabled=useMold(s=>s.ventsEnabled)
   const pourPoint=useMold(s=>s.pourPoint),ventPoints=useMold(s=>s.ventPoints)
   const pourDiameter=useMold(s=>s.pourDiameter)
@@ -125,7 +123,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
     keyDiameter,keyDepth,keyClearance,vSeamWidth,vSeamHeight,vSeamSpacing,vSeamClearance,
     clampTabCount,clampTabWidth,clampTabProjection,clampTabThickness,
     topBottomTabCount,tabBoltDiameter,tabNutAcrossFlats,tabNutDepth,boxDraftDeg,previewGap,
-    pourDiameter,pourFunnelDiameter,pourFunnelDepth,ventDiameter,minimumDraftDeg,
+    pourDiameter,pourFunnelDiameter,pourFunnelDepth,ventDiameter,
     mountHeight:useMold.getState().mountHeight,
     mountPadDiameter:useMold.getState().mountPadDiameter,
     mountStemDiameter:useMold.getState().mountStemDiameter,
@@ -144,7 +142,6 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
   const setOffsetQuality=useMold(s=>s.setOffsetQuality)
   const setPourEnabled=useMold(s=>s.setPourEnabled)
   const setVentsEnabled=useMold(s=>s.setVentsEnabled)
-  const setAnalyzeDraft=useMold(s=>s.setAnalyzeDraft)
   const setMountEnabled=useMold(s=>s.setMountEnabled)
   const setPourPoint=useMold(s=>s.setPourPoint)
   const setVentPoints=useMold(s=>s.setVentPoints)
@@ -338,20 +335,6 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
         :`${material.wall.toFixed(2)} mm walls, ${material.base.toFixed(2)} mm base`}.
         Extra margins add material on top of these calculated requirements and may be zero.</p>
     </div>
-    {(mode==='direct'||analyzeDraft)&&<div className="group" data-test="mold-draft-controls">
-      <div className="sec-head">5. Release and draft screening (optional)</div>
-      {mode!=='direct'&&<p className="hint mold-warning" role="alert">
-        Source release screening requires direct molds. Disable it before generating a silicone containment box.
-      </p>}
-      <label className="kv"><span className="name">Screen for possible undercuts and low draft</span>
-        <input type="checkbox" data-test="mold-analyze-draft" checked={analyzeDraft}
-          onChange={e=>setAnalyzeDraft(e.target.checked)}/></label>
-      {analyzeDraft&&<>
-        {fieldInput({key:'minimumDraftDeg',label:'Minimum positive draft angle (°)',
-          help:'Mark surfaces below this angle as insufficient draft. Negative-facing surfaces indicate potential undercuts.'})}
-        <p className="hint">Analyzes each actual mold sector: lower impression (1), opposing axial halves (2), 120° radial sectors (3), or diagonal withdrawal from two parting planes (4). Source faces are clipped to each sector. Measures the repaired source rather than a clearance-expanded cavity. This is a non-destructive normal-based estimate, not an extraction collision test.</p>
-      </>}
-    </div>}
     {(mode==='direct'&&parts>1||pourEnabled||ventsEnabled)&&<div className="group" data-test="mold-casting-channels">
       <div className="sec-head">5. Pouring and venting (optional)</div>
       {(mode!=='direct'||parts===1)&&<p className="hint mold-warning" role="alert">
