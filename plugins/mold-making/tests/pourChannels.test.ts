@@ -48,6 +48,25 @@ describe('Opt-in direct-mold sprues, funnels and vents (MOLD-012)',()=>{
     expect(()=>planVerticalChannels(cube,target,plan.outer,
       {...s,pourPoint:[0.01,0.01],pourFunnelDiameter:100},plan.radialOuter)).toThrow(/side wall/)
   })
+  it('distinguishes a radial seam ray from its opposite extension',()=>{
+    const s={...DEFAULT_MOLD_SETTINGS,parts:3 as const,pourEnabled:true,
+      pourPoint:[0.05,0.5] as [number,number]}
+    const plan=planMold(cube,s)
+    // X<0 lies *behind* the +X seam ray. Testing an infinite line would
+    // incorrectly reject this point because its Y coordinate is zero.
+    const channels=planVerticalChannels(cube,target,plan.outer,s,plan.radialOuter)
+    expect(channels).toHaveLength(1)
+    expect(channels[0].x).toBeCloseTo(-4.5)
+    expect(channels[0].y).toBeCloseTo(0)
+    // The positive +X ray remains a parting interface and must be rejected.
+    expect(()=>planVerticalChannels(cube,target,plan.outer,
+      {...s,pourPoint:[0.95,0.5]},plan.radialOuter))
+      .toThrow(/radial parting interface/)
+    // Even behind a ray the hub itself must retain clearance.
+    expect(()=>planVerticalChannels(cube,target,plan.outer,
+      {...s,pourPoint:[0.4,0.5]},plan.radialOuter))
+      .toThrow(/radial parting interface/)
+  })
   it('rejects a threefold radial seam collision before any tool body is cut',()=>{
     const s={...DEFAULT_MOLD_SETTINGS,parts:3 as const,pourEnabled:true,
       pourPoint:[0.75,0.5] as [number,number]}
