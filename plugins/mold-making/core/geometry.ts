@@ -769,8 +769,12 @@ function addContourVSeam(
         if(plan.cylinder){
           const centreAlong=center(outer.min[along],outer.max[along])
           const primary=center(outer.min[k],outer.max[k])
+          // Move the anchor inside the actual cylindrical wall; at the
+          // exact outer-radius chord the ear would be tangent, attaching
+          // along a zero-area line rather than a printable solid.
+          const anchorR=plan.cylinder.outerR-Math.max(0.6,plan.material.wall*0.45)
           const chord=Math.sqrt(Math.max(0,
-            plan.cylinder.outerR**2-(split-primary)**2))
+            anchorR**2-(split-primary)**2))
           position=centreAlong+(i===0?-1:1)*chord
         }else{
           position=i===0?outer.min[along]+plan.material.wall*0.5:
