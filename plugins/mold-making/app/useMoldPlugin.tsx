@@ -64,8 +64,13 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
 
   useEffect(() => {
     const offMold = useMold.subscribe((s, prev) => {
-      const geometryChanged=MOLD_SETTING_KEYS.some(k=>k!=='previewGap'&&s[k]!==prev[k])
-      if(geometryChanged){
+      const changed=MOLD_SETTING_KEYS.filter(k=>k!=='previewGap'&&s[k]!==prev[k])
+      if(changed.length===1&&changed[0]==='analyzeDraft'){
+        // Visual screening is NOT a tooling change. Never discard a
+        // generated mold just because its overlay was toggled on/off.
+        setDraftDisplay(old=>({...old,show:s.analyzeDraft}))
+        setPreviewRevision(n=>n+1)
+      }else if(changed.length){
         invalidate()
         setPreviewRevision(n=>n+1)
         guides.current?.updateSettings(moldSettings())
@@ -123,9 +128,12 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
   // No Manifold worker/Boolean generation, including when only a guide moves.
   useEffect(()=>{
     const ticket=++previewTicket.current
-    if(!inWorkspace||generated)return
+    if(!inWorkspace)return
     const scene=host.sceneRef.current,client=host.clientRef.current
     const settings=moldSettings()
+    // The generated build may already contain an overlay. If it does,
+    // changing the overlay toggle is an immediate display-only operation.
+    if(generated&&(!settings.analyzeDraft||generated.draftOverlay))return
     const target=settings.source==='scan'?host.sources.current.scan:host.sources.current.reference
     if(!scene||!client||!target)return
     let stagedId:number|null=null
@@ -151,6 +159,13 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
         })
         const same=version===(settings.source==='scan'?client.scanVersion:client.nominalVersion)
         if(ticket!==previewTicket.current||!same)return
+        if(generated){
+          // Hot-add analysis to an already generated mold using the cheap
+          // worker path. This preserves its actual print solids and exports.
+          preview.current?.setDraftData(data.draftOverlay)
+          preview.current?.setDraftOptions({...draftDisplay,show:true})
+          return
+        }
         if(!preview.current)preview.current=new MoldPreview(scene,invalidate,setDraftHover)
         preview.current.setSourcePreview(data.targetBounds,settings.source,data.draftOverlay)
         preview.current.setDraftOptions({...draftDisplay,
