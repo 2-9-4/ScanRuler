@@ -162,8 +162,9 @@ describe('Mold Making configuration',()=>{
       expect(moldSection.holdsWork!()).toBe(true)
       useMold.setState({...DEFAULT_MOLD_SETTINGS})
       expect(moldSection.holdsWork!()).toBe(false)
-      expect(()=>parseMoldSettings({...s,parts:3})).toThrow(/two-part direct/)
-      expect(()=>parseMoldSettings({...s,mode:'silicone-box'})).toThrow(/two-part direct/)
+      for(const parts of [1,2,3,4] as const)
+        expect(parseMoldSettings({...s,parts}).analyzeDraft).toBe(true)
+      expect(()=>parseMoldSettings({...s,mode:'silicone-box'})).toThrow(/direct-print/)
       expect(()=>parseMoldSettings({...s,minimumDraftDeg:35})).toThrow(/minimumDraftDeg/)
       const legacy=Object.fromEntries(Object.entries(s).filter(
         ([k])=>k!=='analyzeDraft'&&k!=='minimumDraftDeg'))
