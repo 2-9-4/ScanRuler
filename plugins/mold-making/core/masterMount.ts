@@ -43,6 +43,13 @@ export function planMasterMount(bounds:Bounds,s:MoldSettings,outer?:Bounds):{rin
     p[1]-shell.min[1],shell.max[1]-p[1])
   if(Math.max(footR,padR)+0.5>available)
     throw new Error('Master mounting foot or pad would intersect the tooling side wall. Move the contact point or reduce its diameter.')
+  if(s.parts===3||(s.mode==='silicone-box'&&s.boxShape==='cylindrical')){
+    const cx=(shell.min[0]+shell.max[0])/2
+    const cy=(shell.min[1]+shell.max[1])/2
+    const usable=(shell.max[0]-shell.min[0])/2-Math.hypot(p[0]-cx,p[1]-cy)
+    if(Math.max(footR,padR)+0.5>usable)
+      throw new Error('Master mounting foot or pad extends beyond the circular tooling wall. Choose a more central contact point.')
+  }
   const rings:Ring[]=[
     // Stop/shoulder is EXTERNAL to the bottom wall. The keyed section
     // begins inside the bore; it cannot rotate around the vertical axis.
