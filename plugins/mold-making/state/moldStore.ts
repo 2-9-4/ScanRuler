@@ -22,6 +22,7 @@ interface MoldState extends MoldSettings {
   setPourEnabled(value:boolean):void
   setVentsEnabled(value:boolean):void
   setAnalyzeDraft(value:boolean):void
+  setInterfaceLabels(value:boolean):void
   setMountEnabled(value:boolean):void
   setMountContact(point:[number,number,number],normal:[number,number,number]):void
   setPourPoint(point:[number,number]):void
@@ -48,6 +49,7 @@ export const useMold = create<MoldState>()((set)=>({
   setPourEnabled:(pourEnabled)=>set({pourEnabled}),
   setVentsEnabled:(ventsEnabled)=>set({ventsEnabled}),
   setAnalyzeDraft:(analyzeDraft)=>set({analyzeDraft}),
+  setInterfaceLabels:(interfaceLabels)=>set({interfaceLabels}),
   setMountEnabled:(mountEnabled)=>set({mountEnabled}),
   setMountContact:(mountPoint,mountNormal)=>{
     if(![...mountPoint,...mountNormal].every(Number.isFinite))return
