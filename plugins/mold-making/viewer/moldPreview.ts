@@ -300,8 +300,11 @@ export class MoldPreview {
     if(gap>0||this.viewMode==='exploded')this.explodeGap=gap
     const displayed=this.viewMode==='section'?0:gap
     const bounds=this.meshes.map(m=>m.geometry.boundingBox??new THREE.Box3())
-    const offsets=explodedMoldOffsets(bounds,this.partCount,this.splitAxis,displayed)
-    this.parts.forEach((p,i)=>p.position.copy(offsets[i]))
+    const offsets=explodedMoldOffsets(bounds.slice(0,this.partCount),
+      this.partCount,this.splitAxis,displayed)
+    // The optional glue-on master pedestal is an independent fixture in
+    // source coordinates; exploding the mold sections must not move it.
+    this.parts.forEach((p,i)=>p.position.copy(offsets[i]??new THREE.Vector3()))
     this.host.invalidate()
   }
   setVisible(visible:boolean):void {
