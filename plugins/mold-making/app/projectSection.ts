@@ -14,6 +14,15 @@ function settingsChanged(a:MoldSettings,b:MoldSettings):boolean {
       return a.keyPoints.length!==b.keyPoints.length ||
         a.keyPoints.some((point,i)=>point[0]!==b.keyPoints[i][0]||point[1]!==b.keyPoints[i][1])
     }
+    // Snapshots deliberately clone editable XY coordinates. Reference
+    // comparison would mark an untouched/default project as having work.
+    if(k==='pourPoint')
+      return a.pourPoint[0]!==b.pourPoint[0]||a.pourPoint[1]!==b.pourPoint[1]
+    if(k==='ventPoints'){
+      return a.ventPoints.length!==b.ventPoints.length ||
+        a.ventPoints.some((point,i)=>point[0]!==b.ventPoints[i][0]||
+          point[1]!==b.ventPoints[i][1])
+    }
     return a[k]!==b[k]
   })
 }
