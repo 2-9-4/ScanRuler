@@ -111,6 +111,9 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
   const boxDraftDeg=useMold(s=>s.boxDraftDeg)
   const previewGap=useMold(s=>s.previewGap)
   const analyzeDraft=useMold(s=>s.analyzeDraft)
+  const mountEnabled=useMold(s=>s.mountEnabled)
+  const mountPoint=useMold(s=>s.mountPoint)
+  const mountNormal=useMold(s=>s.mountNormal)
   const minimumDraftDeg=useMold(s=>s.minimumDraftDeg)
   const pourEnabled=useMold(s=>s.pourEnabled),ventsEnabled=useMold(s=>s.ventsEnabled)
   const pourPoint=useMold(s=>s.pourPoint),ventPoints=useMold(s=>s.ventPoints)
@@ -122,7 +125,11 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
     keyDiameter,keyDepth,keyClearance,vSeamWidth,vSeamHeight,vSeamSpacing,vSeamClearance,
     clampTabCount,clampTabWidth,clampTabProjection,clampTabThickness,
     topBottomTabCount,tabBoltDiameter,tabNutAcrossFlats,tabNutDepth,boxDraftDeg,previewGap,
-    pourDiameter,pourFunnelDiameter,pourFunnelDepth,ventDiameter,minimumDraftDeg}
+    pourDiameter,pourFunnelDiameter,pourFunnelDepth,ventDiameter,minimumDraftDeg,
+    mountHeight:useMold.getState().mountHeight,
+    mountPadDiameter:useMold.getState().mountPadDiameter,
+    mountStemDiameter:useMold.getState().mountStemDiameter,
+    mountFootDiameter:useMold.getState().mountFootDiameter}
   const setSource=useMold(s=>s.setSource),setMode=useMold(s=>s.setMode)
   const setParts=useMold(s=>s.setParts),setSplitAxis=useMold(s=>s.setSplitAxis)
   const setBoxShape=useMold(s=>s.setBoxShape),setKeys=useMold(s=>s.setKeys)
@@ -138,6 +145,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
   const setPourEnabled=useMold(s=>s.setPourEnabled)
   const setVentsEnabled=useMold(s=>s.setVentsEnabled)
   const setAnalyzeDraft=useMold(s=>s.setAnalyzeDraft)
+  const setMountEnabled=useMold(s=>s.setMountEnabled)
   const setPourPoint=useMold(s=>s.setPourPoint)
   const setVentPoints=useMold(s=>s.setVentPoints)
   const active=source==='scan'?scanName:refName
@@ -386,6 +394,28 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
           onClick={()=>setVentPoints([...ventPoints,[0.3,0.7] as [number,number]])}>Add vent</button>}
       </>}
       <p className="hint">Both currently use the same straight vertical bore routing. A pour sprue is sized for material entry and can add a funnel; a vent is normally narrower and intended for air escape, but is not automatically placed at an air trap. Horizontal gates, automatic high-point detection, risers, and silicone master-mount channels remain roadmap items. Check filling, venting and parting seals before manufacture.</p>
+    </div>}
+    {(mode==='silicone-box'||mountEnabled)&&<div className="group" data-test="mold-master-mount">
+      <div className="sec-head">Master suspension / glue-on base</div>
+      <p className="hint">To hold the source model in the silicone box without changing it, pick a downward-facing contact face using the tool on the 3D viewport. The selected surface sets the pad's location and angle; the support prints separately and can be glued to the master and the box floor.</p>
+      {mountPoint?<p className="hint">
+        Contact: ({mountPoint.map(v=>v.toFixed(2)).join(', ')}) mm;
+        surface direction: ({mountNormal.map(v=>v.toFixed(2)).join(', ')}).
+      </p>:<p className="hint">No contact face selected. Use “Pick glue-on support face” in the 3D viewport first.</p>}
+      <label className="kv"><span className="name">Include printed suspension pedestal</span>
+        <input type="checkbox" data-test="mold-mount-enabled"
+          checked={mountEnabled} disabled={!mountPoint}
+          onChange={e=>setMountEnabled(e.target.checked)}/></label>
+      {mountEnabled&&<>
+        {mode!=='silicone-box'&&<p className="hint mold-warning" role="alert">
+          A separate glue-on pedestal is supported only for silicone containment boxes. Disable it before generating direct-print molds.
+        </p>}
+        {fieldInput({key:'mountHeight',label:'Clearance below model (mm)',help:'Moves the inside bottom of the silicone box downward, providing suspension height below the imported model.'})}
+        {fieldInput({key:'mountPadDiameter',label:'Glue pad diameter (mm)',help:'Contact pad follows the selected face normal. Verify the entire pad stays on the intended feature.'})}
+        {fieldInput({key:'mountStemDiameter',label:'Support stem diameter (mm)',help:'Cylindrical vertical connection between foot and contact pad.'})}
+        {fieldInput({key:'mountFootDiameter',label:'Base foot diameter (mm)',help:'Foot sits just above the inside bottom of the printed silicone box.'})}
+        <p className="hint">The pedestal does not rotate or move the imported model. It aligns only the glue pad to the selected face and raises the model relative to the box floor. Preview collisions or unsupported overhangs before printing; glue and sealing are manual operations.</p>
+      </>}
     </div>}
     <div className="group">
       <div className="sec-head">6. Generate, inspect &amp; export</div>
