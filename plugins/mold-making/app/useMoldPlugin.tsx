@@ -364,6 +364,22 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
             onChange={e=>useMold.getState().setAnalyzeDraft(e.target.checked)}/>
             Draft / overhangs</label>
           {useMold.getState().analyzeDraft&&<>
+            <label><input type="checkbox" data-test="mold-source-colors" checked={draftDisplay.show}
+              onChange={e=>changeDraftDisplay({...draftDisplay,show:e.target.checked})}/>
+              Source colors</label>
+            <select aria-label="Draft colors" value={draftDisplay.mode}
+              onChange={e=>changeDraftDisplay({...draftDisplay,
+                mode:e.target.value as DraftDisplayOptions['mode']})}>
+              <option value="classes">Red / amber / green</option>
+              <option value="heatmap">Angle heatmap</option>
+            </select>
+            <label><input type="checkbox" checked={draftDisplay.problemsOnly}
+              onChange={e=>changeDraftDisplay({...draftDisplay,problemsOnly:e.target.checked})}/>
+              Problems only</label>
+            <label>Opacity {Math.round(draftDisplay.opacity*100)}%
+              <input type="range" min={0.2} max={1} step={0.05}
+                value={draftDisplay.opacity}
+                onChange={e=>changeDraftDisplay({...draftDisplay,opacity:Number(e.target.value)})}/></label>
             <select aria-label="Draft region" value={draftDisplay.view}
               onChange={e=>changeDraftDisplay({...draftDisplay,
                 view:e.target.value as DraftDisplayOptions['view']})}>
@@ -375,6 +391,10 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
               <input type="range" min={0} max={30} step={0.5}
                 value={draftDisplay.thresholdDeg}
                 onChange={e=>changeDraftDisplay({...draftDisplay,thresholdDeg:Number(e.target.value)})}/></label>
+            {draftHover&&<output role="status" data-test="mold-draft-hover">
+              Face #{draftHover.sourceTriangle+1} · {generated?.draftAnalysis?.regions[draftHover.partIndex]?.label??`Part ${draftHover.partIndex+1}`}
+              {' '}· {draftHover.angleDeg.toFixed(1)}° · {draftHover.classification}
+            </output>}
           </>}
         </>}
         {generated&&previewMode==='exploded'&&<div>
@@ -402,9 +422,6 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
         onBoolean={useForBoolean}
         onEditPart={(index,workspace)=>void editPart(index,workspace)}
         generated={generated}
-        draftDisplay={draftDisplay}
-        onDraftDisplayChange={changeDraftDisplay}
-        draftHover={draftHover}
         previewMode={previewMode}
         onPreviewModeChange={changePreviewMode}
         targetBounds={targetBounds}
