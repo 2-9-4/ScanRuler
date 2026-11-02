@@ -46,9 +46,18 @@ function avoidPartingPlanes(
   const min=b.min,max=b.max
   if(s.parts===3){
     const cx=(min[0]+max[0])/2,cy=(min[1]+max[1])/2
+    const dx=x-cx,dy=y-cy
+    const hubDistance=Math.hypot(dx,dy)
     for(const degrees of [0,120,240]){
       const angle=degrees*Math.PI/180
-      const distance=Math.abs((x-cx)*Math.sin(angle)-(y-cy)*Math.cos(angle))
+      // Each threefold parting interface is a RAY from the hub, not an
+      // infinite line. Behind its origin the closest point on that seam
+      // is the hub itself; testing line distance rejects valid channels
+      // centered inside the opposite radial sector.
+      const along=dx*Math.cos(angle)+dy*Math.sin(angle)
+      const distance=along>=0
+        ?Math.abs(dx*Math.sin(angle)-dy*Math.cos(angle))
+        :hubDistance
       if(distance<=clearance)throw new Error(
         'A casting channel intersects a radial parting interface. Move its XY point farther into one of the three sectors or reduce its diameter.')
     }
