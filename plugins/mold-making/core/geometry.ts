@@ -10,7 +10,7 @@ import { createSphericalDistanceField, sphericalOffset, type SphericalDistanceFi
 import { parseMoldSettings, type MoldSettings, type SplitAxis } from './settings'
 import {siliconeBoxCapacityMm3} from './materialEstimate'
 import {planVerticalChannels} from './pourChannels'
-import {masterMountMesh} from './masterMount'
+import {masterMountMesh,MOUNT_HEX_RADIAL_CLEARANCE_MM,planMasterMount} from './masterMount'
 import {analyzeMoldDraft,type DraftAnalysis} from './draftAnalysis'
 import {buildMoldDraftOverlay,type DraftOverlayData} from './draftOverlay'
 import { projectedHull,contourAround,contourSegment,radialSeamContour,radialSiliconeLSeam,triangularContourTube,planeAxes } from './contourSeam'
@@ -1177,6 +1177,27 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
         warnings.push(`Cut ${channels.filter(c=>c.kind==='pour').length} vertical pour channel(s) and ${channels.filter(c=>c.kind==='vent').length} air vent(s), each connected to the casting void. Positions use normalized target XY coordinates; verify fill orientation and air-trap release. No automatic horizontal gates or risers yet.`)
       }
     }
+    if(s.mountEnabled){
+      // A keyed post enters from BELOW through real tooling, rather than
+      // appearing to be glued to an internal floor with no access hole.
+      const mountPlan=planMasterMount(extentOf(targetMesh.positions),s,plan.outer)
+      if(!mountPlan||!s.mountPoint)throw new Error('Select the contact face for the external mount.')
+      const stemR=s.mountStemDiameter/2
+      const bottom=plan.outer.min[2]-0.5
+      const top=s.mode==='silicone-box'
+        ?plan.innerBox!.min[2]+0.5
+        :s.mountPoint[2]+Math.max(0.5,s.clearance+0.25)
+      if(top<=bottom)throw new Error('Master mount bore has no depth through the tooling base.')
+      const keyedBore=keep(wasm.Manifold.cylinder(
+        top-bottom,stemR+MOUNT_HEX_RADIAL_CLEARANCE_MM,
+        stemR+MOUNT_HEX_RADIAL_CLEARANCE_MM,6,true,
+      ).translate([s.mountPoint[0],s.mountPoint[1],bottom]))
+      const before=solid.volume()
+      solid=keep(solid.subtract(keyedBore))
+      if(solid.isEmpty()||before-solid.volume()<1e-4)
+        throw new Error('The hexagonal master mounting bore missed the mold base. Pick another underside face.')
+      warnings.push('External glue-on master support uses a keyed hexagonal through-bore and a larger outside stop. Inspect the selected underside, insertion direction, fit and liquid seal before casting.')
+    }
     solid=chamferOuterCorners(solid,plan,s,keep)
     if(solid.isEmpty())throw new Error('The mold is empty. Increase the wall or margins.')
     let pieces:Manifold[]=[solid]
@@ -1229,12 +1250,12 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
     })
     if(mainParts.length!==s.parts)throw new Error('Part count mismatch: a component disappeared during splitting.')
     const parts=[...mainParts,...loose]
-    if(s.mode==='silicone-box'&&s.mountEnabled){
-      const mount=masterMountMesh(extentOf(targetMesh.positions),s)
+    if(s.mountEnabled){
+      const mount=masterMountMesh(extentOf(targetMesh.positions),s,plan.outer)
       if(!mount)throw new Error('Failed to construct master mounting pedestal.')
       const pedestal=toManifold(wasm,mount,keep)
       parts.push(toPart(pedestal,'Glue-on master mounting pedestal',warnings))
-      warnings.push('A separate glue-on support pedestal was exported. Glue its matched pad to the selected master underside and its foot to the containment-box floor. Verify silicone-tight attachment, clearance and support strength; this is not a permanent part of the casting.')
+      warnings.push('A separate hex-keyed master mounting post was exported. Insert from outside through the base bore; glue the pad to the selected master underside, seal the through-wall penetration and check the exterior stop. The post is not part of the casting.')
     }
     const invalidOutput=warnings.some(w=>w.includes('excluded an invalid detached artifact'))
     const printable=!loose.length&&!invalidOutput
