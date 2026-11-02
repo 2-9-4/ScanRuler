@@ -15,11 +15,11 @@ type XYZ=[number,number,number]
 type Handle={kind:'pour'|'vent';index:number;mesh:THREE.Mesh}
 const axisIndex=(a:'x'|'y'|'z')=>a==='x'?0:a==='y'?1:2
 /** Stable read-only cut layout so previews match the actual two-/three-/fourfold splitter. */
-export function cutGuideSegments(b:Limits,s:MoldSettings):XYZ[][]{
+export function cutGuideSegments(b:Limits,s:MoldSettings,frame:Limits=b):XYZ[][]{
   const cx=(b.min[0]+b.max[0])/2,cy=(b.min[1]+b.max[1])/2
-  const z0=b.min[2]-2,z1=b.max[2]+2
+  const z0=frame.min[2]-0.5,z1=frame.max[2]+0.5
   if(s.parts===3){
-    const reach=Math.hypot(b.max[0]-cx,b.max[1]-cy)+2
+    const reach=Math.hypot(frame.max[0]-cx,frame.max[1]-cy)+0.5
     return [0,120,240].map(deg=>{
       const a=deg*Math.PI/180,x=cx+reach*Math.cos(a),y=cy+reach*Math.sin(a)
       return [[cx,cy,z0],[x,y,z0],[x,y,z1],[cx,cy,z1]] as XYZ[]
@@ -36,12 +36,12 @@ export function cutGuideSegments(b:Limits,s:MoldSettings):XYZ[][]{
     }
   }
   return planes.map(({axis,at})=>{
-    if(axis==='x')return [[at,b.min[1]-2,z0],[at,b.max[1]+2,z0],
-      [at,b.max[1]+2,z1],[at,b.min[1]-2,z1]] as XYZ[]
-    if(axis==='y')return [[b.min[0]-2,at,z0],[b.max[0]+2,at,z0],
-      [b.max[0]+2,at,z1],[b.min[0]-2,at,z1]] as XYZ[]
-    return [[b.min[0]-2,b.min[1]-2,at],[b.max[0]+2,b.min[1]-2,at],
-      [b.max[0]+2,b.max[1]+2,at],[b.min[0]-2,b.max[1]+2,at]] as XYZ[]
+    if(axis==='x')return [[at,frame.min[1]-0.5,z0],[at,frame.max[1]+0.5,z0],
+      [at,frame.max[1]+0.5,z1],[at,frame.min[1]-0.5,z1]] as XYZ[]
+    if(axis==='y')return [[frame.min[0]-0.5,at,z0],[frame.max[0]+0.5,at,z0],
+      [frame.max[0]+0.5,at,z1],[frame.min[0]-0.5,at,z1]] as XYZ[]
+    return [[frame.min[0]-0.5,frame.min[1]-0.5,at],[frame.max[0]+0.5,frame.min[1]-0.5,at],
+      [frame.max[0]+0.5,frame.max[1]+0.5,at],[frame.min[0]-0.5,frame.max[1]+0.5,at]] as XYZ[]
   })
 }
 
@@ -51,6 +51,7 @@ export class MoldGuides {
   private sourceMesh:THREE.Mesh|null=null
   private handles:Handle[]=[]
   private bounds:Limits|null=null
+  private outerBounds:Limits|null=null
   private settings:MoldSettings|null=null
   private active=true
   private showPlanes=true
@@ -79,9 +80,11 @@ export class MoldGuides {
     this.showPlanes=planes;this.showHandles=handles;this.updateObjects()
   }
   setPickBase(pick:boolean){this.pickBase=pick;this.host.invalidate()}
-  set(source:MoldSource,bounds:Limits,settings:MoldSettings,mesh?:MeshData):void{
+  set(source:MoldSource,bounds:Limits,settings:MoldSettings,mesh?:MeshData,
+    outerBounds:Limits=bounds):void{
     this.clear()
     this.bounds=bounds
+    this.outerBounds=outerBounds
     this.settings=settings
     if(source==='reference')this.host.scene.add(this.group)
     else this.host.partGroup.add(this.group)
@@ -118,7 +121,7 @@ export class MoldGuides {
     this.handles=[]
     if(!this.bounds||!this.settings)return
     const b=this.bounds,s=this.settings
-    if(this.showPlanes)for(const corners of cutGuideSegments(b,s)){
+    if(this.showPlanes)for(const corners of cutGuideSegments(b,s,this.outerBounds??b)){
       const vertices=Float32Array.from(corners.flat())
       const geo=new THREE.BufferGeometry()
       geo.setAttribute('position',new THREE.BufferAttribute(vertices,3))
@@ -245,7 +248,7 @@ export class MoldGuides {
       this.sourceMesh=null
     }
     this.group.clear()
-    this.bounds=null;this.settings=null
+    this.bounds=null;this.outerBounds=null;this.settings=null
     this.host.invalidate()
   }
   dispose(){
