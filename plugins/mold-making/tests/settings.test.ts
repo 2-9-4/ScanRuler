@@ -173,6 +173,27 @@ describe('Mold Making configuration',()=>{
       useMold.setState({...DEFAULT_MOLD_SETTINGS})
     }
   })
+  it('round-trips picked 3D mounting faces and avoids false dirty-project state',()=>{
+    const copiedDefaults={...DEFAULT_MOLD_SETTINGS,
+      mountNormal:[...DEFAULT_MOLD_SETTINGS.mountNormal] as [number,number,number]}
+    useMold.setState(copiedDefaults)
+    expect(moldSection.holdsWork!()).toBe(false)
+    const saved={...DEFAULT_MOLD_SETTINGS,mode:'silicone-box' as const,
+      mountEnabled:true,mountPoint:[2,-1,1] as [number,number,number],
+      mountNormal:[0,0,-1] as [number,number,number],
+      mountHeight:15,mountPadDiameter:9}
+    expect(parseMoldSettings(saved)).toEqual(saved)
+    moldSection.prepare(saved,{manifest:{} as never,members:new Map()})()
+    expect(moldSection.collect({sources:{} as never,scanSaved:true,addMember(){}}))
+      .toEqual(saved)
+    expect(moldSection.holdsWork!()).toBe(true)
+    useMold.setState({...DEFAULT_MOLD_SETTINGS})
+    expect(moldSection.holdsWork!()).toBe(false)
+    const legacy=Object.fromEntries(Object.entries(saved).filter(
+      ([key])=>!key.startsWith('mount')))
+    expect(parseMoldSettings(legacy).mountEnabled).toBe(false)
+    expect(parseMoldSettings(legacy).mountPoint).toBeNull()
+  })
   it('resets a project lacking settings',()=>{
     useMold.getState().setMode('silicone-box')
     moldSection.prepare(undefined,{manifest:{} as never,members:new Map()})()
