@@ -1108,7 +1108,9 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
         empty=toManifold(wasm,draftedBox(inn,draft),keep)
       }
       solid=keep(body.subtract(empty))
-      warnings.push('The master still needs a support/attachment and a silicone-tight seal. This is a printable box, not an automatically suspended master.')
+      warnings.push(s.mountEnabled
+        ?'The master is intended to be glued to the separate suspension pedestal, which must also be attached and sealed to the box floor. Inspect the assembled preview before pouring.'
+        :'The master still needs a support/attachment and a silicone-tight seal. This is a printable box, not an automatically suspended master.')
       if(s.boxDraftDeg>0)warnings.push('Draft is applied to the silicone BOX interior, not the master/cast cavity.')
     }else{
       // Use a solid-distance isosurface, not vertex-normal movement: a
@@ -1255,9 +1257,11 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
     const master=edges&&edges.open===0&&edges.bad===0
       ?stableVolume(targetMesh):null
     const masterDisplacementMm3=master!==null&&master>0?master:null
+    const supportDisplacementMm3=s.mountEnabled
+      ?(parts.find(p=>p.name==='Glue-on master mounting pedestal')?.volumeMm3??0):0
     const netSiliconeMm3=grossSiliconeCapacityMm3!==null&&
       masterDisplacementMm3!==null
-      ?Math.max(0,grossSiliconeCapacityMm3-masterDisplacementMm3):null
+      ?Math.max(0,grossSiliconeCapacityMm3-masterDisplacementMm3-supportDisplacementMm3):null
     return {parts,printable,kind:s.mode,warnings,openingZ:plan.openingZ,targetBounds:extentOf(targetMesh.positions),
       draftAnalysis,draftOverlay,
       volumeMm3:parts.reduce((v,p)=>v+p.volumeMm3,0),
