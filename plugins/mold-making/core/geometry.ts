@@ -1084,6 +1084,9 @@ export function chamferOuterCorners(
 export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:MoldSettings,onProgress?:(s:string,fraction?:number)=>void):MoldBuild {
   const s=parseMoldSettings(settings)
   const warnings:string[]=[]
+  if(s.mode==='silicone-box'&&s.parts!==3&&s.splitAxis!=='z'&&
+     s.keys&&s.keyStyle==='v-seam'&&s.topBottomTabs&&s.topBottomTabCount>2)
+    warnings.push(`The silicone bucket has only two supported outer-wall positions for top/bottom clamp tabs per rim. Requested ${s.topBottomTabCount}; generated two anchored positions instead of floating unsupported ears.`)
   onProgress?.('Checking source geometry and mold settings…',0.06)
   if(s.mode==='silicone-box'){
     // Unlike a direct-negative cavity, a silicone
