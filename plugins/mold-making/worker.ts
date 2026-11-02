@@ -6,11 +6,14 @@ import type { WorkerPlugin } from '../../src/core/workerPluginApi'
 import { loadManifold } from '../mesh-tools/core/manifold'
 import { parseMoldSettings } from './core/settings'
 import { buildMold } from './core/geometry'
+import { analyzeMoldDraft } from './core/draftAnalysis'
+import { buildMoldDraftOverlay } from './core/draftOverlay'
+import { extentOf } from '../../src/core/geometry/bounds'
 
 const plugin: WorkerPlugin = {
   id: 'mold-making',
   async handle(op, payload, ctx) {
-    if (op !== 'generate') throw new Error(`Unknown mold-making operation: ${op}`)
+    if (op !== 'generate' && op !== 'preview') throw new Error(`Unknown mold-making operation: ${op}`)
     if (!payload || typeof payload !== 'object') throw new Error('Missing mold settings.')
     const p = payload as Record<string, unknown>
     const settings = parseMoldSettings(p.settings)
@@ -20,6 +23,23 @@ const plugin: WorkerPlugin = {
         ? ctx.takeStaged(p.stagedId as number)
         : null
     if (!source) throw new Error('Load a target before generating a mold.')
+    if(op==='preview'){
+      // Pure geometric UI preview: no Manifold initialization, repair,
+      // Boolean execution or exported/printable part generation.
+      const bounds=extentOf(source.positions)
+      const draftAnalysis=settings.analyzeDraft&&settings.mode==='direct'
+        ?analyzeMoldDraft(source,settings):null
+      const draftOverlay=draftAnalysis?buildMoldDraftOverlay(source,settings):null
+      return {
+        result:{targetBounds:bounds,draftAnalysis,draftOverlay,
+          sourcePositions:new Float32Array(source.positions),
+          sourceIndices:new Uint32Array(source.indices)},
+        transfer:draftOverlay?[
+          draftOverlay.positions.buffer,draftOverlay.half.buffer,
+          draftOverlay.angleDeg.buffer,draftOverlay.sourceTriangle.buffer,
+        ]:[],
+      }
+    }
     ctx.progress('Loading the existing mesh Boolean engine…',0.02)
     const wasm = await loadManifold()
     let lastFraction=0.03
