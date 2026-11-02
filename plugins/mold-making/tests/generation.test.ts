@@ -264,7 +264,7 @@ describe('Mold Making assembly',()=>{
   })
   it('creates a bottom through-hole and a keyed external master post on rigid direct tooling',()=>{
     const settings={...DEFAULT_MOLD_SETTINGS,keys:false,parts:2 as const,
-      mountEnabled:true,mountPoint:[0,0,-5] as [number,number,number],
+      mountEnabled:true,mountPoint:[0,0,0] as [number,number,number],
       mountNormal:[0,0,-1] as [number,number,number]}
     const ordinary=buildMold(wasm,master,{...settings,mountEnabled:false})
     const keyed=buildMold(wasm,master,settings)
