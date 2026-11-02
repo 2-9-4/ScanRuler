@@ -252,3 +252,41 @@ Tests: `pourChannels.test.ts`, `generation.test.ts`,
 `settings.test.ts`. Run locally with `npm run build` and
 `npx vitest run plugins/mold-making/tests`; remote source changes do not
 by themselves establish that the geometry suite passes.
+
+## Source draft and possible undercut screening (MOLD-013, 2026-11)
+
+For **two-piece direct molds**, enable **Screen for possible undercuts
+and low draft** in the new Release and draft section. This opt-in calculation
+is **disabled by default** and has no effect on the mesh, split/registration,
+printing, or export. The configurable positive draft threshold defaults to
+2° (allowed range: 0–30°).
+
+The analyzer uses the chosen split axis and split fraction. Each half is
+assumed to withdraw straight outward along its positive/negative axis.
+It examines every nondegenerate, outward-oriented source triangle,
+and **clips triangles straddling the split plane** so material surface area
+is attributed to the correct half. Using area-weighted outward face normals,
+it separately reports:
+
+- **Reverse-facing area**: source faces pointing *against* that half's
+  withdrawal direction, a warning of potential undercuts.
+- **Low-draft area**: near-parallel faces failing the requested positive
+  angle, *excluding* those classified reverse-facing.
+- Surface area and worst local draft angle for each half.
+
+The analysis is a **surface-normal diagnostic**, not a collision-free mold
+extraction proof, draft operation, or guarantee of demoldability. It cannot
+fully detect occlusion by other geometry along the release path, moving
+cores, deformation, shrinkage, bridges or inaccessible fasteners. It measures
+the source mesh rather than any positive-clearance SDF-offset cutter; as
+such the report does not account for altered edges following offset.
+It is currently supported only for two-piece direct molds, not threefold,
+four-part or silicone containment workflows. The geometry is deliberately
+unchanged even when the report flags a problem.
+
+Tests in `draftAnalysis.test.ts` cover a closed convex cube, synthetic
+opposing reverse-facing facets, a triangle clipped at the split plane and
+minimum-draft validation. The generation/settings suites separately confirm
+the opt-in diagnostic does not alter tooling volume or break legacy project
+persistence. Full local TypeScript/Manifold/Vitest verification is still
+required.
