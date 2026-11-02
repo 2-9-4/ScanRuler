@@ -106,6 +106,8 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
   const tabNutAcrossFlats=useMold(s=>s.tabNutAcrossFlats),tabNutDepth=useMold(s=>s.tabNutDepth)
   const boxDraftDeg=useMold(s=>s.boxDraftDeg)
   const previewGap=useMold(s=>s.previewGap)
+  const analyzeDraft=useMold(s=>s.analyzeDraft)
+  const minimumDraftDeg=useMold(s=>s.minimumDraftDeg)
   const pourEnabled=useMold(s=>s.pourEnabled),ventsEnabled=useMold(s=>s.ventsEnabled)
   const pourPoint=useMold(s=>s.pourPoint),ventPoints=useMold(s=>s.ventPoints)
   const pourDiameter=useMold(s=>s.pourDiameter)
@@ -116,7 +118,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
     keyDiameter,keyDepth,keyClearance,vSeamWidth,vSeamHeight,vSeamSpacing,vSeamClearance,
     clampTabCount,clampTabWidth,clampTabProjection,clampTabThickness,
     topBottomTabCount,tabBoltDiameter,tabNutAcrossFlats,tabNutDepth,boxDraftDeg,previewGap,
-    pourDiameter,pourFunnelDiameter,pourFunnelDepth,ventDiameter}
+    pourDiameter,pourFunnelDiameter,pourFunnelDepth,ventDiameter,minimumDraftDeg}
   const setSource=useMold(s=>s.setSource),setMode=useMold(s=>s.setMode)
   const setParts=useMold(s=>s.setParts),setSplitAxis=useMold(s=>s.setSplitAxis)
   const setBoxShape=useMold(s=>s.setBoxShape),setKeys=useMold(s=>s.setKeys)
@@ -131,6 +133,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
   const setOffsetQuality=useMold(s=>s.setOffsetQuality)
   const setPourEnabled=useMold(s=>s.setPourEnabled)
   const setVentsEnabled=useMold(s=>s.setVentsEnabled)
+  const setAnalyzeDraft=useMold(s=>s.setAnalyzeDraft)
   const setPourPoint=useMold(s=>s.setPourPoint)
   const setVentPoints=useMold(s=>s.setVentPoints)
   const active=source==='scan'?scanName:refName
@@ -323,6 +326,20 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
         :`${material.wall.toFixed(2)} mm walls, ${material.base.toFixed(2)} mm base`}.
         Extra margins add material on top of these calculated requirements and may be zero.</p>
     </div>
+    {(mode==='direct'&&parts===2||analyzeDraft)&&<div className="group" data-test="mold-draft-controls">
+      <div className="sec-head">5. Release and draft screening (optional)</div>
+      {(mode!=='direct'||parts!==2)&&<p className="hint mold-warning" role="alert">
+        Draft screening currently supports only two-piece direct molds. Disable it before generating other mold types.
+      </p>}
+      <label className="kv"><span className="name">Screen for possible undercuts and low draft</span>
+        <input type="checkbox" data-test="mold-analyze-draft" checked={analyzeDraft}
+          onChange={e=>setAnalyzeDraft(e.target.checked)}/></label>
+      {analyzeDraft&&<>
+        {fieldInput({key:'minimumDraftDeg',label:'Minimum positive draft angle (°)',
+          help:'Mark surfaces below this angle as insufficient draft. Negative-facing surfaces indicate potential undercuts.'})}
+        <p className="hint">Uses the two parting halves along the selected axis and split position. Measures the original source triangles, not the clearance-expanded casting cavity. This is a diagnostic only; no draft is added, no release direction is changed and the tooling stays identical.</p>
+      </>}
+    </div>}
     {(mode==='direct'&&parts>1||pourEnabled||ventsEnabled)&&<div className="group" data-test="mold-casting-channels">
       <div className="sec-head">5. Pouring and venting (optional)</div>
       {(mode!=='direct'||parts===1)&&<p className="hint mold-warning" role="alert">
@@ -404,6 +421,22 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
           <p className="hint mold-warning" role="alert">
             Invalid detached Boolean fragments were excluded from export. The main mold remains available, but check its cavity and mating features carefully before printing.
           </p>}
+        {generated.draftAnalysis&&<details data-test="mold-draft-results" open>
+          <summary>Source-mesh draft and possible undercuts</summary>
+          <p className="hint">Screened {generated.draftAnalysis.assessedTriangles.toLocaleString('en-US')} source triangles for two opposing release directions along {generated.draftAnalysis.axis.toUpperCase()}, split at {generated.draftAnalysis.splitAtMm.toFixed(2)} mm. Faces crossing the plane are split for the area calculations. Target positive draft: {generated.draftAnalysis.minimumDraftDeg}°.</p>
+          <div className="kv"><span className="name">Potential reverse-facing (undercut) surface</span>
+            <b>{generated.draftAnalysis.reverseFacingMm2.toFixed(1)} mm² ({(100*generated.draftAnalysis.reverseFacingMm2/Math.max(1e-9,generated.draftAnalysis.totalAreaMm2)).toFixed(1)}%)</b></div>
+          <div className="kv"><span className="name">Additional insufficient-draft area</span>
+            <b>{generated.draftAnalysis.lowDraftMm2.toFixed(1)} mm² ({(100*generated.draftAnalysis.lowDraftMm2/Math.max(1e-9,generated.draftAnalysis.totalAreaMm2)).toFixed(1)}%)</b></div>
+          {(['negative','positive'] as const).map(side=>{
+            const d=generated.draftAnalysis![side]
+            return <div className="kv" key={side}>
+              <span className="name">{side==='negative'?'-':'+'}{generated.draftAnalysis!.axis.toUpperCase()} half · reverse / low draft</span>
+              <b>{d.reverseFacingMm2.toFixed(1)} / {d.lowDraftMm2.toFixed(1)} mm²</b>
+            </div>
+          })}
+          <p className="hint">A reverse-facing triangle may signal a trapped undercut. Low draft includes near-parallel walls. This normal-based screening does not prove collision-free withdrawal, does not detect every obstruction, and does not alter or block the printable mold. Check material flexibility, release path, parting seams and mechanical clearance.</p>
+        </details>}
         <div className="kv"><span className="name">Total material</span><b>{(generated.volumeMm3/1000).toFixed(1)} cm³</b></div>
         <details data-test="mold-material-estimate">
           <summary>Material quantity &amp; cost estimates</summary>
