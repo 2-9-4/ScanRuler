@@ -66,6 +66,8 @@ export interface MoldSettings {
   tabCapturedNuts: boolean
   tabNutAcrossFlats: number
   tabNutDepth: number
+  /** Engrave matching seam index numbers on each multipart exterior. */
+  interfaceLabels:boolean
   /** Optional vertical casting channels for closed multipart direct molds. */
   pourEnabled:boolean
   pourDiameter:number
@@ -135,6 +137,7 @@ export const DEFAULT_MOLD_SETTINGS: Readonly<MoldSettings> = Object.freeze({
   tabCapturedNuts: false,
   tabNutAcrossFlats: 7.2,
   tabNutDepth: 3.5,
+  interfaceLabels:false,
   pourEnabled:false,
   pourDiameter:3,
   pourFunnelDiameter:5,
@@ -173,7 +176,7 @@ export const MOLD_SETTING_KEYS: readonly (keyof MoldSettings)[] = [
   'source', 'mode', ...MOLD_DIMENSIONS, 'offsetQuality', 'repairTarget', 'parts', 'splitAxis', 'boxShape', 'keys',
   'keyStyle', 'keyPlacement', 'keyPositions', 'keyPoints',
   'topBottomTabs','tabBoltHoles','tabCapturedNuts',
-  'pourEnabled','pourPoint','ventsEnabled','ventPoints','analyzeDraft',
+  'pourEnabled','pourPoint','ventsEnabled','ventPoints','analyzeDraft','interfaceLabels',
   'mountEnabled','mountPoint','mountNormal',
 ]
 export function validMoldDimension(key: MoldDimension, value: number): boolean {
@@ -207,6 +210,7 @@ export function parseMoldSettings(value: unknown): MoldSettings {
     throw new Error('Invalid draft analysis enable setting.')
   if(parsed.analyzeDraft&&parsed.mode!=='direct')
     throw new Error('Draft screening requires a direct-print mold.')
+  if(typeof parsed.interfaceLabels!=='boolean')throw new Error('Invalid interface engraving option.')
   if(typeof parsed.mountEnabled!=='boolean')throw new Error('Invalid master support option.')
   // A base-mounted core can feed through the bottom of either a direct
   // rigid tooling body or a silicone containment bucket.
