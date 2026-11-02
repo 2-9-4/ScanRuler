@@ -190,7 +190,7 @@ export class MoldPreview {
       if(mat.transparent!==xray){
         mat.transparent=xray;mat.needsUpdate=true
       }
-      mat.opacity=xray?.26:1
+      mat.opacity=xray?0.26:1
       mat.depthWrite=!xray
     }
     if(!active)this.emitDraftHover(null)
