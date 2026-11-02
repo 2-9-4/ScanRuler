@@ -19,7 +19,7 @@ export function cutGuideSegments(b:Limits,s:MoldSettings,frame:Limits=b):XYZ[][]
   const cx=(b.min[0]+b.max[0])/2,cy=(b.min[1]+b.max[1])/2
   const z0=frame.min[2]-0.5,z1=frame.max[2]+0.5
   if(s.parts===3){
-    const reach=Math.hypot(frame.max[0]-cx,frame.max[1]-cy)+0.5
+    const reach=Math.max(frame.max[0]-cx,frame.max[1]-cy)+0.5
     return [0,120,240].map(deg=>{
       const a=deg*Math.PI/180,x=cx+reach*Math.cos(a),y=cy+reach*Math.sin(a)
       return [[cx,cy,z0],[x,y,z0],[x,y,z1],[cx,cy,z1]] as XYZ[]
