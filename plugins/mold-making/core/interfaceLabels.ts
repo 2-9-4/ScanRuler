@@ -37,7 +37,6 @@ const strokes:Record<Segment,[number,number,number,number]>={
   f:[0,2.1,.35,3.8],e:[0,.2,.35,1.9],
 }
 const center=(a:number,b:number)=>(a+b)/2
-const shapeBox=(min:V3,max:V3)=>({min,max})
 /** Use the six basic strokes (plus a middle bar) as shallow, robust solid
  * cutters; no fonts/text shaping system or raster Boolean is required.
  */
@@ -50,7 +49,6 @@ export function engraveInterfaceNumbers(
   const out=pieces.slice(),cx=center(outer.min[0],outer.max[0])
   const cy=center(outer.min[1],outer.max[1])
   const outerRadius=plan.radialOuter?.radius??plan.cylinder?.outerR??null
-  const secondary:SplitAxis=s.splitAxis==='x'?'y':'x'
   const faceAxis:SplitAxis=s.parts===3?'x':
     s.splitAxis==='z'?'x':s.splitAxis
   const normalIndex=faceAxis==='x'?0:1
@@ -110,9 +108,8 @@ export function engraveInterfaceNumbers(
           min=[tangent+u0,side<0?plane-.4:plane-depth,z+v0]
           max=[tangent+u1,side<0?plane+depth:plane+.4,z+v1]
         }
-        const mesh=shapeBox(min,max)
-        // Actual boxSolid-to-Manifold conversion is kept local to avoid
-        // coupling this module to the geometry generator's private helper.
+        // Use a shallow 3D solid, not a decorative decal: this notch
+        // survives mesh export and remains readable after printing.
         const x=max[0]-min[0],y=max[1]-min[1],zz=max[2]-min[2]
         if(x<=0||y<=0||zz<=0)continue
         let stamp=keep(wasm.Manifold.cube([x,y,zz]))
@@ -136,6 +133,5 @@ export function engraveInterfaceNumbers(
       warnings.push(`Interface marking was not possible on mold part ${i+1}; original part preserved.`)
     }
   }
-  void secondary
   return out
 }
