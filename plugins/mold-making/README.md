@@ -290,3 +290,47 @@ minimum-draft validation. The generation/settings suites separately confirm
 the opt-in diagnostic does not alter tooling volume or break legacy project
 persistence. Full local TypeScript/Manifold/Vitest verification is still
 required.
+
+## Visual draft and undercut overlay on the source model (2026-11-01)
+
+When the optional **two-piece direct-mold** draft diagnostic is enabled,
+generating the tooling now also returns a **separate display-only source
+surface**. The overlay is displayed by default in the Mold Making 3D viewport,
+not baked into any mold part, CAD Boolean operand, or exported STL/3MF.
+
+- The actual analyzed source triangles are clipped at the split plane, and
+  each clipped face receives the signed draft angle for the **specific
+  mold half** withdrawing along the positive or negative primary axis.
+- **Red** is reverse-facing/potential undercut; **amber** is below the
+  chosen positive-draft threshold; **green** satisfies the threshold.
+  Continuous signed-angle heatmap coloring is also available.
+- Toggle both halves, positive half, or negative half; optionally show
+  **only problematic faces**, leaving the original source mesh visible
+  as a backdrop. Control opacity and the on-screen angle threshold
+  interactively without rerunning Boolean mold generation or invalidating
+  printable output.
+- Hover a colored face in the 3D scene to inspect its original triangle
+  number, half, signed draft angle and classification. Selecting a class
+  or switching to exploded/section views does not alter the source mesh.
+- The numerical area report remains tied to the **generation-time**
+  draft threshold; the on-screen threshold changes only the colors
+  and visibility of faces. To obtain new measured aggregate statistics,
+  modify the persisted minimum draft setting and regenerate.
+
+Data flows from `core/draftOverlay.ts` through the existing mold worker
+as transferrable typed arrays into the existing `MoldPreview` plugin
+scene layer. Scan-source overlays follow the scan's alignment group;
+reference/STEP overlays use reference world coordinates. The scene layer
+restores the original scan/reference visibility on exit or dismissal,
+and disposes all GPU overlay buffers when cleared.
+
+This is **not** a swept-volume / collision proof of demoldability.
+Per-face normal screening can flag false positives and overlook
+interlocking shapes. The exact analyzed model is used for colors;
+when automatic mesh repair is enabled it is the repaired temporary
+copy, not an edit to the original imported model.
+
+Regression coverage: `tests/draftOverlay.test.ts` verifies half assignment,
+triangle clipping across the split plane, per-face source indices,
+live threshold classifications and face filtering. The suite still
+needs a local TypeScript/React/Manifold/WebGL run.
