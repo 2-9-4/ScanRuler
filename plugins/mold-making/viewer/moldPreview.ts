@@ -180,7 +180,9 @@ export class MoldPreview {
       mesh.visible=options.show&&this.draftVisible.length>0
     }
     const active=this.draftActive()
-    for(const part of this.parts)part.visible=!active
+    // Draft colors are painted on the source model, not a replacement for tooling.
+    // Keep each mold component visible in assembled and exploded views.
+    for(const part of this.parts)part.visible=true
     if(!active)this.emitDraftHover(null)
     this.setSourceVisibility()
     this.refreshCaps()
@@ -188,7 +190,7 @@ export class MoldPreview {
     this.host.invalidate()
   }
   private refreshCaps():void {
-    this.caps.update(this.group.visible&&!this.draftActive()?this.activeSection:null,
+    this.caps.update(this.group.visible?this.activeSection:null,
       this.meshes.map((mesh,i)=>({
         mesh,slot:CAP_SLOT.layers+i,color:cutColor(CAP_SLOT.layers+i),
       })),this.host.theme())
