@@ -31,7 +31,13 @@ const plugin: WorkerPlugin = {
     ctx.progress('Mold geometry ready.',1)
     return {
       result: made,
-      transfer: [made.positions.buffer, made.indices.buffer],
+      transfer: [made.positions.buffer, made.indices.buffer,
+        ...(made.draftOverlay?[
+          made.draftOverlay.positions.buffer,
+          made.draftOverlay.half.buffer,
+          made.draftOverlay.angleDeg.buffer,
+          made.draftOverlay.sourceTriangle.buffer,
+        ]:[])],
     }
   },
 }
