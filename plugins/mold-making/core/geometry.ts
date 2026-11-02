@@ -176,7 +176,10 @@ export function moldMaterial(s:MoldSettings,targetHeight?:number,targetWidth?:nu
     // anchor into the surrounding body even when the model is shallow.
     const tab=clampHardware(s)
     material.base=Math.max(material.base,tab.width*0.35+1.5)
-    if(targetWidth!==undefined&&s.splitAxis!=='z'){
+    if(s.mode==='direct'&&targetWidth!==undefined&&s.splitAxis!=='z'){
+      // Direct closed tooling distributes tabs along a solid edge. Hollow
+      // silicone buckets anchor at the two perimeter wall intersections,
+      // so extra interior XY width would be unnecessary and misleading.
       const perInterface=s.topBottomTabCount*(tab.width+2)+2
       const minWidth=s.parts===4?perInterface*2:perInterface
       material.side=Math.max(material.side,(minWidth-targetWidth)/2)
