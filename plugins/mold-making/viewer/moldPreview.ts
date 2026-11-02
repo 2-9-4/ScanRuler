@@ -94,7 +94,9 @@ export class MoldPreview {
         this.refreshCaps()
       },
       themeChanged:()=>this.refreshCaps(),
-      partMoved:()=>this.changed(),
+      // A live source-only diagnostic follows the source alignment group.
+      // Only generated molds require invalidation when the scan is edited.
+      partMoved:()=>{if(this.meshes.length)this.changed();else this.host.invalidate()},
       hover:(at,covered)=>{
         if(!at||covered||!this.group.visible||!this.draftMesh?.visible){
           this.emitDraftHover(null)
