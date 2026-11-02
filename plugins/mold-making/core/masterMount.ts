@@ -33,6 +33,15 @@ export function planMasterMount(bounds:Bounds,s:MoldSettings):{rings:Ring[];floo
   if(s.mountFootDiameter<s.mountStemDiameter||s.mountPadDiameter<s.mountStemDiameter)
     throw new Error('Mount pad and foot must be at least the stem diameter.')
   const footR=s.mountFootDiameter/2,stemR=s.mountStemDiameter/2,padR=s.mountPadDiameter/2
+  // The support must sit INSIDE the box, not poke through its side wall.
+  // Rectangular XY clearance is a conservative bound for circular boxes.
+  const available=Math.min(
+    p[0]-bounds.min[0]+s.siliconeThickness,
+    bounds.max[0]-p[0]+s.siliconeThickness,
+    p[1]-bounds.min[1]+s.siliconeThickness,
+    bounds.max[1]-p[1]+s.siliconeThickness)
+  if(Math.max(footR,padR)+0.5>available)
+    throw new Error('Master mounting foot or pad would intersect a silicone box side wall. Choose an interior contact point or reduce its diameter.')
   const rings:Ring[]=[
     {center:[p[0],p[1],floorZ+0.25],radius:footR,up:[0,0,1]},
     {center:[p[0],p[1],floorZ+1.5],radius:footR,up:[0,0,1]},
