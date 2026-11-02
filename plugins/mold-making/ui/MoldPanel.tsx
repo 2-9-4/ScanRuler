@@ -110,6 +110,8 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
   const tabNutAcrossFlats=useMold(s=>s.tabNutAcrossFlats),tabNutDepth=useMold(s=>s.tabNutDepth)
   const boxDraftDeg=useMold(s=>s.boxDraftDeg)
   const previewGap=useMold(s=>s.previewGap)
+  const interfaceLabels=useMold(s=>s.interfaceLabels)
+  const setInterfaceLabels=useMold(s=>s.setInterfaceLabels)
   const mountEnabled=useMold(s=>s.mountEnabled)
   const mountPoint=useMold(s=>s.mountPoint)
   const mountNormal=useMold(s=>s.mountNormal)
@@ -227,6 +229,11 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
           <option value={4}>4 parts — quartered mold</option>
         </select></label>
       {multi&&<>
+        <label className="kv"><span className="name">Engrave matching interface numbers on outer mold faces</span>
+          <input type="checkbox" data-test="mold-interface-labels"
+            checked={interfaceLabels}
+            onChange={e=>setInterfaceLabels(e.target.checked)}/></label>
+        <p className="hint">Each shared seam gets the same number on both parts. A three-part mold marks the first sector 1–3, the second 1–2, and the third 2–3. Engraving is optional and never touches the casting surface.</p>
         {parts===3&&<p className="hint">Threefold has three 120° radial mating planes. The V-seam and printed/dowel registration are supported on all three interfaces; clamp ears are available on the radial mating interfaces.</p>}
         {parts!==3&&<label className="kv"><span className="name">Primary parting axis</span>
           <select data-test="mold-split-axis" value={splitAxis}
@@ -378,9 +385,9 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
       </>}
       <p className="hint">Both currently use the same straight vertical bore routing. A pour sprue is sized for material entry and can add a funnel; a vent is normally narrower and intended for air escape, but is not automatically placed at an air trap. Horizontal gates, automatic high-point detection, risers, and silicone master-mount channels remain roadmap items. Check filling, venting and parting seals before manufacture.</p>
     </div>}
-    {(mode==='silicone-box'||mountEnabled)&&<div className="group" data-test="mold-master-mount">
+    <div className="group" data-test="mold-master-mount">
       <div className="sec-head">Master suspension / glue-on base</div>
-      <p className="hint">To hold the source model in the silicone box without changing it, pick a downward-facing contact face using the tool on the 3D viewport. The selected surface sets the pad's location and angle; the support prints separately and can be glued to the master and the box floor.</p>
+      <p className="hint">Select a downward-facing surface of the master in the 3D viewport. The separate printable post enters from outside through a hexagonal hole in the mold base; the upper pad aligns to the selected surface and the larger exterior hexagonal shoulder sets insertion depth and rotation.</p>
       {mountPoint?<p className="hint">
         Contact: ({mountPoint.map(v=>v.toFixed(2)).join(', ')}) mm;
         surface direction: ({mountNormal.map(v=>v.toFixed(2)).join(', ')}).
@@ -390,16 +397,13 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
           checked={mountEnabled} disabled={!mountPoint}
           onChange={e=>setMountEnabled(e.target.checked)}/></label>
       {mountEnabled&&<>
-        {mode!=='silicone-box'&&<p className="hint mold-warning" role="alert">
-          A separate glue-on pedestal is supported only for silicone containment boxes. Disable it before generating direct-print molds.
-        </p>}
-        {fieldInput({key:'mountHeight',label:'Clearance below model (mm)',help:'Moves the inside bottom of the silicone box downward, providing suspension height below the imported model.'})}
+        {mode==='silicone-box'&&fieldInput({key:'mountHeight',label:'Clearance below model (mm)',help:'Moves the inside bottom of a silicone containment box downward; the hexagonal post passes through its base.'})}
         {fieldInput({key:'mountPadDiameter',label:'Glue pad diameter (mm)',help:'Contact pad follows the selected face normal. Verify the entire pad stays on the intended feature.'})}
         {fieldInput({key:'mountStemDiameter',label:'Support stem diameter (mm)',help:'Cylindrical vertical connection between foot and contact pad.'})}
-        {fieldInput({key:'mountFootDiameter',label:'Base foot diameter (mm)',help:'Foot sits just above the inside bottom of the printed silicone box.'})}
-        <p className="hint">The pedestal does not rotate or move the imported model. It aligns only the glue pad to the selected face and raises the model relative to the box floor. Preview collisions or unsupported overhangs before printing; glue and sealing are manual operations.</p>
+        {fieldInput({key:'mountFootDiameter',label:'Exterior stop diameter (mm)',help:'Hexagonal shoulder remains outside the mold base and prevents the post from sliding through.'})}
+        <p className="hint">The keyed bore has 0.25 mm nominal radial clearance. The source model is not rotated or modified; the hex post is printed separately. Test-fit and seal the penetration before casting.</p>
       </>}
-    </div>}
+    </div>
     <div className="group">
       <div className="sec-head">6. Generate, inspect &amp; export</div>
       {mode!=='silicone-box'&&<p className="hint">Positive clearance enlarges the cavity by a spherical distance-field offset, rounding sharp corners rather than pushing vertices along their normals. Very small features may be lost at the reported sampling resolution; inspect the resulting cavity. Zero clearance is exact.</p>}
