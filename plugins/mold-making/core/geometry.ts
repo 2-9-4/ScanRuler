@@ -11,6 +11,7 @@ import { parseMoldSettings, type MoldSettings, type SplitAxis } from './settings
 import {siliconeBoxCapacityMm3} from './materialEstimate'
 import {planVerticalChannels} from './pourChannels'
 import {analyzeTwoPartDraft,type DraftAnalysis} from './draftAnalysis'
+import {buildDraftOverlay,type DraftOverlayData} from './draftOverlay'
 import { projectedHull,contourAround,contourSegment,radialSeamContour,radialSiliconeLSeam,triangularContourTube,planeAxes } from './contourSeam'
 
 type Vec3 = [number,number,number]
@@ -24,6 +25,8 @@ export interface MoldBuild {
   targetBounds:Limits
   /** Opt-in surface-normal diagnostic, never changes geometry or export. */
   draftAnalysis:DraftAnalysis|null
+  /** Source-model diagnostic geometry: never included in printable parts. */
+  draftOverlay:DraftOverlayData|null
   /** Read-only estimates; never affect actual tooling meshes. Nullable
    * quantities deliberately distinguish open scans from valid solids. */
   materialEstimate:{
@@ -1081,6 +1084,8 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
     const splitAt=bounds.min[k]+(bounds.max[k]-bounds.min[k])*s.splitPosition
     return analyzeTwoPartDraft(targetMesh,s.splitAxis,splitAt,s.minimumDraftDeg)
   })():null
+  const draftOverlay=draftAnalysis
+    ?buildDraftOverlay(targetMesh,s.splitAxis,draftAnalysis.splitAtMm):null
   const heap:Manifold[]=[]
   const keep=(x:Manifold):Manifold=>{heap.push(x);return x}
   // One triangle BVH per generation, not once per clearance radius.
@@ -1248,7 +1253,7 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
       masterDisplacementMm3!==null
       ?Math.max(0,grossSiliconeCapacityMm3-masterDisplacementMm3):null
     return {parts,printable,kind:s.mode,warnings,openingZ:plan.openingZ,targetBounds:extentOf(targetMesh.positions),
-      draftAnalysis,
+      draftAnalysis,draftOverlay,
       volumeMm3:parts.reduce((v,p)=>v+p.volumeMm3,0),
       materialEstimate:{nominalCastingCavityMm3,grossSiliconeCapacityMm3,
         masterDisplacementMm3,netSiliconeMm3},
