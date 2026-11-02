@@ -162,7 +162,10 @@ export class MoldGuides {
     const createHandle=(kind:'pour'|'vent',index:number,pt:XY)=>{
       const diameter=kind==='pour'?s.pourDiameter:s.ventDiameter
       const radius=Math.max(0.65,diameter/2)
-      const color=kind==='pour'?0xff982b:0x3fd9d1
+      const x=b.min[0]+pt[0]*(b.max[0]-b.min[0])
+      const y=b.min[1]+pt[1]*(b.max[1]-b.min[1])
+      const hasSurface=this.surfaceHeight(x,y)!==null
+      const color=!hasSurface?0xff4055:kind==='pour'?0xff982b:0x3fd9d1
       // A visible annulus centered on the target's actual top surface,
       // showing the requested hole diameter, not a ball floating above it.
       const mesh=new THREE.Mesh(new THREE.TorusGeometry(radius,Math.max(.12,radius*.12),8,40),
@@ -191,7 +194,8 @@ export class MoldGuides {
         ctx.lineWidth=4;ctx.stroke()
         ctx.fillStyle='#ffffff';ctx.font='bold 32px sans-serif'
         ctx.textAlign='center';ctx.textBaseline='middle'
-        ctx.fillText(kind==='pour'?`SPRUE Ø${diameter}mm`:`VENT ${index+1} Ø${diameter}mm`,192,44)
+        ctx.fillText(!hasSurface?`${kind==='pour'?'SPRUE':'VENT '+(index+1)} — NO SURFACE`:
+          kind==='pour'?`SPRUE Ø${diameter}mm`:`VENT ${index+1} Ø${diameter}mm`,192,44)
       }
       const texture=new THREE.CanvasTexture(canvas)
       const sprite=new THREE.Sprite(new THREE.SpriteMaterial({
@@ -311,6 +315,7 @@ export class MoldGuides {
     if(!this.dragging||this.dragging.pointerId!==e.pointerId)return
     if(this.dragging.final)
       this.onMove(this.dragging.handle.kind,this.dragging.handle.index,this.dragging.final)
+    else this.updateObjects() // Revert a drag to an XY location with no source surface.
     this.dragging=null
     this.host.claimDrag(false)
     if(this.host.canvas.hasPointerCapture(e.pointerId))
