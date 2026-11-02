@@ -50,6 +50,7 @@ export class MoldGuides {
   private group=new THREE.Group()
   private sourceMesh:THREE.Mesh|null=null
   private handles:Handle[]=[]
+  private handleDecorations:THREE.Object3D[]=[]
   private bounds:Limits|null=null
   private outerBounds:Limits|null=null
   private settings:MoldSettings|null=null
@@ -119,6 +120,16 @@ export class MoldGuides {
       ;(handle.mesh.material as THREE.Material).dispose()
     }
     this.handles=[]
+    for(const obj of this.handleDecorations){
+      obj.parent?.remove(obj)
+      if(obj instanceof THREE.Mesh||obj instanceof THREE.Sprite){
+        if(obj instanceof THREE.Mesh)obj.geometry.dispose()
+        const mat=obj.material as THREE.SpriteMaterial|THREE.MeshBasicMaterial
+        if(mat.map)mat.map.dispose()
+        mat.dispose()
+      }
+    }
+    this.handleDecorations=[]
     if(!this.bounds||!this.settings)return
     const b=this.bounds,s=this.settings
     if(this.showPlanes)for(const corners of cutGuideSegments(b,s,this.outerBounds??b)){
@@ -138,19 +149,52 @@ export class MoldGuides {
       }))
       line.renderOrder=5;this.group.add(line);this.planeObjects.push(line)
     }
-    const pointToModel=(pt:XY):XYZ=>[
-      b.min[0]+pt[0]*(b.max[0]-b.min[0]),
-      b.min[1]+pt[1]*(b.max[1]-b.min[1]),
-      b.max[2]+Math.max(2,(b.max[2]-b.min[2])*0.08),
-    ]
+    const pointToModel=(pt:XY):XYZ=>{
+      const x=b.min[0]+pt[0]*(b.max[0]-b.min[0])
+      const y=b.min[1]+pt[1]*(b.max[1]-b.min[1])
+      return [x,y,this.surfaceHeight(x,y)??b.max[2]]
+    }
     const createHandle=(kind:'pour'|'vent',index:number,pt:XY)=>{
-      const radius=Math.max(0.65,(kind==='pour'?s.pourDiameter:s.ventDiameter)/2)
-      const mesh=new THREE.Mesh(new THREE.SphereGeometry(radius,16,10),
-        new THREE.MeshBasicMaterial({color:kind==='pour'?0xfaa34e:0x80ebca,
-          depthTest:false,transparent:true,opacity:0.95}))
-      mesh.position.set(...pointToModel(pt))
-      mesh.renderOrder=6
+      const diameter=kind==='pour'?s.pourDiameter:s.ventDiameter
+      const radius=Math.max(0.65,diameter/2)
+      const color=kind==='pour'?0xff982b:0x3fd9d1
+      // A visible annulus centered on the target's actual top surface,
+      // showing the requested hole diameter, not a ball floating above it.
+      const mesh=new THREE.Mesh(new THREE.TorusGeometry(radius,Math.max(.12,radius*.12),8,40),
+        new THREE.MeshBasicMaterial({color,depthTest:false,depthWrite:false,
+          transparent:true,opacity:1,side:THREE.DoubleSide}))
+      const xyz=pointToModel(pt)
+      mesh.position.set(xyz[0],xyz[1],xyz[2]+0.15)
+      mesh.renderOrder=7
       this.group.add(mesh);this.handles.push({kind,index,mesh})
+      const canvas=document.createElement('canvas')
+      canvas.width=384;canvas.height=88
+      const ctx=canvas.getContext('2d')
+      if(ctx){
+        ctx.fillStyle='rgba(16,22,30,0.9)'
+        ctx.roundRect(2,4,380,78,15);ctx.fill()
+        ctx.strokeStyle=kind==='pour'?'#ff982b':'#3fd9d1'
+        ctx.lineWidth=4;ctx.stroke()
+        ctx.fillStyle='#ffffff';ctx.font='bold 32px sans-serif'
+        ctx.textAlign='center';ctx.textBaseline='middle'
+        ctx.fillText(kind==='pour'?`SPRUE Ø${diameter}mm`:`VENT ${index+1} Ø${diameter}mm`,192,44)
+      }
+      const texture=new THREE.CanvasTexture(canvas)
+      const sprite=new THREE.Sprite(new THREE.SpriteMaterial({
+        map:texture,depthTest:false,depthWrite:false,transparent:true,
+      }))
+      const h=Math.max(2.4,Math.min(5,(b.max[2]-b.min[2])*.12))
+      sprite.scale.set(h*384/88,h,1)
+      sprite.position.set(xyz[0],xyz[1],xyz[2]+h*1.25)
+      sprite.renderOrder=8
+      this.group.add(sprite);this.handleDecorations.push(sprite)
+      // Thin leader joins the label to the actual surface opening.
+      const points=[new THREE.Vector3(xyz[0],xyz[1],xyz[2]+0.2),
+        new THREE.Vector3(xyz[0],xyz[1],xyz[2]+h*.9)]
+      const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints(points),
+        new THREE.LineBasicMaterial({color,depthTest:false}))
+      line.renderOrder=7
+      this.group.add(line);this.handleDecorations.push(line)
     }
     if(this.showHandles){
       if(s.pourEnabled)createHandle('pour',0,s.pourPoint)
@@ -179,6 +223,19 @@ export class MoldGuides {
       this.group.add(marker);this.planeObjects.push(marker)
     }
     this.host.invalidate()
+  }
+  /** Find the frontmost intersection in the vertical bore direction. A
+   *  marker is not valid until an actual source triangle is underneath. */
+  private surfaceHeight(x:number,y:number):number|null{
+    if(!this.sourceMesh||!this.bounds)return null
+    this.group.updateWorldMatrix(true,false)
+    const top=this.bounds.max[2]+Math.max(5,this.bounds.max[2]-this.bounds.min[2])
+    const origin=new THREE.Vector3(x,y,top).applyMatrix4(this.group.matrixWorld)
+    const direction=new THREE.Vector3(0,0,-1).transformDirection(this.group.matrixWorld)
+    const ray=new THREE.Raycaster(origin,direction,0,Infinity)
+    const hit=ray.intersectObject(this.sourceMesh,false)[0]
+    if(!hit)return null
+    return this.group.worldToLocal(hit.point.clone()).z
   }
   private pointerDown(e:PointerEvent):boolean{
     if(!this.active||!this.bounds||!this.settings||e.button!==0)return false
@@ -220,6 +277,9 @@ export class MoldGuides {
     const xy:XY=[Math.max(.01,Math.min(.99,fx)),Math.max(.01,Math.min(.99,fy))]
     drag.handle.mesh.position.x=b.min[0]+xy[0]*(b.max[0]-b.min[0])
     drag.handle.mesh.position.y=b.min[1]+xy[1]*(b.max[1]-b.min[1])
+    const z=this.surfaceHeight(drag.handle.mesh.position.x,drag.handle.mesh.position.y)
+    if(z===null){drag.final=null;return}
+    drag.handle.mesh.position.z=z+0.15
     drag.final=xy
     this.host.invalidate()
   }
@@ -241,7 +301,16 @@ export class MoldGuides {
       }
     }
     for(const h of this.handles){h.mesh.geometry.dispose();(h.mesh.material as THREE.Material).dispose()}
-    this.planeObjects=[];this.handles=[]
+    for(const obj of this.handleDecorations){
+      if(obj instanceof THREE.Mesh||obj instanceof THREE.Sprite){
+        if(obj instanceof THREE.Mesh)obj.geometry.dispose()
+        const material=obj.material as THREE.SpriteMaterial|THREE.MeshBasicMaterial
+        material.map?.dispose();material.dispose()
+      }else if(obj instanceof THREE.Line){
+        obj.geometry.dispose();(obj.material as THREE.Material).dispose()
+      }
+    }
+    this.planeObjects=[];this.handles=[];this.handleDecorations=[]
     if(this.sourceMesh){
       this.sourceMesh.geometry.dispose()
       ;(this.sourceMesh.material as THREE.Material).dispose()
