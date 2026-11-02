@@ -1121,6 +1121,8 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
   try{
     let solid:Manifold
     let nominalCastingCavityMm3:number|null=null
+    let siliconeInterior:Manifold|null=null
+    let supportDisplacementInsideMm3=0
     onProgress?.('Constructing full-height tooling from the source solid…',0.13)
     if(s.mode==='silicone-box'){
       const out=plan.outer,inn=plan.innerBox!
@@ -1135,6 +1137,7 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
         body=toManifold(wasm,boxSolid(out),keep)
         empty=toManifold(wasm,draftedBox(inn,draft),keep)
       }
+      siliconeInterior=empty
       solid=keep(body.subtract(empty))
       warnings.push(s.mountEnabled
         ?'The master is intended to be glued to the separate suspension pedestal, which must also be attached and sealed to the box floor. Inspect the assembled preview before pouring.'
@@ -1284,6 +1287,10 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
       const mount=masterMountMesh(extentOf(targetMesh.positions),s,plan.outer)
       if(!mount)throw new Error('Failed to construct master mounting pedestal.')
       const pedestal=toManifold(wasm,mount,keep)
+      if(siliconeInterior){
+        const inside=keep(pedestal.intersect(siliconeInterior))
+        supportDisplacementInsideMm3=inside.isEmpty()?0:Math.max(0,inside.volume())
+      }
       parts.push(toPart(pedestal,'Glue-on master mounting pedestal',warnings))
       warnings.push('A separate hex-keyed master mounting post was exported. Insert from outside through the base bore; glue the pad to the selected master underside, seal the through-wall penetration and check the exterior stop. The post is not part of the casting.')
     }
@@ -1308,8 +1315,10 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
     const master=edges&&edges.open===0&&edges.bad===0
       ?stableVolume(targetMesh):null
     const masterDisplacementMm3=master!==null&&master>0?master:null
-    const supportDisplacementMm3=s.mountEnabled
-      ?(parts.find(p=>p.name==='Glue-on master mounting pedestal')?.volumeMm3??0):0
+    // The external shoulder and the segment inside the printed base do NOT
+    // displace pourable silicone. Intersect against the actual interior
+    // instead of subtracting the entire keyed post's printed volume.
+    const supportDisplacementMm3=supportDisplacementInsideMm3
     const netSiliconeMm3=grossSiliconeCapacityMm3!==null&&
       masterDisplacementMm3!==null
       ?Math.max(0,grossSiliconeCapacityMm3-masterDisplacementMm3-supportDisplacementMm3):null
