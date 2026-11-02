@@ -225,6 +225,25 @@ describe('Mold Making assembly',()=>{
     expect(assessed.volumeMm3).toBeCloseTo(ordinary.volumeMm3,5)
     intact(assessed.parts)
   })
+  it('keeps 1/3/4-piece direct tooling unchanged with release overlays enabled',()=>{
+    const target=boxSolid({min:[-5,-5,0],max:[5,5,10]})
+    for(const parts of [1,3,4] as const){
+      const base={...DEFAULT_MOLD_SETTINGS,parts,keys:false}
+      const normal=buildMold(wasm,target,base)
+      const diagnosed=buildMold(wasm,target,{...base,analyzeDraft:true})
+      expect(normal.draftOverlay).toBeNull()
+      expect(normal.draftAnalysis).toBeNull()
+      expect(diagnosed.draftAnalysis?.regions).toHaveLength(parts)
+      expect(diagnosed.draftOverlay?.angleDeg.length).toBeGreaterThan(0)
+      expect(new Set(diagnosed.draftOverlay!.half).size).toBe(parts)
+      expect(diagnosed.parts).toHaveLength(normal.parts.length)
+      expect(diagnosed.printable).toBe(normal.printable)
+      expect(diagnosed.volumeMm3).toBeCloseTo(normal.volumeMm3,5)
+      for(let i=0;i<parts;i++)
+        expect(diagnosed.parts[i].volumeMm3).toBeCloseTo(normal.parts[i].volumeMm3,5)
+      intact(diagnosed.parts)
+    }
+  })
   it('builds a silicone containment box from an OPEN scan without any mesh repair',()=>{
     // Two triangles removed from a face: four boundary edges.
     const open={positions:master.positions,
