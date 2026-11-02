@@ -23,6 +23,12 @@ function settingsChanged(a:MoldSettings,b:MoldSettings):boolean {
         a.ventPoints.some((point,i)=>point[0]!==b.ventPoints[i][0]||
           point[1]!==b.ventPoints[i][1])
     }
+    if(k==='mountPoint')
+      return a.mountPoint===null||b.mountPoint===null
+        ?a.mountPoint!==b.mountPoint
+        :a.mountPoint.some((x,i)=>x!==b.mountPoint![i])
+    if(k==='mountNormal')
+      return a.mountNormal.some((x,i)=>x!==b.mountNormal[i])
     return a[k]!==b[k]
   })
 }
