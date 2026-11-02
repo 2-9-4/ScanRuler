@@ -156,6 +156,8 @@ export function moldMaterial(s:MoldSettings,targetHeight?:number,targetWidth?:nu
   // Grow the computed backing only when the optional feature is enabled.
   if(s.mode==='direct'&&s.pourEnabled)
     material.base=Math.max(material.base,s.pourFunnelDepth+s.clearance+1.5)
+  if(s.mode==='direct'&&s.mountEnabled)
+    material.base=Math.max(material.base,6+s.clearance)
   if((v||(s.parts===3&&s.keys))&&targetHeight!==undefined&&Number.isFinite(targetHeight)&&s.clampTabCount>0){
     const tab=clampHardware(s)
     const pitch=tab.width+Math.max(2,tab.width*0.25)
