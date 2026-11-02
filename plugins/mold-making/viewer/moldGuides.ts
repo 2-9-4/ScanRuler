@@ -12,7 +12,7 @@ import {masterMountMesh} from '../core/masterMount'
 type MeshData={positions:Float32Array;indices:Uint32Array}
 type XY=[number,number]
 type XYZ=[number,number,number]
-type Handle={kind:'pour'|'vent';index:number;mesh:THREE.Mesh}
+type Handle={kind:'pour'|'vent';index:number;mesh:THREE.Mesh;label:THREE.Sprite;leader:THREE.Line}
 const axisIndex=(a:'x'|'y'|'z')=>a==='x'?0:a==='y'?1:2
 /** Stable read-only cut layout so previews match the actual two-/three-/fourfold splitter. */
 export function cutGuideSegments(b:Limits,s:MoldSettings,frame:Limits=b):XYZ[][]{
@@ -127,6 +127,9 @@ export class MoldGuides {
         const mat=obj.material as THREE.SpriteMaterial|THREE.MeshBasicMaterial
         if(mat.map)mat.map.dispose()
         mat.dispose()
+      }else if(obj instanceof THREE.Line){
+        obj.geometry.dispose()
+        ;(obj.material as THREE.Material).dispose()
       }
     }
     this.handleDecorations=[]
@@ -166,7 +169,8 @@ export class MoldGuides {
       const xyz=pointToModel(pt)
       mesh.position.set(xyz[0],xyz[1],xyz[2]+0.15)
       mesh.renderOrder=7
-      this.group.add(mesh);this.handles.push({kind,index,mesh})
+      this.group.add(mesh);this.handles.push({kind,index,mesh,
+        label:null as unknown as THREE.Sprite,leader:null as unknown as THREE.Line})
       const canvas=document.createElement('canvas')
       canvas.width=384;canvas.height=88
       const ctx=canvas.getContext('2d')
@@ -195,6 +199,8 @@ export class MoldGuides {
         new THREE.LineBasicMaterial({color,depthTest:false}))
       line.renderOrder=7
       this.group.add(line);this.handleDecorations.push(line)
+      this.handles[this.handles.length-1].label=sprite
+      this.handles[this.handles.length-1].leader=line
     }
     if(this.showHandles){
       if(s.pourEnabled)createHandle('pour',0,s.pourPoint)
@@ -202,7 +208,7 @@ export class MoldGuides {
     }
     if(s.mountEnabled&&s.mountPoint){
       try{
-        const support=masterMountMesh(b,s)
+        const support=masterMountMesh(b,s,this.outerBounds??b)
         if(support){
           const geometry=new THREE.BufferGeometry()
           geometry.setAttribute('position',new THREE.BufferAttribute(support.positions,3))
@@ -280,6 +286,13 @@ export class MoldGuides {
     const z=this.surfaceHeight(drag.handle.mesh.position.x,drag.handle.mesh.position.y)
     if(z===null){drag.final=null;return}
     drag.handle.mesh.position.z=z+0.15
+    const label=drag.handle.label,leader=drag.handle.leader
+    const h=label.position.z-leader.geometry.getAttribute('position').getZ(0)
+    label.position.set(drag.handle.mesh.position.x,drag.handle.mesh.position.y,z+h)
+    leader.geometry.setFromPoints([
+      new THREE.Vector3(drag.handle.mesh.position.x,drag.handle.mesh.position.y,z+0.2),
+      new THREE.Vector3(drag.handle.mesh.position.x,drag.handle.mesh.position.y,z+h*0.7),
+    ])
     drag.final=xy
     this.host.invalidate()
   }
