@@ -92,7 +92,7 @@ export function planVerticalChannels(
     const z=topSurfaceAt(mesh,x,y)
     if(z===null)throw new Error(
       `${item.kind==='pour'?'Pour channel':'Air vent'} at (${Math.round(100*fx)}%, ${Math.round(100*fy)}%) misses the master surface. Move the XY point to a filled area of the model.`)
-    const radius=item.diameter/2,outerRadius=item.funnel/2
+    const outerRadius=item.funnel/2
     const lip=0.6
     if(radialOuter){
       const d=Math.hypot(x-radialOuter.cx,y-radialOuter.cy)
