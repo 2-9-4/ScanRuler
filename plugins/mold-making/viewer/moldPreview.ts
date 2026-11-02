@@ -180,9 +180,19 @@ export class MoldPreview {
       mesh.visible=options.show&&this.draftVisible.length>0
     }
     const active=this.draftActive()
-    // Draft colors are painted on the source model, not a replacement for tooling.
-    // Keep each mold component visible in assembled and exploded views.
+    // Keep mold components on screen WITH the colored source. In assembled
+    // draft mode, make the shell translucent so the diagnostic survives
+    // normal depth testing; the exploded view retains opaque solid surfaces.
+    const xray=active&&this.viewMode==='section'
     for(const part of this.parts)part.visible=true
+    for(const mesh of this.meshes){
+      const mat=mesh.material as THREE.MeshStandardMaterial
+      if(mat.transparent!==xray){
+        mat.transparent=xray;mat.needsUpdate=true
+      }
+      mat.opacity=xray?.26:1
+      mat.depthWrite=!xray
+    }
     if(!active)this.emitDraftHover(null)
     this.setSourceVisibility()
     this.refreshCaps()
@@ -298,6 +308,7 @@ export class MoldPreview {
     // Unlike the prior mode, exploding the mold must never hide the model.
     this.setSourceVisibility()
     this.setGap(active?0:this.explodeGap)
+    this.setDraftOptions(this.draftOptions)
   }
   setGap(gap:number):void {
     if(!Number.isFinite(gap)||gap<0)return
