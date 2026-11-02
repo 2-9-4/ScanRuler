@@ -36,6 +36,23 @@ describe('Mold Making configuration',()=>{
     expect(MOLD_MODES).not.toContain('thin-negative-shell')
     expect(parsed.clearance).toBe(old.clearance)
   })
+  it('compares new channel coordinates by value for holdsWork and project tracking',()=>{
+    useMold.setState({...DEFAULT_MOLD_SETTINGS,
+      pourPoint:[...DEFAULT_MOLD_SETTINGS.pourPoint] as [number,number],
+      ventPoints:DEFAULT_MOLD_SETTINGS.ventPoints.map(p=>[...p] as [number,number])})
+    expect(moldSection.holdsWork!()).toBe(false)
+    expect(moldSection.hasContent!({...DEFAULT_MOLD_SETTINGS,
+      pourPoint:[...DEFAULT_MOLD_SETTINGS.pourPoint],
+      ventPoints:DEFAULT_MOLD_SETTINGS.ventPoints.map(p=>[...p])})).toBe(false)
+    useMold.getState().setPourPoint([0.22,0.35])
+    expect(moldSection.holdsWork!()).toBe(true)
+    useMold.setState({...DEFAULT_MOLD_SETTINGS})
+    expect(moldSection.holdsWork!()).toBe(false)
+    useMold.getState().setVentPoints([[0.3,0.7],[0.85,0.65]])
+    expect(moldSection.holdsWork!()).toBe(true)
+    useMold.setState({...DEFAULT_MOLD_SETTINGS})
+    expect(moldSection.holdsWork!()).toBe(false)
+  })
   it('preserves two-axis registration coordinates through project save and restore',()=>{
     const s={...DEFAULT_MOLD_SETTINGS,keyPlacement:'manual' as const,
       keyPoints:[[0.13,0.25],[0.82,0.77]] as [number,number][]}
