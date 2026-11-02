@@ -31,8 +31,13 @@ const plugin: WorkerPlugin = {
       const draftAnalysis=settings.analyzeDraft&&settings.mode==='direct'
         ?analyzeMoldDraft(source,settings):null
       const draftOverlay=draftAnalysis?buildMoldDraftOverlay(source,settings):null
-      const sourcePositions=new Float32Array(source.positions)
-      const sourceIndices=new Uint32Array(source.indices)
+      // Only silicone boxes need a second raycast mesh for selecting a
+      // glue-on master face. Direct molds already transfer the colored
+      // overlay: avoid duplicating large scan buffers unnecessarily.
+      const sourcePositions=settings.mode==='silicone-box'
+        ?new Float32Array(source.positions):new Float32Array(0)
+      const sourceIndices=settings.mode==='silicone-box'
+        ?new Uint32Array(source.indices):new Uint32Array(0)
       return {
         result:{targetBounds:bounds,outerBounds,draftAnalysis,draftOverlay,
           sourcePositions,sourceIndices},
