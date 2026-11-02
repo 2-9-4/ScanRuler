@@ -150,6 +150,29 @@ describe('Mold Making configuration',()=>{
     expect(parseMoldSettings({...recipe,pourFunnelDepth:0}).pourFunnelDepth).toBe(0)
     useMold.setState({...DEFAULT_MOLD_SETTINGS})
   })
+  it('keeps diagnostic draft screening opt-in and round-trips its threshold',()=>{
+    const original=useMold.getState()
+    try{
+      expect(DEFAULT_MOLD_SETTINGS.analyzeDraft).toBe(false)
+      expect(DEFAULT_MOLD_SETTINGS.minimumDraftDeg).toBe(2)
+      const s={...DEFAULT_MOLD_SETTINGS,analyzeDraft:true,minimumDraftDeg:4.5}
+      expect(parseMoldSettings(s)).toEqual(s)
+      moldSection.prepare(s,{manifest:{} as never,members:new Map()})()
+      expect(moldSection.collect({sources:{} as never,scanSaved:true,addMember(){}}))
+        .toEqual(s)
+      expect(moldSection.holdsWork!()).toBe(true)
+      useMold.setState({...DEFAULT_MOLD_SETTINGS})
+      expect(moldSection.holdsWork!()).toBe(false)
+      expect(()=>parseMoldSettings({...s,parts:3})).toThrow(/two-part direct/)
+      expect(()=>parseMoldSettings({...s,mode:'silicone-box'})).toThrow(/two-part direct/)
+      expect(()=>parseMoldSettings({...s,minimumDraftDeg:35})).toThrow(/minimumDraftDeg/)
+      const legacy=Object.fromEntries(Object.entries(s).filter(
+        ([k])=>k!=='analyzeDraft'&&k!=='minimumDraftDeg'))
+      expect(parseMoldSettings(legacy).analyzeDraft).toBe(false)
+    }finally{
+      useMold.setState({...DEFAULT_MOLD_SETTINGS})
+    }
+  })
   it('resets a project lacking settings',()=>{
     useMold.getState().setMode('silicone-box')
     moldSection.prepare(undefined,{manifest:{} as never,members:new Map()})()
