@@ -16,7 +16,8 @@ import { fileSafe } from '../../../src/core/project/manifest'
 import { moldSettings, useMold } from '../state/moldStore'
 import { MOLD_SETTING_KEYS } from '../core/settings'
 import type { MoldBuild, Limits } from '../core/geometry'
-import { MoldPreview, type MoldPreviewMode } from '../viewer/moldPreview'
+import { MoldPreview, type MoldPreviewMode, type DraftHover } from '../viewer/moldPreview'
+import { DEFAULT_DRAFT_DISPLAY,type DraftDisplayOptions } from '../core/draftOverlay'
 import { MoldPanel } from '../ui/MoldPanel'
 
 const NO_CREASE = { mode: 'off' as const, angleDeg: 30 }
@@ -31,6 +32,9 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [previewMode,setPreviewMode] = useState<MoldPreviewMode>('exploded')
+  // View-only controls; changing these never invalidates worker results.
+  const [draftDisplay,setDraftDisplay]=useState<DraftDisplayOptions>({...DEFAULT_DRAFT_DISPLAY})
+  const [draftHover,setDraftHover]=useState<DraftHover|null>(null)
   const previewGap = useMold(s=>s.previewGap)
   const preview = useRef<MoldPreview | null>(null)
   const priorSection=useRef<ReturnType<typeof useSectionView.getState>|null>(null)
@@ -48,6 +52,7 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
     generatedVersion.current = null
     setError(null)
     preview.current?.clear()
+    setDraftHover(null)
   }, [])
 
   useEffect(() => {
@@ -136,10 +141,14 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
       // An unsupported or physically risky mold must never be presented as
       // a complete two-part production mold; warnings travel with exports.
       if (!preview.current && host.sceneRef.current) {
-        preview.current = new MoldPreview(host.sceneRef.current, invalidate)
+        preview.current = new MoldPreview(host.sceneRef.current, invalidate,setDraftHover)
       }
       setPreviewMode('exploded')
       preview.current?.set(made, settings.source, settings.previewGap,'exploded',settings.parts,settings.splitAxis)
+      const nextDisplay={...DEFAULT_DRAFT_DISPLAY,show:!!made.draftOverlay,
+        thresholdDeg:settings.minimumDraftDeg}
+      setDraftDisplay(nextDisplay)
+      preview.current?.setDraftOptions(nextDisplay)
       generatedVersion.current = selectedVersion
       setGenerated(made)
       setTargetBounds(made.targetBounds)
@@ -158,6 +167,11 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
       busy.current = false
       setGenerating(false)
     }
+  }
+
+  const changeDraftDisplay=(next:DraftDisplayOptions)=>{
+    setDraftDisplay(next)
+    preview.current?.setDraftOptions(next)
   }
 
   const changePreviewMode=(next:MoldPreviewMode)=>{
@@ -266,6 +280,9 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
         onBoolean={useForBoolean}
         onEditPart={(index,workspace)=>void editPart(index,workspace)}
         generated={generated}
+        draftDisplay={draftDisplay}
+        onDraftDisplayChange={changeDraftDisplay}
+        draftHover={draftHover}
         previewMode={previewMode}
         onPreviewModeChange={changePreviewMode}
         targetBounds={targetBounds}
