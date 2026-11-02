@@ -12,7 +12,7 @@ import {masterMountMesh} from '../core/masterMount'
 type MeshData={positions:Float32Array;indices:Uint32Array}
 type XY=[number,number]
 type XYZ=[number,number,number]
-type Handle={kind:'pour'|'vent';index:number;mesh:THREE.Mesh;label:THREE.Sprite;leader:THREE.Line}
+type Handle={kind:'pour'|'vent';index:number;mesh:THREE.Mesh;pick:THREE.Mesh;label:THREE.Sprite;leader:THREE.Line}
 const axisIndex=(a:'x'|'y'|'z')=>a==='x'?0:a==='y'?1:2
 /** Stable read-only cut layout so previews match the actual two-/three-/fourfold splitter. */
 export function cutGuideSegments(b:Limits,s:MoldSettings,frame:Limits=b):XYZ[][]{
@@ -118,6 +118,8 @@ export class MoldGuides {
     for(const handle of this.handles){
       this.group.remove(handle.mesh);handle.mesh.geometry.dispose()
       ;(handle.mesh.material as THREE.Material).dispose()
+      handle.pick.parent?.remove(handle.pick)
+      handle.pick.geometry.dispose();(handle.pick.material as THREE.Material).dispose()
     }
     this.handles=[]
     for(const obj of this.handleDecorations){
@@ -169,7 +171,15 @@ export class MoldGuides {
       const xyz=pointToModel(pt)
       mesh.position.set(xyz[0],xyz[1],xyz[2]+0.15)
       mesh.renderOrder=7
-      this.group.add(mesh);this.handles.push({kind,index,mesh,
+      this.group.add(mesh)
+      // Broad transparent hit disk makes the narrow circle easy to grab
+      // without replacing the visible hole marker with a floating sphere.
+      const pick=new THREE.Mesh(new THREE.CircleGeometry(radius*1.35,32),
+        new THREE.MeshBasicMaterial({colorWrite:false,depthWrite:false,
+          transparent:true,opacity:0,side:THREE.DoubleSide}))
+      pick.position.copy(mesh.position)
+      this.group.add(pick)
+      this.handles.push({kind,index,mesh,pick,
         label:null as unknown as THREE.Sprite,leader:null as unknown as THREE.Line})
       const canvas=document.createElement('canvas')
       canvas.width=384;canvas.height=88
@@ -257,9 +267,9 @@ export class MoldGuides {
       return true
     }
     if(!this.showHandles)return false
-    const hits=this.host.raycaster.intersectObjects(this.handles.map(h=>h.mesh),false)
+    const hits=this.host.raycaster.intersectObjects(this.handles.map(h=>h.pick),false)
     if(!hits.length)return false
-    const handle=this.handles.find(h=>h.mesh===hits[0].object)
+    const handle=this.handles.find(h=>h.pick===hits[0].object)
     if(!handle)return false
     this.dragging={handle,pointerId:e.pointerId,z:handle.mesh.position.z,final:null}
     this.host.claimDrag(true)
@@ -286,6 +296,7 @@ export class MoldGuides {
     const z=this.surfaceHeight(drag.handle.mesh.position.x,drag.handle.mesh.position.y)
     if(z===null){drag.final=null;return}
     drag.handle.mesh.position.z=z+0.15
+    drag.handle.pick.position.copy(drag.handle.mesh.position)
     const label=drag.handle.label,leader=drag.handle.leader
     const h=label.position.z-leader.geometry.getAttribute('position').getZ(0)
     label.position.set(drag.handle.mesh.position.x,drag.handle.mesh.position.y,z+h)
@@ -313,7 +324,10 @@ export class MoldGuides {
         obj.geometry.dispose();(obj.material as THREE.Material).dispose()
       }
     }
-    for(const h of this.handles){h.mesh.geometry.dispose();(h.mesh.material as THREE.Material).dispose()}
+    for(const h of this.handles){
+      h.mesh.geometry.dispose();(h.mesh.material as THREE.Material).dispose()
+      h.pick.geometry.dispose();(h.pick.material as THREE.Material).dispose()
+    }
     for(const obj of this.handleDecorations){
       if(obj instanceof THREE.Mesh||obj instanceof THREE.Sprite){
         if(obj instanceof THREE.Mesh)obj.geometry.dispose()
