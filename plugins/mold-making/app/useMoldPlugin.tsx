@@ -353,6 +353,24 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
           onChange={e=>setShowCutGuides(e.target.checked)}/> Cut planes</label>
         <label><input type="checkbox" checked={showHandles}
           onChange={e=>setShowHandles(e.target.checked)}/> Sprue / vent handles</label>
+        {useMold.getState().mode==='direct'&&useMold.getState().parts>1&&<>
+          <button type="button" data-test="mold-toggle-surface-sprue"
+            onClick={()=>useMold.getState().setPourEnabled(!useMold.getState().pourEnabled)}>
+            {useMold.getState().pourEnabled?'Remove sprue':'Add sprue'}
+          </button>
+          <button type="button" data-test="mold-add-surface-vent"
+            onClick={()=>{
+              const state=useMold.getState()
+              if(!state.ventsEnabled)state.setVentsEnabled(true)
+              else if(state.ventPoints.length<8){
+                const index=state.ventPoints.length
+                const point:[number,number]=[0.25+(index%3)*0.23,0.3+((index+1)%3)*0.21]
+                state.setVentPoints([...state.ventPoints,point])
+              }
+            }}>
+            {useMold.getState().ventsEnabled?'Add vent':'Add vent hole'}
+          </button>
+        </>}
         {<button type="button"
           data-test="mold-pick-base" aria-pressed={pickingBase}
           onClick={()=>setPickingBase(!pickingBase)}>
