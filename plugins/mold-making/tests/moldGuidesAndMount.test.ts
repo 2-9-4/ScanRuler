@@ -48,7 +48,7 @@ describe('Pre-generation plane guides and glue-on master support',()=>{
     expect(DEFAULT_MOLD_SETTINGS.mountPoint).toBeNull()
     expect(masterMountMesh(bounds,DEFAULT_MOLD_SETTINGS)).toBeNull()
     expect(()=>parseMoldSettings({...mounted,mountPoint:null})).toThrow(/Pick a base face/)
-    expect(()=>parseMoldSettings({...mounted,mode:'direct'})).toThrow(/silicone containment/)
+    expect(parseMoldSettings({...mounted,mode:'direct'}).mountEnabled).toBe(true)
     expect(()=>parseMoldSettings({...mounted,mountNormal:[0,0,1]})).toThrow(/downward/)
     expect(()=>parseMoldSettings({...mounted,mountStemDiameter:50})).toThrow(/foot diameter/)
   })
@@ -60,6 +60,9 @@ describe('Pre-generation plane guides and glue-on master support',()=>{
     const planned=planMasterMount(bounds,mounted)!
     expect(planned.floorZ).toBeCloseTo(-12)
     expect(planned.rings.at(-1)!.center).toEqual([0,0,-0.2])
+    expect(planned.rings[0].hex).toBe(true)
+    expect(planned.rings[2].hex).toBe(true)
+    expect(planned.rings[0].center[2]).toBeLessThan(planned.floorZ)
     expect(cube.positions).toEqual(untouched)
     expect(parseMoldSettings(mounted)).toEqual(mounted)
   })
