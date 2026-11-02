@@ -10,8 +10,8 @@ import { createSphericalDistanceField, sphericalOffset, type SphericalDistanceFi
 import { parseMoldSettings, type MoldSettings, type SplitAxis } from './settings'
 import {siliconeBoxCapacityMm3} from './materialEstimate'
 import {planVerticalChannels} from './pourChannels'
-import {analyzeTwoPartDraft,type DraftAnalysis} from './draftAnalysis'
-import {buildDraftOverlay,type DraftOverlayData} from './draftOverlay'
+import {analyzeMoldDraft,type DraftAnalysis} from './draftAnalysis'
+import {buildMoldDraftOverlay,type DraftOverlayData} from './draftOverlay'
 import { projectedHull,contourAround,contourSegment,radialSeamContour,radialSiliconeLSeam,triangularContourTube,planeAxes } from './contourSeam'
 
 type Vec3 = [number,number,number]
@@ -1079,13 +1079,8 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
     warnings.push(...repaired.warnings)
   }
   const plan=planMold(targetMesh,s)
-  const draftAnalysis=s.analyzeDraft?(()=>{
-    const bounds=extentOf(targetMesh.positions),k=axisIndex(s.splitAxis)
-    const splitAt=bounds.min[k]+(bounds.max[k]-bounds.min[k])*s.splitPosition
-    return analyzeTwoPartDraft(targetMesh,s.splitAxis,splitAt,s.minimumDraftDeg)
-  })():null
-  const draftOverlay=draftAnalysis
-    ?buildDraftOverlay(targetMesh,s.splitAxis,draftAnalysis.splitAtMm):null
+  const draftAnalysis=s.analyzeDraft?analyzeMoldDraft(targetMesh,s):null
+  const draftOverlay=draftAnalysis?buildMoldDraftOverlay(targetMesh,s):null
   const heap:Manifold[]=[]
   const keep=(x:Manifold):Manifold=>{heap.push(x);return x}
   // One triangle BVH per generation, not once per clearance radius.
