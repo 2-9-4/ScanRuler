@@ -86,6 +86,10 @@ export class MoldPreview {
           m.clippingPlanes=planes??[]
           m.needsUpdate=true
         }
+        if(this.draftMesh){
+          this.draftMesh.material.clippingPlanes=planes??[]
+          this.draftMesh.material.needsUpdate=true
+        }
         this.activeSection=section?planes:null
         this.refreshCaps()
       },
@@ -128,10 +132,10 @@ export class MoldPreview {
     if(!this.bounds||!this.group.visible)return
     if(this.source==='reference'){
       this.scene.setScanVisible(false)
-      this.scene.setNominalVisible(!this.draftActive())
+      this.scene.setNominalVisible(!this.draftActive()||this.draftOptions.problemsOnly)
     }else{
       this.scene.setNominalVisible(false)
-      this.scene.setScanVisible(!this.draftActive())
+      this.scene.setScanVisible(!this.draftActive()||this.draftOptions.problemsOnly)
     }
   }
   /** Pure display changes: no worker call, no mold solid mutation or export. */
@@ -224,6 +228,7 @@ export class MoldPreview {
       const material=new THREE.MeshBasicMaterial({
         color:0xffffff,vertexColors:true,transparent:true,opacity:this.draftOptions.opacity,
         depthWrite:true,side:THREE.DoubleSide,
+        polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-2,
         clippingPlanes:this.host.clipPlanes()??[],
       })
       this.draftMesh=new THREE.Mesh(geo,material)
