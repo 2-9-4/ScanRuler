@@ -54,13 +54,16 @@ export function planMasterMount(bounds:Bounds,s:MoldSettings,outer?:Bounds):{rin
     // Stop/shoulder is EXTERNAL to the bottom wall. The keyed section
     // begins inside the bore; it cannot rotate around the vertical axis.
     {center:[p[0],p[1],floorZ-3],radius:footR,up:[0,0,1],hex:true},
-    {center:[p[0],p[1],floorZ-0.2],radius:footR,up:[0,0,1],hex:true},
-    {center:[p[0],p[1],floorZ+0.2],radius:stemR,up:[0,0,1],hex:true},
+    {center:[p[0],p[1],floorZ-0.8],radius:footR,up:[0,0,1],hex:true},
+    // Reduce from the exterior shoulder BEFORE entering the bore: otherwise
+    // the taper wedges against the bottom face and cannot be inserted.
+    {center:[p[0],p[1],floorZ-0.3],radius:stemR,up:[0,0,1],hex:true},
+    {center:[p[0],p[1],floorZ+0.3],radius:stemR,up:[0,0,1],hex:true},
     {center:[p[0],p[1],p[2]+n[2]*3],radius:stemR,up:[0,0,1],hex:true},
     {center:add(p,scale(n,2)),radius:padR,up:scale(n,-1)},
     {center:add(p,scale(n,0.2)),radius:padR,up:scale(n,-1)},
   ]
-  if(rings[3].center[2] < rings[2].center[2]+0.3)
+  if(rings[4].center[2] < rings[3].center[2]+0.3)
     throw new Error('Mount contact is too close to the bucket floor for this pad size.')
   return {rings,floorZ}
 }
