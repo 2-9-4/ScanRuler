@@ -79,6 +79,15 @@ export interface MoldSettings {
   /** Read-only draft/undercut screening. Off by default, no solid edits. */
   analyzeDraft:boolean
   minimumDraftDeg:number
+  /** Optional separately printed, glue-on support for a silicone box master. */
+  mountEnabled:boolean
+  /** Picked surface contact point in model coordinates, millimetres. */
+  mountPoint:[number,number,number]|null
+  mountNormal:[number,number,number]
+  mountHeight:number
+  mountPadDiameter:number
+  mountStemDiameter:number
+  mountFootDiameter:number
   /** Silicone box *interior wall* draft, degrees, widening at the opening. */
   boxDraftDeg: number
   /** Display-only gap between printed components; not applied to STL parts. */
@@ -136,6 +145,13 @@ export const DEFAULT_MOLD_SETTINGS: Readonly<MoldSettings> = Object.freeze({
   ventPoints:[[0.75,0.75]] as [number,number][],
   analyzeDraft:false,
   minimumDraftDeg:2,
+  mountEnabled:false,
+  mountPoint:null,
+  mountNormal:[0,0,-1] as [number,number,number],
+  mountHeight:12,
+  mountPadDiameter:8,
+  mountStemDiameter:4,
+  mountFootDiameter:12,
   boxDraftDeg: 1,
   previewGap: 10,
 })
@@ -150,7 +166,7 @@ export const MOLD_DIMENSIONS: readonly MoldDimension[] = [
   'clampTabCount', 'clampTabWidth', 'clampTabProjection', 'clampTabThickness',
   'topBottomTabCount', 'tabBoltDiameter', 'tabNutAcrossFlats', 'tabNutDepth',
   'pourDiameter','pourFunnelDiameter','pourFunnelDepth','ventDiameter',
-  'minimumDraftDeg',
+  'minimumDraftDeg','mountHeight','mountPadDiameter','mountStemDiameter','mountFootDiameter',
   'boxDraftDeg', 'previewGap',
 ]
 export const MOLD_SETTING_KEYS: readonly (keyof MoldSettings)[] = [
@@ -158,6 +174,7 @@ export const MOLD_SETTING_KEYS: readonly (keyof MoldSettings)[] = [
   'keyStyle', 'keyPlacement', 'keyPositions', 'keyPoints',
   'topBottomTabs','tabBoltHoles','tabCapturedNuts',
   'pourEnabled','pourPoint','ventsEnabled','ventPoints','analyzeDraft',
+  'mountEnabled','mountPoint','mountNormal',
 ]
 export function validMoldDimension(key: MoldDimension, value: number): boolean {
   if (!Number.isFinite(value)) return false
@@ -190,6 +207,24 @@ export function parseMoldSettings(value: unknown): MoldSettings {
     throw new Error('Invalid draft analysis enable setting.')
   if(parsed.analyzeDraft&&parsed.mode!=='direct')
     throw new Error('Draft screening requires a direct-print mold.')
+  if(typeof parsed.mountEnabled!=='boolean')throw new Error('Invalid master support option.')
+  if(parsed.mountEnabled&&parsed.mode!=='silicone-box')
+    throw new Error('Glue-on master support currently requires a silicone containment box.')
+  const validXYZ=(v:unknown):v is [number,number,number]=>
+    Array.isArray(v)&&v.length===3&&v.every(x=>typeof x==='number'&&Number.isFinite(x))
+  if(parsed.mountPoint!==null&&!validXYZ(parsed.mountPoint))
+    throw new Error('Master support contact point must be three finite millimetre coordinates.')
+  if(!validXYZ(parsed.mountNormal)||Math.hypot(...parsed.mountNormal)<0.95||
+      Math.hypot(...parsed.mountNormal)>1.05)
+    throw new Error('Master support normal must be a unit 3D direction.')
+  if(parsed.mountEnabled&&parsed.mountPoint===null)
+    throw new Error('Pick a base face on the model before generating a glue-on support.')
+  if(parsed.mountEnabled&&parsed.mountNormal[2]>-0.3)
+    throw new Error('Select a downward-facing surface for the glue-on support; upward and near-vertical faces are unsupported.')
+  if(parsed.mountEnabled&&parsed.mountFootDiameter<parsed.mountStemDiameter)
+    throw new Error('Master support foot diameter must exceed the stem diameter.')
+  if(parsed.mountEnabled&&parsed.mountPadDiameter<parsed.mountStemDiameter)
+    throw new Error('Master support pad diameter must exceed the stem diameter.')
   if(typeof parsed.pourEnabled!=='boolean'||typeof parsed.ventsEnabled!=='boolean')
     throw new Error('Invalid casting channel enable setting.')
   const validPoint=(point:unknown):point is [number,number]=>Array.isArray(point)&&
@@ -230,7 +265,9 @@ export function parseMoldSettings(value: unknown): MoldSettings {
   // No future/unknown fields leak into the store.
   return Object.fromEntries(MOLD_SETTING_KEYS.map(key => [key, key==='keyPositions'?[...parsed.keyPositions]:key==='keyPoints'?parsed.keyPoints.map(p=>[...p]):
     key==='pourPoint'?[...parsed.pourPoint]:
-    key==='ventPoints'?parsed.ventPoints.map(p=>[...p]):parsed[key]])) as unknown as MoldSettings
+    key==='ventPoints'?parsed.ventPoints.map(p=>[...p]):
+    key==='mountPoint'?(parsed.mountPoint?[...parsed.mountPoint]:null):
+    key==='mountNormal'?[...parsed.mountNormal]:parsed[key]])) as unknown as MoldSettings
 }
 
 export const MOLD_MODE_LABELS: Readonly<Record<MoldMode,string>> = {
