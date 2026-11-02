@@ -160,9 +160,14 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
             else store.setVentPoints(store.ventPoints.map((p,i)=>i===index?point:p))
           },
           (point,normal)=>{
+            setPickingBase(false)
+            if(normal[2]>-0.5){
+              setError('Pick an underside face pointing downward. The pedestal cannot attach reliably to an upward or nearly vertical face.')
+              return
+            }
             useMold.getState().setMountContact(point,normal)
             useMold.getState().setMountEnabled(true)
-            setPickingBase(false)
+            setError(null)
           })
         guides.current.set(settings.source,data.targetBounds,settings,{
           positions:data.sourcePositions,indices:data.sourceIndices,
@@ -340,12 +345,13 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
   return {
     overlay:inWorkspace?(
       <div className="mold-explode-overlay" data-test="mold-viewport-tools"
+        style={{display:'flex',flexWrap:'wrap',alignItems:'center',gap:8,maxWidth:'min(95%, 960px)'}}
         onPointerDown={e=>e.stopPropagation()} onWheel={e=>e.stopPropagation()}>
         <label><input type="checkbox" checked={showCutGuides}
           onChange={e=>setShowCutGuides(e.target.checked)}/> Cut planes</label>
         <label><input type="checkbox" checked={showHandles}
           onChange={e=>setShowHandles(e.target.checked)}/> Sprue / vent handles</label>
-        {source==='scan'||source==='reference'?<button type="button"
+        {useMold.getState().mode==='silicone-box'?<button type="button"
           data-test="mold-pick-base" aria-pressed={pickingBase}
           onClick={()=>setPickingBase(!pickingBase)}>
           {pickingBase?'Click a downward-facing model face':'Pick glue-on support face'}
