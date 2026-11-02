@@ -258,9 +258,36 @@ describe('Mold Making assembly',()=>{
     expect(result.parts[2].volumeMm3).toBeGreaterThan(0)
     expect(result.printable).toBe(true)
     intact(result.parts)
-    expect(result.warnings.join(' ')).toMatch(/separate glue-on support pedestal/)
+    expect(result.warnings.join(' ')).toMatch(/separate hex-keyed master mounting post/)
     expect(planMold(master,settings).innerBox!.min[2])
       .toBeLessThan(planMold(master,{...settings,mountEnabled:false}).innerBox!.min[2])
+  })
+  it('creates a bottom through-hole and a keyed external master post on rigid direct tooling',()=>{
+    const settings={...DEFAULT_MOLD_SETTINGS,keys:false,parts:2 as const,
+      mountEnabled:true,mountPoint:[0,0,-5] as [number,number,number],
+      mountNormal:[0,0,-1] as [number,number,number]}
+    const ordinary=buildMold(wasm,master,{...settings,mountEnabled:false})
+    const keyed=buildMold(wasm,master,settings)
+    expect(keyed.parts).toHaveLength(3)
+    expect(keyed.parts[2].name).toMatch(/mounting pedestal/)
+    expect(keyed.parts[2].volumeMm3).toBeGreaterThan(0)
+    expect(keyed.volumeMm3).not.toBeCloseTo(ordinary.volumeMm3,3)
+    expect(keyed.warnings.join(' ')).toMatch(/hexagonal through-bore/)
+    expect(keyed.printable).toBe(true)
+    intact(keyed.parts)
+  })
+  it('engraves paired exterior interface labels without modifying the source',()=>{
+    const settings={...DEFAULT_MOLD_SETTINGS,parts:3 as const,
+      keys:false,clampTabCount:0,interfaceLabels:true}
+    const target=boxSolid({min:[-16,-16,-10],max:[16,16,10]})
+    const original=target.positions.slice()
+    const unmarked=buildMold(wasm,target,{...settings,interfaceLabels:false})
+    const engraved=buildMold(wasm,target,settings)
+    expect(engraved.parts).toHaveLength(3)
+    expect(engraved.printable).toBe(true)
+    expect(engraved.volumeMm3).toBeLessThan(unmarked.volumeMm3)
+    expect(target.positions).toEqual(original)
+    intact(engraved.parts)
   })
   it('builds a silicone containment box from an OPEN scan without any mesh repair',()=>{
     // Two triangles removed from a face: four boundary edges.
