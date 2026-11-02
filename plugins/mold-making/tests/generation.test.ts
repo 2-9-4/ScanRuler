@@ -244,6 +244,24 @@ describe('Mold Making assembly',()=>{
       intact(diagnosed.parts)
     }
   })
+  it('adds an opt-in, separately exported glue-on support to a deeper silicone box',()=>{
+    const settings={...DEFAULT_MOLD_SETTINGS,mode:'silicone-box' as const,
+      keys:false,parts:2 as const,
+      mountEnabled:true,mountPoint:[0,0,0] as [number,number,number],
+      mountNormal:[0,0,-1] as [number,number,number],
+      mountHeight:12}
+    const base=buildMold(wasm,master,{...settings,mountEnabled:false})
+    const result=buildMold(wasm,master,settings)
+    expect(base.parts).toHaveLength(2)
+    expect(result.parts).toHaveLength(3)
+    expect(result.parts[2].name).toBe('Glue-on master mounting pedestal')
+    expect(result.parts[2].volumeMm3).toBeGreaterThan(0)
+    expect(result.printable).toBe(true)
+    intact(result.parts)
+    expect(result.warnings.join(' ')).toMatch(/separate glue-on support pedestal/)
+    expect(planMold(master,settings).innerBox!.min[2])
+      .toBeLessThan(planMold(master,{...settings,mountEnabled:false}).innerBox!.min[2])
+  })
   it('builds a silicone containment box from an OPEN scan without any mesh repair',()=>{
     // Two triangles removed from a face: four boundary edges.
     const open={positions:master.positions,
