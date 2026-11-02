@@ -56,7 +56,7 @@ export class MoldGuides {
   private showHandles=true
   private planeObjects:THREE.Object3D[]=[]
   private pickBase=false
-  private dragging:{handle:Handle;pointerId:number;z:number}|null=null
+  private dragging:{handle:Handle;pointerId:number;z:number;final:XY|null}|null=null
   private remove:()=>void
   constructor(scene:SceneManager,
     private onMove:(kind:'pour'|'vent',index:number,point:XY)=>void,
@@ -176,7 +176,7 @@ export class MoldGuides {
     if(!hits.length)return false
     const handle=this.handles.find(h=>h.mesh===hits[0].object)
     if(!handle)return false
-    this.dragging={handle,pointerId:e.pointerId,z:handle.mesh.position.z}
+    this.dragging={handle,pointerId:e.pointerId,z:handle.mesh.position.z,final:null}
     this.host.claimDrag(true)
     this.host.canvas.setPointerCapture(e.pointerId)
     return true
@@ -198,11 +198,13 @@ export class MoldGuides {
     const xy:XY=[Math.max(.01,Math.min(.99,fx)),Math.max(.01,Math.min(.99,fy))]
     drag.handle.mesh.position.x=b.min[0]+xy[0]*(b.max[0]-b.min[0])
     drag.handle.mesh.position.y=b.min[1]+xy[1]*(b.max[1]-b.min[1])
-    this.onMove(drag.handle.kind,drag.handle.index,xy)
+    drag.final=xy
     this.host.invalidate()
   }
   private pointerUp=(e:PointerEvent)=>{
     if(!this.dragging||this.dragging.pointerId!==e.pointerId)return
+    if(this.dragging.final)
+      this.onMove(this.dragging.handle.kind,this.dragging.handle.index,this.dragging.final)
     this.dragging=null
     this.host.claimDrag(false)
     if(this.host.canvas.hasPointerCapture(e.pointerId))
