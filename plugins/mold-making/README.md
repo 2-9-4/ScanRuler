@@ -255,18 +255,20 @@ by themselves establish that the geometry suite passes.
 
 ## Source draft and possible undercut screening (MOLD-013, 2026-11)
 
-For **two-piece direct molds**, enable **Screen for possible undercuts
-and low draft** in the new Release and draft section. This opt-in calculation
+For **all direct-print mold layouts (1, 2, 3, or 4 parts)**, enable
+**Screen for possible undercuts and low draft** in the Release and draft section. This opt-in calculation
 is **disabled by default** and has no effect on the mesh, split/registration,
 printing, or export. The configurable positive draft threshold defaults to
 2° (allowed range: 0–30°).
 
-The analyzer uses the chosen split axis and split fraction. Each half is
-assumed to withdraw straight outward along its positive/negative axis.
-It examines every nondegenerate, outward-oriented source triangle,
-and **clips triangles straddling the split plane** so material surface area
-is attributed to the correct half. Using area-weighted outward face normals,
-it separately reports:
+The analyzer mirrors the actual part partition: the lower half of a
+one-piece impression is measured along −Z; two opposing halves move
+along ± the selected parting axis; three radial sectors use the outward
+60°/180°/300° bisectors; four orthogonal quadrants use the normalized
+diagonal combination of their two split-axis directions. Source triangles
+crossing **any** parting plane are geometrically clipped to each
+participating part so the overlay and area report agree.
+Using area-weighted outward face normals, it separately reports:
 
 - **Reverse-facing area**: source faces pointing *against* that half's
   withdrawal direction, a warning of potential undercuts.
@@ -280,9 +282,14 @@ fully detect occlusion by other geometry along the release path, moving
 cores, deformation, shrinkage, bridges or inaccessible fasteners. It measures
 the source mesh rather than any positive-clearance SDF-offset cutter; as
 such the report does not account for altered edges following offset.
-It is currently supported only for two-piece direct molds, not threefold,
-four-part or silicone containment workflows. The geometry is deliberately
-unchanged even when the report flags a problem.
+It applies to one-piece impressions, two-piece, threefold and four-part
+**direct** molds. It is not a silicone containment-box release analysis:
+the workflow for demolding flexible silicone from its printed box has
+different mechanics and master mount constraints. For four-part molds,
+diagonal simultaneous part withdrawal is an **assumed screening direction**,
+not a validated removal sequence. For single-piece impressions the
+source geometry above the mid-height opening is deliberately excluded.
+The geometry is unchanged even when the report flags a problem.
 
 Tests in `draftAnalysis.test.ts` cover a closed convex cube, synthetic
 opposing reverse-facing facets, a triangle clipped at the split plane and
@@ -293,24 +300,24 @@ required.
 
 ## Visual draft and undercut overlay on the source model (2026-11-01)
 
-When the optional **two-piece direct-mold** draft diagnostic is enabled,
+When the optional **direct-mold** draft diagnostic is enabled,
 generating the tooling now also returns a **separate display-only source
 surface**. The overlay is displayed by default in the Mold Making 3D viewport,
 not baked into any mold part, CAD Boolean operand, or exported STL/3MF.
 
 - The actual analyzed source triangles are clipped at the split plane, and
-  each clipped face receives the signed draft angle for the **specific
-  mold half** withdrawing along the positive or negative primary axis.
+  each clipped face receives the signed draft angle for its **actual
+  part/sector's assumed release vector** (up to four parts).
 - **Red** is reverse-facing/potential undercut; **amber** is below the
   chosen positive-draft threshold; **green** satisfies the threshold.
   Continuous signed-angle heatmap coloring is also available.
-- Toggle both halves, positive half, or negative half; optionally show
+- Toggle all parts, or one specific half/sector; optionally show
   **only problematic faces**, leaving the original source mesh visible
   as a backdrop. Control opacity and the on-screen angle threshold
   interactively without rerunning Boolean mold generation or invalidating
   printable output.
 - Hover a colored face in the 3D scene to inspect its original triangle
-  number, half, signed draft angle and classification. Selecting a class
+  number, part/sector, signed draft angle and classification. Changing a view
   or switching to exploded/section views does not alter the source mesh.
 - The numerical area report remains tied to the **generation-time**
   draft threshold; the on-screen threshold changes only the colors
@@ -330,7 +337,8 @@ interlocking shapes. The exact analyzed model is used for colors;
 when automatic mesh repair is enabled it is the repaired temporary
 copy, not an edit to the original imported model.
 
-Regression coverage: `tests/draftOverlay.test.ts` verifies half assignment,
+Regression coverage: `tests/draftOverlay.test.ts` and
+`tests/draftPartitions.test.ts` verify per-part assignment,
 triangle clipping across the split plane, per-face source indices,
 live threshold classifications and face filtering. The suite still
 needs a local TypeScript/React/Manifold/WebGL run.
