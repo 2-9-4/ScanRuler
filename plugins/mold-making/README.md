@@ -255,10 +255,12 @@ by themselves establish that the geometry suite passes.
 
 ## Source draft and possible undercut screening (MOLD-013, 2026-11)
 
-For **all direct-print mold layouts (1, 2, 3, or 4 parts)**, enable
-**Screen for possible undercuts and low draft** in the Release and draft section. This opt-in calculation
-is **disabled by default** and has no effect on the mesh, split/registration,
-printing, or export. The configurable positive draft threshold defaults to
+For **all direct-print mold layouts (1, 2, 3, or 4 parts)**, toggle
+**Draft / overhangs** in the **3D viewport**. This opt-in analysis is
+disabled by default and can be turned on before or after generation.
+Turning it on after generation loads only the source diagnostic overlay,
+**retaining the already-generated printable mold parts and exports**.
+The configurable positive draft threshold defaults to
 2° (allowed range: 0–30°).
 
 The analyzer mirrors the actual part partition: the lower half of a
@@ -447,7 +449,9 @@ scan alignment or reference frame, and clean up their GPU geometry
 when the workspace closes or source changes.
 
 Tests: `tests/moldGuidesAndMount.test.ts` covers planned split guides,
-support bounds/normal validations and the closed oriented support mesh.
-`tests/generation.test.ts` includes an enabled silicone-box build with
-a separate exported pedestal. Full browser interaction, TypeScript,
+support bounds/normal validations and the closed oriented hexagonal
+mounting post. `tests/interfaceLabels.test.ts` checks matching seam
+numbers. `tests/generation.test.ts` includes a silicone-box and
+rigid-mold through-post build, exterior interface engraving, and attached
+upper/lower bucket clamp tabs. Full browser interaction, TypeScript,
 Vitest, and geometry-engine validation are still required.
