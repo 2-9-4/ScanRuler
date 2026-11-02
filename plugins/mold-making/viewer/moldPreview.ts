@@ -15,7 +15,7 @@ import {
 
 export interface DraftHover {
   sourceTriangle:number
-  half:'negative'|'positive'
+  partIndex:number
   angleDeg:number
   classification:DraftClass
 }
@@ -108,7 +108,7 @@ export class MoldPreview {
         const angleDeg=this.draftData.angleDeg[id]
         this.emitDraftHover({
           sourceTriangle:this.draftData.sourceTriangle[id],
-          half:this.draftData.half[id]===0?'negative':'positive',
+          partIndex:this.draftData.half[id],
           angleDeg,classification:draftClass(angleDeg,this.draftOptions.thresholdDeg),
         })
         return false
@@ -121,7 +121,7 @@ export class MoldPreview {
     this.remove=scene.addLayer(layer)
   }
   private emitDraftHover(next:DraftHover|null):void {
-    const key=next?`${next.sourceTriangle}:${next.half}:${next.classification}`:null
+    const key=next?`${next.sourceTriangle}:${next.partIndex}:${next.classification}`:null
     if(this.lastDraftHover===key)return
     this.lastDraftHover=key
     this.onDraftHover(next)
