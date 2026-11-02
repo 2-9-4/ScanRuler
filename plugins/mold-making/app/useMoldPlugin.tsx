@@ -142,6 +142,7 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
         if(ticket!==previewTicket.current)return
         const data=await client.pluginCall<{
           targetBounds:Limits
+          outerBounds:Limits
           draftOverlay:MoldBuild['draftOverlay']
           sourcePositions:Float32Array
           sourceIndices:Uint32Array
@@ -172,7 +173,7 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
           })
         guides.current.set(settings.source,data.targetBounds,settings,{
           positions:data.sourcePositions,indices:data.sourceIndices,
-        })
+        },data.outerBounds)
         guides.current.setOptions(showCutGuides,showHandles)
         guides.current.setPickBase(pickingBase)
         setTargetBounds(data.targetBounds)
