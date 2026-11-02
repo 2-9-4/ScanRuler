@@ -353,7 +353,7 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
           onChange={e=>setShowCutGuides(e.target.checked)}/> Cut planes</label>
         <label><input type="checkbox" checked={showHandles}
           onChange={e=>setShowHandles(e.target.checked)}/> Sprue / vent handles</label>
-        {useMold.getState().mode==='silicone-box'?<button type="button"
+        {<button type="button"
           data-test="mold-pick-base" aria-pressed={pickingBase}
           onClick={()=>setPickingBase(!pickingBase)}>
           {pickingBase?'Click a downward-facing model face':'Pick glue-on support face'}
