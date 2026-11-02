@@ -330,10 +330,10 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
         :`${material.wall.toFixed(2)} mm walls, ${material.base.toFixed(2)} mm base`}.
         Extra margins add material on top of these calculated requirements and may be zero.</p>
     </div>
-    {(mode==='direct'&&parts===2||analyzeDraft)&&<div className="group" data-test="mold-draft-controls">
+    {(mode==='direct'||analyzeDraft)&&<div className="group" data-test="mold-draft-controls">
       <div className="sec-head">5. Release and draft screening (optional)</div>
-      {(mode!=='direct'||parts!==2)&&<p className="hint mold-warning" role="alert">
-        Draft screening currently supports only two-piece direct molds. Disable it before generating other mold types.
+      {mode!=='direct'&&<p className="hint mold-warning" role="alert">
+        Source release screening requires direct molds. Disable it before generating a silicone containment box.
       </p>}
       <label className="kv"><span className="name">Screen for possible undercuts and low draft</span>
         <input type="checkbox" data-test="mold-analyze-draft" checked={analyzeDraft}
@@ -341,7 +341,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
       {analyzeDraft&&<>
         {fieldInput({key:'minimumDraftDeg',label:'Minimum positive draft angle (°)',
           help:'Mark surfaces below this angle as insufficient draft. Negative-facing surfaces indicate potential undercuts.'})}
-        <p className="hint">Uses the two parting halves along the selected axis and split position. Measures the original source triangles, not the clearance-expanded casting cavity. This is a diagnostic only; no draft is added, no release direction is changed and the tooling stays identical.</p>
+        <p className="hint">Analyzes each actual mold sector: lower impression (1), opposing axial halves (2), 120° radial sectors (3), or diagonal withdrawal from two parting planes (4). Source faces are clipped to each sector. Measures the repaired source rather than a clearance-expanded cavity. This is a non-destructive normal-based estimate, not an extraction collision test.</p>
       </>}
     </div>}
     {(mode==='direct'&&parts>1||pourEnabled||ventsEnabled)&&<div className="group" data-test="mold-casting-channels">
