@@ -21,6 +21,7 @@ interface MoldState extends MoldSettings {
   setTabCapturedNuts(value:boolean):void
   setPourEnabled(value:boolean):void
   setVentsEnabled(value:boolean):void
+  setAnalyzeDraft(value:boolean):void
   setPourPoint(point:[number,number]):void
   setVentPoints(points:[number,number][]):void
   setKeyPlacement(keyPlacement: KeyPlacement): void
@@ -44,6 +45,7 @@ export const useMold = create<MoldState>()((set)=>({
   setTabCapturedNuts:(tabCapturedNuts)=>set({tabCapturedNuts}),
   setPourEnabled:(pourEnabled)=>set({pourEnabled}),
   setVentsEnabled:(ventsEnabled)=>set({ventsEnabled}),
+  setAnalyzeDraft:(analyzeDraft)=>set({analyzeDraft}),
   setPourPoint:(pourPoint)=>{
     if(pourPoint.length!==2||pourPoint.some(x=>!Number.isFinite(x)||x<0.01||x>0.99))return
     set({pourPoint:[...pourPoint] as [number,number]})
