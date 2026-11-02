@@ -191,6 +191,42 @@ export class MoldPreview {
         mesh,slot:CAP_SLOT.layers+i,color:cutColor(CAP_SLOT.layers+i),
       })),this.host.theme())
   }
+  private createDraftMesh():void {
+    if(this.draftData){
+      const geo=new THREE.BufferGeometry()
+      geo.setAttribute('position',new THREE.BufferAttribute(this.draftData.positions,3))
+      geo.setAttribute('color',new THREE.BufferAttribute(
+        new Float32Array(this.draftData.positions.length),3))
+      geo.computeBoundingBox()
+      const material=new THREE.MeshBasicMaterial({
+        color:0xffffff,vertexColors:true,transparent:true,opacity:this.draftOptions.opacity,
+        depthWrite:true,side:THREE.DoubleSide,
+        polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-2,
+        clippingPlanes:this.host.clipPlanes()??[],
+      })
+      this.draftMesh=new THREE.Mesh(geo,material)
+      this.draftMesh.name='Analyzed source — draft and undercut overlay'
+      this.draftMesh.renderOrder=1
+      this.group.add(this.draftMesh)
+    }
+  }
+  /** Fast pre-generation screen: shows the original target's draft/overhang
+   * overlay, without any generated solids or geometry Boolean. */
+  setSourcePreview(bounds:MoldBuild['targetBounds'],source:MoldSource,
+    overlay:DraftOverlayData|null):void {
+    this.clear()
+    this.source=source
+    this.bounds=bounds
+    this.draftData=overlay
+    this.viewMode='exploded'
+    this.priorNominal=this.scene.nominalShown()
+    this.priorScan=this.scene.scanShown()
+    if(source==='reference')this.host.scene.add(this.group)
+    else this.host.partGroup.add(this.group)
+    this.group.visible=true
+    this.createDraftMesh()
+    this.setDraftOptions(this.draftOptions)
+  }
   set(build:MoldBuild,source:MoldSource,gap:number,mode:MoldPreviewMode='section',
     parts:PartCount=2,splitAxis:SplitAxis='x'):void {
     this.clear()
