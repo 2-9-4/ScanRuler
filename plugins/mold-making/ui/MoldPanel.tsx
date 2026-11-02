@@ -381,7 +381,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
         {ventPoints.length<8&&<button type="button"
           onClick={()=>setVentPoints([...ventPoints,[0.3,0.7] as [number,number]])}>Add vent</button>}
       </>}
-      <p className="hint">These are vertical-only bores. Horizontal gates, automatic high-point air-trap detection, risers, and silicone master-mount channels remain roadmap items. Assess fill direction, silicone/metal safety, vent sizing and parting seals before manufacture.</p>
+      <p className="hint">Both currently use the same straight vertical bore routing. A pour sprue is sized for material entry and can add a funnel; a vent is normally narrower and intended for air escape, but is not automatically placed at an air trap. Horizontal gates, automatic high-point detection, risers, and silicone master-mount channels remain roadmap items. Check filling, venting and parting seals before manufacture.</p>
     </div>}
     <div className="group">
       <div className="sec-head">6. Generate, inspect &amp; export</div>
