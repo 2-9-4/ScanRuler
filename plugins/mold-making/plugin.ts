@@ -26,7 +26,9 @@ const plugin: ScanRulerPlugin = {
       }],
       actions:[{
         store:useMold,label:'Mold Making',
-        names:['setRepairTarget','setOffsetQuality','setSource','setMode','setParts','setSplitAxis','setBoxShape','setKeys','setKeyStyle','setKeyPlacement','setKeyPositions','setKeyPoints','setDimension'],
+        names:['setRepairTarget','setOffsetQuality','setSource','setMode','setParts','setSplitAxis','setBoxShape','setKeys','setKeyStyle','setKeyPlacement','setKeyPositions','setKeyPoints','setDimension',
+          'setAnalyzeDraft','setPourEnabled','setVentsEnabled','setPourPoint','setVentPoints',
+          'setMountEnabled','setMountContact'],
       }],
     })
   },
