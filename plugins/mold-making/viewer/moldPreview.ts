@@ -140,31 +140,41 @@ export class MoldPreview {
   }
   /** Pure display changes: no worker call, no mold solid mutation or export. */
   setDraftOptions(options:DraftDisplayOptions):void {
+    const previous=this.draftOptions
     this.draftOptions={...options}
     const data=this.draftData,mesh=this.draftMesh
     if(data&&mesh){
       const geometry=mesh.geometry
-      const attr=geometry.getAttribute('color') as THREE.BufferAttribute
-      const color=attr.array as Float32Array
-      for(let i=0;i<data.angleDeg.length;i++){
-        const rgb=draftFaceRgb(data.angleDeg[i],options.thresholdDeg,options.mode)
-        const offset=i*9
-        for(let j=0;j<3;j++){
-          color[offset+j*3]=rgb[0]
-          color[offset+j*3+1]=rgb[1]
-          color[offset+j*3+2]=rgb[2]
+      // On large scanned meshes, a mere opacity/show toggle must not
+      // reconstruct hundreds of thousands of triangle colors or indices.
+      if(!geometry.getIndex()||previous.thresholdDeg!==options.thresholdDeg||
+         previous.mode!==options.mode){
+        const attr=geometry.getAttribute('color') as THREE.BufferAttribute
+        const color=attr.array as Float32Array
+        for(let i=0;i<data.angleDeg.length;i++){
+          const rgb=draftFaceRgb(data.angleDeg[i],options.thresholdDeg,options.mode)
+          const offset=i*9
+          for(let j=0;j<3;j++){
+            color[offset+j*3]=rgb[0]
+            color[offset+j*3+1]=rgb[1]
+            color[offset+j*3+2]=rgb[2]
+          }
         }
+        attr.needsUpdate=true
       }
-      attr.needsUpdate=true
-      this.draftVisible=draftVisibleFaces(data,options)
-      const indices=new Uint32Array(this.draftVisible.length*3)
-      for(let i=0;i<this.draftVisible.length;i++){
-        const start=this.draftVisible[i]*3
-        indices[i*3]=start;indices[i*3+1]=start+1;indices[i*3+2]=start+2
+      if(!geometry.getIndex()||previous.view!==options.view||
+         previous.problemsOnly!==options.problemsOnly||
+         (options.problemsOnly&&previous.thresholdDeg!==options.thresholdDeg)){
+        this.draftVisible=draftVisibleFaces(data,options)
+        const indices=new Uint32Array(this.draftVisible.length*3)
+        for(let i=0;i<this.draftVisible.length;i++){
+          const start=this.draftVisible[i]*3
+          indices[i*3]=start;indices[i*3+1]=start+1;indices[i*3+2]=start+2
+        }
+        geometry.setIndex(new THREE.BufferAttribute(indices,1))
       }
-      geometry.setIndex(new THREE.BufferAttribute(indices,1))
       mesh.material.opacity=options.opacity
-      mesh.visible=options.show&&indices.length>0
+      mesh.visible=options.show&&this.draftVisible.length>0
     }
     const active=this.draftActive()
     for(const part of this.parts)part.visible=!active
