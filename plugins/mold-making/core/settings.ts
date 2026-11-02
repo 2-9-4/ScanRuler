@@ -188,8 +188,8 @@ export function parseMoldSettings(value: unknown): MoldSettings {
   if (typeof parsed.keys !== 'boolean') throw new Error('Invalid alignment keys setting.')
   if(typeof parsed.analyzeDraft!=='boolean')
     throw new Error('Invalid draft analysis enable setting.')
-  if(parsed.analyzeDraft&&(parsed.mode!=='direct'||parsed.parts!==2))
-    throw new Error('Draft analysis currently supports only two-part direct molds.')
+  if(parsed.analyzeDraft&&parsed.mode!=='direct')
+    throw new Error('Draft screening requires a direct-print mold.')
   if(typeof parsed.pourEnabled!=='boolean'||typeof parsed.ventsEnabled!=='boolean')
     throw new Error('Invalid casting channel enable setting.')
   const validPoint=(point:unknown):point is [number,number]=>Array.isArray(point)&&
