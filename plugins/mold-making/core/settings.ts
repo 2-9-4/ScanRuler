@@ -76,6 +76,9 @@ export interface MoldSettings {
   ventsEnabled:boolean
   ventDiameter:number
   ventPoints:[number,number][]
+  /** Read-only draft/undercut screening. Off by default, no solid edits. */
+  analyzeDraft:boolean
+  minimumDraftDeg:number
   /** Silicone box *interior wall* draft, degrees, widening at the opening. */
   boxDraftDeg: number
   /** Display-only gap between printed components; not applied to STL parts. */
@@ -131,6 +134,8 @@ export const DEFAULT_MOLD_SETTINGS: Readonly<MoldSettings> = Object.freeze({
   ventsEnabled:false,
   ventDiameter:1.2,
   ventPoints:[[0.75,0.75]] as [number,number][],
+  analyzeDraft:false,
+  minimumDraftDeg:2,
   boxDraftDeg: 1,
   previewGap: 10,
 })
@@ -145,19 +150,21 @@ export const MOLD_DIMENSIONS: readonly MoldDimension[] = [
   'clampTabCount', 'clampTabWidth', 'clampTabProjection', 'clampTabThickness',
   'topBottomTabCount', 'tabBoltDiameter', 'tabNutAcrossFlats', 'tabNutDepth',
   'pourDiameter','pourFunnelDiameter','pourFunnelDepth','ventDiameter',
+  'minimumDraftDeg',
   'boxDraftDeg', 'previewGap',
 ]
 export const MOLD_SETTING_KEYS: readonly (keyof MoldSettings)[] = [
   'source', 'mode', ...MOLD_DIMENSIONS, 'offsetQuality', 'repairTarget', 'parts', 'splitAxis', 'boxShape', 'keys',
   'keyStyle', 'keyPlacement', 'keyPositions', 'keyPoints',
   'topBottomTabs','tabBoltHoles','tabCapturedNuts',
-  'pourEnabled','pourPoint','ventsEnabled','ventPoints',
+  'pourEnabled','pourPoint','ventsEnabled','ventPoints','analyzeDraft',
 ]
 export function validMoldDimension(key: MoldDimension, value: number): boolean {
   if (!Number.isFinite(value)) return false
   if (key === 'splitPosition') return value >= 0.1 && value <= 0.9
   if (key === 'clampTabCount' || key==='topBottomTabCount') return Number.isInteger(value) && value>=0 && value<=12
   if (key === 'boxDraftDeg') return value >= 0 && value <= 12
+  if (key === 'minimumDraftDeg') return value >= 0 && value <= 30
   if (key === 'previewGap' || key === 'pourFunnelDepth' || key === 'clearance' || key === 'sideMargin' || key === 'baseThickness' ||
       key === 'wallThickness' || key === 'keyClearance' || key === 'vSeamClearance' || key === 'vSeamSpacing') {
     return value >= 0 && value <= 100_000
@@ -179,6 +186,10 @@ export function parseMoldSettings(value: unknown): MoldSettings {
   if (parsed.boxShape !== 'rectangular' && parsed.boxShape !== 'cylindrical') throw new Error('Invalid box shape.')
   if (typeof parsed.repairTarget !== 'boolean') throw new Error('Invalid mesh repair setting.')
   if (typeof parsed.keys !== 'boolean') throw new Error('Invalid alignment keys setting.')
+  if(typeof parsed.analyzeDraft!=='boolean')
+    throw new Error('Invalid draft analysis enable setting.')
+  if(parsed.analyzeDraft&&(parsed.mode!=='direct'||parsed.parts!==2))
+    throw new Error('Draft analysis currently supports only two-part direct molds.')
   if(typeof parsed.pourEnabled!=='boolean'||typeof parsed.ventsEnabled!=='boolean')
     throw new Error('Invalid casting channel enable setting.')
   const validPoint=(point:unknown):point is [number,number]=>Array.isArray(point)&&
