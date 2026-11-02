@@ -151,7 +151,6 @@ describe('Mold Making configuration',()=>{
     useMold.setState({...DEFAULT_MOLD_SETTINGS})
   })
   it('keeps diagnostic draft screening opt-in and round-trips its threshold',()=>{
-    const original=useMold.getState()
     try{
       expect(DEFAULT_MOLD_SETTINGS.analyzeDraft).toBe(false)
       expect(DEFAULT_MOLD_SETTINGS.minimumDraftDeg).toBe(2)
