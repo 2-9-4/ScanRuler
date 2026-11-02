@@ -42,8 +42,8 @@ describe('Mold Making configuration',()=>{
       ventPoints:DEFAULT_MOLD_SETTINGS.ventPoints.map(p=>[...p] as [number,number])})
     expect(moldSection.holdsWork!()).toBe(false)
     expect(moldSection.hasContent!({...DEFAULT_MOLD_SETTINGS,
-      pourPoint:[...DEFAULT_MOLD_SETTINGS.pourPoint],
-      ventPoints:DEFAULT_MOLD_SETTINGS.ventPoints.map(p=>[...p])})).toBe(false)
+      pourPoint:[...DEFAULT_MOLD_SETTINGS.pourPoint] as [number,number],
+      ventPoints:DEFAULT_MOLD_SETTINGS.ventPoints.map(p=>[...p] as [number,number])})).toBe(false)
     useMold.getState().setPourPoint([0.22,0.35])
     expect(moldSection.holdsWork!()).toBe(true)
     useMold.setState({...DEFAULT_MOLD_SETTINGS})
