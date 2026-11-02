@@ -210,7 +210,14 @@ describe('Mold Making assembly',()=>{
     const assessed=buildMold(wasm,master,{...settings,analyzeDraft:true,
       minimumDraftDeg:3})
     expect(ordinary.draftAnalysis).toBeNull()
+    expect(ordinary.draftOverlay).toBeNull()
     expect(assessed.draftAnalysis).not.toBeNull()
+    expect(assessed.draftOverlay).not.toBeNull()
+    expect(assessed.draftOverlay!.positions.length).toBe(
+      assessed.draftOverlay!.angleDeg.length*9)
+    expect(assessed.draftOverlay!.half).toContain(0)
+    expect(assessed.draftOverlay!.half).toContain(1)
+    expect(assessed.draftOverlay!.angleDeg.length).toBeGreaterThan(0)
     expect(assessed.draftAnalysis!.axis).toBe('x')
     expect(assessed.draftAnalysis!.reverseFacingMm2).toBeCloseTo(0,5)
     expect(assessed.draftAnalysis!.lowDraftMm2).toBeGreaterThan(0)
