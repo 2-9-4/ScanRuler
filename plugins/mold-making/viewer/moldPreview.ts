@@ -224,6 +224,20 @@ export class MoldPreview {
       this.group.add(this.draftMesh)
     }
   }
+  /** Add or replace a live diagnostic overlay without clearing generated
+   * mold parts, registration, exploded offsets, or printable exports. */
+  setDraftData(overlay:DraftOverlayData|null):void {
+    if(this.draftMesh){
+      this.draftMesh.parent?.remove(this.draftMesh)
+      this.draftMesh.geometry.dispose()
+      this.draftMesh.material.dispose()
+      this.draftMesh=null
+    }
+    this.draftData=overlay
+    this.draftVisible=new Uint32Array(0)
+    this.createDraftMesh()
+    this.setDraftOptions(this.draftOptions)
+  }
   /** Fast pre-generation screen: shows the original target's draft/overhang
    * overlay, without any generated solids or geometry Boolean. */
   setSourcePreview(bounds:MoldBuild['targetBounds'],source:MoldSource,
