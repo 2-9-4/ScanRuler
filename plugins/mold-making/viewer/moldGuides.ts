@@ -7,6 +7,7 @@ import type {SceneManager} from '../../../src/viewer/SceneManager'
 import type {SceneLayer,SceneLayerHost} from '../../../src/viewer/sceneLayers'
 import type {MoldSettings,MoldSource} from '../core/settings'
 import type {Limits} from '../core/geometry'
+import {masterMountMesh} from '../core/masterMount'
 
 type MeshData={positions:Float32Array;indices:Uint32Array}
 type XY=[number,number]
@@ -149,6 +150,22 @@ export class MoldGuides {
     if(this.showHandles){
       if(s.pourEnabled)createHandle('pour',0,s.pourPoint)
       if(s.ventsEnabled)s.ventPoints.forEach((pt,i)=>createHandle('vent',i,pt))
+    }
+    if(s.mountEnabled&&s.mountPoint){
+      try{
+        const support=masterMountMesh(b,s)
+        if(support){
+          const geometry=new THREE.BufferGeometry()
+          geometry.setAttribute('position',new THREE.BufferAttribute(support.positions,3))
+          geometry.setIndex(new THREE.BufferAttribute(support.indices,1))
+          geometry.computeVertexNormals()
+          const model=new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({
+            color:0x9a65e9,transparent:true,opacity:0.7,side:THREE.DoubleSide,depthWrite:false,
+          }))
+          model.renderOrder=2
+          this.group.add(model);this.planeObjects.push(model)
+        }
+      }catch{/* Invalid mounting point is reported by the generation preflight. */}
     }
     if(s.mountPoint){
       const marker=new THREE.Mesh(new THREE.SphereGeometry(Math.max(.8,s.mountPadDiameter/4),16,10),
