@@ -10,6 +10,7 @@ import { createSphericalDistanceField, sphericalOffset, type SphericalDistanceFi
 import { parseMoldSettings, type MoldSettings, type SplitAxis } from './settings'
 import {siliconeBoxCapacityMm3} from './materialEstimate'
 import {planVerticalChannels} from './pourChannels'
+import {masterMountMesh} from './masterMount'
 import {analyzeMoldDraft,type DraftAnalysis} from './draftAnalysis'
 import {buildMoldDraftOverlay,type DraftOverlayData} from './draftOverlay'
 import { projectedHull,contourAround,contourSegment,radialSeamContour,radialSiliconeLSeam,triangularContourTube,planeAxes } from './contourSeam'
@@ -191,8 +192,11 @@ export function planMold(target:Triangles,settings:MoldSettings):MoldPlan {
   const cx=center(min[0],max[0]),cy=center(min[1],max[1])
   const material=moldMaterial(s,size[2],Math.min(size[0],size[1]))
   if(s.mode==='silicone-box'){
-    const bottom=min[2]-material.base,top=max[2]+s.siliconeThickness+material.wall
-    const innerBottom=min[2],innerTop=top+2
+    // Optional support stands inside a deeper container. It is exported
+    // as a separate part, never unioned into the model or the bucket.
+    const innerBottom=min[2]-(s.mountEnabled?s.mountHeight:0)
+    const bottom=innerBottom-material.base,top=max[2]+s.siliconeThickness+material.wall
+    const innerTop=top+2
     const draft=(innerTop-innerBottom)*Math.tan(s.boxDraftDeg*Math.PI/180)
     if(s.boxShape==='cylindrical'||s.parts===3){
       const innerR=Math.hypot(size[0]/2,size[1]/2)+s.siliconeThickness
@@ -1223,6 +1227,13 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
     })
     if(mainParts.length!==s.parts)throw new Error('Part count mismatch: a component disappeared during splitting.')
     const parts=[...mainParts,...loose]
+    if(s.mode==='silicone-box'&&s.mountEnabled){
+      const mount=masterMountMesh(extentOf(targetMesh.positions),s)
+      if(!mount)throw new Error('Failed to construct master mounting pedestal.')
+      const pedestal=toManifold(wasm,mount,keep)
+      parts.push(toPart(pedestal,'Glue-on master mounting pedestal',warnings))
+      warnings.push('A separate glue-on support pedestal was exported. Glue its matched pad to the selected master underside and its foot to the containment-box floor. Verify silicone-tight attachment, clearance and support strength; this is not a permanent part of the casting.')
+    }
     const invalidOutput=warnings.some(w=>w.includes('excluded an invalid detached artifact'))
     const printable=!loose.length&&!invalidOutput
     if(!printable)warnings.unshift(
