@@ -208,8 +208,8 @@ export function parseMoldSettings(value: unknown): MoldSettings {
   if(parsed.analyzeDraft&&parsed.mode!=='direct')
     throw new Error('Draft screening requires a direct-print mold.')
   if(typeof parsed.mountEnabled!=='boolean')throw new Error('Invalid master support option.')
-  if(parsed.mountEnabled&&parsed.mode!=='silicone-box')
-    throw new Error('Glue-on master support currently requires a silicone containment box.')
+  // A base-mounted core can feed through the bottom of either a direct
+  // rigid tooling body or a silicone containment bucket.
   const validXYZ=(v:unknown):v is [number,number,number]=>
     Array.isArray(v)&&v.length===3&&v.every(x=>typeof x==='number'&&Number.isFinite(x))
   if(parsed.mountPoint!==null&&!validXYZ(parsed.mountPoint))
