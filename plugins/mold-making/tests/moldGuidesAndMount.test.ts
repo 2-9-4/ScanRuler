@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {describe,expect,it} from 'vitest'
-import {boxSolid,buildMold,planMold} from '../core/geometry'
+import {boxSolid,planMold} from '../core/geometry'
 import {DEFAULT_MOLD_SETTINGS,parseMoldSettings} from '../core/settings'
 import {cutGuideSegments} from '../viewer/moldGuides'
 import {masterMountMesh,planMasterMount} from '../core/masterMount'
