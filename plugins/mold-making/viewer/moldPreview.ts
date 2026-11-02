@@ -8,6 +8,17 @@ import type { SceneLayer } from '../../../src/viewer/sceneLayers'
 import { CapSet, CAP_SLOT, cutColor } from '../../../src/viewer/sliceCap'
 import type { MoldBuild } from '../core/geometry'
 import type { MoldSource, PartCount, SplitAxis } from '../core/settings'
+import {
+  DEFAULT_DRAFT_DISPLAY,draftClass,draftFaceRgb,draftVisibleFaces,
+  type DraftDisplayOptions,type DraftOverlayData,type DraftClass,
+} from '../core/draftOverlay'
+
+export interface DraftHover {
+  sourceTriangle:number
+  half:'negative'|'positive'
+  angleDeg:number
+  classification:DraftClass
+}
 
 export type MoldPreviewMode = 'section' | 'exploded'
 
@@ -59,7 +70,13 @@ export class MoldPreview {
   private explodeGap=3
   private partCount:PartCount=2
   private splitAxis:SplitAxis='x'
-  constructor(private scene:SceneManager,private changed:()=>void) {
+  private draftData:DraftOverlayData|null=null
+  private draftMesh:THREE.Mesh<THREE.BufferGeometry,THREE.MeshBasicMaterial>|null=null
+  private draftVisible:Uint32Array=new Uint32Array(0)
+  private draftOptions:DraftDisplayOptions={...DEFAULT_DRAFT_DISPLAY}
+  private lastDraftHover:string|null=null
+  constructor(private scene:SceneManager,private changed:()=>void,
+    private onDraftHover:(value:DraftHover|null)=>void=()=>{}) {
     this.host=scene.layerHost()
     const layer:SceneLayer={
       order:80,
@@ -74,6 +91,23 @@ export class MoldPreview {
       },
       themeChanged:()=>this.refreshCaps(),
       partMoved:()=>this.changed(),
+      hover:(at,covered)=>{
+        if(!at||covered||!this.group.visible||!this.draftMesh?.visible){
+          this.emitDraftHover(null)
+          return false
+        }
+        this.host.setPickRay(at.x,at.y)
+        const hit=this.host.raycaster.intersectObject(this.draftMesh,false)[0]
+        const id=hit?.faceIndex===undefined?undefined:this.draftVisible[hit.faceIndex]
+        if(id===undefined||!this.draftData){this.emitDraftHover(null);return false}
+        const angleDeg=this.draftData.angleDeg[id]
+        this.emitDraftHover({
+          sourceTriangle:this.draftData.sourceTriangle[id],
+          half:this.draftData.half[id]===0?'negative':'positive',
+          angleDeg,classification:draftClass(angleDeg,this.draftOptions.thresholdDeg),
+        })
+        return false
+      },
       scanReplaced:()=>{if(this.source==='scan')this.changed()},
       frameBox:()=>this.group.visible&&this.meshes.length?new THREE.Box3().setFromObject(this.group):null,
       dispose:()=>this.clear(),
@@ -81,8 +115,63 @@ export class MoldPreview {
     this.group.name='Mold Making — print components'
     this.remove=scene.addLayer(layer)
   }
+  private emitDraftHover(next:DraftHover|null):void {
+    const key=next?`${next.sourceTriangle}:${next.half}:${next.classification}`:null
+    if(this.lastDraftHover===key)return
+    this.lastDraftHover=key
+    this.onDraftHover(next)
+  }
+  private draftActive():boolean {
+    return Boolean(this.group.visible&&this.draftMesh&&this.draftOptions.show)
+  }
+  private setSourceVisibility():void {
+    if(!this.bounds||!this.group.visible)return
+    if(this.source==='reference'){
+      this.scene.setScanVisible(false)
+      this.scene.setNominalVisible(!this.draftActive())
+    }else{
+      this.scene.setNominalVisible(false)
+      this.scene.setScanVisible(!this.draftActive())
+    }
+  }
+  /** Pure display changes: no worker call, no mold solid mutation or export. */
+  setDraftOptions(options:DraftDisplayOptions):void {
+    this.draftOptions={...options}
+    const data=this.draftData,mesh=this.draftMesh
+    if(data&&mesh){
+      const geometry=mesh.geometry
+      const attr=geometry.getAttribute('color') as THREE.BufferAttribute
+      const color=attr.array as Float32Array
+      for(let i=0;i<data.angleDeg.length;i++){
+        const rgb=draftFaceRgb(data.angleDeg[i],options.thresholdDeg,options.mode)
+        const offset=i*9
+        for(let j=0;j<3;j++){
+          color[offset+j*3]=rgb[0]
+          color[offset+j*3+1]=rgb[1]
+          color[offset+j*3+2]=rgb[2]
+        }
+      }
+      attr.needsUpdate=true
+      this.draftVisible=draftVisibleFaces(data,options)
+      const indices=new Uint32Array(this.draftVisible.length*3)
+      for(let i=0;i<this.draftVisible.length;i++){
+        const start=this.draftVisible[i]*3
+        indices[i*3]=start;indices[i*3+1]=start+1;indices[i*3+2]=start+2
+      }
+      geometry.setIndex(new THREE.BufferAttribute(indices,1))
+      mesh.material.opacity=options.opacity
+      mesh.visible=options.show&&indices.length>0
+    }
+    const active=this.draftActive()
+    for(const part of this.parts)part.visible=!active
+    if(!active)this.emitDraftHover(null)
+    this.setSourceVisibility()
+    this.refreshCaps()
+    this.host.requestHover()
+    this.host.invalidate()
+  }
   private refreshCaps():void {
-    this.caps.update(this.group.visible?this.activeSection:null,
+    this.caps.update(this.group.visible&&!this.draftActive()?this.activeSection:null,
       this.meshes.map((mesh,i)=>({
         mesh,slot:CAP_SLOT.layers+i,color:cutColor(CAP_SLOT.layers+i),
       })),this.host.theme())
@@ -96,6 +185,7 @@ export class MoldPreview {
     this.viewMode=mode
     this.partCount=parts
     this.splitAxis=splitAxis
+    this.draftData=build.draftOverlay
     this.group.visible=true
     // Keep both previous visibility states: the model inside the mold is
     // the selected source, not any unrelated comparison model.
@@ -125,7 +215,24 @@ export class MoldPreview {
       this.parts.push(part)
       this.group.add(part)
     }
+    if(this.draftData){
+      const geo=new THREE.BufferGeometry()
+      geo.setAttribute('position',new THREE.BufferAttribute(this.draftData.positions,3))
+      geo.setAttribute('color',new THREE.BufferAttribute(
+        new Float32Array(this.draftData.positions.length),3))
+      geo.computeBoundingBox()
+      const material=new THREE.MeshBasicMaterial({
+        color:0xffffff,vertexColors:true,transparent:true,opacity:this.draftOptions.opacity,
+        depthWrite:true,side:THREE.DoubleSide,
+        clippingPlanes:this.host.clipPlanes()??[],
+      })
+      this.draftMesh=new THREE.Mesh(geo,material)
+      this.draftMesh.name='Analyzed source — draft and undercut overlay'
+      this.draftMesh.renderOrder=1
+      this.group.add(this.draftMesh)
+    }
     this.setMode(mode)
+    this.setDraftOptions(this.draftOptions)
     this.refreshCaps()
   }
   setMode(mode:MoldPreviewMode):void {
@@ -133,13 +240,7 @@ export class MoldPreview {
     const active=mode==='section'
     // Keep the original master visible within the separated mold components.
     // Unlike the prior mode, exploding the mold must never hide the model.
-    if(this.source==='reference'){
-      this.scene.setScanVisible(false)
-      this.scene.setNominalVisible(true)
-    }else{
-      this.scene.setNominalVisible(false)
-      this.scene.setScanVisible(true)
-    }
+    this.setSourceVisibility()
     this.setGap(active?0:this.explodeGap)
   }
   setGap(gap:number):void {
@@ -159,11 +260,21 @@ export class MoldPreview {
       if(this.priorNominal!==null)this.scene.setNominalVisible(this.priorNominal)
       if(this.priorScan!==null)this.scene.setScanVisible(this.priorScan)
     }else if(this.bounds)this.setMode(this.viewMode)
+    if(!visible)this.emitDraftHover(null)
     this.refreshCaps()
     this.host.invalidate()
   }
   clear():void {
     this.caps.update(null,[],this.host.theme())
+    this.emitDraftHover(null)
+    if(this.draftMesh){
+      this.draftMesh.geometry.dispose()
+      this.draftMesh.material.dispose()
+      this.draftMesh.parent?.remove(this.draftMesh)
+      this.draftMesh=null
+    }
+    this.draftData=null
+    this.draftVisible=new Uint32Array(0)
     this.activeSection=null
     this.bounds=null
     this.group.parent?.remove(this.group)
