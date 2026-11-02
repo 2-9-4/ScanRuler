@@ -17,6 +17,7 @@ import { moldSettings, useMold } from '../state/moldStore'
 import { MOLD_SETTING_KEYS } from '../core/settings'
 import type { MoldBuild, Limits } from '../core/geometry'
 import { MoldPreview, type MoldPreviewMode, type DraftHover } from '../viewer/moldPreview'
+import { MoldGuides } from '../viewer/moldGuides'
 import { DEFAULT_DRAFT_DISPLAY,type DraftDisplayOptions } from '../core/draftOverlay'
 import { MoldPanel } from '../ui/MoldPanel'
 
@@ -35,6 +36,12 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
   // View-only controls; changing these never invalidates worker results.
   const [draftDisplay,setDraftDisplay]=useState<DraftDisplayOptions>({...DEFAULT_DRAFT_DISPLAY})
   const [draftHover,setDraftHover]=useState<DraftHover|null>(null)
+  const [previewRevision,setPreviewRevision]=useState(0)
+  const [showCutGuides,setShowCutGuides]=useState(true)
+  const [showHandles,setShowHandles]=useState(true)
+  const [pickingBase,setPickingBase]=useState(false)
+  const guides=useRef<MoldGuides|null>(null)
+  const previewTicket=useRef(0)
   const previewGap = useMold(s=>s.previewGap)
   const preview = useRef<MoldPreview | null>(null)
   const priorSection=useRef<ReturnType<typeof useSectionView.getState>|null>(null)
@@ -57,8 +64,11 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
 
   useEffect(() => {
     const offMold = useMold.subscribe((s, prev) => {
-      if (MOLD_SETTING_KEYS.some(k => k !== 'previewGap' && s[k] !== prev[k])) invalidate()
-      else if (s.previewGap !== prev.previewGap) preview.current?.setGap(s.previewGap)
+      if(MOLD_SETTING_KEYS.some(k=>k!=='previewGap'&&s[k]!==prev[k])){
+        invalidate()
+        setPreviewRevision(n=>n+1)
+      }else if(s.previewGap!==prev.previewGap)preview.current?.setGap(s.previewGap)
+      guides.current?.updateSettings(moldSettings())
     })
     const offScan = onScan({ loaded: invalidate, swapped: invalidate })
     return () => { offMold(); offScan() }
@@ -75,9 +85,12 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
     if(priorSection.current)useSectionView.setState(priorSection.current)
     priorSection.current=null
     preview.current?.dispose(); preview.current = null
+    guides.current?.dispose(); guides.current=null
+    previewTicket.current++
   }, [])
   useEffect(() => {
     preview.current?.setVisible(inWorkspace)
+    guides.current?.setVisible(inWorkspace)
     if(!inWorkspace){
       if(priorSection.current){
         useSectionView.setState(priorSection.current)
@@ -104,6 +117,77 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
   useEffect(() => useDeviation.subscribe((s,prev) => {
     if (s.nominalName !== prev.nominalName || s.nominalBusy !== prev.nominalBusy || s.nominalStep !== prev.nominalStep) invalidate()
   }), [invalidate])
+
+  // Fast source guides and draft map are independent of generated tooling.
+  // No Manifold worker/Boolean generation, including when only a guide moves.
+  useEffect(()=>{
+    const ticket=++previewTicket.current
+    if(!inWorkspace||generated)return
+    const scene=host.sceneRef.current,client=host.clientRef.current
+    const settings=moldSettings()
+    const target=settings.source==='scan'?host.sources.current.scan:host.sources.current.reference
+    if(!scene||!client||!target)return
+    let stagedId:number|null=null
+    const run=async()=>{
+      try{
+        const version=settings.source==='scan'?client.scanVersion:client.nominalVersion
+        let sourceKind:'scan'|'staged'='scan'
+        if(settings.source==='reference'){
+          const staged=await client.prepareScan(target.name,
+            target.bytes.slice().buffer as ArrayBuffer,NO_CREASE,undefined,target.units)
+          stagedId=staged.id
+          sourceKind='staged'
+        }
+        if(ticket!==previewTicket.current)return
+        const data=await client.pluginCall<{
+          targetBounds:Limits
+          draftOverlay:MoldBuild['draftOverlay']
+          sourcePositions:Float32Array
+          sourceIndices:Uint32Array
+        }>('mold-making','preview',{
+          settings,source:sourceKind,...(stagedId!==null?{stagedId}:{}),
+        })
+        const same=version===(settings.source==='scan'?client.scanVersion:client.nominalVersion)
+        if(ticket!==previewTicket.current||!same)return
+        if(!preview.current)preview.current=new MoldPreview(scene,invalidate,setDraftHover)
+        preview.current.setSourcePreview(data.targetBounds,settings.source,data.draftOverlay)
+        preview.current.setDraftOptions({...draftDisplay,
+          show:settings.mode==='direct'&&settings.analyzeDraft&&draftDisplay.show})
+        if(!guides.current)guides.current=new MoldGuides(scene,
+          (kind,index,point)=>{
+            const store=useMold.getState()
+            if(kind==='pour')store.setPourPoint(point)
+            else store.setVentPoints(store.ventPoints.map((p,i)=>i===index?point:p))
+          },
+          (point,normal)=>{
+            useMold.getState().setMountContact(point,normal)
+            useMold.getState().setMountEnabled(true)
+            setPickingBase(false)
+          })
+        guides.current.set(settings.source,data.targetBounds,settings,{
+          positions:data.sourcePositions,indices:data.sourceIndices,
+        })
+        guides.current.setOptions(showCutGuides,showHandles)
+        guides.current.setPickBase(pickingBase)
+        setTargetBounds(data.targetBounds)
+      }catch(err){
+        if(ticket===previewTicket.current)
+          setError(err instanceof Error?err.message:String(err))
+      }finally{
+        if(stagedId!==null)try{await client.discardImport([stagedId])}catch{/* worker may restart */}
+      }
+    }
+    void run()
+    return ()=>{previewTicket.current++}
+  },[inWorkspace,previewRevision,scanName,referenceName,generated,host])
+
+  useEffect(()=>{
+    guides.current?.setOptions(showCutGuides,showHandles)
+    guides.current?.setPickBase(pickingBase)
+  },[showCutGuides,showHandles,pickingBase])
+  useEffect(()=>{
+    preview.current?.setDraftOptions(draftDisplay)
+  },[draftDisplay])
 
   const runGenerate = async () => {
     if (busy.current) return
@@ -254,15 +338,45 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
   }
 
   return {
-    overlay:inWorkspace&&generated&&previewMode==='exploded'?(
-      <div className="mold-explode-overlay" data-test="mold-explode-overlay"
+    overlay:inWorkspace?(
+      <div className="mold-explode-overlay" data-test="mold-viewport-tools"
         onPointerDown={e=>e.stopPropagation()} onWheel={e=>e.stopPropagation()}>
+        <label><input type="checkbox" checked={showCutGuides}
+          onChange={e=>setShowCutGuides(e.target.checked)}/> Cut planes</label>
+        <label><input type="checkbox" checked={showHandles}
+          onChange={e=>setShowHandles(e.target.checked)}/> Sprue / vent handles</label>
+        {source==='scan'||source==='reference'?<button type="button"
+          data-test="mold-pick-base" aria-pressed={pickingBase}
+          onClick={()=>setPickingBase(!pickingBase)}>
+          {pickingBase?'Click a downward-facing model face':'Pick glue-on support face'}
+        </button>:null}
+        {useMold.getState().mode==='direct'&&<>
+          <label><input type="checkbox" data-test="mold-draft-toggle-viewport"
+            checked={useMold.getState().analyzeDraft}
+            onChange={e=>useMold.getState().setAnalyzeDraft(e.target.checked)}/>
+            Draft / overhangs</label>
+          {useMold.getState().analyzeDraft&&<>
+            <select aria-label="Draft region" value={draftDisplay.view}
+              onChange={e=>changeDraftDisplay({...draftDisplay,
+                view:e.target.value as DraftDisplayOptions['view']})}>
+              <option value="both">All parts</option>
+              {Array.from({length:useMold.getState().parts},(_,i)=>
+                <option key={i} value={`part-${i}`}>Part {i+1}</option>)}
+            </select>
+            <label>Draft limit {draftDisplay.thresholdDeg}°
+              <input type="range" min={0} max={30} step={0.5}
+                value={draftDisplay.thresholdDeg}
+                onChange={e=>changeDraftDisplay({...draftDisplay,thresholdDeg:Number(e.target.value)})}/></label>
+          </>}
+        </>}
+        {generated&&previewMode==='exploded'&&<div>
         <label htmlFor="mold-explode-slider">Mold separation</label>
         <input id="mold-explode-slider" type="range" data-test="mold-explode-slider"
           min={0} max={Math.max(60,...generated.targetBounds.max.map((v,i)=>
             (v-generated.targetBounds.min[i])*3))} step={0.5} value={previewGap}
           onChange={e=>useMold.getState().setDimension('previewGap',Number(e.target.value))}/>
         <output>{previewGap.toFixed(1)} mm</output>
+        </div>}
       </div>
     ):null,
     startPane: source === 'reference' && referenceName ? null : {
