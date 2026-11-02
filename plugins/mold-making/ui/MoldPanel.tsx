@@ -437,8 +437,8 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
                 onChange={e=>onDraftDisplayChange({...draftDisplay,
                   view:e.target.value as DraftDisplayOptions['view']})}>
                 <option value="both">Both halves</option>
-                <option value="negative">Negative (−{generated.draftAnalysis.axis.toUpperCase()})</option>
-                <option value="positive">Positive (+{generated.draftAnalysis.axis.toUpperCase()})</option>
+                {generated.draftAnalysis.regions.map((region,i)=>
+                  <option key={i} value={`part-${i}`}>{region.label}</option>)}
               </select></label>
             <label className="kv"><span className="name">Color display</span>
               <select data-test="mold-draft-overlay-color" value={draftDisplay.mode}
@@ -466,23 +466,28 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
             <div className="kv" data-test="mold-draft-hover-readout" role="status">
               <span className="name">Hovered source face</span>
               <b>{draftHover
-                ?`#${draftHover.sourceTriangle+1} · ${draftHover.half==='negative'?'−':'+'}${generated.draftAnalysis.axis.toUpperCase()} · ${draftHover.angleDeg.toFixed(2)}° · ${draftHover.classification==='reverse'?'possible undercut':draftHover.classification==='low'?'low draft':'adequate'}`
+                ?`#${draftHover.sourceTriangle+1} · ${generated.draftAnalysis.regions[draftHover.partIndex]?.label??'Unknown part'} · ${draftHover.angleDeg.toFixed(2)}° · ${draftHover.classification==='reverse'?'possible undercut':draftHover.classification==='low'?'low draft':'adequate'}`
                 :'Move the pointer over a colored face'}</b>
             </div>
             <p className="hint">Changing these display controls does not regenerate the mold. Numerical totals below retain the generation-time draft threshold ({generated.draftAnalysis.minimumDraftDeg}°).</p>
           </>}
-          <p className="hint">Screened {generated.draftAnalysis.assessedTriangles.toLocaleString('en-US')} source triangles for two opposing release directions along {generated.draftAnalysis.axis.toUpperCase()}, split at {generated.draftAnalysis.splitAtMm.toFixed(2)} mm. Faces crossing the plane are split for the area calculations. Target positive draft: {generated.draftAnalysis.minimumDraftDeg}°.</p>
+          <p className="hint">Screened {generated.draftAnalysis.assessedTriangles.toLocaleString('en-US')} source triangles across {generated.draftAnalysis.regions.length} tooling region(s). {generated.draftAnalysis.layout==='threefold'
+            ?'Three 120° radial sectors withdraw along their outward bisectors.'
+            :generated.draftAnalysis.layout==='four-part'
+            ?'Four quadrants withdraw diagonally along both parting axes.'
+            :generated.draftAnalysis.layout==='impression'
+            ?'The lower half of the target is screened relative to −Z withdrawal.'
+            :`Two opposing halves withdraw along ±${generated.draftAnalysis.axis.toUpperCase()}, split at ${generated.draftAnalysis.splitAtMm.toFixed(2)} mm.`}
+            {' '}Faces crossing parting planes are clipped. Target positive draft: {generated.draftAnalysis.minimumDraftDeg}°.</p>
           <div className="kv"><span className="name">Potential reverse-facing (undercut) surface</span>
             <b>{generated.draftAnalysis.reverseFacingMm2.toFixed(1)} mm² ({(100*generated.draftAnalysis.reverseFacingMm2/Math.max(1e-9,generated.draftAnalysis.totalAreaMm2)).toFixed(1)}%)</b></div>
           <div className="kv"><span className="name">Additional insufficient-draft area</span>
             <b>{generated.draftAnalysis.lowDraftMm2.toFixed(1)} mm² ({(100*generated.draftAnalysis.lowDraftMm2/Math.max(1e-9,generated.draftAnalysis.totalAreaMm2)).toFixed(1)}%)</b></div>
-          {(['negative','positive'] as const).map(side=>{
-            const d=generated.draftAnalysis![side]
-            return <div className="kv" key={side}>
-              <span className="name">{side==='negative'?'-':'+'}{generated.draftAnalysis!.axis.toUpperCase()} half · reverse / low draft</span>
-              <b>{d.reverseFacingMm2.toFixed(1)} / {d.lowDraftMm2.toFixed(1)} mm²</b>
-            </div>
-          })}
+          {generated.draftAnalysis.regions.map((region,i)=>
+            <div className="kv" key={i}>
+              <span className="name">{region.label} · reverse / low draft</span>
+              <b>{region.reverseFacingMm2.toFixed(1)} / {region.lowDraftMm2.toFixed(1)} mm²</b>
+            </div>)}
           <p className="hint">A reverse-facing triangle may signal a trapped undercut. Low draft includes near-parallel walls. This normal-based screening does not prove collision-free withdrawal, does not detect every obstruction, and does not alter or block the printable mold. Check material flexibility, release path, parting seams and mechanical clearance.</p>
         </details>}
         <div className="kv"><span className="name">Total material</span><b>{(generated.volumeMm3/1000).toFixed(1)} cm³</b></div>
