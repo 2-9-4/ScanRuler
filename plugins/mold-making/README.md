@@ -358,49 +358,85 @@ requiring the **Generate tooling** operation:
   adjust the displayed minimum angle there. The source mesh is analyzed
   by the worker's lightweight **preview** operation (no Manifold
   instantiation, remeshing or mold Boolean).
-- **Sprue / vent handles** draw orange pour and teal air-vent spheres above
-  the target model. Drag in the 3D scene to change normalized XY placement,
-  leaving the channel vertical. Changes commit **on pointer release**,
-  rather than on every mouse move; the existing side-panel numeric controls
-  remain available. A handle is a placement indicator only: final bore
-  collision/surface/parting validation still takes place at generation.
-  Existing pouring and venting limits (multipart direct molds) remain
-  unchanged.
+- **Sprue / vent holes** are visible on the **actual source surface**,
+  rather than floating above its bounding box: orange annular **SPRUE Ø…**
+  and teal **VENT N Ø…** markers have camera-facing labels, short leaders
+  and a large transparent picking disk. Click **Add sprue** or **Add vent**
+  in the viewport, then drag a ring in the XY plane. Its Z coordinate
+  follows the first actual source-mesh intersection along the vertical
+  bore direction. An off-model point is shown red and labelled **NO
+  SURFACE**, and a drag to a location without source triangles is rejected.
+  Positions are saved on pointer release, not on every move. The bores
+  remain vertical, and the existing geometry preflight still checks
+  intersection with the actual cavity, seams, and mold outer walls.
+- **Draft / overhangs** no longer needs an entire left-panel setup
+  section. In the 3D viewport it supports classifications, continuous
+  heatmap, per-part filters, hide adequate faces, live angle threshold,
+  opacity and hover readouts both **before and after** generation.
+  The generated mold is never hidden just because the overlay is on:
+  exploded pieces retain their normal solid appearance, while an
+  assembled mold can be viewed with a translucent shell around the
+  colored source.
 
-### Optional suspension pedestal for silicone containment boxes
+### Matched exterior seam labels
 
-In **silicone-box** mode, use **Pick glue-on support face** in the 3D viewport,
-then click a **downward-facing** source triangle. The picked contact position
-and outward normal are persisted with the mold settings; they define a pad
-oriented to that physical surface (rather than guessing a plane from the
-target's bounding box). The **Include printed suspension pedestal** control
-is enabled after picking. The user can adjust:
+Optional **Engrave matching interface numbers** (under Parting and
+registration) subtracts shallow seven-segment glyphs from the **outside**
+of each multipart tool, never the mating face or cavity. Each physical
+interface is numbered consistently on both adjacent parts:
 
-- Interior **height under the model** (the bucket's internal floor moves
-  down; the imported target's position and orientation remain unchanged).
-- Glue-pad, stem and foot diameters.
+- 2 parts: `1` / `1`
+- 3 sectors: `1-3`, `1-2`, `2-3`
+- 4 quadrants: `1-4`, `1-2`, `3-4`, `2-3`
 
-When enabled, the separately exported pedestal consists of a continuous
-watertight loft: wide floor foot, narrowing/transitioning support stem,
-and a pad oriented with the selected face normal, spaced approximately
-0.2 mm off the selected surface to allow glue. The box generates with the
-requested interior clearance. The support is shown in purple before
-generation, is preserved as a separate printable STL/3MF component
-and remains at its original position in the exploded preview rather
-than moving along with the mold sections. Support material displacement is
-included in the net silicone quantity estimate when the master is a
-measurable closed solid.
+The setting defaults off to protect existing production geometry;
+enable it for new numbered tooling. Curved bodies use a shallow
+tangent-plane cut and flat bodies use an exterior side face. If a
+part is too small or a Boolean fails, the original valid part is
+preserved with a warning rather than losing the tooling.
 
-The support is **not** fused to the master or the box: both attachments
-must be glued and sealed before casting. Surface curvature may cause an
-oversized glue pad to overhang the selected feature; check the viewport.
-The fixture does not rotate the original imported master. The current
-support generator requires a substantially downward-facing selected face
-and a separate silicone containment box. It does not yet handle arbitrary
-side-facing mounts, multiple pedestals, model reorientation, mold cavity
-cores, or automatic intersection-proof support routing. There is also
-no guarantee that a selected contact face is sufficiently smooth for
-gluing: it is chosen by the operator.
+### Keyed through-base master support (rigid and silicone molds)
+
+In either **direct-print** or **silicone-box** mode, click
+**Pick glue-on support face** in the 3D viewport, then choose an
+actual substantially downward-facing source triangle. Enable the
+separately printable support and set the glue pad, keyed stem, and
+outside stop/foot diameters. In silicone-box mode, optional interior
+clearance below the model extends the bucket downward. In direct
+mode the backing and outside clearance grow as required.
+
+At generation time a **hexagonal through-bore** is subtracted from
+the bottom tooling **before splitting**. The exported
+**Hex-keyed master mounting post** can be inserted from outside:
+its stem is regular hexagonal with **0.25 mm nominal radial clearance**,
+its larger exterior hexagonal stop cannot pass through the hole,
+and a tilted upper glue pad faces the chosen model surface. The
+transition from shoulder to stem is entirely outside the mold wall.
+The post is a separate export, not joined to the source, and remains
+at its original position while mold sections are exploded. A
+translucent purple model shows the post before generation.
+
+The user must glue the contact pad to the master, physically seat
+the outer shoulder, and **seal the through-wall penetration against
+casting fluid**. The feature does not rotate the imported master,
+automatically verify that the post misses other parts of a complex
+source geometry, or support near-horizontal/sideways attachment
+directions. A curved contact surface may not fully mate with the
+flat pad. Test-fit the printable stop/hex before pouring. For silicone
+estimates, only the post volume **inside the cavity** (not its
+external shoulder or the volume inside the printed base) is
+subtracted from the estimated pour.
+
+### Silicone bucket clamp-tab anchoring
+
+For V-seam cylindrical and rectangular silicone containment
+buckets, top and bottom clamp tabs are no longer placed at evenly
+spaced unsupported points over the empty opening. Instead they are
+anchored to the two **actual exterior wall intersections** of each
+parting plane, including slightly inward-of-tangent intersections
+for round bucket walls. At most two such wall locations are
+available on one exterior rim; additional requested tabs are
+not duplicated in free space.
 
 The fast preview returns source mesh buffers and parting guides through
 `worker.ts`. The independent `viewer/moldGuides.ts` scene layer handles
