@@ -342,3 +342,76 @@ Regression coverage: `tests/draftOverlay.test.ts` and
 triangle clipping across the split plane, per-face source indices,
 live threshold classifications and face filtering. The suite still
 needs a local TypeScript/React/Manifold/WebGL run.
+
+## Live viewport setup and picked master mounting (2026-11-01)
+
+The Mold Making viewport now offers **live pre-generation** overlays, without
+requiring the **Generate tooling** operation:
+
+- **Cut planes** shows translucent cyan outlines spanning the **planned
+  outside mold bounds**, not just the imported model. The display mirrors
+  the one-piece mid-height impression plane, the configurable primary
+  two-part split, the three radial 120° parting interfaces, or the primary
+  and perpendicular secondary planes used in four-part tooling.
+- **Draft / overhangs** toggles the existing per-source-triangle color
+  diagnostic in the 3D viewport before generation. Pick a sector and
+  adjust the displayed minimum angle there. The source mesh is analyzed
+  by the worker's lightweight **preview** operation (no Manifold
+  instantiation, remeshing or mold Boolean).
+- **Sprue / vent handles** draw orange pour and teal air-vent spheres above
+  the target model. Drag in the 3D scene to change normalized XY placement,
+  leaving the channel vertical. Changes commit **on pointer release**,
+  rather than on every mouse move; the existing side-panel numeric controls
+  remain available. A handle is a placement indicator only: final bore
+  collision/surface/parting validation still takes place at generation.
+  Existing pouring and venting limits (multipart direct molds) remain
+  unchanged.
+
+### Optional suspension pedestal for silicone containment boxes
+
+In **silicone-box** mode, use **Pick glue-on support face** in the 3D viewport,
+then click a **downward-facing** source triangle. The picked contact position
+and outward normal are persisted with the mold settings; they define a pad
+oriented to that physical surface (rather than guessing a plane from the
+target's bounding box). The **Include printed suspension pedestal** control
+is enabled after picking. The user can adjust:
+
+- Interior **height under the model** (the bucket's internal floor moves
+  down; the imported target's position and orientation remain unchanged).
+- Glue-pad, stem and foot diameters.
+
+When enabled, the separately exported pedestal consists of a continuous
+watertight loft: wide floor foot, narrowing/transitioning support stem,
+and a pad oriented with the selected face normal, spaced approximately
+0.2 mm off the selected surface to allow glue. The box generates with the
+requested interior clearance. The support is shown in purple before
+generation, is preserved as a separate printable STL/3MF component
+and remains at its original position in the exploded preview rather
+than moving along with the mold sections. Support material displacement is
+included in the net silicone quantity estimate when the master is a
+measurable closed solid.
+
+The support is **not** fused to the master or the box: both attachments
+must be glued and sealed before casting. Surface curvature may cause an
+oversized glue pad to overhang the selected feature; check the viewport.
+The fixture does not rotate the original imported master. The current
+support generator requires a substantially downward-facing selected face
+and a separate silicone containment box. It does not yet handle arbitrary
+side-facing mounts, multiple pedestals, model reorientation, mold cavity
+cores, or automatic intersection-proof support routing. There is also
+no guarantee that a selected contact face is sufficiently smooth for
+gluing: it is chosen by the operator.
+
+The fast preview returns source mesh buffers and parting guides through
+`worker.ts`. The independent `viewer/moldGuides.ts` scene layer handles
+raycastable source picking and constrained horizontal dragging; the
+ordinary Mold Preview layer remains responsible for diagnostic colors
+and generated mold parts. Both layers follow the selected source's
+scan alignment or reference frame, and clean up their GPU geometry
+when the workspace closes or source changes.
+
+Tests: `tests/moldGuidesAndMount.test.ts` covers planned split guides,
+support bounds/normal validations and the closed oriented support mesh.
+`tests/generation.test.ts` includes an enabled silicone-box build with
+a separate exported pedestal. Full browser interaction, TypeScript,
+Vitest, and geometry-engine validation are still required.
