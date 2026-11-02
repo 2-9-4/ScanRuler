@@ -749,7 +749,11 @@ function addContourVSeam(
     const along=axis==='x'?1:0
     const [lo,hi]=seamSpan&&seamSpanAxis===('xyz'[along] as SplitAxis)
       ?seamSpan:[outer.min[along],outer.max[along]]
-    const count=s.topBottomTabCount
+    // A silicone bucket is HOLLOW at its top: distributing tabs across
+    // the seam would create suspended, disconnected islands. Anchor them
+    // at the actual two outer wall intersections instead. Additional
+    // requested positions cannot be realized on that unsupported rim.
+    const count=s.mode==='silicone-box'?Math.min(2,s.topBottomTabCount):s.topBottomTabCount
     const span=hi-lo
     for(const sign of [-1,1])for(let i=0;i<count;i++){
       const end=sign<0?outer.min[2]:outer.max[2]
@@ -757,7 +761,19 @@ function addContourVSeam(
       // an ear on the other piece's outside end would be detached.
       if(seamSpan&&seamSpanAxis==='z'&&
         Math.abs((sign<0?seamSpan[0]:seamSpan[1])-end)>1e-4)continue
-      const position=lo+span*(i+0.5)/count
+      let position=lo+span*(i+0.5)/count
+      if(s.mode==='silicone-box'){
+        if(plan.cylinder){
+          const centreAlong=center(outer.min[along],outer.max[along])
+          const primary=center(outer.min[k],outer.max[k])
+          const chord=Math.sqrt(Math.max(0,
+            plan.cylinder.outerR**2-(split-primary)**2))
+          position=centreAlong+(i===0?-1:1)*chord
+        }else{
+          position=i===0?outer.min[along]+plan.material.wall*0.5:
+            outer.max[along]-plan.material.wall*0.5
+        }
+      }
       const overlap=Math.max(2.5,Math.min(6,tab.thickness*0.6))
       const makeEar=(upper:boolean)=>{
         const low:Vec3=[...outer.min],high:Vec3=[...outer.max]
