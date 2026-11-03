@@ -127,6 +127,32 @@ export function planMasterMount(bounds:Bounds,s:MoldSettings,outer?:Bounds):{
   )
   return {rings,floorZ,headSeat,innerStop}
 }
+/** A socket cutter with EXACTLY the same hex orientation as the
+ * printable post (vertices at 0°, 60°, ...). Using Manifold.cylinder(6)
+ * independently can rotate the flats, losing the promised radial fit.
+ * Bounds are absolute; its bottom is NEVER automatically Z-centered.
+ */
+export function mountHexPrismMesh(
+  xy:[number,number],radius:number,bottomZ:number,topZ:number,
+):Triangles{
+  if(![...xy,radius,bottomZ,topZ].every(Number.isFinite)||
+     radius<=0||topZ<=bottomZ)
+    throw new Error('Invalid hexagonal mounting cutter dimensions.')
+  const vertices:number[]=[],indices:number[]=[]
+  for(const z of [bottomZ,topZ])for(let i=0;i<6;i++){
+    const a=i*Math.PI/3
+    vertices.push(xy[0]+radius*Math.cos(a),xy[1]+radius*Math.sin(a),z)
+  }
+  vertices.push(xy[0],xy[1],bottomZ,xy[0],xy[1],topZ)
+  for(let i=0;i<6;i++){
+    const next=(i+1)%6
+    indices.push(i,next,6+next,i,6+next,6+i)
+    indices.push(12,next,i)
+    indices.push(13,6+i,6+next)
+  }
+  return {positions:Float32Array.from(vertices),indices:Uint32Array.from(indices)}
+}
+
 /** Winding is consistent along every circular cross section. The top cap
  * conforms to the picked face's tangent plane (not the bounding-box plane).
  */
