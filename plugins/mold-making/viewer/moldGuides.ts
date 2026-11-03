@@ -12,6 +12,21 @@ import {masterMountMesh} from '../core/masterMount'
 type MeshData={positions:Float32Array;indices:Uint32Array}
 type XY=[number,number]
 type XYZ=[number,number,number]
+/** Try bounding-box center first, then a compact radial search over the
+ * underside so a centered cavity/hole does not make auto-centering fail. */
+export function mountCenterCandidates(bounds:Limits):XY[]{
+  const cx=(bounds.min[0]+bounds.max[0])/2
+  const cy=(bounds.min[1]+bounds.max[1])/2
+  const sx=bounds.max[0]-bounds.min[0],sy=bounds.max[1]-bounds.min[1]
+  const candidates:XY[]=[[cx,cy]]
+  for(const fraction of [0.05,0.12,0.22]){
+    for(let i=0;i<8;i++){
+      const t=2*Math.PI*i/8
+      candidates.push([cx+sx*fraction*Math.cos(t),cy+sy*fraction*Math.sin(t)])
+    }
+  }
+  return candidates
+}
 type Handle={kind:'pour'|'vent';index:number;mesh:THREE.Mesh;pick:THREE.Mesh;label:THREE.Sprite;leader:THREE.Line}
 const axisIndex=(a:'x'|'y'|'z')=>a==='x'?0:a==='y'?1:2
 /** Stable read-only cut layout so previews match the actual two-/three-/fourfold splitter. */
@@ -256,6 +271,29 @@ export class MoldGuides {
     const hit=ray.intersectObject(this.sourceMesh,false)[0]
     if(!hit)return null
     return this.group.worldToLocal(hit.point.clone()).z
+  }
+  /** Place a mount at the XY center and the first downward-facing
+   * surface hit from below. No manual camera orbit or face click required. */
+  centerMount():boolean{
+    if(!this.active||!this.bounds||!this.sourceMesh)return false
+    const b=this.bounds
+    this.group.updateWorldMatrix(true,false)
+    const depth=Math.max(5,b.max[2]-b.min[2])
+    const direction=new THREE.Vector3(0,0,1).transformDirection(this.group.matrixWorld)
+    for(const [x,y] of mountCenterCandidates(b)){
+      const origin=new THREE.Vector3(x,y,b.min[2]-depth).applyMatrix4(this.group.matrixWorld)
+      const ray=new THREE.Raycaster(origin,direction,0,Infinity)
+      const hits=ray.intersectObject(this.sourceMesh,false)
+      const hit=hits.find(h=>h.face&&h.face.normal.z<=-0.5)
+      if(!hit?.face)continue
+      const point=this.group.worldToLocal(hit.point.clone())
+      const normal=hit.face.normal.clone().normalize()
+      this.pickBase=false
+      this.onMount([point.x,point.y,point.z],[normal.x,normal.y,normal.z])
+      this.host.invalidate()
+      return true
+    }
+    return false
   }
   private pointerDown(e:PointerEvent):boolean{
     if(!this.active||!this.bounds||!this.settings||e.button!==0)return false
