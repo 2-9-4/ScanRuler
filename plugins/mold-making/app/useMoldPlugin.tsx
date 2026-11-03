@@ -24,7 +24,8 @@ import { MoldPanel } from '../ui/MoldPanel'
 const NO_CREASE = { mode: 'off' as const, angleDeg: 30 }
 
 export function useMoldPlugin(host: PluginHost): PluginRuntime {
-  const inWorkspace = useShell((s) => s.workspace === 'mold-making')
+  const workspace=useShell(s=>s.workspace)
+  const inWorkspace = workspace==='mold-making'
   const source = useMold((s) => s.source)
   const referenceName = useDeviation((s) => s.nominalName)
   const scanName = useStore((s) => s.fileName)
@@ -35,6 +36,8 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
   const [previewMode,setPreviewMode] = useState<MoldPreviewMode>('exploded')
   const [visibleParts,setVisibleParts]=useState<boolean[]>([])
   const [masterVisible,setMasterVisible]=useState(true)
+  /** Selected mold part kept as a non-editable scene overlay in Reverse. */
+  const [cadReferenceIndex,setCadReferenceIndex]=useState<number|null>(null)
   // View-only controls; changing these never invalidates worker results.
   const [draftDisplay,setDraftDisplay]=useState<DraftDisplayOptions>({...DEFAULT_DRAFT_DISPLAY})
   const [draftHover,setDraftHover]=useState<DraftHover|null>(null)
@@ -60,6 +63,7 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
     setGenerated(null)
     setVisibleParts([])
     setMasterVisible(true)
+    setCadReferenceIndex(null)
     generatedVersion.current = null
     setError(null)
     preview.current?.clear()
@@ -99,7 +103,11 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
     previewTicket.current++
   }, [])
   useEffect(() => {
-    preview.current?.setVisible(inWorkspace)
+    const inCadReference=workspace==='reverse'&&
+      cadReferenceIndex!==null&&generated!==null
+    preview.current?.setVisible(inWorkspace||inCadReference)
+    preview.current?.setCadReference(inCadReference?cadReferenceIndex:null)
+    if(inWorkspace)preview.current?.setMode(previewMode)
     guides.current?.setVisible(inWorkspace)
     if(!inWorkspace){
       if(priorSection.current){
@@ -123,7 +131,7 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
     view.open([0,0,-1],centre)
     view.setRef(sectionAxis,[0,0,-1])
     view.setOffset(centre[sectionAxis==='x'?0:1])
-  },[inWorkspace,generated,previewMode])
+  },[inWorkspace,workspace,generated,previewMode,cadReferenceIndex])
   useEffect(() => useDeviation.subscribe((s,prev) => {
     if (s.nominalName !== prev.nominalName || s.nominalBusy !== prev.nominalBusy || s.nominalStep !== prev.nominalStep) invalidate()
   }), [invalidate])
@@ -269,6 +277,8 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
       setVisibleParts(allVisible)
       preview.current?.setPartVisibility(allVisible)
       setMasterVisible(true)
+      setCadReferenceIndex(null)
+      preview.current?.setCadReference(null)
       preview.current?.setMasterVisible(true)
       const nextDisplay={...DEFAULT_DRAFT_DISPLAY,show:!!made.draftOverlay,
         thresholdDeg:settings.minimumDraftDeg}
@@ -324,10 +334,31 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
   const editPart=async(index:number,workspace:'mesh'|'reverse')=>{
     const part=generated?.parts[index]
     if(!generated?.printable||!part)return
+    if(workspace==='reverse'){
+      // CAD reference must NOT import the STL as a replacement scan. The
+      // old workflow triggered onScan(invalidate), destroying all the
+      // generated mold parts and replacing the original model.
+      // Keep the original source, ALL mold pieces and source coordinates.
+      const all=generated.parts.map(()=>true)
+      setVisibleParts(all)
+      setMasterVisible(true)
+      setCadReferenceIndex(index)
+      preview.current?.setPartVisibility(all)
+      preview.current?.setMasterVisible(true)
+      // The overlay is assembled in model coordinates; returning to Mold
+      // restores its separate previewMode/exploded gap state.
+      preview.current?.setMode('section')
+      preview.current?.setCadReference(index)
+      preview.current?.setVisible(true)
+      useShell.getState().setWorkspace('reverse')
+      useStore.getState().setStatus(
+        `${part.name} shown as a highlighted, view-only CAD reference with all mold parts and the original model. No scan or project data was replaced. Return to Mold Making to change the mold; use Edit copy only if you want to replace the active scan.`
+      )
+      return
+    }
     try{
-      // Use the existing scan-import pipeline, not a duplicate editable
-      // mesh store: this is a deliberate "edit a copy" operation and will
-      // replace the current scan. Boolean operands above do not.
+      // Edit copy is intentionally destructive to the active scan: unlike
+      // CAD reference it imports one STL into the mesh editor.
       const built=buildMeshFile('stl',[{
         name:part.name,positions:part.positions,indices:part.indices,
       }],null,'ScanRuler Mold Making')
