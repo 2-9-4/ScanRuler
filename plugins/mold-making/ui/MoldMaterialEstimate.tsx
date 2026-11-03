@@ -86,17 +86,19 @@ export function MoldMaterialEstimate({
         <b>{volume(mix.supportDisplacementMm3)}</b>
       </div>}
       {netAvailable?
-        <div className="kv" data-test="mold-silicone-mix-volume"
-          title="The volume of liquid silicone required with the original part still inside the tooling, before overage.">
-          <span className="name">= Silicone to pour (before overage)</span>
-          <b>{volume(mix.volumeMm3)}</b>
+        <div data-test={mode==='silicone-box'?'mold-silicone-net':undefined}>
+          <div className="kv" data-test="mold-silicone-mix-volume"
+            title="The volume of liquid silicone required with the original part still inside the tooling, before overage.">
+            <span className="name">= Silicone to pour (before overage)</span>
+            <b>{volume(mix.volumeMm3)}</b>
+          </div>
         </div>:
         <div className="kv" data-test="mold-silicone-mix-volume">
           <span className="name">= Silicone to pour</span>
           <b>Cannot determine</b>
         </div>}
       {mode==='silicone-box'&&netAvailable&&
-        <p className="hint" data-test="mold-silicone-net">This is the estimated net silicone fill with the master installed and the box filled to its rim.</p>}
+        <p className="hint">This is the estimated net silicone fill with the master installed and the box filled to its rim.</p>}
       {mix.basis==='gross-silicone'&&<p className="hint mold-warning" role="status">
         The input master is not a measurable closed solid. The internal capacity above is only a gross upper bound, not a usable silicone quantity. No mixing weights are calculated until the part volume is known.
       </p>}
