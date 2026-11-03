@@ -19,7 +19,7 @@ export function MoldPartList({
   const shown=visibleMoldParts(visible,parts.length)
   return <div data-test="mold-parts-list">
     <div className="sec-head">Inspect and export individual parts</div>
-    <p className="hint">Hide a part to see beneath it, or isolate one part to inspect its interior. The original master can be hidden independently. These controls affect ONLY the viewport; STL, 3MF, and geometry remain unchanged. Edit copy and CAD reference explicitly replace the current scan.</p>
+    <p className="hint">Hide or isolate components for inspection; the original master has its own visibility control. Display options never change STL, 3MF, or mold geometry. Reference in CAD preserves the complete assembly and original model; Edit copy replaces the active scan.</p>
     <label className="kv"><span className="name">Show original master / source model</span>
       <input type="checkbox" data-test="mold-show-master"
         checked={masterVisible} onChange={e=>onMasterVisibilityChange(e.target.checked)}/>
@@ -59,7 +59,8 @@ export function MoldPartList({
             onClick={()=>onEditPart(i,'mesh')}>Edit copy</button>
           <button type="button" disabled={!printable}
             data-test={`mold-edit-cad-${i}`}
-            onClick={()=>onEditPart(i,'reverse')}>CAD reference</button>
+            title="Show all mold pieces and the original model in Reverse Engineering, with this part highlighted. View-only reference; does not import or replace the active scan."
+            onClick={()=>onEditPart(i,'reverse')}>Reference in CAD</button>
         </div>
       </div>
     })}
