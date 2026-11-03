@@ -64,3 +64,36 @@ export function siliconeBatchByWeight(
   return {requiredGrams,batchGrams,partAGrams,partBGrams,
     overageGrams:batchGrams-requiredGrams}
 }
+
+/** Select the material volume relevant to a two-part silicone mix.
+ * Direct tooling is opt-in: only a positive cavity clearance enables
+ * the calculator. For silicone containment, use the net fill when the
+ * master has a trustworthy displacement estimate, otherwise explicitly
+ * identify gross-to-rim capacity as an upper bound.
+ */
+export type SiliconeMixVolumeBasis='direct-cavity'|'net-silicone'|'gross-silicone'
+export interface SiliconeMixVolume {
+  volumeMm3:number
+  basis:SiliconeMixVolumeBasis
+}
+export function siliconeMixVolume(
+  mode:'direct'|'silicone-box',
+  cavityClearanceMm:number,
+  estimates:{
+    nominalCastingCavityMm3:number|null
+    netSiliconeMm3:number|null
+    grossSiliconeCapacityMm3:number|null
+  },
+):SiliconeMixVolume|null{
+  const usable=(v:number|null):v is number=>v!==null&&Number.isFinite(v)&&v>=0
+  if(mode==='direct'){
+    return cavityClearanceMm>0&&usable(estimates.nominalCastingCavityMm3)
+      ?{volumeMm3:estimates.nominalCastingCavityMm3,basis:'direct-cavity'}
+      :null
+  }
+  if(usable(estimates.netSiliconeMm3))
+    return {volumeMm3:estimates.netSiliconeMm3,basis:'net-silicone'}
+  if(usable(estimates.grossSiliconeCapacityMm3))
+    return {volumeMm3:estimates.grossSiliconeCapacityMm3,basis:'gross-silicone'}
+  return null
+}
