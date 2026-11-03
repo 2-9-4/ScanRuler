@@ -20,6 +20,12 @@ const normalize=(a:V3):V3=>{
 }
 interface Ring {center:V3;radius:number;up:V3;hex?:boolean}
 export const MOUNT_HEX_RADIAL_CLEARANCE_MM=0.25
+/** Recess in the exterior tooling base for a positive axial locating shoulder. */
+export const MOUNT_HEX_SEAT_DEPTH_MM=1.2
+/** Clearance between the upper shoulder face and the back of its seat. */
+export const MOUNT_HEX_AXIAL_CLEARANCE_MM=0.15
+/** The actual post collar protrudes into the counterbore. */
+export const MOUNT_HEX_COLLAR_HEIGHT_MM=MOUNT_HEX_SEAT_DEPTH_MM-MOUNT_HEX_AXIAL_CLEARANCE_MM
 /** The source contact pad stays inside the mold; a hex-keyed stem crosses
  * the bottom wall and an exterior shoulder prevents insertion past its stop. */
 export function planMasterMount(bounds:Bounds,s:MoldSettings,outer?:Bounds):{rings:Ring[];floorZ:number}|null{
@@ -51,14 +57,13 @@ export function planMasterMount(bounds:Bounds,s:MoldSettings,outer?:Bounds):{rin
       throw new Error('Master mounting foot or pad extends beyond the circular tooling wall. Choose a more central contact point.')
   }
   const rings:Ring[]=[
-    // Stop/shoulder is EXTERNAL to the bottom wall. The keyed section
-    // begins inside the bore; it cannot rotate around the vertical axis.
+    // Hexagonal stop collar enters a short matching recess from BELOW.
+    // At the far end its annular step seats against the counterbore's
+    // ceiling, setting Z positively (within the stated clearance).
     {center:[p[0],p[1],floorZ-3],radius:footR,up:[0,0,1],hex:true},
-    {center:[p[0],p[1],floorZ-0.8],radius:footR,up:[0,0,1],hex:true},
-    // Reduce from the exterior shoulder BEFORE entering the bore: otherwise
-    // the taper wedges against the bottom face and cannot be inserted.
-    {center:[p[0],p[1],floorZ-0.3],radius:stemR,up:[0,0,1],hex:true},
-    {center:[p[0],p[1],floorZ+0.3],radius:stemR,up:[0,0,1],hex:true},
+    {center:[p[0],p[1],floorZ+MOUNT_HEX_COLLAR_HEIGHT_MM],radius:footR,up:[0,0,1],hex:true},
+    {center:[p[0],p[1],floorZ+MOUNT_HEX_COLLAR_HEIGHT_MM],radius:stemR,up:[0,0,1],hex:true},
+    {center:[p[0],p[1],floorZ+MOUNT_HEX_SEAT_DEPTH_MM+0.4],radius:stemR,up:[0,0,1],hex:true},
     {center:[p[0],p[1],p[2]+n[2]*3],radius:stemR,up:[0,0,1],hex:true},
     {center:add(p,scale(n,2)),radius:padR,up:scale(n,-1)},
     {center:add(p,scale(n,0.2)),radius:padR,up:scale(n,-1)},
