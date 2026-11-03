@@ -2,6 +2,7 @@
 // Explicit tooling choices and per-part export; no hidden mid-height cut.
 import { useState } from 'react'
 import {MoldMaterialEstimate,DEFAULT_MOLD_MATERIAL_INPUTS} from './MoldMaterialEstimate'
+import {MoldPartList} from './MoldPartList'
 import { SCAN_ACCEPT,REFERENCE_ACCEPT,REFERENCE_FORMATS } from '../../../src/core/formats'
 import { ModelSlot } from '../../../src/ui/ModelSlot'
 import { useStore } from '../../../src/state/store'
@@ -50,7 +51,7 @@ const NUT_FIELDS:readonly {key:MoldDimension;label:string;help:string}[]=[
   {key:'tabNutAcrossFlats',label:'Captured hex across flats (mm)',help:'Width between parallel flats of the nut, including fit allowance.'},
   {key:'tabNutDepth',label:'Captured nut pocket depth (mm)',help:'Recess depth from the outside face of the negative mold half.'},
 ]
-export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,onExport,onBoolean,onEditPart,generated,targetBounds,previewMode,onPreviewModeChange,generating,error}:{
+export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,onExport,onBoolean,onEditPart,visibleParts,onPartVisibilityChange,generated,targetBounds,previewMode,onPreviewModeChange,generating,error}:{
   onOpenScan:(file:File)=>void
   onOpenReference:(file:File)=>void
   onGenerate:()=>void
@@ -58,6 +59,8 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
   onExport:(format:'stl'|'3mf',index?:number)=>void
   onBoolean:()=>void
   onEditPart:(index:number,workspace:'mesh'|'reverse')=>void
+  visibleParts:readonly boolean[]
+  onPartVisibilityChange:(visible:boolean[])=>void
   generated:MoldBuild|null
   targetBounds:Limits|null
   previewMode:MoldPreviewMode
@@ -467,24 +470,14 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
         <MoldMaterialEstimate generated={generated} mode={mode} clearance={clearance}
           inputs={materialInputs}
           onInputChange={(key,value)=>setMaterialInputs(prev=>({...prev,[key]:value}))}/>
-        {generated.parts.map((p,i)=><div key={i} className="kv">
-          <span className="name">{p.name} · {Math.round(p.indices.length/3).toLocaleString('en-US')} faces</span>
-          <button type="button" disabled={!generated.printable} data-test={`mold-export-part-${i+1}`}
-            onClick={()=>onExport('stl',i)}>STL</button>
-        </div>)}
-        <button type="button" disabled={!generated.printable} data-test="mold-export-3mf" onClick={()=>onExport('3mf')}>Export all parts · 3MF</button>
-        <div className="sec-head">Continue editing</div>
+        <MoldPartList parts={generated.parts} printable={generated.printable}
+          visible={visibleParts} onVisibilityChange={onPartVisibilityChange}
+          onExportPart={i=>onExport('stl',i)} onEditPart={onEditPart}/>
+        <button type="button" disabled={!generated.printable} data-test="mold-export-3mf"
+          onClick={()=>onExport('3mf')}>Export all parts · 3MF</button>
         <button type="button" disabled={!generated.printable} data-test="mold-to-boolean"
           onClick={onBoolean}>Use mold parts in Mesh Tools Boolean</button>
-        <p className="hint">Mold parts are shared with Mesh Tools as independent solid operands. The original loaded scan stays unchanged.</p>
-        {generated.parts.map((p,i)=><div key={'edit-'+i} className="kv">
-          <span className="name">{p.name}</span>
-          <button type="button" disabled={!generated.printable}
-            data-test={`mold-edit-mesh-${i}`} onClick={()=>onEditPart(i,'mesh')}>Edit copy</button>
-          <button type="button" disabled={!generated.printable}
-            data-test={`mold-edit-cad-${i}`} onClick={()=>onEditPart(i,'reverse')}>CAD reference</button>
-        </div>)}
-        <p className="hint">Edit copy / CAD reference loads the selected exported mold part as a new scan, replacing the current scan. Save the current project first if you need it.</p>
+        <p className="hint">Generated mold parts are available as independent Boolean operands in Mesh Tools. The original loaded model is unchanged. Edit copy/CAD reference replaces the current scan; save your project before using those actions.</p>
         {generated.warnings.map((w,i)=><p key={i} className="hint">{w}</p>)}
       </div>}
     </div>
