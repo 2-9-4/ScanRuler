@@ -528,7 +528,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
               <label className="kv"><span className="name">Silicone price ($/kg)</span>
                 <input type="number" min={0} step={1} value={siliconeCostKg}
                   onChange={e=>setSiliconeCostKg(Number(e.target.value))}/></label>
-              {siliconeDensity>0&&siliconeCostKg>=0&&(()=>{
+              {Number.isFinite(siliconeDensity)&&siliconeDensity>0&&Number.isFinite(siliconeCostKg)&&siliconeCostKg>=0&&(()=>{
                 const v=generated.materialEstimate.netSiliconeMm3??
                   generated.materialEstimate.grossSiliconeCapacityMm3!
                 const estimate=volumeMassCost(v,siliconeDensity,siliconeCostKg)
@@ -538,7 +538,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
                 </div>
               })()}
               <div className="sec-head">Two-part silicone mixing (by weight)</div>
-              <p className="hint">Enter the A:B ratio **by weight** printed on your silicone product's technical data sheet. Do not substitute its ratio by volume; the two may differ. The default 1:1 is illustrative, not a recommendation for your product.</p>
+              <p className="hint">Enter the A:B ratio by weight printed on your silicone product's technical data sheet. Do not substitute its ratio by volume; the two may differ. The default 1:1 is illustrative, not a recommendation for your product.</p>
               <label className="kv"><span className="name">Part A ratio</span>
                 <input type="number" min={0.01} step={1} data-test="mold-silicone-ratio-a"
                   value={mixRatioA} onChange={e=>setMixRatioA(Number(e.target.value))}/></label>
@@ -548,7 +548,8 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
               <label className="kv"><span className="name">Extra mixed silicone allowance (%)</span>
                 <input type="number" min={0} max={100} step={1} data-test="mold-silicone-overage"
                   value={mixOveragePercent} onChange={e=>setMixOveragePercent(Number(e.target.value))}/></label>
-              {siliconeDensity>0&&siliconeCostKg>=0&&mixRatioA>0&&mixRatioB>0&&
+              {Number.isFinite(siliconeDensity)&&siliconeDensity>0&&Number.isFinite(siliconeCostKg)&&siliconeCostKg>=0&&
+                mixRatioA>0&&mixRatioB>0&&
                 Number.isFinite(mixRatioA+mixRatioB)&&mixOveragePercent>=0&&mixOveragePercent<=100&&(()=>{
                   const v=generated.materialEstimate.netSiliconeMm3??
                     generated.materialEstimate.grossSiliconeCapacityMm3!
