@@ -165,7 +165,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
     Number.isFinite(mixRatioA+mixRatioB)&&
     Number.isFinite(mixOveragePercent)&&
     mixOveragePercent>=0&&mixOveragePercent<=100
-  const mixBatch=mixVolume&&canEstimateMix
+  const mixBatch=mixVolume&&mixVolume.basis!=='gross-silicone'&&canEstimateMix
     ?siliconeBatchByWeight(mixVolume.volumeMm3,mixDensity,
       mixRatioA,mixRatioB,mixOveragePercent):null
   const active=source==='scan'?scanName:refName
@@ -518,15 +518,20 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
               <label className="kv"><span className="name">Cast material price ($/kg)</span>
                 <input type="number" min={0} step={1} value={castingCostKg}
                   onChange={e=>setCastingCostKg(Number(e.target.value))}/></label>
-              {castingDensity>0&&castingCostKg>=0&&(()=>{
-                const v=generated.materialEstimate.nominalCastingCavityMm3!
+              {Number.isFinite(castingDensity)&&castingDensity>0&&
+                Number.isFinite(castingCostKg)&&castingCostKg>=0&&(()=>{
+                const gap=mode==='direct'&&mixVolume?.basis==='direct-clearance-gap'
+                const v=gap?mixVolume.volumeMm3:
+                  generated.materialEstimate.nominalCastingCavityMm3!
                 const estimate=volumeMassCost(v,castingDensity,castingCostKg)
                 return <div className="kv" data-test="mold-casting-estimate">
-                  <span className="name">Nominal casting mass/cost</span>
+                  <span className="name">{gap
+                    ?'Material in clearance gap around retained master'
+                    :'Nominal full-cavity casting mass/cost'}</span>
                   <b>{estimate.grams.toFixed(1)} g / ${estimate.cost.toFixed(2)}</b>
                 </div>
               })()}
-              <p className="hint">Nominal casting volume follows the actual solid cavity cutter, including intentional clearance; it excludes sprue, vent and overpour material, shrinkage, and waste.</p>
+              <p className="hint">The full cavity volume includes the original master. When clearance is positive and the master remains inside the mold, the mix calculator subtracts the measured master volume first. Sprues, vents, shrinkage and process waste are excluded.</p>
             </>}
           {generated.materialEstimate?.grossSiliconeCapacityMm3!==null&&
             generated.materialEstimate?.grossSiliconeCapacityMm3!==undefined&&<>
@@ -554,28 +559,43 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
                   <b>{estimate.grams.toFixed(1)} g / ${estimate.cost.toFixed(2)}</b>
                 </div>
               })()}
-              <p className="hint">Capacity assumes fill to the top rim; actual fill level, funnels, air pockets, master supports, overpour and process waste are not included. Master displacement is subtracted only for a closed, positively oriented mesh.</p>
+              <p className="hint">Gross capacity assumes filling to the rim. Net silicone deducts the measured master and any support inside the container. Unknown master displacement prevents a reliable net quantity; neither estimate includes funnels, air pockets, overpour or process waste.</p>
             </>}
           {mixVolume&&<>
             <div className="sec-head">Two-part silicone mixing (by weight)</div>
             <p className="hint">Enter the A:B ratio BY WEIGHT specified by your silicone manufacturer. A ratio by volume is not interchangeable. The initial 1:1 ratio is illustrative only.</p>
             <div className="kv" data-test="mold-silicone-mix-volume">
-              <span className="name">{mixVolume.basis==='direct-cavity'
-                ?'Nominal casting cavity volume'
+              <span className="name">{mixVolume.basis==='direct-clearance-gap'
+                ?'Silicone clearance-gap volume'
                 :mixVolume.basis==='net-silicone'
                   ?'Net silicone fill volume'
-                  :'Gross container volume (upper bound)'}</span>
+                  :'Gross container volume (master volume unknown)'}</span>
               <b>{(mixVolume.volumeMm3/1000).toFixed(2)} cm³ ({(mixVolume.volumeMm3/1000).toFixed(2)} mL)</b>
             </div>
+            <div className="kv" data-test="mold-silicone-tool-volume">
+              <span className="name">Tool internal volume</span>
+              <b>{(mixVolume.toolInternalVolumeMm3/1000).toFixed(2)} cm³</b>
+            </div>
+            <div className="kv" data-test="mold-silicone-master-volume">
+              <span className="name">Original part displacement</span>
+              <b>{mixVolume.partVolumeMm3===null
+                ?'Unknown — net silicone cannot be calculated'
+                :`${(mixVolume.partVolumeMm3/1000).toFixed(2)} cm³`}</b>
+            </div>
+            {mixVolume.supportDisplacementMm3>0&&
+              <div className="kv" data-test="mold-silicone-support-volume">
+                <span className="name">Support displacement inside mold</span>
+                <b>{(mixVolume.supportDisplacementMm3/1000).toFixed(2)} cm³</b>
+              </div>}
             <div className="kv" data-test="mold-silicone-mix-density">
               <span className="name">Mixed silicone density</span>
               <b>{Number.isFinite(mixDensity)?mixDensity.toFixed(3):'Invalid'} g/cm³</b>
             </div>
-            <p className="hint">{mixVolume.basis==='direct-cavity'
-              ?'This direct-print mold uses the expanded casting cavity volume; the batch calculation assumes the casting material is two-part silicone. The cavity cutter volume includes the requested positive clearance, not pour-channel waste.'
+            <p className="hint">{mixVolume.basis==='direct-clearance-gap'
+              ?'Silicone needed = expanded cavity volume minus the original part volume. This assumes the part remains inside the direct mold while silicone fills its clearance gap.'
               :mixVolume.basis==='net-silicone'
-                ?'Net silicone volume accounts for valid master displacement and assumes filling the container to its rim.'
-                :'Gross-to-rim container volume is used because master displacement is unknown. This is an upper bound, not the actual silicone amount required.'}
+                ?'Silicone needed = box internal volume minus original part displacement minus any support inside the box. This assumes filling to the rim.'
+                :'The original part volume cannot be measured from the open/invalid mesh. Gross capacity is an upper bound only; no A/B quantity is calculated until a valid part volume is available.'}
               {' '}Change the {mode==='direct'?'Cast material':'Silicone'} density and price inputs above to match your product.</p>
             <label className="kv"><span className="name">Part A weight ratio</span>
               <input type="number" min={0.01} step={1} data-test="mold-silicone-ratio-a"
@@ -595,7 +615,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
                 <b>{mixBatch.batchGrams.toFixed(1)} g · ${(mixBatch.batchGrams*mixCostKg/1000).toFixed(2)}</b></div>
               <p className="hint">Extra {mixBatch.overageGrams.toFixed(1)} g allocated for mixing losses and overpour. Confirm the product's mixing ratio, working time and density before preparing the batch.</p>
             </div>}
-            {!canEstimateMix&&<p className="hint" role="alert">
+            {mixVolume.basis!=='gross-silicone'&&!canEstimateMix&&<p className="hint" role="alert">
               Enter a positive mixed silicone density and A:B weight ratios, a nonnegative price, and an allowance from 0% to 100%.
             </p>}
           </>}
