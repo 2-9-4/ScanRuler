@@ -20,6 +20,7 @@ import { MoldPreview, type MoldPreviewMode, type DraftHover } from '../viewer/mo
 import { MoldGuides } from '../viewer/moldGuides'
 import { DEFAULT_DRAFT_DISPLAY,type DraftDisplayOptions } from '../core/draftOverlay'
 import { MoldPanel } from '../ui/MoldPanel'
+import {MoldIcon} from '../ui/MoldIcons'
 import {showMoldInCadReference} from './cadReferenceHandoff'
 
 const NO_CREASE = { mode: 'off' as const, angleDeg: 30 }
@@ -430,11 +431,12 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
         <label><input type="checkbox" checked={showHandles}
           onChange={e=>setShowHandles(e.target.checked)}/> Sprue / vent handles</label>
         {useMold.getState().mode==='direct'&&useMold.getState().parts>1&&<>
-          <button type="button" data-test="mold-toggle-surface-sprue"
+          <button type="button" className="withicon" data-test="mold-toggle-surface-sprue"
             onClick={()=>useMold.getState().setPourEnabled(!useMold.getState().pourEnabled)}>
+            <MoldIcon name="moldPour" size={16}/>
             {useMold.getState().pourEnabled?'Remove sprue':'Add sprue'}
           </button>
-          <button type="button" data-test="mold-add-surface-vent"
+          <button type="button" className="withicon" data-test="mold-add-surface-vent"
             onClick={()=>{
               const state=useMold.getState()
               if(!state.ventsEnabled)state.setVentsEnabled(true)
@@ -444,17 +446,19 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
                 state.setVentPoints([...state.ventPoints,point])
               }
             }}>
+            <MoldIcon name="moldVent" size={16}/>
             {useMold.getState().ventsEnabled?'Add vent':'Add vent hole'}
           </button>
         </>}
-        <button type="button" data-test="mold-center-mount"
+        <button type="button" className="withicon" data-test="mold-center-mount"
           onClick={()=>{
             if(!guides.current?.centerMount())
               setError('Could not find a downward-facing source surface near the model center. Pick a base face manually.')
-          }}>Center mount on model</button>
-        <button type="button"
+          }}><MoldIcon name="moldMount" size={16}/>Center mount on model</button>
+        <button type="button" className="withicon"
           data-test="mold-pick-base" aria-pressed={pickingBase}
           onClick={()=>setPickingBase(!pickingBase)}>
+          <MoldIcon name="pickPoints" size={16}/>
           {pickingBase?'Click a downward-facing model face':'Pick glue-on support face'}
         </button>
         {useMold.getState().mode==='direct'&&<>
