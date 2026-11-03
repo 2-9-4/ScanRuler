@@ -3,7 +3,8 @@ import {describe,expect,it} from 'vitest'
 import {boxSolid,planMold} from '../core/geometry'
 import {DEFAULT_MOLD_SETTINGS,parseMoldSettings} from '../core/settings'
 import {cutGuideSegments} from '../viewer/moldGuides'
-import {masterMountMesh,planMasterMount} from '../core/masterMount'
+import {masterMountMesh,planMasterMount,MOUNT_HEX_SEAT_DEPTH_MM,MOUNT_HEX_COLLAR_HEIGHT_MM,MOUNT_HEX_AXIAL_CLEARANCE_MM} from '../core/masterMount'
+import {mountCenterCandidates} from '../viewer/moldGuides'
 import {closedness} from '../../mesh-tools/core/boolean'
 import {signedVolume} from '../../mesh-tools/core/hollow'
 import {analyzeMoldDraft} from '../core/draftAnalysis'
@@ -16,6 +17,14 @@ const mounted={...DEFAULT_MOLD_SETTINGS,mode:'silicone-box' as const,keys:false,
   mountNormal:[0,0,-1] as [number,number,number],
   mountHeight:12}
 describe('Pre-generation plane guides and glue-on master support',()=>{
+  it('prefers the actual XY center before nearby underside fallback samples',()=>{
+    const samples=mountCenterCandidates(bounds)
+    expect(samples[0]).toEqual([0,0])
+    expect(samples.length).toBeGreaterThan(10)
+    expect(samples.every(([x,y])=>x>=bounds.min[0]&&x<=bounds.max[0]&&
+      y>=bounds.min[1]&&y<=bounds.max[1])).toBe(true)
+    expect(new Set(samples.map(p=>p.join(','))).size).toBe(samples.length)
+  })
   it('draws an exact primary XY/YZ/XZ split rectangle at requested fraction',()=>{
     for(const axis of ['x','y','z'] as const){
       const s={...DEFAULT_MOLD_SETTINGS,parts:2 as const,splitAxis:axis,
@@ -48,7 +57,8 @@ describe('Pre-generation plane guides and glue-on master support',()=>{
     expect(DEFAULT_MOLD_SETTINGS.mountPoint).toBeNull()
     expect(masterMountMesh(bounds,DEFAULT_MOLD_SETTINGS)).toBeNull()
     expect(()=>parseMoldSettings({...mounted,mountPoint:null})).toThrow(/Pick a base face/)
-    expect(parseMoldSettings({...mounted,mode:'direct'}).mountEnabled).toBe(true)
+    expect(()=>parseMoldSettings({...mounted,mode:'direct'})).toThrow(/positive cavity clearance/)
+    expect(parseMoldSettings({...mounted,mode:'direct',clearance:0.4}).mountEnabled).toBe(true)
     expect(()=>parseMoldSettings({...mounted,mountNormal:[0,0,1]})).toThrow(/downward/)
     expect(()=>parseMoldSettings({...mounted,mountStemDiameter:50})).toThrow(/foot diameter/)
   })
@@ -64,6 +74,11 @@ describe('Pre-generation plane guides and glue-on master support',()=>{
     expect(planned.rings[0].hex).toBe(true)
     expect(planned.rings[2].hex).toBe(true)
     expect(planned.rings[0].center[2]).toBeLessThan(planned.floorZ)
+    expect(planned.rings[1].center[2]).toBeCloseTo(planned.floorZ+MOUNT_HEX_COLLAR_HEIGHT_MM)
+    expect(planned.rings[1].center[2]).toBe(planned.rings[2].center[2])
+    expect(planned.rings[1].radius).toBeGreaterThan(planned.rings[2].radius)
+    expect(MOUNT_HEX_SEAT_DEPTH_MM-MOUNT_HEX_COLLAR_HEIGHT_MM)
+      .toBeCloseTo(MOUNT_HEX_AXIAL_CLEARANCE_MM)
     expect(cube.positions).toEqual(untouched)
     expect(parseMoldSettings(mounted)).toEqual(mounted)
   })
