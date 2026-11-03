@@ -4399,6 +4399,36 @@ button.x:disabled {
   min-width: 0;
 }
 
+/* Mold Making uses the same icon key proportions and native 24-unit
+   SVG language as the rest of ScanRuler. Keep each tab legible in the
+   narrow panel; keep action icons inline with their labels. */
+[data-test="mold-making-panel"] .kindrow.featurekeys.mold-workflow-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+[data-test="mold-making-panel"] .mold-workflow-tabs button svg.icon {
+  flex: none;
+}
+[data-test="mold-making-panel"] button.withicon,
+.mold-explode-overlay button.withicon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: normal;
+  text-align: center;
+}
+[data-test="mold-making-panel"] button.withicon svg.icon,
+.mold-explode-overlay button.withicon svg.icon {
+  flex: 0 0 auto;
+}
+@media (max-width: 430px) {
+  [data-test="mold-making-panel"] .kindrow.featurekeys.mold-workflow-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 /* In-viewport exploded mold adjustment; never steals ordinary orbit/pan
    events outside this small control. */
 .mold-explode-overlay {
