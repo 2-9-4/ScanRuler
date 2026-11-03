@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Read-only tooling and silicone quantities, with independent material
 // assumptions. UI-only changes never regenerate or mutate a mold.
+import type {ChangeEvent} from 'react'
 import type {MoldBuild} from '../core/geometry'
 import type {MoldMode} from '../core/settings'
 import {siliconeBatchByWeight,siliconeMixVolume,volumeMassCost} from '../core/materialEstimate'
@@ -49,14 +50,15 @@ export function MoldMaterialEstimate({
     Number.isFinite(inputs.mixRatioA+inputs.mixRatioB)
   const validOverage=Number.isFinite(inputs.mixOveragePercent)&&
     inputs.mixOveragePercent>=0&&inputs.mixOveragePercent<=100
-  const batch=netAvailable&&validProduct&&validRatio&&validOverage
+  const batch=mix!==null&&mix.basis!=='gross-silicone'&&
+    validProduct&&validRatio&&validOverage
     ?siliconeBatchByWeight(mix.volumeMm3,density,
       inputs.mixRatioA,inputs.mixRatioB,inputs.mixOveragePercent):null
   const validPrint=validDensity(inputs.printDensity)&&validCost(inputs.printCostKg)
   const print=validPrint
     ?volumeMassCost(generated.volumeMm3,inputs.printDensity,inputs.printCostKg)
     :null
-  const edit=(key:keyof MoldMaterialInputs)=>(e:React.ChangeEvent<HTMLInputElement>)=>{
+  const edit=(key:keyof MoldMaterialInputs)=>(e:ChangeEvent<HTMLInputElement>)=>{
     onInputChange(key,Number(e.target.value))
   }
   return <details data-test="mold-material-estimate"
