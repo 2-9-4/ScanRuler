@@ -105,6 +105,11 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
   const tabCapturedNuts=useMold(s=>s.tabCapturedNuts)
   const tabNutAcrossFlats=useMold(s=>s.tabNutAcrossFlats),tabNutDepth=useMold(s=>s.tabNutDepth)
   const boxDraftDeg=useMold(s=>s.boxDraftDeg)
+  const minimumDraftDeg=useMold(s=>s.minimumDraftDeg)
+  const mountHeight=useMold(s=>s.mountHeight)
+  const mountPadDiameter=useMold(s=>s.mountPadDiameter)
+  const mountStemDiameter=useMold(s=>s.mountStemDiameter)
+  const mountFootDiameter=useMold(s=>s.mountFootDiameter)
   const previewGap=useMold(s=>s.previewGap)
   const interfaceLabels=useMold(s=>s.interfaceLabels)
   const setInterfaceLabels=useMold(s=>s.setInterfaceLabels)
@@ -117,15 +122,12 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
   const pourFunnelDiameter=useMold(s=>s.pourFunnelDiameter)
   const pourFunnelDepth=useMold(s=>s.pourFunnelDepth)
   const ventDiameter=useMold(s=>s.ventDiameter)
-  const values={clearance,repairHoleSize,sideMargin,baseThickness,wallThickness,siliconeThickness,splitPosition,
+  const values:Record<MoldDimension,number>={clearance,repairHoleSize,sideMargin,baseThickness,wallThickness,siliconeThickness,splitPosition,
     keyDiameter,keyDepth,keyClearance,vSeamWidth,vSeamHeight,vSeamSpacing,vSeamClearance,
     clampTabCount,clampTabWidth,clampTabProjection,clampTabThickness,
     topBottomTabCount,tabBoltDiameter,tabNutAcrossFlats,tabNutDepth,boxDraftDeg,previewGap,
-    pourDiameter,pourFunnelDiameter,pourFunnelDepth,ventDiameter,
-    mountHeight:useMold.getState().mountHeight,
-    mountPadDiameter:useMold.getState().mountPadDiameter,
-    mountStemDiameter:useMold.getState().mountStemDiameter,
-    mountFootDiameter:useMold.getState().mountFootDiameter}
+    pourDiameter,pourFunnelDiameter,pourFunnelDepth,ventDiameter,minimumDraftDeg,
+    mountHeight,mountPadDiameter,mountStemDiameter,mountFootDiameter}
   const setSource=useMold(s=>s.setSource),setMode=useMold(s=>s.setMode)
   const setParts=useMold(s=>s.setParts),setSplitAxis=useMold(s=>s.setSplitAxis)
   const setBoxShape=useMold(s=>s.setBoxShape),setKeys=useMold(s=>s.setKeys)
