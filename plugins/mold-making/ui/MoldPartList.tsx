@@ -5,19 +5,26 @@ import type {MoldPart} from '../core/geometry'
 import {isolateMoldPart,toggleMoldPart,visibleMoldParts} from './partVisibility'
 
 export function MoldPartList({
-  parts,printable,visible,onVisibilityChange,onExportPart,onEditPart,
+  parts,printable,visible,onVisibilityChange,masterVisible,onMasterVisibilityChange,onExportPart,onEditPart,
 }:{
   parts:readonly MoldPart[]
   printable:boolean
   visible:readonly boolean[]
   onVisibilityChange:(next:boolean[])=>void
+  masterVisible:boolean
+  onMasterVisibilityChange:(visible:boolean)=>void
   onExportPart:(index:number)=>void
   onEditPart:(index:number,workspace:'mesh'|'reverse')=>void
 }){
   const shown=visibleMoldParts(visible,parts.length)
   return <div data-test="mold-parts-list">
     <div className="sec-head">Inspect and export individual parts</div>
-    <p className="hint">Hide a part to see beneath it, or isolate one part to inspect its interior. These controls affect ONLY the viewport; STL, 3MF, and geometry remain unchanged. Edit copy and CAD reference explicitly replace the current scan.</p>
+    <p className="hint">Hide a part to see beneath it, or isolate one part to inspect its interior. The original master can be hidden independently. These controls affect ONLY the viewport; STL, 3MF, and geometry remain unchanged. Edit copy and CAD reference explicitly replace the current scan.</p>
+    <label className="kv"><span className="name">Show original master / source model</span>
+      <input type="checkbox" data-test="mold-show-master"
+        checked={masterVisible} onChange={e=>onMasterVisibilityChange(e.target.checked)}/>
+    </label>
+    <p className="hint">The draft heatmap is a separate diagnostic overlay controlled by the viewport toolbar; hiding the source model does not disable that overlay.</p>
     <div className="kv">
       <span className="name">{shown.filter(Boolean).length} of {parts.length} visible</span>
       <button type="button" data-test="mold-show-all-parts"
