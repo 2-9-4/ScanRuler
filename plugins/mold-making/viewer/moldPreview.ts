@@ -186,8 +186,10 @@ export class MoldPreview {
     // draft mode, make the shell translucent so the diagnostic survives
     // normal depth testing; the exploded view retains opaque solid surfaces.
     const xray=active&&this.viewMode==='section'
-    for(let i=0;i<this.parts.length;i++)
-      this.parts[i].visible=this.partVisibility[i]??true
+    for(let i=0;i<this.parts.length;i++){
+      const part=this.parts[i]
+      if(part)part.visible=this.partVisibility[i]??true
+    }
     for(const mesh of this.meshes){
       const mat=mesh.material as THREE.MeshStandardMaterial
       if(mat.transparent!==xray){
@@ -333,7 +335,7 @@ export class MoldPreview {
    */
   setPartVisibility(visible:readonly boolean[]):void {
     this.partVisibility=this.parts.map((_,i)=>visible[i]??true)
-    this.parts.forEach((part,i)=>{part.visible=this.partVisibility[i]})
+    this.parts.forEach((part,i)=>{part.visible=this.partVisibility[i]??true})
     this.refreshCaps()
     this.host.invalidate()
   }
