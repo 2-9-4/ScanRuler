@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Explicit tooling choices and per-part export; no hidden mid-height cut.
 import { useState } from 'react'
-import { volumeMassCost } from '../core/materialEstimate'
+import { volumeMassCost,siliconeBatchByWeight } from '../core/materialEstimate'
 import { SCAN_ACCEPT,REFERENCE_ACCEPT,REFERENCE_FORMATS } from '../../../src/core/formats'
 import { ModelSlot } from '../../../src/ui/ModelSlot'
 import { useStore } from '../../../src/state/store'
@@ -71,6 +71,11 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
   const [printCostKg,setPrintCostKg]=useState(25)
   const [siliconeDensity,setSiliconeDensity]=useState(1.1)
   const [siliconeCostKg,setSiliconeCostKg]=useState(35)
+  // Mix instructions are LOCAL to the calculator, not the mold recipe.
+  // Different products specify different A:B ratios by weight vs volume.
+  const [mixRatioA,setMixRatioA]=useState(1)
+  const [mixRatioB,setMixRatioB]=useState(1)
+  const [mixOveragePercent,setMixOveragePercent]=useState(10)
   const [castingDensity,setCastingDensity]=useState(1.1)
   const [castingCostKg,setCastingCostKg]=useState(25)
   const scanName=useStore(s=>s.fileName)
@@ -532,6 +537,38 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
                   <b>{estimate.grams.toFixed(1)} g / ${estimate.cost.toFixed(2)}</b>
                 </div>
               })()}
+              <div className="sec-head">Two-part silicone mixing (by weight)</div>
+              <p className="hint">Enter the A:B ratio **by weight** printed on your silicone product's technical data sheet. Do not substitute its ratio by volume; the two may differ. The default 1:1 is illustrative, not a recommendation for your product.</p>
+              <label className="kv"><span className="name">Part A ratio</span>
+                <input type="number" min={0.01} step={1} data-test="mold-silicone-ratio-a"
+                  value={mixRatioA} onChange={e=>setMixRatioA(Number(e.target.value))}/></label>
+              <label className="kv"><span className="name">Part B ratio</span>
+                <input type="number" min={0.01} step={1} data-test="mold-silicone-ratio-b"
+                  value={mixRatioB} onChange={e=>setMixRatioB(Number(e.target.value))}/></label>
+              <label className="kv"><span className="name">Extra mixed silicone allowance (%)</span>
+                <input type="number" min={0} max={100} step={1} data-test="mold-silicone-overage"
+                  value={mixOveragePercent} onChange={e=>setMixOveragePercent(Number(e.target.value))}/></label>
+              {siliconeDensity>0&&siliconeCostKg>=0&&mixRatioA>0&&mixRatioB>0&&
+                Number.isFinite(mixRatioA+mixRatioB)&&mixOveragePercent>=0&&mixOveragePercent<=100&&(()=>{
+                  const v=generated.materialEstimate.netSiliconeMm3??
+                    generated.materialEstimate.grossSiliconeCapacityMm3!
+                  const batch=siliconeBatchByWeight(v,siliconeDensity,
+                    mixRatioA,mixRatioB,mixOveragePercent)
+                  const cost=batch.batchGrams*siliconeCostKg/1000
+                  return <div data-test="mold-silicone-mix-plan">
+                    <div className="kv"><span className="name">Prepare Part A / Part B</span>
+                      <b>{batch.partAGrams.toFixed(1)} g / {batch.partBGrams.toFixed(1)} g</b></div>
+                    <div className="kv"><span className="name">Total batch including allowance</span>
+                      <b>{batch.batchGrams.toFixed(1)} g · ${cost.toFixed(2)}</b></div>
+                    <p className="hint">{generated.materialEstimate.netSiliconeMm3===null?
+                      'This uses the gross box capacity before master displacement, NOT a measured pour quantity.':
+                      'This uses the calculated net silicone volume, assuming fill to rim.'}
+                      {' '}Allow an additional {batch.overageGrams.toFixed(1)} g for mixing losses and overpour. Confirm the product mixing ratio, density and working time before mixing.</p>
+                  </div>
+                })()}
+              {(mixRatioA<=0||mixRatioB<=0||!Number.isFinite(mixRatioA+mixRatioB)||
+                mixOveragePercent<0||mixOveragePercent>100)&&
+                <p className="hint">Use positive A and B weight ratios and an allowance between 0% and 100%.</p>}
               <p className="hint">Capacity assumes fill to the top rim; actual fill level, funnels, air pockets, master supports, overpour and process waste are not included. Master displacement is subtracted only for a closed, positively oriented mesh.</p>
             </>}
         </details>
