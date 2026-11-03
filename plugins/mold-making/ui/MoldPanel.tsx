@@ -232,7 +232,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
           <input type="checkbox" data-test="mold-interface-labels"
             checked={interfaceLabels}
             onChange={e=>setInterfaceLabels(e.target.checked)}/></label>
-        <p className="hint">Each shared seam gets the same number on both parts. A three-part mold marks the first sector 1–3, the second 1–2, and the third 2–3. Engraving is optional and never touches the casting surface.</p>
+        <p className="hint">A small number is engraved on each side of each mating seam, near that seam on the outside wall. Three-part sector 1 has separate 1 and 3 labels by its two mating edges; each neighboring sector receives the matching number. Engraving never touches the casting surface.</p>
         {parts===3&&<p className="hint">Threefold has three 120° radial mating planes. The V-seam and printed/dowel registration are supported on all three interfaces; clamp ears are available on the radial mating interfaces.</p>}
         {parts!==3&&<label className="kv"><span className="name">Primary parting axis</span>
           <select data-test="mold-split-axis" value={splitAxis}
