@@ -154,7 +154,7 @@ export function MoldMaterialEstimate({
     </div>}
 
     <details data-test="mold-printed-tooling-estimate">
-      <summary>3. Printed tooling — separate material</summary>
+      <summary>{mix?'3. Printed tooling — separate material':'2. Printed tooling — separate material'}</summary>
       <p className="hint">This is the sum of generated solid tooling parts (including separately printed fixtures), not the silicone inside them. The mass assumes fully solid printed material. Slicer infill, supports, purge and failed prints are excluded.</p>
       <div className="kv" data-test="mold-tooling-volume">
         <span className="name">Printed solid volume</span>
