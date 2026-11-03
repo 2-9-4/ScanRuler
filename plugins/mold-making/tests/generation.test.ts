@@ -23,6 +23,30 @@ const matchedBlank=(target:typeof master,settings:MoldSettings):MoldSettings=>{
     baseThickness:settings.baseThickness+keyed.base-blank.base,
     wallThickness:settings.wallThickness+keyed.wall-blank.wall}
 }
+/** Quantify *physical* overlap between the actual printable mount and
+ * finished exported mold parts, not just whether a cutter removed volume.
+ * Also test forced axial displacement to prove real opposing stops exist.
+ */
+const meshSolid=(part:ReturnType<typeof buildMold>['parts'][number]):Manifold=>{
+  const mesh=new wasm.Mesh({numProp:3,vertProperties:part.positions,triVerts:part.indices})
+  mesh.merge()
+  return new wasm.Manifold(mesh)
+}
+const postOverlap=(parts:ReturnType<typeof buildMold>['parts'],
+  partCount:number,zOffset=0):number=>{
+  const post=meshSolid(parts.find(p=>p.name==='Hex-keyed master mounting post')!)
+  const shifted=zOffset===0?post:post.translate([0,0,zOffset])
+  let intersection=0
+  for(let i=0;i<partCount;i++){
+    const mold=meshSolid(parts[i])
+    const shared=mold.intersect(shifted)
+    intersection+=shared.volume()
+    shared.delete();mold.delete()
+  }
+  if(shifted!==post)shifted.delete()
+  post.delete()
+  return intersection
+}
 const intact=(parts:ReturnType<typeof buildMold>['parts'])=>{
   for(const p of parts){
     expect(p.volumeMm3).toBeGreaterThan(0)
@@ -290,7 +314,7 @@ describe('Mold Making assembly',()=>{
     expect(keyed.parts[2].name).toMatch(/mounting post/)
     expect(keyed.parts[2].volumeMm3).toBeGreaterThan(0)
     expect(keyed.volumeMm3).not.toBeCloseTo(ordinary.volumeMm3,3)
-    expect(keyed.warnings.join(' ')).toMatch(/shallow outside hexagonal counterbore/)
+    expect(keyed.warnings.join(' ')).toMatch(/Opposing head and exterior hex collar shoulders/)
     expect(keyed.printable).toBe(true)
     intact(keyed.parts)
   })
@@ -318,8 +342,8 @@ describe('Mold Making assembly',()=>{
       const built=buildMold(wasm,master,settings)
       expect(ordinary.parts).toHaveLength(2)
       expect(built.parts).toHaveLength(3)
-      expect(built.warnings.join(' ')).toMatch(/passes through male V-seam registration/)
-      expect(built.warnings.join(' ')).toMatch(/shallow outside hexagonal counterbore/)
+      expect(built.warnings.join(' ')).toMatch(/keyed mounting passage is cut after V-seam registration/)
+      expect(built.warnings.join(' ')).toMatch(/Opposing head and exterior hex collar shoulders/)
       expect(built.parts[2].name).toBe('Hex-keyed master mounting post')
       expect(built.parts[2].volumeMm3).toBeGreaterThan(0)
       if(mode==='direct'){
@@ -329,6 +353,14 @@ describe('Mold Making assembly',()=>{
         expect(built.parts[0].volumeMm3).toBeLessThan(ordinary.parts[0].volumeMm3)
         expect(built.parts[1].volumeMm3).toBeLessThan(ordinary.parts[1].volumeMm3)
       }
+      // Critical assembly regression: the completed V-seam, including
+      // positive ridges, must NOT intersect the actual printable shaft,
+      // widened head, or either seating shoulder at nominal position.
+      expect(postOverlap(built.parts,2)).toBeLessThan(0.05)
+      // Both insertion directions must encounter hard geometry stops:
+      // positive Z: exterior collar/seat; negative Z: head or inner flange.
+      expect(postOverlap(built.parts,2,0.65)).toBeGreaterThan(0.1)
+      expect(postOverlap(built.parts,2,-0.65)).toBeGreaterThan(0.1)
       intact(built.parts)
     }
   })
