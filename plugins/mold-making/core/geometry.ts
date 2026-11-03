@@ -1299,7 +1299,7 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
       warnings.push('The master post passes through male V-seam registration wherever it intersects the socket. A shallow outside hexagonal counterbore seats the post collar to a repeatable axial height. Verify the 0.25 mm radial and 0.15 mm axial fit clearances.')
     }
     if(s.interfaceLabels&&pieces.length>1)
-      pieces=engraveInterfaceNumbers(wasm,pieces,plan,s,keep,warnings)
+      pieces=engraveInterfaceNumbers(wasm,pieces,plan,s,extent,keep,warnings)
     const loose:MoldPart[]=[]
     const mainParts=pieces.map((x,i)=>{
       onProgress?.(`Checking and exporting mold component ${i+1} of ${pieces.length}…`,0.90+0.08*i/pieces.length)
