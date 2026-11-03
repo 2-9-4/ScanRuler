@@ -386,11 +386,11 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
             {useMold.getState().ventsEnabled?'Add vent':'Add vent hole'}
           </button>
         </>}
-        {<button type="button"
+        <button type="button"
           data-test="mold-pick-base" aria-pressed={pickingBase}
           onClick={()=>setPickingBase(!pickingBase)}>
           {pickingBase?'Click a downward-facing model face':'Pick glue-on support face'}
-        </button>:null}
+        </button>
         {useMold.getState().mode==='direct'&&<>
           <label><input type="checkbox" data-test="mold-draft-toggle-viewport"
             checked={useMold.getState().analyzeDraft}
