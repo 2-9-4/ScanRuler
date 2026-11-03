@@ -51,7 +51,7 @@ const NUT_FIELDS:readonly {key:MoldDimension;label:string;help:string}[]=[
   {key:'tabNutAcrossFlats',label:'Captured hex across flats (mm)',help:'Width between parallel flats of the nut, including fit allowance.'},
   {key:'tabNutDepth',label:'Captured nut pocket depth (mm)',help:'Recess depth from the outside face of the negative mold half.'},
 ]
-export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,onExport,onBoolean,onEditPart,visibleParts,onPartVisibilityChange,generated,targetBounds,previewMode,onPreviewModeChange,generating,error}:{
+export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,onExport,onBoolean,onEditPart,visibleParts,onPartVisibilityChange,masterVisible,onMasterVisibilityChange,generated,targetBounds,previewMode,onPreviewModeChange,generating,error}:{
   onOpenScan:(file:File)=>void
   onOpenReference:(file:File)=>void
   onGenerate:()=>void
@@ -61,6 +61,8 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
   onEditPart:(index:number,workspace:'mesh'|'reverse')=>void
   visibleParts:readonly boolean[]
   onPartVisibilityChange:(visible:boolean[])=>void
+  masterVisible:boolean
+  onMasterVisibilityChange:(visible:boolean)=>void
   generated:MoldBuild|null
   targetBounds:Limits|null
   previewMode:MoldPreviewMode
@@ -472,6 +474,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
           onInputChange={(key,value)=>setMaterialInputs(prev=>({...prev,[key]:value}))}/>
         <MoldPartList parts={generated.parts} printable={generated.printable}
           visible={visibleParts} onVisibilityChange={onPartVisibilityChange}
+          masterVisible={masterVisible} onMasterVisibilityChange={onMasterVisibilityChange}
           onExportPart={i=>onExport('stl',i)} onEditPart={onEditPart}/>
         <button type="button" disabled={!generated.printable} data-test="mold-export-3mf"
           onClick={()=>onExport('3mf')}>Export all parts · 3MF</button>
