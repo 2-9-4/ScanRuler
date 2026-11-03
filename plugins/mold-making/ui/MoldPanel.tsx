@@ -405,7 +405,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
         {fieldInput({key:'mountPadDiameter',label:'Glue pad diameter (mm)',help:'Contact pad follows the selected face normal. Verify the entire pad stays on the intended feature.'})}
         {fieldInput({key:'mountStemDiameter',label:'Support stem diameter (mm)',help:'Cylindrical vertical connection between foot and contact pad.'})}
         {fieldInput({key:'mountFootDiameter',label:'Exterior stop diameter (mm)',help:'Hexagonal shoulder remains outside the mold base and prevents the post from sliding through.'})}
-        <p className="hint">The underside post has 0.25 mm nominal radial fit and a 1.2 mm-deep stepped hexagonal seat with 0.15 mm axial clearance to locate its height. The final bore is cut after V-seam registration, including positive ridges. Test-fit and seal the penetration before casting.</p>
+        <p className="hint">The post has a 0.25 mm nominal radial fit and a 1.2 mm-deep exterior hex counterbore. For rigid molds, the glue-pad underside also seats in a relieved head pocket; for silicone buckets, a separate inner-floor flange serves as that stop. The opposing shoulders limit Z travel to approximately 0.15 mm each way. The entire post envelope is cleared after V-groove registration, including positive ridges. Assemble split tooling around the already-glued post, test-fit, and seal the penetration before casting.</p>
       </>}
     </div>
     <div className="group">
