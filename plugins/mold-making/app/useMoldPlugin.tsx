@@ -34,6 +34,7 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
   const [error, setError] = useState<string | null>(null)
   const [previewMode,setPreviewMode] = useState<MoldPreviewMode>('exploded')
   const [visibleParts,setVisibleParts]=useState<boolean[]>([])
+  const [masterVisible,setMasterVisible]=useState(true)
   // View-only controls; changing these never invalidates worker results.
   const [draftDisplay,setDraftDisplay]=useState<DraftDisplayOptions>({...DEFAULT_DRAFT_DISPLAY})
   const [draftHover,setDraftHover]=useState<DraftHover|null>(null)
@@ -58,6 +59,7 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
     generation.current++
     setGenerated(null)
     setVisibleParts([])
+    setMasterVisible(true)
     generatedVersion.current = null
     setError(null)
     preview.current?.clear()
@@ -266,6 +268,8 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
       const allVisible=made.parts.map(()=>true)
       setVisibleParts(allVisible)
       preview.current?.setPartVisibility(allVisible)
+      setMasterVisible(true)
+      preview.current?.setMasterVisible(true)
       const nextDisplay={...DEFAULT_DRAFT_DISPLAY,show:!!made.draftOverlay,
         thresholdDeg:settings.minimumDraftDeg}
       setDraftDisplay(nextDisplay)
@@ -304,6 +308,11 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
     if(!generated||next.length!==generated.parts.length)return
     setVisibleParts(next)
     preview.current?.setPartVisibility(next)
+  }
+
+  const changeMasterVisible=(visible:boolean)=>{
+    setMasterVisible(visible)
+    preview.current?.setMasterVisible(visible)
   }
 
   const useForBoolean=()=>{
@@ -486,6 +495,8 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
         onEditPart={(index,workspace)=>void editPart(index,workspace)}
         visibleParts={visibleParts}
         onPartVisibilityChange={changePartVisibility}
+        masterVisible={masterVisible}
+        onMasterVisibilityChange={changeMasterVisible}
         generated={generated}
         previewMode={previewMode}
         onPreviewModeChange={changePreviewMode}
