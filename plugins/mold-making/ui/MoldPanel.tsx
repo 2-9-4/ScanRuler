@@ -395,7 +395,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
       </p>:<p className="hint">No contact face selected. Use “Pick glue-on support face” in the 3D viewport first.</p>}
       <label className="kv"><span className="name">Include printed suspension pedestal</span>
         <input type="checkbox" data-test="mold-mount-enabled"
-          checked={mountEnabled} disabled={!mountPoint||(mode==='direct'&&clearance<=0)}
+          checked={mountEnabled} disabled={!mountPoint||parts===1||(mode==='direct'&&clearance<=0)}
           onChange={e=>setMountEnabled(e.target.checked)}/></label>
       {mode==='direct'&&clearance<=0&&<p className="hint mold-warning">
         Set a positive cavity clearance to enable a removable glue-on post in a rigid mold.
