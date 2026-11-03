@@ -347,9 +347,6 @@ export class MoldPreview {
     this.setGap(active?0:this.explodeGap)
     this.setDraftOptions(this.draftOptions)
   }
-  /** Independent toggle for the original scan/STEP master. Draft overlays
-   * are diagnostic layers and remain controlled by their own toolbar.
-   */
   /** Present all mold components as context in Reverse Engineering while
    * the selected part is highlighted. Unlike importing an STL as a scan,
    * this leaves the original scan/STEP, every mold piece and the mold
@@ -359,6 +356,9 @@ export class MoldPreview {
     this.cadReferenceIndex=index!==null&&index>=0&&index<this.parts.length?index:null
     this.setDraftOptions(this.draftOptions)
   }
+  /** Independent toggle for the original scan/STEP master. Draft overlays
+   * are diagnostic layers and remain controlled by their own toolbar.
+   */
   setMasterVisible(visible:boolean):void {
     this.masterVisible=visible
     this.setSourceVisibility()
