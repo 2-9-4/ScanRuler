@@ -7,7 +7,7 @@ import {
   masterMountMesh,planMasterMount,MOUNT_HEX_SEAT_DEPTH_MM,
   MOUNT_HEX_COLLAR_HEIGHT_MM,MOUNT_HEX_AXIAL_CLEARANCE_MM,
   MOUNT_PAD_AXIAL_CLEARANCE_MM,MOUNT_PAD_RADIAL_CLEARANCE_MM,
-  mountHexPrismMesh,
+  mountHexPrismMesh,planVSeamMountKeepout,
 } from '../core/masterMount'
 import {mountCenterCandidates} from '../viewer/moldGuides'
 import {closedness} from '../../mesh-tools/core/boolean'
@@ -29,6 +29,24 @@ describe('Pre-generation plane guides and glue-on master support',()=>{
     expect(samples.every(([x,y])=>x>=bounds.min[0]&&x<=bounds.max[0]&&
       y>=bounds.min[1]&&y<=bounds.max[1])).toBe(true)
     expect(new Set(samples.map(p=>p.join(','))).size).toBe(samples.length)
+  })
+  it('plans an explicit V-seam keep-out wider than every post feature across the entire tool',()=>{
+    const settings={...mounted,keys:true,keyStyle:'v-seam' as const}
+    const plan=planMold(cube,settings)
+    const mask=planVSeamMountKeepout(settings,plan.outer)!
+    const largestRadius=Math.max(settings.mountPadDiameter,settings.mountFootDiameter,
+      settings.mountStemDiameter)/2
+    expect(mask.xy).toEqual([0,0])
+    expect(mask.radius).toBeGreaterThan(
+      largestRadius+Math.max(settings.vSeamWidth/2,settings.vSeamHeight))
+    expect(mask.bottomZ).toBeLessThan(plan.outer.min[2])
+    expect(mask.topZ).toBeGreaterThan(plan.outer.max[2])
+    expect(planVSeamMountKeepout({...settings,mountEnabled:false},plan.outer))
+      .toBeNull()
+    expect(planVSeamMountKeepout({...settings,keys:false},plan.outer))
+      .toBeNull()
+    expect(planVSeamMountKeepout({...settings,keyStyle:'printed-pin'},plan.outer))
+      .toBeNull()
   })
   it('defines the hex cutter with exact absolute Z endpoints and matching 0-degree facets',()=>{
     const prism=mountHexPrismMesh([2,-3],2.25,-6.5,4.25)
