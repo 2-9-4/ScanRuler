@@ -1280,9 +1280,9 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
       if(top<=floorZ+MOUNT_HEX_SEAT_DEPTH_MM+0.3)
         throw new Error('Keyed mounting shaft is too short to penetrate the base and seat collar.')
       const shaft=keep(wasm.Manifold.cylinder(top-(floorZ-0.3),
-        stemR+margin,stemR+margin,6,true).translate([p[0],p[1],floorZ-0.3]))
+        stemR+margin,stemR+margin,6,false).translate([p[0],p[1],floorZ-0.3]))
       const seat=keep(wasm.Manifold.cylinder(MOUNT_HEX_SEAT_DEPTH_MM+0.4,
-        s.mountFootDiameter/2+margin,s.mountFootDiameter/2+margin,6,true)
+        s.mountFootDiameter/2+margin,s.mountFootDiameter/2+margin,6,false)
         .translate([p[0],p[1],floorZ-0.4]))
       const cutter=keep(shaft.add(seat))
       let totalRemoved=0
