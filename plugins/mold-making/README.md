@@ -182,6 +182,18 @@ is only shown for a positive direct cavity clearance; split fraction
 is shown beside the primary split axis rather than with material
 dimensions. This organization does not change mold settings or exports.
 
+Mold Making now gives workflow tabs and the main part/view/export operations
+distinct icons in ScanRuler's **native 24-unit line-art system**. Common
+actions reuse `src/ui/icons.tsx` (scan, split, visibility, editing,
+Boolean operations); the small set of mold-specific icons in
+`ui/MoldIcons.tsx` illustrates the mold cavity, pour, vent, glue-on
+post, isolated piece, assembled/exploded parts and mesh export. Icon
+outlines show the object, the existing blue accent shows the operation,
+and dashed contours identify removed or referenced geometry.
+**Icons are decorative**, not replacements for visible button labels
+or accessible names. The narrow sidebar retains a two-column tab grid
+and wraps icon-and-label controls rather than clipping text.
+
 The Mold Making result opens as an **exploded model**, with the original
 source shown inside. A separation slider is overlaid on the 3D viewport
 and can return to zero gap. The assembled button still uses ScanRuler's
