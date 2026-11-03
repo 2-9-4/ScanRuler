@@ -537,25 +537,26 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
             generated.materialEstimate?.grossSiliconeCapacityMm3!==undefined&&<>
               <div className="kv"><span className="name">Silicone box capacity to rim (gross)</span>
                 <b>{(generated.materialEstimate.grossSiliconeCapacityMm3/1000).toFixed(1)} cm³</b></div>
-              {generated.materialEstimate.netSiliconeMm3!==null&&
+              {mixVolume?.basis==='net-silicone'&&
                 <div className="kv" data-test="mold-silicone-net">
-                  <span className="name">Estimated silicone after master displacement</span>
-                  <b>{(generated.materialEstimate.netSiliconeMm3!/1000).toFixed(1)} cm³</b>
+                  <span className="name">Silicone fill (interior minus part and support)</span>
+                  <b>{(mixVolume.volumeMm3/1000).toFixed(2)} cm³</b>
                 </div>}
-              {generated.materialEstimate.netSiliconeMm3===null&&
-                <p className="hint">Net silicone quantity unavailable: the source is open, not outward-wound or lacks valid solid volume. Gross capacity is an upper bound before the master is inserted.</p>}
+              {mixVolume?.basis!=='net-silicone'&&
+                <p className="hint">Net silicone quantity unavailable: the master displacement cannot be measured reliably or exceeds the container's volume. Gross capacity is shown only as an upper bound, not as a mixing quantity.</p>}
               <label className="kv"><span className="name">Silicone density (g/cm³)</span>
                 <input type="number" min={0.01} step={0.01} value={siliconeDensity}
                   onChange={e=>setSiliconeDensity(Number(e.target.value))}/></label>
               <label className="kv"><span className="name">Silicone price ($/kg)</span>
                 <input type="number" min={0} step={1} value={siliconeCostKg}
                   onChange={e=>setSiliconeCostKg(Number(e.target.value))}/></label>
-              {Number.isFinite(siliconeDensity)&&siliconeDensity>0&&Number.isFinite(siliconeCostKg)&&siliconeCostKg>=0&&(()=>{
-                const v=generated.materialEstimate.netSiliconeMm3??
-                  generated.materialEstimate.grossSiliconeCapacityMm3!
-                const estimate=volumeMassCost(v,siliconeDensity,siliconeCostKg)
+              {mixVolume?.basis==='net-silicone'&&
+                Number.isFinite(siliconeDensity)&&siliconeDensity>0&&
+                Number.isFinite(siliconeCostKg)&&siliconeCostKg>=0&&(()=>{
+                const estimate=volumeMassCost(mixVolume.volumeMm3,
+                  siliconeDensity,siliconeCostKg)
                 return <div className="kv" data-test="mold-silicone-estimate">
-                  <span className="name">{generated.materialEstimate.netSiliconeMm3===null?'Gross upper-bound':'Net estimate'} · silicone mass/cost</span>
+                  <span className="name">Net silicone mass/cost (before overage)</span>
                   <b>{estimate.grams.toFixed(1)} g / ${estimate.cost.toFixed(2)}</b>
                 </div>
               })()}
