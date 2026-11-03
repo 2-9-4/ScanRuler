@@ -3,6 +3,7 @@
 import { useEffect,useState } from 'react'
 import {MoldMaterialEstimate,DEFAULT_MOLD_MATERIAL_INPUTS} from './MoldMaterialEstimate'
 import {MoldPartList} from './MoldPartList'
+import {MoldWorkflowTabs,type MoldWorkflowTab} from './MoldWorkflowTabs'
 import { SCAN_ACCEPT,REFERENCE_ACCEPT,REFERENCE_FORMATS } from '../../../src/core/formats'
 import { ModelSlot } from '../../../src/ui/ModelSlot'
 import { useStore } from '../../../src/state/store'
@@ -70,7 +71,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
   generating:boolean
   error:string|null
 }) {
-  const [tab,setTab]=useState<'setup'|'parting'|'casting'|'review'>('setup')
+  const [tab,setTab]=useState<MoldWorkflowTab>('setup')
   // Once geometry finishes generating, open its inspection results.
   useEffect(()=>{if(generated)setTab('review')},[generated])
   // Keep calculator assumptions across mold regeneration. They must not
@@ -170,31 +171,8 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
     if(mode==='silicone-box')return ['siliconeThickness','wallThickness','baseThickness'].includes(key)
     return false
   })
-  const tabOrder=['setup','parting','casting','review'] as const
   return <aside className="panel" data-test="mold-making-panel">
-    <nav className="kindrow featurekeys" role="tablist" aria-label="Mold Making workflow"
-      style={{display:'flex',flexWrap:'wrap',gap:4}}
-      onKeyDown={e=>{
-        if(!['ArrowRight','ArrowLeft','Home','End'].includes(e.key))return
-        e.preventDefault()
-        const i=tabOrder.indexOf(tab)
-        const next=e.key==='Home'?0:e.key==='End'?tabOrder.length-1:
-          (i+(e.key==='ArrowRight'?1:-1)+tabOrder.length)%tabOrder.length
-        const target=tabOrder[next]
-        if(!target)return
-        setTab(target)
-        e.currentTarget.querySelector<HTMLButtonElement>(`#mold-tab-${target}`)?.focus()
-      }}>
-      {([
-        ['setup','Model & size'],['parting','Split & keys'],
-        ['casting','Pour & mount'],['review','Inspect & export'],
-      ] as const).map(([value,label])=><button type="button" key={value}
-        id={`mold-tab-${value}`} data-test={`mold-tab-${value}`}
-        role="tab" aria-selected={tab===value} tabIndex={tab===value?0:-1}
-        aria-controls={`mold-tab-panel-${value}`}
-        className={tab===value?'on':undefined}
-        onClick={()=>setTab(value)}>{label}</button>)}
-    </nav>
+    <MoldWorkflowTabs active={tab} onChange={setTab}/>
     <p className="hint">Configure the model, prepare its joints and casting features, then generate and inspect the parts. Settings remain saved when switching tabs.</p>
     <div className="kv">
       <span className="name">{generated?'Mold generated — inspect the result or adjust settings':'Ready to generate tooling when the source is loaded'}</span>
