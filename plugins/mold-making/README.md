@@ -420,16 +420,34 @@ disables the support and the geometry validator rejects it. Silicone
 containment boxes remain supported with their nonzero interior space.
 
 At generation time the **keyed socket is subtracted from the final
-mold parts AFTER their V-seam registration geometry is added**. A male
-V-ridge crossing the socket is therefore cut away instead of bridging
-the post hole. The mating shaft is hexagonal with 0.25 mm nominal
-radial clearance. A **1.2 mm deep, wider hexagonal exterior counterbore**
-receives its collar: the step provides a positive axial insertion stop
-with **0.15 mm nominal height clearance**, while the six-sided shaft
-prevents rotation. The contact pad remains aligned with the selected
-source face. The post is a separate export, not joined to the source,
-and remains stationary while mold sections are exploded. A translucent
-purple model shows it before generation.
+mold parts AFTER their V-seam registration geometry is added**. The
+hexagonal shaft cutter uses **the same facet orientation** as the
+printable shaft, spans the correct absolute Z interval (not a
+mistakenly vertically centered interval), and provides 0.25 mm nominal
+radial clearance. The complete physical post mesh is also included in
+the subtraction envelope to eliminate residual V-ridge slivers.
+
+The post is held vertically by **two opposing shoulders**:
+- A **1.2 mm-deep exterior hexagonal counterbore** receives the matching
+  collar and prevents excessive upward insertion (0.15 mm nominal gap
+  to the counterbore ceiling).
+- For **direct rigid molds**, a wider cylindrical head recess clears
+  the entire glue-pad head and its tilt. The glue pad has a horizontal
+  underside shoulder 0.15 mm above the pocket floor; this prevents
+  the glued master dropping farther into the bore.
+- For **silicone containment boxes**, the glue pad is suspended above
+  the interior floor, so its shoulder cannot support the model there.
+  Instead, a second integral flange on the post rests just above the
+  interior floor, with 0.15 mm nominal clearance, preventing downward
+  movement.
+
+The post is a separate export, not joined to the source, and remains
+stationary while mold sections are exploded. A translucent purple model
+shows it before generation. The under-head clearance and shaft
+socket permit the mold halves to close around the already-glued post.
+**This is an assembly-around-the-post design:** a fully assembled tool
+with both head and external collar larger than the shaft cannot have
+that post pushed endwise through its narrow hexagonal hole.
 
 For faster positioning, use **Center mounting post on model** in the
 3D toolbar or mounting section. The app tries the XY bounding-box
@@ -438,9 +456,9 @@ then samples nearby underside positions when the center is a hole.
 Use manual face picking to override the result. This does not rotate
 or change the imported master.
 
-The user must glue the contact pad to the master, physically seat
-the outer shoulder, and **seal the through-wall penetration against
-casting fluid**. The feature does not rotate the imported master,
+The user must glue the contact pad to the master, seat the inner
+and outer locating shoulders by closing the appropriate mold sections,
+and **seal the through-wall penetration against casting fluid**. The feature does not rotate the imported master,
 automatically verify that the post misses other parts of a complex
 source geometry, or support near-horizontal/sideways attachment
 directions. A curved contact surface may not fully mate with the
