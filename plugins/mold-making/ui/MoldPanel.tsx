@@ -565,7 +565,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
                 :mixVolume.basis==='net-silicone'
                   ?'Net silicone fill volume'
                   :'Gross container volume (upper bound)'}</span>
-              <b>{(mixVolume.volumeMm3/1000).toFixed(2)} cm³ / mL</b>
+              <b>{(mixVolume.volumeMm3/1000).toFixed(2)} cm³ ({(mixVolume.volumeMm3/1000).toFixed(2)} mL)</b>
             </div>
             <div className="kv" data-test="mold-silicone-mix-density">
               <span className="name">Mixed silicone density</span>
