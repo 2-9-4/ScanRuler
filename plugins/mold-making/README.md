@@ -209,18 +209,28 @@ parametric reconstruction of a molded part.
   estimate includes overpour, fittings, headspace, trapped air, or waste.
   No geometry, build settings, preview or export path is changed by editing
   material assumptions.
-- **Two-component silicone mixing** now converts the net silicone estimate
-  (or explicitly labeled gross upper bound for an open source mesh) to
-  a batch plan. Enter your material's **A:B ratio by WEIGHT** and optional
-  overage percentage (default 10%); the panel shows Part A grams, Part B
-  grams, total prepared mixture and estimated kit cost. The calculation
-  uses the entered *mixed-product density* in g/cm³. **By-volume and
-  by-weight mixing ratios are not interchangeable** and must be checked
-  against the actual material's technical data sheet, not inferred from
-  the selected 1:1 illustrative starting value. The allowance is applied
-  to mass after net/gross volume estimation; it cannot compensate for
-  unmodeled voids, top-off height or trapped air. Editing ratio, density,
-  cost and overage does not invalidate or regenerate the mold.
+- **Two-component silicone mixing** is available in both silicone
+  containment boxes and generated **direct molds with positive cavity
+  clearance** (not with zero clearance). Direct molds use the actual
+  *expanded casting cavity cutter volume*, assuming that the intended
+  casting material is two-part silicone. Silicone boxes use the net
+  fill estimate or the explicitly labeled gross-to-rim upper bound
+  for an open/invalid master. The calculator shows its **source volume
+  in cm³ / mL**, **mixed density in g/cm³**, calculated base mass, the
+  separate Part A and Part B grams, total prepared batch and estimated
+  material cost. In direct mode the editable **Cast material density**
+  and price feed the calculator; in silicone-box mode its editable
+  **Silicone density** and price feed it. The generated-results
+  materials section automatically opens in positive-clearance direct
+  mode, so the calculator is visible.
+  Enter your material's **A:B ratio by WEIGHT** and optional overage
+  percentage (default 10%). **By-volume and by-weight mixing ratios are
+  not interchangeable** and must be checked against the specific
+  product's technical data sheet. The 1:1 starting value is illustrative.
+  The allowance applies after volume-to-mass conversion; it cannot
+  compensate for unmodeled voids, top-off height or trapped air.
+  Editing ratio, density, cost and overage does not invalidate or
+  regenerate the mold.
 
 These changes are regression-covered in `contourSeam.test.ts`,
 `generation.test.ts`, `settings.test.ts` and `materialEstimate.test.ts`.
