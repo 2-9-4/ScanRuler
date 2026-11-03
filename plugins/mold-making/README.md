@@ -209,20 +209,28 @@ parametric reconstruction of a molded part.
   estimate includes overpour, fittings, headspace, trapped air, or waste.
   No geometry, build settings, preview or export path is changed by editing
   material assumptions.
-- **Two-component silicone mixing** is available in both silicone
+- **Two-component silicone mixing** is available in silicone
   containment boxes and generated **direct molds with positive cavity
-  clearance** (not with zero clearance). Direct molds use the actual
-  *expanded casting cavity cutter volume*, assuming that the intended
-  casting material is two-part silicone. Silicone boxes use the net
-  fill estimate or the explicitly labeled gross-to-rim upper bound
-  for an open/invalid master. The calculator shows its **source volume
-  in cm³ / mL**, **mixed density in g/cm³**, calculated base mass, the
-  separate Part A and Part B grams, total prepared batch and estimated
-  material cost. In direct mode the editable **Cast material density**
-  and price feed the calculator; in silicone-box mode its editable
-  **Silicone density** and price feed it. The generated-results
-  materials section automatically opens in positive-clearance direct
-  mode, so the calculator is visible.
+  clearance** (not with zero clearance). In BOTH modes, the silicone
+  quantity assumes the physical master is still inside the mold:
+  **silicone fill = tool interior volume − original master volume**,
+  additionally minus any support volume inside a silicone box.
+  - Direct: actual expanded cavity cutter volume minus measured *original*
+    master volume. The full cavity remains available separately as the
+    amount of material for casting after removing the master, but it is
+    **not** the silicone clearance-gap requirement.
+  - Containment box: calculated gross internal box capacity to the rim
+    minus measured master displacement minus any in-container support
+    displacement. Open/invalid scans without a trustworthy master
+    volume show the gross upper bound but **do not calculate A/B mix
+    quantities** from it.
+  The readout shows internal volume, the original part's displacement,
+  any mounting support displacement, the **net silicone volume in cm³
+  / mL**, mixed density in g/cm³, base mass, separate Part A and Part B
+  masses, overage-adjusted batch total and estimated cost. Direct molds
+  use the editable **Cast material density** and price; silicone boxes
+  use **Silicone density** and price. The material-estimate section
+  opens automatically for a generated direct mold with positive clearance.
   Enter your material's **A:B ratio by WEIGHT** and optional overage
   percentage (default 10%). **By-volume and by-weight mixing ratios are
   not interchangeable** and must be checked against the specific
