@@ -1288,6 +1288,9 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
       }
       warnings.push('Splits do not guarantee demoldability: inspect the target for trapped undercuts and add a sprue or vent before casting.')
     }
+    const seamKeepout=planVSeamMountKeepout(s,plan.outer)
+    if(seamKeepout)
+      warnings.push(`Deliberately interrupted the male V ridge and female V groove within a ${(2*seamKeepout.radius).toFixed(1)} mm diameter corridor around the keyed master post. Registration remains on the other sections of the parting seam.`)
     if(s.mountEnabled){
       // Registration may UNION positive V-tongues onto the already-split
       // parts. Cut the keyed socket LAST, through every finished part,
