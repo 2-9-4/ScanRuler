@@ -314,7 +314,7 @@ describe('Mold Making assembly',()=>{
     expect(keyed.parts[2].name).toMatch(/mounting post/)
     expect(keyed.parts[2].volumeMm3).toBeGreaterThan(0)
     expect(keyed.volumeMm3).not.toBeCloseTo(ordinary.volumeMm3,3)
-    expect(keyed.warnings.join(' ')).toMatch(/Opposing head and exterior hex collar shoulders/)
+    expect(keyed.warnings.join(' ')).toMatch(/Opposing exterior and interior shoulders/)
     expect(keyed.printable).toBe(true)
     intact(keyed.parts)
   })
@@ -343,7 +343,7 @@ describe('Mold Making assembly',()=>{
       expect(ordinary.parts).toHaveLength(2)
       expect(built.parts).toHaveLength(3)
       expect(built.warnings.join(' ')).toMatch(/keyed mounting passage is cut after V-seam registration/)
-      expect(built.warnings.join(' ')).toMatch(/Opposing head and exterior hex collar shoulders/)
+      expect(built.warnings.join(' ')).toMatch(/Opposing exterior and interior shoulders/)
       expect(built.parts[2].name).toBe('Hex-keyed master mounting post')
       expect(built.parts[2].volumeMm3).toBeGreaterThan(0)
       if(mode==='direct'){
