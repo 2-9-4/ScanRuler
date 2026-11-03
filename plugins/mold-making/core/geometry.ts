@@ -11,7 +11,8 @@ import { parseMoldSettings, type MoldSettings, type SplitAxis } from './settings
 import {siliconeBoxCapacityMm3} from './materialEstimate'
 import {planVerticalChannels} from './pourChannels'
 import {
-  masterMountMesh,MOUNT_HEX_RADIAL_CLEARANCE_MM,MOUNT_HEX_SEAT_DEPTH_MM,planMasterMount,
+  masterMountMesh,mountHexPrismMesh,MOUNT_HEX_RADIAL_CLEARANCE_MM,
+  MOUNT_HEX_SEAT_DEPTH_MM,planMasterMount,
 } from './masterMount'
 import {engraveInterfaceNumbers} from './interfaceLabels'
 import {analyzeMoldDraft,type DraftAnalysis} from './draftAnalysis'
@@ -1280,11 +1281,15 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
         :p[2]+Math.max(2,s.clearance+s.vSeamHeight+s.vSeamClearance+1)
       if(top<=floorZ+MOUNT_HEX_SEAT_DEPTH_MM+0.3)
         throw new Error('Keyed mounting shaft is too short to penetrate the base and seat collar.')
-      const shaft=keep(wasm.Manifold.cylinder(top-(floorZ-0.3),
-        stemR+margin,stemR+margin,6,false).translate([p[0],p[1],floorZ-0.3]))
-      const seat=keep(wasm.Manifold.cylinder(MOUNT_HEX_SEAT_DEPTH_MM+0.4,
-        s.mountFootDiameter/2+margin,s.mountFootDiameter/2+margin,6,false)
-        .translate([p[0],p[1],floorZ-0.4]))
+      // Both keyed cutter prisms use exactly the printable post's 0° hex
+      // orientation. Their Z ranges are defined by absolute lower/upper
+      // planes; no centered primitive can silently shorten the opening.
+      const xy:[number,number]=[p[0],p[1]]
+      const shaft=toManifold(wasm,mountHexPrismMesh(xy,stemR+margin,
+        floorZ-0.3,top),keep)
+      const seat=toManifold(wasm,mountHexPrismMesh(xy,
+        s.mountFootDiameter/2+margin,floorZ-0.4,
+        floorZ+MOUNT_HEX_SEAT_DEPTH_MM),keep)
       // The glue pad is WIDER than the anti-rotation shaft. Without this
       // head pocket the mold's floor penetrates its underside, and its
       // own shoulder has no mating surface to prevent downward travel.
