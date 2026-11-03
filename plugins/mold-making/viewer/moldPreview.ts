@@ -65,6 +65,7 @@ export class MoldPreview {
   private partVisibility:boolean[]=[]
   private remove:()=>void
   private source:MoldSource='scan'
+  private masterVisible=true
   private priorNominal:boolean|null=null
   private priorScan:boolean|null=null
   private viewMode:MoldPreviewMode='section'
@@ -137,10 +138,12 @@ export class MoldPreview {
     if(!this.bounds||!this.group.visible)return
     if(this.source==='reference'){
       this.scene.setScanVisible(false)
-      this.scene.setNominalVisible(!this.draftActive()||this.draftOptions.problemsOnly)
+      this.scene.setNominalVisible(this.masterVisible&&
+        (!this.draftActive()||this.draftOptions.problemsOnly))
     }else{
       this.scene.setNominalVisible(false)
-      this.scene.setScanVisible(!this.draftActive()||this.draftOptions.problemsOnly)
+      this.scene.setScanVisible(this.masterVisible&&
+        (!this.draftActive()||this.draftOptions.problemsOnly))
     }
   }
   /** Pure display changes: no worker call, no mold solid mutation or export. */
@@ -333,6 +336,14 @@ export class MoldPreview {
    * Reapply the mask whenever the draft overlay or exploded mode changes.
    * Source model, guide geometry and independent pedestal are unaffected.
    */
+  /** Independent toggle for the original scan/STEP master. Draft overlays
+   * are diagnostic layers and remain controlled by their own toolbar.
+   */
+  setMasterVisible(visible:boolean):void {
+    this.masterVisible=visible
+    this.setSourceVisibility()
+    this.host.invalidate()
+  }
   setPartVisibility(visible:readonly boolean[]):void {
     this.partVisibility=this.parts.map((_,i)=>visible[i]??true)
     this.parts.forEach((part,i)=>{part.visible=this.partVisibility[i]??true})
@@ -385,6 +396,7 @@ export class MoldPreview {
     this.meshes=[]
     this.parts=[]
     this.partVisibility=[]
+    this.masterVisible=true
     this.group.clear()
     if(this.priorScan!==null){
       this.scene.setScanVisible(this.priorScan)
