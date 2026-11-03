@@ -184,7 +184,10 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
             }
             const state=useMold.getState()
             state.setMountContact(point,normal)
-            if(state.mode==='direct'&&state.clearance<=0){
+            if(state.parts===1){
+              state.setMountEnabled(false)
+              setError('The captured post must be installed between mold sections. Choose a two-, three-, or four-part mold.')
+            }else if(state.mode==='direct'&&state.clearance<=0){
               state.setMountEnabled(false)
               setError('Mount contact selected. Set a positive cavity clearance for a removable support before enabling the mount.')
             }else{
