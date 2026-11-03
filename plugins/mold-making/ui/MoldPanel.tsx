@@ -397,6 +397,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
         <input type="checkbox" data-test="mold-mount-enabled"
           checked={mountEnabled} disabled={!mountPoint||parts===1||(mode==='direct'&&clearance<=0)}
           onChange={e=>setMountEnabled(e.target.checked)}/></label>
+      {parts===1&&<p className="hint mold-warning">A captured post with two locating shoulders requires multipart tooling to assemble around it.</p>}
       {mode==='direct'&&clearance<=0&&<p className="hint mold-warning">
         Set a positive cavity clearance to enable a removable glue-on post in a rigid mold.
       </p>}
