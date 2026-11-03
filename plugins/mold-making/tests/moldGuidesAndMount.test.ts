@@ -72,6 +72,7 @@ describe('Pre-generation plane guides and glue-on master support',()=>{
     expect(DEFAULT_MOLD_SETTINGS.mountPoint).toBeNull()
     expect(masterMountMesh(bounds,DEFAULT_MOLD_SETTINGS)).toBeNull()
     expect(()=>parseMoldSettings({...mounted,mountPoint:null})).toThrow(/Pick a base face/)
+    expect(()=>parseMoldSettings({...mounted,parts:1})).toThrow(/at least two mold parts/)
     expect(()=>parseMoldSettings({...mounted,mode:'direct'})).toThrow(/positive cavity clearance/)
     expect(parseMoldSettings({...mounted,mode:'direct',clearance:0.4}).mountEnabled).toBe(true)
     expect(()=>parseMoldSettings({...mounted,mountNormal:[0,0,1]})).toThrow(/downward/)
