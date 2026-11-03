@@ -43,6 +43,9 @@ describe('Mold part visibility and unified per-part UI',()=>{
     expect(html).toContain('2 of 3 visible')
     expect(html).toContain('Show Mold part 2 in viewport')
     expect(html).toContain('Hex-keyed master mounting post')
+    expect(html).toContain('Reference in CAD')
+    expect(html).toContain('preserves the complete assembly and original model')
+    expect(html).toContain('Edit copy replaces the active scan')
     expect(html).toContain('viewport')
   })
   it('disables geometry export when the generated tool is not printable, but keeps viewport controls',()=>{
