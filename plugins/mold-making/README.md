@@ -240,6 +240,33 @@ parametric reconstruction of a molded part.
   Editing ratio, density, cost and overage does not invalidate or
   regenerate the mold.
 
+### Organized material readout
+The generated-results material calculator now uses a single task-based
+breakdown (extracted into `ui/MoldMaterialEstimate.tsx`):
+1. **Silicone volume — master remains inside:** one displayed value for
+   gross tool interior, one for original model displacement, one optional
+   mounting-post displacement, and **one net silicone quantity**.
+   In direct tooling the gross interior is the expanded cavity; in
+   containment boxes it is the container's to-rim capacity. A valid net
+   amount is never guessed from an open mesh's bounding box.
+2. **Silicone product & mixing:** one editable density and price, A:B
+   weight ratio and mixing-loss allowance, followed by base mass,
+   additional mass, final total, the Part A/B weigh-out and batch cost.
+   Density is an input, not a second redundant read-only number.
+3. **Printed tooling — separate material:** a collapsed sub-section
+   reports only the generated solid tool volume, its independently
+   editable material density/price and fully solid mass/cost. **Printed
+   solid material is not silicone fill.**
+
+Each computed value is shown once in its relevant section, rather than
+repeated as casting, silicone, gross, net and total material readouts.
+`1 cm³ = 1 mL`; all material volumes are displayed in cm³.
+The product assumptions are kept locally in the panel so a regenerated
+mold doesn't reset the mixing recipe. React server-rendered UI
+regressions in `tests/materialEstimateUI.test.ts` cover direct and
+silicone-box net volume explanations, gross-only unavailable masters,
+and zero-clearance direct tooling.
+
 These changes are regression-covered in `contourSeam.test.ts`,
 `generation.test.ts`, `settings.test.ts` and `materialEstimate.test.ts`.
 The complete browser build/Manifold suite and physical print still require
