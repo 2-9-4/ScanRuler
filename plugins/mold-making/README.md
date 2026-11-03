@@ -419,13 +419,24 @@ The mount is meaningful for rigid negative tooling only with
 disables the support and the geometry validator rejects it. Silicone
 containment boxes remain supported with their nonzero interior space.
 
-At generation time the **keyed socket is subtracted from the final
-mold parts AFTER their V-seam registration geometry is added**. The
-hexagonal shaft cutter uses **the same facet orientation** as the
-printable shaft, spans the correct absolute Z interval (not a
-mistakenly vertically centered interval), and provides 0.25 mm nominal
-radial clearance. The complete physical post mesh is also included in
-the subtraction envelope to eliminate residual V-ridge slivers.
+Before V-seam registration is added to the mold, the generator
+creates a **circular keep-out corridor around the selected master post**.
+This mask is larger than the widest post feature by at least the
+V-profile's half-width/projection plus fit clearance. It is subtracted
+from both the **positive V-ridge and matching female groove BEFORE**
+unioning the tongue with its mold half. The profile therefore stops
+cleanly on either side of the hex opening, with a short ordinary
+planar mating interface across the gap. The same mask also applies
+to three-sector radial V-seams.
+
+At generation time the keyed socket is additionally subtracted from
+the finished mold parts AFTER all registration geometry is added.
+The hexagonal shaft cutter has the same facet orientation as the
+printable shaft and explicitly defined absolute Z endpoints, with
+0.25 mm nominal radial clearance. The complete physical post mesh
+is also included in the final cut, and finished parts are checked
+for residual post overlap. The final cut is a second safeguard,
+**not** the primary V-seam exclusion mechanism.
 
 The post is held vertically by **two opposing shoulders**:
 - A **1.2 mm-deep exterior hexagonal counterbore** receives the matching
