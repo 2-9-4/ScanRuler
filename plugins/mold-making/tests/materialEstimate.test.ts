@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {describe,expect,it} from 'vitest'
 import {boxSolid,planMold,buildMold} from '../core/geometry'
-import {siliconeBoxCapacityMm3,volumeMassCost} from '../core/materialEstimate'
+import {siliconeBoxCapacityMm3,volumeMassCost,siliconeBatchByWeight} from '../core/materialEstimate'
 import {DEFAULT_MOLD_SETTINGS} from '../core/settings'
 import Module from 'manifold-3d'
 
@@ -32,6 +32,30 @@ describe('Mold material calculator (MOLD-014)',()=>{
     expect(volumeMassCost(1_000_000,1.2,30)).toEqual({cm3:1000,grams:1200,cost:36})
     expect(()=>volumeMassCost(100,-1,20)).toThrow(/positive density/)
     expect(()=>volumeMassCost(100,1,-20)).toThrow(/nonnegative/)
+  })
+  it('allocates mixed silicone batch mass by the specified A:B weight ratio',()=>{
+    const equal=siliconeBatchByWeight(200_000,1.1,1,1,10)
+    expect(equal.requiredGrams).toBeCloseTo(220)
+    expect(equal.batchGrams).toBeCloseTo(242)
+    expect(equal.partAGrams).toBeCloseTo(121)
+    expect(equal.partBGrams).toBeCloseTo(121)
+    expect(equal.overageGrams).toBeCloseTo(22)
+    const unequal=siliconeBatchByWeight(300_000,1.1,100,10,10)
+    expect(unequal.requiredGrams).toBeCloseTo(330)
+    expect(unequal.batchGrams).toBeCloseTo(363)
+    expect(unequal.partAGrams).toBeCloseTo(330)
+    expect(unequal.partBGrams).toBeCloseTo(33)
+    expect(unequal.partAGrams+unequal.partBGrams).toBeCloseTo(unequal.batchGrams)
+    expect(siliconeBatchByWeight(0,1,1,1,0).batchGrams).toBe(0)
+  })
+  it('rejects invalid silicone weight ratios, density and overage assumptions',()=>{
+    expect(()=>siliconeBatchByWeight(1000,1.1,0,1,10)).toThrow(/positive/)
+    expect(()=>siliconeBatchByWeight(1000,1.1,1,-1,10)).toThrow(/positive/)
+    expect(()=>siliconeBatchByWeight(1000,-1,1,1,10)).toThrow(/positive/)
+    expect(()=>siliconeBatchByWeight(-1000,1.1,1,1,10)).toThrow(/nonnegative/)
+    expect(()=>siliconeBatchByWeight(1000,1.1,1,1,-1)).toThrow(/0–100%/)
+    expect(()=>siliconeBatchByWeight(1000,1.1,1,1,101)).toThrow(/0–100%/)
+    expect(()=>siliconeBatchByWeight(1000,1.1,Infinity,1,10)).toThrow(/weight/)
   })
   it('subtracts a valid master but not a source with open mesh topology',async()=>{
     const wasm=await Module();wasm.setup()
