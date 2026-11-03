@@ -326,16 +326,12 @@ export class MoldPreview {
   setMode(mode:MoldPreviewMode):void {
     this.viewMode=mode
     const active=mode==='section'
-    // Keep the original master visible within the separated mold components.
-    // Unlike the prior mode, exploding the mold must never hide the model.
+    // Preserve the user's independent source-master visibility choice.
+    // Exploding or assembling the tooling must not override that choice.
     this.setSourceVisibility()
     this.setGap(active?0:this.explodeGap)
     this.setDraftOptions(this.draftOptions)
   }
-  /** Show/hide each generated part without changing any printable mesh.
-   * Reapply the mask whenever the draft overlay or exploded mode changes.
-   * Source model, guide geometry and independent pedestal are unaffected.
-   */
   /** Independent toggle for the original scan/STEP master. Draft overlays
    * are diagnostic layers and remain controlled by their own toolbar.
    */
@@ -344,6 +340,10 @@ export class MoldPreview {
     this.setSourceVisibility()
     this.host.invalidate()
   }
+  /** Show/hide each generated part without changing any printable mesh.
+   * This includes independently exported posts and detached components.
+   * Display choices persist across mode and draft-overlay changes.
+   */
   setPartVisibility(visible:readonly boolean[]):void {
     this.partVisibility=this.parts.map((_,i)=>visible[i]??true)
     this.parts.forEach((part,i)=>{part.visible=this.partVisibility[i]??true})
