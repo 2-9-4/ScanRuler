@@ -518,7 +518,8 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
               <label className="kv"><span className="name">Cast material price ($/kg)</span>
                 <input type="number" min={0} step={1} value={castingCostKg}
                   onChange={e=>setCastingCostKg(Number(e.target.value))}/></label>
-              {Number.isFinite(castingDensity)&&castingDensity>0&&
+              {(clearance===0||mixVolume?.basis==='direct-clearance-gap')&&
+                Number.isFinite(castingDensity)&&castingDensity>0&&
                 Number.isFinite(castingCostKg)&&castingCostKg>=0&&(()=>{
                 const gap=mode==='direct'&&mixVolume?.basis==='direct-clearance-gap'
                 const v=gap?mixVolume.volumeMm3:
