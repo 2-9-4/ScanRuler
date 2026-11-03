@@ -11,7 +11,7 @@ import { parseMoldSettings, type MoldSettings, type SplitAxis } from './settings
 import {siliconeBoxCapacityMm3} from './materialEstimate'
 import {planVerticalChannels} from './pourChannels'
 import {
-  masterMountMesh,mountHexPrismMesh,MOUNT_HEX_RADIAL_CLEARANCE_MM,
+  masterMountMesh,mountHexPrismMesh,planVSeamMountKeepout,MOUNT_HEX_RADIAL_CLEARANCE_MM,
   MOUNT_HEX_SEAT_DEPTH_MM,planMasterMount,
 } from './masterMount'
 import {engraveInterfaceNumbers} from './interfaceLabels'
@@ -611,6 +611,27 @@ function drillClampPair(
   }
   return [neg,pos]
 }
+/** Cut a deliberately oversized exclusion corridor into BOTH halves of
+ * a V-registration profile BEFORE it is unioned/subtracted from the mold.
+ * An after-the-fact bore can clear the post's own volume while still
+ * leaving a nearby tongue lip that obstructs assembly.
+ *
+ * Return the masked tongue/groove as separate registration solids; the
+ * final keyed socket and post-envelope cuts happen after all splitting.
+ */
+function maskMountFromVSeam(
+  wasm:ManifoldToplevel,tongue:Manifold,groove:Manifold,
+  s:MoldSettings,plan:MoldPlan,keep:(m:Manifold)=>Manifold,
+):[Manifold,Manifold] {
+  const mask=planVSeamMountKeepout(s,plan.outer)
+  if(!mask)return [tongue,groove]
+  const cutter=keep(wasm.Manifold.cylinder(
+    mask.topZ-mask.bottomZ,mask.radius,mask.radius,96,false,
+  ).translate([mask.xy[0],mask.xy[1],mask.bottomZ]))
+  // Apply the same exclusion to each side so the two halves return to
+  // ordinary planar mating surfaces across the interrupted portion.
+  return [keep(tongue.subtract(cutter)),keep(groove.subtract(cutter))]
+}
 function addContourVSeam(
   wasm:ManifoldToplevel,negative:Manifold,positive:Manifold,
   axis:SplitAxis,split:number,s:MoldSettings,plan:MoldPlan,
@@ -695,6 +716,8 @@ function addContourVSeam(
   const groove=toManifold(wasm,triangularContourTube(
     path,axis,split,halfWidth+fit,-0.18,
     s.vSeamHeight+fit+0.3,closed),keep)
+  const [maskedTongue,maskedGroove]=maskMountFromVSeam(
+    wasm,tongue,groove,s,plan,keep)
   // Construct the exterior clamp ears FIRST. Subtracting the groove last
   // keeps it open even where a tab overlaps the seam near the exterior:
   // previously unioning tabs AFTER the subtraction partially filled it.
@@ -814,8 +837,8 @@ function addContourVSeam(
   for(const centre of fasteners){
     [neg,pos]=drillClampPair(wasm,neg,pos,axis,split,centre,tab.thickness,s,keep)
   }
-  neg=keep(neg.add(tongue))
-  pos=keep(pos.subtract(groove))
+  if(!maskedTongue.isEmpty())neg=keep(neg.add(maskedTongue))
+  if(!maskedGroove.isEmpty())pos=keep(pos.subtract(maskedGroove))
   if(neg.isEmpty()||pos.isEmpty())throw new Error('V seam Boolean returned an empty part.')
   return [neg,pos]
 }
@@ -1002,8 +1025,10 @@ function keyThreeParts(
         path,'y',0,hw,-embed,s.vSeamHeight,false,0.24),keep))
       const groove=place(toManifold(wasm,triangularContourTube(
         path,'y',0,hw+fit,-0.18,s.vSeamHeight+fit+0.3,false),keep))
-      male=keep(male.add(tongue))
-      female=keep(female.subtract(groove))
+      const [maskedTongue,maskedGroove]=maskMountFromVSeam(
+        wasm,tongue,groove,s,plan,keep)
+      if(!maskedTongue.isEmpty())male=keep(male.add(maskedTongue))
+      if(!maskedGroove.isEmpty())female=keep(female.subtract(maskedGroove))
     }else{
       // Two separated heights provide anti-rotation registration. Metal
       // dowels use identical blind sockets in both pieces.
