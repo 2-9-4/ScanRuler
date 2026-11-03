@@ -392,6 +392,11 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
             {useMold.getState().ventsEnabled?'Add vent':'Add vent hole'}
           </button>
         </>}
+        <button type="button" data-test="mold-center-mount"
+          onClick={()=>{
+            if(!guides.current?.centerMount())
+              setError('Could not find a downward-facing source surface near the model center. Pick a base face manually.')
+          }}>Center mount on model</button>
         <button type="button"
           data-test="mold-pick-base" aria-pressed={pickingBase}
           onClick={()=>setPickingBase(!pickingBase)}>
@@ -457,6 +462,10 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
         onOpenScan={(file) => void host.openScan(file)}
         onOpenReference={(file) => void host.openReference(file)}
         onGenerate={() => void runGenerate()}
+        onCenterMount={()=>{
+          if(!guides.current?.centerMount())
+            setError('Could not center a mounting post on the model underside. Choose a base face in the viewport.')
+        }}
         onExport={exportPart}
         onBoolean={useForBoolean}
         onEditPart={(index,workspace)=>void editPart(index,workspace)}
