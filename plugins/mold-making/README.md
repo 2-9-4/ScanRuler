@@ -169,9 +169,21 @@ one-sided impressions are no longer offered as a creation choice.
 The Mold Making result opens as an **exploded model**, with the original
 source shown inside. A separation slider is overlaid on the 3D viewport
 and can return to zero gap. The assembled button still uses ScanRuler's
-native section view. Individual generated mold parts are offered through
-`src/app/solids.ts`, where Mesh Tools' Boolean panel can select them as
-operands while the original scan remains in place.
+native section view. The generated-parts list now combines **Hide/Show,
+Isolate/Unisolate, Show all, per-part STL export, Edit copy, and CAD
+reference** controls in one place. An independent **Show original master**
+checkbox hides the imported scan/STEP source without hiding mold parts;
+the source draft heatmap remains controlled by its own viewport toolbar.
+These are viewport-only visibility masks and **do not regenerate or
+modify part meshes, invalidate the mold, or affect STL/3MF exports**.
+An exported master support/pedestal is listed and can be isolated just
+like a mold half. Hiding a component also excludes its section-view caps,
+so invisible components cannot leave misleading cut-face overlays. All
+parts and the source become visible again after generating a new mold.
+
+Individual generated mold parts are offered through `src/app/solids.ts`,
+where Mesh Tools' Boolean panel can select them as operands while the
+original scan remains in place.
 
 For freeform mesh edits, **Edit copy** imports a selected mold part as
 a scan into Mesh Tools. **CAD reference** opens the selected part as the
