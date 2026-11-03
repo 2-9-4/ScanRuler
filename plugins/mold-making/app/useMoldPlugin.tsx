@@ -20,6 +20,7 @@ import { MoldPreview, type MoldPreviewMode, type DraftHover } from '../viewer/mo
 import { MoldGuides } from '../viewer/moldGuides'
 import { DEFAULT_DRAFT_DISPLAY,type DraftDisplayOptions } from '../core/draftOverlay'
 import { MoldPanel } from '../ui/MoldPanel'
+import {showMoldInCadReference} from './cadReferenceHandoff'
 
 const NO_CREASE = { mode: 'off' as const, angleDeg: 30 }
 
@@ -335,25 +336,24 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
     const part=generated?.parts[index]
     if(!generated?.printable||!part)return
     if(workspace==='reverse'){
-      // CAD reference must NOT import the STL as a replacement scan. The
-      // old workflow triggered onScan(invalidate), destroying all the
-      // generated mold parts and replacing the original model.
-      // Keep the original source, ALL mold pieces and source coordinates.
-      const all=generated.parts.map(()=>true)
-      setVisibleParts(all)
-      setMasterVisible(true)
-      setCadReferenceIndex(index)
-      preview.current?.setPartVisibility(all)
-      preview.current?.setMasterVisible(true)
-      // The overlay is assembled in model coordinates; returning to Mold
-      // restores its separate previewMode/exploded gap state.
-      preview.current?.setMode('section')
-      preview.current?.setCadReference(index)
-      preview.current?.setVisible(true)
-      useShell.getState().setWorkspace('reverse')
-      useStore.getState().setStatus(
-        `${part.name} shown as a highlighted, view-only CAD reference with all mold parts and the original model. No scan or project data was replaced. Return to Mold Making to change the mold; use Edit copy only if you want to replace the active scan.`
-      )
+      showMoldInCadReference(generated.parts.map(p=>p.name),index,{
+        showAllMoldParts:all=>{
+          setVisibleParts(all)
+          preview.current?.setPartVisibility(all)
+        },
+        showOriginalMaster:()=>{
+          setMasterVisible(true)
+          preview.current?.setMasterVisible(true)
+        },
+        assemblePreview:()=>preview.current?.setMode('section'),
+        focusPart:i=>{
+          setCadReferenceIndex(i)
+          preview.current?.setCadReference(i)
+        },
+        showPreview:()=>preview.current?.setVisible(true),
+        openReverseWorkspace:()=>useShell.getState().setWorkspace('reverse'),
+        report:message=>useStore.getState().setStatus(message),
+      })
       return
     }
     try{
