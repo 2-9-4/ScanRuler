@@ -11,9 +11,10 @@ const parts:Array<MoldPart>=[
   {name:'Mold part 2',positions:new Float32Array(),indices:new Uint32Array(60),volumeMm3:3},
   {name:'Hex-keyed master mounting post',positions:new Float32Array(),indices:new Uint32Array(18),volumeMm3:1},
 ]
-const render=(visible:readonly boolean[],printable=true)=>renderToStaticMarkup(
+const render=(visible:readonly boolean[],printable=true,masterVisible=true)=>renderToStaticMarkup(
   createElement(MoldPartList,{
-    parts,visible,printable,onVisibilityChange:()=>{},onExportPart:()=>{},onEditPart:()=>{},
+    parts,visible,printable,masterVisible,onMasterVisibilityChange:()=>{},
+    onVisibilityChange:()=>{},onExportPart:()=>{},onEditPart:()=>{},
   }),
 )
 
@@ -58,5 +59,16 @@ describe('Mold part visibility and unified per-part UI',()=>{
     expect(isolate).toContain('aria-pressed="true"')
     expect(html).toContain('Unisolate')
     expect(html).toContain('Show all parts')
+  })
+  it('can hide the original master independently of any part or draft-overlay controls',()=>{
+    const html=render([true,true,true],true,false)
+    const sourceToggle=html.match(/<input[^>]*data-test="mold-show-master"[^>]*>/)?.[0]
+    expect(sourceToggle).toBeDefined()
+    expect(sourceToggle).not.toContain('checked')
+    expect(html).toContain('draft heatmap is a separate diagnostic overlay')
+    expect(html.match(/data-test="mold-part-row-\d+"/g)).toHaveLength(3)
+    const shown=render([true,true,true])
+    expect(shown.match(/<input[^>]*data-test="mold-show-master"[^>]*>/)?.[0])
+      .toContain('checked')
   })
 })
