@@ -209,6 +209,18 @@ parametric reconstruction of a molded part.
   estimate includes overpour, fittings, headspace, trapped air, or waste.
   No geometry, build settings, preview or export path is changed by editing
   material assumptions.
+- **Two-component silicone mixing** now converts the net silicone estimate
+  (or explicitly labeled gross upper bound for an open source mesh) to
+  a batch plan. Enter your material's **A:B ratio by WEIGHT** and optional
+  overage percentage (default 10%); the panel shows Part A grams, Part B
+  grams, total prepared mixture and estimated kit cost. The calculation
+  uses the entered *mixed-product density* in g/cm³. **By-volume and
+  by-weight mixing ratios are not interchangeable** and must be checked
+  against the actual material's technical data sheet, not inferred from
+  the selected 1:1 illustrative starting value. The allowance is applied
+  to mass after net/gross volume estimation; it cannot compensate for
+  unmodeled voids, top-off height or trapped air. Editing ratio, density,
+  cost and overage does not invalidate or regenerate the mold.
 
 These changes are regression-covered in `contourSeam.test.ts`,
 `generation.test.ts`, `settings.test.ts` and `materialEstimate.test.ts`.
