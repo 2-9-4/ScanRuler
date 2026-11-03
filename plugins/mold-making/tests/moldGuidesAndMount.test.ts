@@ -3,7 +3,11 @@ import {describe,expect,it} from 'vitest'
 import {boxSolid,planMold} from '../core/geometry'
 import {DEFAULT_MOLD_SETTINGS,parseMoldSettings} from '../core/settings'
 import {cutGuideSegments} from '../viewer/moldGuides'
-import {masterMountMesh,planMasterMount,MOUNT_HEX_SEAT_DEPTH_MM,MOUNT_HEX_COLLAR_HEIGHT_MM,MOUNT_HEX_AXIAL_CLEARANCE_MM} from '../core/masterMount'
+import {
+  masterMountMesh,planMasterMount,MOUNT_HEX_SEAT_DEPTH_MM,
+  MOUNT_HEX_COLLAR_HEIGHT_MM,MOUNT_HEX_AXIAL_CLEARANCE_MM,
+  MOUNT_PAD_AXIAL_CLEARANCE_MM,MOUNT_PAD_RADIAL_CLEARANCE_MM,
+} from '../core/masterMount'
 import {mountCenterCandidates} from '../viewer/moldGuides'
 import {closedness} from '../../mesh-tools/core/boolean'
 import {signedVolume} from '../../mesh-tools/core/hollow'
@@ -79,8 +83,45 @@ describe('Pre-generation plane guides and glue-on master support',()=>{
     expect(planned.rings[1].radius).toBeGreaterThan(planned.rings[2].radius)
     expect(MOUNT_HEX_SEAT_DEPTH_MM-MOUNT_HEX_COLLAR_HEIGHT_MM)
       .toBeCloseTo(MOUNT_HEX_AXIAL_CLEARANCE_MM)
+    expect(planned.innerStop).not.toBeNull()
+    const stop=planned.innerStop!
+    expect(stop.bottomZ).toBeCloseTo(bounds.min[2]-mounted.mountHeight+MOUNT_PAD_AXIAL_CLEARANCE_MM)
+    expect(stop.radius).toBeGreaterThan(mounted.mountStemDiameter/2)
+    const stopRings=planned.rings.filter(r=>Math.abs(r.center[2]-stop.bottomZ)<1e-6)
+    expect(stopRings).toHaveLength(2)
+    expect(stopRings[0].radius).toBeCloseTo(mounted.mountStemDiameter/2)
+    expect(stopRings[1].radius).toBeCloseTo(stop.radius)
+    expect(planned.headSeat.pocketFloorZ).toBeCloseTo(
+      planned.headSeat.baseZ-MOUNT_PAD_AXIAL_CLEARANCE_MM)
+    expect(planned.headSeat.pocketRadius).toBeGreaterThan(
+      mounted.mountPadDiameter/2+MOUNT_PAD_RADIAL_CLEARANCE_MM-1e-6)
+    const headRings=planned.rings.filter(r=>Math.abs(r.center[2]-planned.headSeat.baseZ)<1e-6)
+    expect(headRings).toHaveLength(2)
+    expect(headRings[1].radius).toBeGreaterThan(headRings[0].radius)
     expect(cube.positions).toEqual(untouched)
     expect(parseMoldSettings(mounted)).toEqual(mounted)
+  })
+  it('provides a rigid-mold head shoulder seat in addition to the exterior collar',()=>{
+    const s={...mounted,mode:'direct' as const,clearance:0.4}
+    const p=planMasterMount(bounds,s,planMold(cube,s).outer)!
+    expect(p.innerStop).toBeNull()
+    expect(p.headSeat.baseZ).toBeCloseTo(-2)
+    expect(p.headSeat.pocketFloorZ).toBeCloseTo(-2-MOUNT_PAD_AXIAL_CLEARANCE_MM)
+    const head=p.rings.filter(r=>Math.abs(r.center[2]-p.headSeat.baseZ)<1e-6)
+    expect(head).toHaveLength(2)
+    expect(head[1].radius).toBeGreaterThan(head[0].radius)
+    expect(p.headSeat.pocketTopZ).toBeGreaterThan(
+      p.rings[p.rings.length-1].center[2])
+  })
+  it('reserves sufficient head-pocket height for an angled glue pad',()=>{
+    const tilted={...mounted,mountNormal:[0.6,0,-0.8] as [number,number,number]}
+    const p=planMasterMount(bounds,tilted,planMold(cube,tilted).outer)!
+    const top=p.rings[p.rings.length-1]
+    const lowestTop=top.center[2]-
+      top.radius*Math.hypot(tilted.mountNormal[0],tilted.mountNormal[1])
+    expect(p.headSeat.baseZ).toBeLessThan(lowestTop-1)
+    expect(p.headSeat.pocketTopZ).toBeGreaterThan(top.center[2]+
+      top.radius*Math.hypot(tilted.mountNormal[0],tilted.mountNormal[1]))
   })
   it('separates and deepens silicone box interior when mount support is enabled',()=>{
     const base=planMold(cube,{...mounted,mountEnabled:false})
