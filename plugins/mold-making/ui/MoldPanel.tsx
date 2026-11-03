@@ -164,7 +164,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
   </label>
   const fields=FIELDS.filter(({key})=>{
     if(key==='previewGap')return false // An in-viewport slider controls the layout.
-    if(key==='splitPosition')return multi
+    if(key==='splitPosition')return false // Belongs with split axis, not outer dimensions.
     if(key==='boxDraftDeg')return mode==='silicone-box'
     if(mode==='direct')return ['clearance','sideMargin','baseThickness'].includes(key)
     if(mode==='silicone-box')return ['siliconeThickness','wallThickness','baseThickness'].includes(key)
@@ -197,9 +197,10 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
       <p className="hint">Approximate progress; mesh Boolean and export stages may take additional time.</p>
     </div>}
     {error&&<p className="hint" role="alert" data-test="mold-error">{error}</p>}
-    <div role="tabpanel" id="mold-tab-panel-setup" aria-labelledby="mold-tab-setup" hidden={tab!=='setup'}>
+    <div role="tabpanel" id="mold-tab-panel-setup" aria-labelledby="mold-tab-setup"
+      hidden={tab!=='setup'} style={{display:tab==='setup'?'block':'none'}}>
     <div className="group">
-      <div className="sec-head">1. Target</div>
+      <div className="sec-head">Source model</div>
       <p className="hint">{mode==='silicone-box'?'Containment boxes need only the target bounding dimensions; open or nonmanifold meshes are allowed.':'Direct molds require a watertight target; use a valid solid or repair the scan first.'} The original model is never modified.</p>
       <div className="kindrow featurekeys" role="radiogroup" aria-label="Target source">
         <button type="button" role="radio" aria-checked={source==='scan'} className={source==='scan'?'on':undefined}
@@ -233,7 +234,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
       )}
     </div>
     <div className="group">
-      <div className="sec-head">2. Mold type</div>
+      <div className="sec-head">Tooling method</div>
       <div className="kindrow featurekeys mold-type-choices" role="radiogroup" aria-label="Tooling method">
         {MOLD_MODES.map(x=><button key={x} type="button" role="radio" aria-checked={mode===x}
           className={mode===x?'on':undefined} onClick={()=>setMode(x)}>{MOLD_MODE_LABELS[x]}</button>)}
@@ -248,8 +249,8 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
           </select></label>}
     </div>
     <div className="group">
-      <div className="sec-head">4. Dimensions (mm)</div>
-      {mode!=='silicone-box'&&<label className="kv">
+      <div className="sec-head">Tool dimensions (mm)</div>
+      {mode!=='silicone-box'&&clearance>0&&<label className="kv">
         <span className="name">Spherical offset detail</span>
         <select data-test="mold-offset-quality" value={offsetQuality}
           onChange={e=>setOffsetQuality(e.target.value as OffsetQuality)}>
@@ -258,7 +259,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
           <option value="fine">Fine — slower, more detail</option>
         </select>
       </label>}
-      {mode!=='silicone-box'&&<p className="hint">
+      {mode!=='silicone-box'&&clearance>0&&<p className="hint">
         {offsetQuality==='fast'
           ?'Fast previews use a coarse distance-field grid. Small features may disappear; switch to Fine before exporting detailed tooling.'
           :offsetQuality==='balanced'
@@ -272,9 +273,10 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
         Extra margins add material on top of these calculated requirements and may be zero.</p>
     </div>
     </div>
-    <div role="tabpanel" id="mold-tab-panel-parting" aria-labelledby="mold-tab-parting" hidden={tab!=='parting'}>
+    <div role="tabpanel" id="mold-tab-panel-parting" aria-labelledby="mold-tab-parting"
+      hidden={tab!=='parting'} style={{display:tab==='parting'?'block':'none'}}>
     <div className="group">
-      <div className="sec-head">3. Parting and registration</div>
+      <div className="sec-head">Parting &amp; registration</div>
       <label className="kv"><span className="name">Split into</span>
         <select data-test="mold-part-count" value={parts}
           onChange={e=>setParts(Number(e.target.value) as PartCount)}>
@@ -298,6 +300,9 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
             <option value="z">Z (top/bottom)</option>
           </select></label>}
         {parts===4&&<p className="hint">The second split is perpendicular: X→Y, Y→X, or Z→X.</p>}
+        {parts!==3&&multi&&fieldInput({key:'splitPosition',
+          label:'Primary split-plane fraction',
+          help:'Fraction of the available mold span along the chosen primary split axis (0.1 to 0.9).'})}
         <label className="kv"><span className="name">Alignment features</span>
           <input data-test="mold-keys" type="checkbox" checked={keys}
             onChange={e=>setKeys(e.target.checked)}/></label>
@@ -374,9 +379,10 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
       </>}
     </div>
     </div>
-    <div role="tabpanel" id="mold-tab-panel-casting" aria-labelledby="mold-tab-casting" hidden={tab!=='casting'}>
+    <div role="tabpanel" id="mold-tab-panel-casting" aria-labelledby="mold-tab-casting"
+      hidden={tab!=='casting'} style={{display:tab==='casting'?'block':'none'}}>
     {(mode==='direct'&&parts>1||pourEnabled||ventsEnabled)&&<div className="group" data-test="mold-casting-channels">
-      <div className="sec-head">5. Pouring and venting (optional)</div>
+      <div className="sec-head">Pouring &amp; venting (optional)</div>
       {(mode!=='direct'||parts===1)&&<p className="hint mold-warning" role="alert">
         Channels require a multipart direct mold. Disable pour/vents here before generating a silicone box or single-sided impression.
       </p>}
@@ -444,7 +450,8 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
       </>}
     </div>
     </div>
-    <div role="tabpanel" id="mold-tab-panel-review" aria-labelledby="mold-tab-review" hidden={tab!=='review'}>
+    <div role="tabpanel" id="mold-tab-panel-review" aria-labelledby="mold-tab-review"
+      hidden={tab!=='review'} style={{display:tab==='review'?'block':'none'}}>
     <div className="group">
       <div className="sec-head">Inspect generated tooling</div>
       {mode!=='silicone-box'&&<p className="hint">Positive clearance enlarges the cavity by a spherical distance-field offset, rounding sharp corners rather than pushing vertices along their normals. Very small features may be lost at the reported sampling resolution; inspect the resulting cavity. Zero clearance is exact.</p>}
@@ -454,6 +461,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
           'Multi-part tooling captures the full target. Verify demolding, orientation, clearance and casting undercuts before printing.'}
       </p>
 
+      {!generated&&<p className="hint">No generated mold to inspect yet. Use Generate tooling above; results will open here automatically.</p>}
       {generated&&<div data-test="mold-result">
         <div className="kindrow featurekeys" role="radiogroup" aria-label="Mold preview mode">
           <button type="button" role="radio" aria-checked={previewMode==='section'} className={previewMode==='section'?'on':undefined}
@@ -506,7 +514,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
           onClick={()=>onExport('3mf')}>Export all parts · 3MF</button>
         <button type="button" disabled={!generated.printable} data-test="mold-to-boolean"
           onClick={onBoolean}>Use mold parts in Mesh Tools Boolean</button>
-        <p className="hint">Generated mold parts are available as independent Boolean operands in Mesh Tools. The original loaded model is unchanged. Edit copy/CAD reference replaces the current scan; save your project before using those actions.</p>
+        <p className="hint">Generated mold parts are available as independent Boolean operands in Mesh Tools. “Reference in CAD” opens a view-only assembled overlay in Reverse Engineering, retaining the original model and all other mold parts. Only “Edit copy” replaces the active scan; save your project before doing that.</p>
         {generated.warnings.map((w,i)=><p key={i} className="hint">{w}</p>)}
       </div>}
     </div>
