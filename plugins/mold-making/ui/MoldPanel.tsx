@@ -4,6 +4,7 @@ import { useEffect,useState } from 'react'
 import {MoldMaterialEstimate,DEFAULT_MOLD_MATERIAL_INPUTS} from './MoldMaterialEstimate'
 import {MoldPartList} from './MoldPartList'
 import {MoldWorkflowTabs,type MoldWorkflowTab} from './MoldWorkflowTabs'
+import {MoldIcon} from './MoldIcons'
 import { SCAN_ACCEPT,REFERENCE_ACCEPT,REFERENCE_FORMATS } from '../../../src/core/formats'
 import { ModelSlot } from '../../../src/ui/ModelSlot'
 import { useStore } from '../../../src/state/store'
@@ -176,8 +177,9 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
     <p className="hint">Configure the model, prepare its joints and casting features, then generate and inspect the parts. Settings remain saved when switching tabs.</p>
     <div className="kv">
       <span className="name">{generated?'Mold generated — inspect the result or adjust settings':'Ready to generate tooling when the source is loaded'}</span>
-      <button type="button" data-test="mold-generate" disabled={busy||generating||!active}
-        onClick={onGenerate}>{generating?'Generating…':'Generate tooling'}</button>
+      <button type="button" className="withicon" data-test="mold-generate" disabled={busy||generating||!active}
+        onClick={onGenerate}>
+        <MoldIcon name="moldTool" size={18}/>{generating?'Generating…':'Generate tooling'}</button>
     </div>
     {generating&&<div className="mold-progress" role="status" aria-live="off">
       <div className="mold-progress-label">{workStatus||'Preparing mold geometry…'}
@@ -195,9 +197,9 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
       <p className="hint">{mode==='silicone-box'?'Containment boxes need only the target bounding dimensions; open or nonmanifold meshes are allowed.':'Direct molds require a watertight target; use a valid solid or repair the scan first.'} The original model is never modified.</p>
       <div className="kindrow featurekeys" role="radiogroup" aria-label="Target source">
         <button type="button" role="radio" aria-checked={source==='scan'} className={source==='scan'?'on':undefined}
-          onClick={()=>setSource('scan')}>Scan / model</button>
+          onClick={()=>setSource('scan')}><MoldIcon name="scan" size={20}/>Scan / model</button>
         <button type="button" role="radio" aria-checked={source==='reference'} className={source==='reference'?'on':undefined}
-          onClick={()=>setSource('reference')}>Reference STEP / mesh</button>
+          onClick={()=>setSource('reference')}><MoldIcon name="model" size={20}/>Reference STEP / mesh</button>
       </div>
       {source==='scan'?
         <ModelSlot role="Target" name={scanName} detail={`${tris.toLocaleString('en-US')} triangles`}
@@ -228,7 +230,8 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
       <div className="sec-head">Tooling method</div>
       <div className="kindrow featurekeys mold-type-choices" role="radiogroup" aria-label="Tooling method">
         {MOLD_MODES.map(x=><button key={x} type="button" role="radio" aria-checked={mode===x}
-          className={mode===x?'on':undefined} onClick={()=>setMode(x)}>{MOLD_MODE_LABELS[x]}</button>)}
+          className={mode===x?'on':undefined} onClick={()=>setMode(x)}>
+          <MoldIcon name={x==='direct'?'moldTool':'shell'} size={20}/>{MOLD_MODE_LABELS[x]}</button>)}
       </div>
       {mode==='silicone-box'&&parts===3&&<p className="hint">Threefold forces a cylindrical containment box for rotationally spaced 120° sectors.</p>}
       {mode==='silicone-box'&&parts!==3&&
@@ -406,19 +409,22 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
               value={x} onChange={e=>setVentPoints(ventPoints.map((p,j)=>j===i?([Number(e.target.value),y] as [number,number]):p))}/>
             <input aria-label={`Vent ${i+1} Y`} data-test={`mold-vent-${i}-y`} type="number" min={0.01} max={0.99} step={0.05}
               value={y} onChange={e=>setVentPoints(ventPoints.map((p,j)=>j===i?([x,Number(e.target.value)] as [number,number]):p))}/>
-            {ventPoints.length>1&&<button type="button"
-              onClick={()=>setVentPoints(ventPoints.filter((_,j)=>j!==i))}>Remove</button>}
+            {ventPoints.length>1&&<button type="button" className="withicon" title={`Remove vent ${i+1}`}
+              onClick={()=>setVentPoints(ventPoints.filter((_,j)=>j!==i))}>
+              <MoldIcon name="bin" size={16}/>Remove</button>}
           </span>
         </div>)}
-        {ventPoints.length<8&&<button type="button"
-          onClick={()=>setVentPoints([...ventPoints,[0.3,0.7] as [number,number]])}>Add vent</button>}
+        {ventPoints.length<8&&<button type="button" className="withicon"
+          onClick={()=>setVentPoints([...ventPoints,[0.3,0.7] as [number,number]])}>
+          <MoldIcon name="moldVent" size={16}/>Add vent</button>}
       </>}
       <p className="hint">Both currently use the same straight vertical bore routing. A pour sprue is sized for material entry and can add a funnel; a vent is normally narrower and intended for air escape, but is not automatically placed at an air trap. Horizontal gates, automatic high-point detection, risers, and silicone master-mount channels remain roadmap items. Check filling, venting and parting seals before manufacture.</p>
     </div>}
     <div className="group" data-test="mold-master-mount">
       <div className="sec-head">Master suspension / glue-on base</div>
-      <button type="button" data-test="mold-center-mount-panel"
-        disabled={!active} onClick={onCenterMount}>Center mounting post on model</button>
+      <button type="button" className="withicon" data-test="mold-center-mount-panel"
+        disabled={!active} onClick={onCenterMount}>
+        <MoldIcon name="moldMount" size={16}/>Center mounting post on model</button>
       <p className="hint">Select a downward-facing surface of the master in the 3D viewport. The separate printable post enters from outside through a hexagonal hole in the mold base; the upper pad aligns to the selected surface and the larger exterior hexagonal shoulder sets insertion depth and rotation.</p>
       {mountPoint?<p className="hint">
         Contact: ({mountPoint.map(v=>v.toFixed(2)).join(', ')}) mm;
@@ -456,9 +462,11 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
       {generated&&<div data-test="mold-result">
         <div className="kindrow featurekeys" role="radiogroup" aria-label="Mold preview mode">
           <button type="button" role="radio" aria-checked={previewMode==='section'} className={previewMode==='section'?'on':undefined}
-            onClick={()=>onPreviewModeChange('section')}>Assembled</button>
+            onClick={()=>onPreviewModeChange('section')}>
+            <MoldIcon name="moldAssembled" size={20}/>Assembled</button>
           <button type="button" role="radio" aria-checked={previewMode==='exploded'} className={previewMode==='exploded'?'on':undefined}
-            onClick={()=>onPreviewModeChange('exploded')}>Exploded</button>
+            onClick={()=>onPreviewModeChange('exploded')}>
+            <MoldIcon name="moldExploded" size={20}/>Exploded</button>
         </div>
         <p className="hint">Exploded view shows the original model between the tooling sections. Use the separation slider on the 3D viewport to expand or contract the parts; Assembled switches to the app's built-in Section view.</p>
         <div className="kv"><span className="name">{generated.printable?'Exportable solids':'Preview-only solids'}</span><b>{generated.parts.length}</b></div>
@@ -501,10 +509,12 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
           visible={visibleParts} onVisibilityChange={onPartVisibilityChange}
           masterVisible={masterVisible} onMasterVisibilityChange={onMasterVisibilityChange}
           onExportPart={i=>onExport('stl',i)} onEditPart={onEditPart}/>
-        <button type="button" disabled={!generated.printable} data-test="mold-export-3mf"
-          onClick={()=>onExport('3mf')}>Export all parts · 3MF</button>
-        <button type="button" disabled={!generated.printable} data-test="mold-to-boolean"
-          onClick={onBoolean}>Use mold parts in Mesh Tools Boolean</button>
+        <button type="button" className="withicon" disabled={!generated.printable} data-test="mold-export-3mf"
+          onClick={()=>onExport('3mf')}>
+          <MoldIcon name="moldExport" size={16}/>Export all parts · 3MF</button>
+        <button type="button" className="withicon" disabled={!generated.printable} data-test="mold-to-boolean"
+          onClick={onBoolean}>
+          <MoldIcon name="combine" size={16}/>Use mold parts in Mesh Tools Boolean</button>
         <p className="hint">Generated mold parts are available as independent Boolean operands in Mesh Tools. “Reference in CAD” opens a view-only assembled overlay in Reverse Engineering, retaining the original model and all other mold parts. Only “Edit copy” replaces the active scan; save your project before doing that.</p>
         {generated.warnings.map((w,i)=><p key={i} className="hint">{w}</p>)}
       </div>}
