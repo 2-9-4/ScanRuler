@@ -7,7 +7,8 @@ describe('Exterior mold interface engraving numbering',()=>{
     for(const count of [2,3,4]){
       const marks=matingMarks(count)
       const labels=labelsForParts(count)
-      expect(marks).toHaveLength(count)
+      // A two-part mold has one shared interface, not two.
+      expect(marks).toHaveLength(count===2?1:count)
       expect(labels).toHaveLength(count)
       for(const mark of marks){
         const [a,b]=mark.pair
