@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Shallow seven-segment numeric engraving on the outside of each printable
-// mold piece. Every shared interface has the SAME number on both neighbors.
-// No labels are stamped on the mating face or through the cavity.
+// Engrave an individual seam number near EACH mating edge. Its neighbor
+// receives the SAME number at the other side of that edge. Labels are
+// shallow real printable geometry on the OUTER wall, never on the seam,
+// key, sprue, cavity or inner mold surface.
 import type {Manifold,ManifoldToplevel} from 'manifold-3d'
 import type {MoldSettings,SplitAxis} from './settings'
 import type {MoldPlan,Limits} from './geometry'
 
-type V3=[number,number,number]
+type Vec3=[number,number,number]
+type Axis=SplitAxis
+type Surface='x'|'y'|'radial'
 export interface MatingMark {pair:[number,number];number:number}
 export const matingMarks=(parts:number):MatingMark[]=>{
   if(parts===2)return [{pair:[0,1],number:1}]
@@ -19,120 +22,214 @@ export const matingMarks=(parts:number):MatingMark[]=>{
   ]
   return []
 }
+/** The old grouped text remains useful as a legend / testable mapping, but
+ * individual physical numbers are no longer engraved together at the center. */
 export function labelsForParts(parts:number):string[]{
   const result=Array.from({length:parts},()=>[] as number[])
   for(const mark of matingMarks(parts))for(const i of mark.pair)result[i].push(mark.number)
   return result.map(ns=>ns.sort((a,b)=>a-b).join('-'))
 }
+const center=(a:number,b:number)=>(a+b)/2
+const axisIndex=(axis:Axis)=>axis==='x'?0:axis==='y'?1:2
+const clamp=(v:number,a:number,b:number)=>Math.min(b,Math.max(a,v))
+const digitHeight=4
+export interface SeamNumberPlacement {
+  number:number
+  partIndex:number
+  /** Source-coordinate location at the actual outer tooling wall. */
+  center:Vec3
+  surface:Surface
+  /** Flat-face direction, or angle of the outward cylinder normal. */
+  sign:1|-1
+  angleRad:number
+  scale:number
+  seamAxis:Axis|'radial'
+  seamAt:number
+}
+/** A small number is set *beside* each parting plane, on the outer wall.
+ * This is a geometric, testable planner independent of Manifold's Booleans. */
+export function planSeamNumberPlacements(
+  outer:Limits,source:Limits,s:MoldSettings,partBounds:readonly Limits[],
+  outerRadius:number|null,
+):SeamNumberPlacement[]{
+  if(s.parts<2)return []
+  const cx=center(outer.min[0],outer.max[0])
+  const cy=center(outer.min[1],outer.max[1])
+  const axisPrimary=s.splitAxis
+  const axisSecondary:Axis=axisPrimary==='x'?'y':'x'
+  const splitPrimary=source.min[axisIndex(axisPrimary)]+
+    (source.max[axisIndex(axisPrimary)]-source.min[axisIndex(axisPrimary)])*s.splitPosition
+  const splitSecondary=center(source.min[axisIndex(axisSecondary)],
+    source.max[axisIndex(axisSecondary)])
+  const result:SeamNumberPlacement[]=[]
+  for(const mark of matingMarks(s.parts)){
+    const seamAxis:Axis|'radial'=s.parts===3?'radial':
+      s.parts===2?axisPrimary:mark.number%2===1?axisSecondary:axisPrimary
+    const seamAt=seamAxis==='radial'?((mark.number%3)*2*Math.PI/3):
+      seamAxis===axisPrimary?splitPrimary:splitSecondary
+    const k=seamAxis==='radial'?-1:axisIndex(seamAxis)
+    for(const partIndex of mark.pair){
+      const bounds=partBounds[partIndex]
+      if(!bounds)continue
+      const zspan=bounds.max[2]-bounds.min[2]
+      const scale=clamp(zspan/8,0.60,1.05)
+      const mid:Vec3=[center(bounds.min[0],bounds.max[0]),
+        center(bounds.min[1],bounds.max[1]),
+        center(bounds.min[2],bounds.max[2])]
+      let surface:Surface='x',sign:1|-1=1,angleRad=0
+      const pos:Vec3=[...mid]
+      if(outerRadius!==null){
+        surface='radial'
+        let theta:number
+        if(seamAxis==='radial'){
+          // A 120° sector has a number at EACH end of its external arc.
+          // Move the glyph into its own wedge by at least half a glyph
+          // width + margin, away from the seam and adjacent part.
+          const offset=clamp((1.2*scale+1.7)/outerRadius,0.035,0.30)
+          theta=seamAt+(partIndex===mark.number%3?offset:-offset)
+        }else if(seamAxis==='z'){
+          theta=Math.atan2(mid[1]-cy,mid[0]-cx)
+          if(Math.hypot(mid[0]-cx,mid[1]-cy)<1e-5)
+            theta=partIndex===0?Math.PI:0
+        }else{
+          // Intersect the actual XY parting line with the outer circle,
+          // then move one glyph width into the appropriate adjacent part.
+          const other=k===0?1:0
+          const side=mid[other]>=center(outer.min[other],outer.max[other])?1:-1
+          const radialOffset=seamAt-(k===0?cx:cy)
+          const chord=Math.sqrt(Math.max(0,outerRadius**2-radialOffset**2))
+          const x=k===0?seamAt:cx+side*chord
+          const y=k===1?seamAt:cy+side*chord
+          const edge=Math.atan2(y-cy,x-cx)
+          const offset=clamp((1.2*scale+1.7)/outerRadius,0.035,0.32)
+          const choose=(a:number)=>{
+            const coord=(k===0?cx+outerRadius*Math.cos(a):cy+outerRadius*Math.sin(a))
+            const partSide=mid[k]<seamAt?-1:1
+            return (coord-seamAt)*partSide
+          }
+          theta=choose(edge+offset)>choose(edge-offset)?edge+offset:edge-offset
+        }
+        angleRad=theta
+        pos[0]=cx+outerRadius*Math.cos(theta)
+        pos[1]=cy+outerRadius*Math.sin(theta)
+      }else{
+        // For a plane X or Y, stamp on a PERPENDICULAR exterior face so
+        // both sides of the mating edge are visible from outside.
+        surface=seamAxis==='x'?'y':'x'
+        const f=axisIndex(surface)
+        const outside=center(outer.min[f],outer.max[f])
+        sign=mid[f]<outside?-1:1
+        if(Math.abs(mid[f]-outside)<1e-5)sign=1
+        pos[f]=sign<0?outer.min[f]:outer.max[f]
+      }
+      if(seamAxis==='z'){
+        const side=mid[2]<seamAt?-1:1
+        const margin=2.1*scale+0.65
+        const desired=seamAt+side*margin
+        pos[2]=clamp(desired,bounds.min[2]+digitHeight*scale/2+.25,
+          bounds.max[2]-digitHeight*scale/2-.25)
+      }else if(seamAxis!=='radial'&&outerRadius===null){
+        const side=mid[k]<seamAt?-1:1
+        const margin=1.2*scale+1
+        const desired=seamAt+side*margin
+        pos[k]=clamp(desired,bounds.min[k]+1.1*scale+.15,
+          bounds.max[k]-1.1*scale-.15)
+      }
+      result.push({number:mark.number,partIndex,center:pos,surface,
+        sign,angleRad,scale,seamAxis,seamAt})
+    }
+  }
+  return result
+}
+
 type Segment='a'|'b'|'c'|'d'|'e'|'f'|'g'
 const DIGITS:Record<string,Segment[]>={
   '1':['b','c'],'2':['a','b','g','e','d'],
   '3':['a','b','g','c','d'],'4':['f','g','b','c'],
-  '-':['g'],
 }
 const strokes:Record<Segment,[number,number,number,number]>={
-  a:[0.3,3.6,1.7,3.95],g:[0.3,1.83,1.7,2.17],
-  d:[0.3,.05,1.7,.4],
-  b:[1.65,2.1,2,3.8],c:[1.65,.2,2,1.9],
-  f:[0,2.1,.35,3.8],e:[0,.2,.35,1.9],
+  a:[0.30,3.60,1.70,3.95],g:[0.30,1.83,1.70,2.17],
+  d:[0.30,0.05,1.70,0.40],
+  b:[1.65,2.10,2.00,3.80],c:[1.65,0.20,2.00,1.90],
+  f:[0,2.10,0.35,3.80],e:[0,0.20,0.35,1.90],
 }
-const center=(a:number,b:number)=>(a+b)/2
-/** Use the six basic strokes (plus a middle bar) as shallow, robust solid
- * cutters; no fonts/text shaping system or raster Boolean is required.
- */
+function numberCutters(
+  wasm:ManifoldToplevel,placement:SeamNumberPlacement,outerRadius:number|null,
+  cx:number,cy:number,depth:number,keep:(m:Manifold)=>Manifold,
+):Manifold[]{
+  const pieces:Manifold[]=[]
+  const {surface,center:at,scale,number,sign,angleRad}=placement
+  for(const seg of DIGITS[String(number)]??[]){
+    const [x0,y0,x1,y1]=strokes[seg]
+    const u0=(x0-1)*scale,u1=(x1-1)*scale
+    const v0=(y0-2)*scale,v1=(y1-2)*scale
+    let mn:Vec3,mx:Vec3
+    if(surface==='radial'){
+      const R=outerRadius!
+      mn=[R-depth,u0,at[2]+v0]
+      mx=[R+.6,u1,at[2]+v1]
+    }else if(surface==='x'){
+      const uSign=sign
+      const a=at[1]+uSign*u0,b=at[1]+uSign*u1
+      mn=[sign<0?at[0]-.6:at[0]-depth,Math.min(a,b),at[2]+v0]
+      mx=[sign<0?at[0]+depth:at[0]+.6,Math.max(a,b),at[2]+v1]
+    }else{
+      const uSign=-sign
+      const a=at[0]+uSign*u0,b=at[0]+uSign*u1
+      mn=[Math.min(a,b),sign<0?at[1]-.6:at[1]-depth,at[2]+v0]
+      mx=[Math.max(a,b),sign<0?at[1]+depth:at[1]+.6,at[2]+v1]
+    }
+    const size:Vec3=[mx[0]-mn[0],mx[1]-mn[1],mx[2]-mn[2]]
+    if(size.some(x=>x<=0))continue
+    let stamp=keep(wasm.Manifold.cube(size).translate(mn))
+    if(surface==='radial'){
+      stamp=keep(stamp.rotate([0,0,angleRad*180/Math.PI]))
+      stamp=keep(stamp.translate([cx,cy,0]))
+    }
+    pieces.push(stamp)
+  }
+  return pieces
+}
 export function engraveInterfaceNumbers(
   wasm:ManifoldToplevel,pieces:Manifold[],plan:MoldPlan,s:MoldSettings,
-  keep:(m:Manifold)=>Manifold,warnings:string[],
+  sourceBounds:Limits,keep:(m:Manifold)=>Manifold,warnings:string[],
 ):Manifold[]{
   if(!s.interfaceLabels||pieces.length<2)return pieces
-  const labels=labelsForParts(s.parts),outer=plan.outer
-  const out=pieces.slice(),cx=center(outer.min[0],outer.max[0])
+  const outer=plan.outer
+  const radius=plan.radialOuter?.radius??plan.cylinder?.outerR??null
+  const cx=center(outer.min[0],outer.max[0])
   const cy=center(outer.min[1],outer.max[1])
-  const outerRadius=plan.radialOuter?.radius??plan.cylinder?.outerR??null
-  const faceAxis:SplitAxis=s.parts===3?'x':
-    s.splitAxis==='z'?'x':s.splitAxis
-  const normalIndex=faceAxis==='x'?0:1
-  const tangentIndex=normalIndex===0?1:0
-  const bnd=(m:Manifold):Limits=>m.boundingBox() as Limits
-  for(let i=0;i<Math.min(out.length,labels.length);i++){
-    const label=labels[i]
-    if(!label)continue
-    const bounds=bnd(out[i])
-    const height=bounds.max[2]-bounds.min[2]
-    const scale=Math.min(1.1,Math.max(0.5,height/8))
-    const glyphWidth=3.0*scale
-    const width=label.length*glyphWidth
-    const depth=Math.min(1.1,Math.max(0.5,plan.material.wall*.32))
-    // Place both interface indices on one outside face of each mold part.
-    // For a round body, a tangent cutter hits the curved exterior at the
-    // part's outward bisector (not at the XY bounding-box corner).
-    let angle=0,radial=outerRadius??0
-    if(outerRadius!==null){
-      if(s.parts===3)angle=(i+.5)*2*Math.PI/3
-      else if(s.parts===2){
-        angle=s.splitAxis==='x'?(i===0?Math.PI:0):
-          s.splitAxis==='y'?(i===0?-Math.PI/2:Math.PI/2):0
-      }else{
-        const mid=bnd(out[i])
-        const x=center(mid.min[0],mid.max[0])-cx
-        const y=center(mid.min[1],mid.max[1])-cy
-        angle=Math.atan2(y,x)
-      }
-    }
-    // For flat bodies select an actual outside wall belonging to the part.
-    const splitCenter=normalIndex===0?cx:cy
-    const side=center(bounds.min[normalIndex],bounds.max[normalIndex])<splitCenter?-1:1
-    const plane=side<0?outer.min[normalIndex]:outer.max[normalIndex]
-    const tangent=center(bounds.min[tangentIndex],bounds.max[tangentIndex])
-    const z=center(bounds.min[2],bounds.max[2])
-    // Skip illegibly tiny parts rather than rejecting a working mold.
-    if(height<3||outer.max[tangentIndex]-outer.min[tangentIndex]<width+1){
-      warnings.push('Interface number engraving skipped on a tiny mold part; use physical part labels during assembly.')
-      continue
-    }
-    const cutters:Manifold[]=[]
-    try{
-      for(let g=0;g<label.length;g++)for(const seg of DIGITS[label[g]]??[]){
-        const [left,bottom,right,top]=strokes[seg]
-        const u0=(g*glyphWidth+left*scale-width/2)
-        const u1=(g*glyphWidth+right*scale-width/2)
-        const v0=(bottom-2)*scale,v1=(top-2)*scale
-        let min:V3,max:V3
-        if(outerRadius!==null){
-          min=[radial-depth,u0,z+v0]
-          max=[radial+.4,u1,z+v1]
-        }else if(normalIndex===0){
-          min=[side<0?plane-.4:plane-depth,tangent+u0,z+v0]
-          max=[side<0?plane+depth:plane+.4,tangent+u1,z+v1]
-        }else{
-          min=[tangent+u0,side<0?plane-.4:plane-depth,z+v0]
-          max=[tangent+u1,side<0?plane+depth:plane+.4,z+v1]
-        }
-        // Use a shallow 3D solid, not a decorative decal: this notch
-        // survives mesh export and remains readable after printing.
-        const x=max[0]-min[0],y=max[1]-min[1],zz=max[2]-min[2]
-        if(x<=0||y<=0||zz<=0)continue
-        let stamp=keep(wasm.Manifold.cube([x,y,zz]))
-        stamp=keep(stamp.translate(min))
-        if(outerRadius!==null){
-          stamp=keep(stamp.rotate([0,0,angle*180/Math.PI]))
-          stamp=keep(stamp.translate([cx,cy,0]))
-        }
-        cutters.push(stamp)
-      }
-      if(!cutters.length)continue
-      let merged=cutters[0]
-      for(let j=1;j<cutters.length;j++)merged=keep(merged.add(cutters[j]))
-      const result=keep(out[i].subtract(merged))
-      if(result.isEmpty()||result.status()!=='NoError'||
-         out[i].volume()-result.volume()<0.0001){
-        warnings.push(`Interface marking failed on mold part ${i+1}; original part preserved.`)
+  const placements=planSeamNumberPlacements(
+    outer,sourceBounds,s,pieces.map(p=>p.boundingBox() as Limits),radius)
+  const output=pieces.slice()
+  for(let part=0;part<output.length;part++){
+    const mine=placements.filter(p=>p.partIndex===part)
+    if(!mine.length)continue
+    let solid=output[part]
+    for(const place of mine){
+      const bounds=solid.boundingBox()
+      if(bounds.max[2]-bounds.min[2]<digitHeight*place.scale+0.5){
+        warnings.push(`Skipped seam ${place.number} on part ${part+1}: not enough external label height.`)
         continue
       }
-      out[i]=result
-    }catch{
-      warnings.push(`Interface marking was not possible on mold part ${i+1}; original part preserved.`)
+      try{
+        const cuts=numberCutters(wasm,place,radius,cx,cy,
+          Math.max(.6,Math.min(1.1,plan.material.wall*.32)),keep)
+        if(!cuts.length)continue
+        let cutter=cuts[0]
+        for(let j=1;j<cuts.length;j++)cutter=keep(cutter.add(cuts[j]))
+        const candidate=keep(solid.subtract(cutter))
+        const removed=solid.volume()-candidate.volume()
+        if(candidate.isEmpty()||candidate.status()!=='NoError'||removed<1e-5){
+          warnings.push(`Could not engrave seam ${place.number} on part ${part+1} near its mating edge; original geometry retained.`)
+          continue
+        }
+        solid=candidate
+      }catch{
+        warnings.push(`Could not engrave seam ${place.number} on part ${part+1}; original geometry retained.`)
+      }
     }
+    output[part]=solid
   }
-  return out
+  return output
 }
