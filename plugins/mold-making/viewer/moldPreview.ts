@@ -66,6 +66,8 @@ export class MoldPreview {
   private remove:()=>void
   private source:MoldSource='scan'
   private masterVisible=true
+  /** Non-destructive, view-only ghost assembly in Reverse Engineering. */
+  private cadReferenceIndex:number|null=null
   private priorNominal:boolean|null=null
   private priorScan:boolean|null=null
   private viewMode:MoldPreviewMode='section'
@@ -182,24 +184,37 @@ export class MoldPreview {
         geometry.setIndex(new THREE.BufferAttribute(indices,1))
       }
       mesh.material.opacity=options.opacity
-      mesh.visible=options.show&&this.draftVisible.length>0
+      // CAD handoff is an inspection reference; don't overlay draft colors
+      // on the original scan or interfere with Reverse Engineering picks.
+      mesh.visible=this.cadReferenceIndex===null&&options.show&&this.draftVisible.length>0
     }
     const active=this.draftActive()
     // Keep mold components on screen WITH the colored source. In assembled
     // draft mode, make the shell translucent so the diagnostic survives
     // normal depth testing; the exploded view retains opaque solid surfaces.
     const xray=active&&this.viewMode==='section'
+    const cad=this.cadReferenceIndex!==null
     for(let i=0;i<this.parts.length;i++){
       const part=this.parts[i]
       if(part)part.visible=this.partVisibility[i]??true
     }
-    for(const mesh of this.meshes){
+    for(let i=0;i<this.meshes.length;i++){
+      const mesh=this.meshes[i]
+      if(!mesh)continue
       const mat=mesh.material as THREE.MeshStandardMaterial
-      if(mat.transparent!==xray){
-        mat.transparent=xray;mat.needsUpdate=true
+      const transparent=cad||xray
+      if(mat.transparent!==transparent){
+        mat.transparent=transparent;mat.needsUpdate=true
       }
-      mat.opacity=xray?0.26:1
-      mat.depthWrite=!xray
+      // The focused mold piece stays clear, the remaining pieces form a
+      // translucent context around the *original* source model.
+      const focus=cad&&i===this.cadReferenceIndex
+      mat.color.setHex(focus?0xe9ae65:0x57a99d)
+      mat.opacity=cad?(focus?0.58:0.19):xray?0.26:1
+      mat.depthWrite=!transparent
+      mesh.renderOrder=cad?(focus?2:1):0
+      // Never hijack CAD picking. These overlays aren't editable B-reps.
+      mesh.raycast=cad?()=>{}:THREE.Mesh.prototype.raycast
     }
     if(!active)this.emitDraftHover(null)
     this.setSourceVisibility()
@@ -335,6 +350,15 @@ export class MoldPreview {
   /** Independent toggle for the original scan/STEP master. Draft overlays
    * are diagnostic layers and remain controlled by their own toolbar.
    */
+  /** Present all mold components as context in Reverse Engineering while
+   * the selected part is highlighted. Unlike importing an STL as a scan,
+   * this leaves the original scan/STEP, every mold piece and the mold
+   * generation state untouched. This is a visual reference, not a CAD solid.
+   */
+  setCadReference(index:number|null):void {
+    this.cadReferenceIndex=index!==null&&index>=0&&index<this.parts.length?index:null
+    this.setDraftOptions(this.draftOptions)
+  }
   setMasterVisible(visible:boolean):void {
     this.masterVisible=visible
     this.setSourceVisibility()
@@ -397,6 +421,7 @@ export class MoldPreview {
     this.parts=[]
     this.partVisibility=[]
     this.masterVisible=true
+    this.cadReferenceIndex=null
     this.group.clear()
     if(this.priorScan!==null){
       this.scene.setScanVisible(this.priorScan)
