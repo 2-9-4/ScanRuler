@@ -4,7 +4,8 @@
 import {beforeAll,describe,expect,it} from 'vitest'
 import Module,{type ManifoldToplevel,type Manifold} from 'manifold-3d'
 import {DEFAULT_MOLD_SETTINGS} from '../core/settings'
-import {boxSolid,buildMold,planMold,seamPositions,registrationSites,toPart} from '../core/geometry'
+import {boxSolid,buildMold,planMold,seamPositions,registrationSites,toPart,maskMountFromVSeam} from '../core/geometry'
+import {planVSeamMountKeepout} from '../core/masterMount'
 import type {MoldSettings} from '../core/settings'
 import {closedness} from '../../mesh-tools/core/boolean'
 import {signedVolume} from '../../mesh-tools/core/hollow'
@@ -317,6 +318,76 @@ describe('Mold Making assembly',()=>{
     expect(keyed.warnings.join(' ')).toMatch(/Opposing exterior and interior shoulders/)
     expect(keyed.printable).toBe(true)
     intact(keyed.parts)
+  })
+  it('masks the V tongue AND its mating groove across the mounting corridor before Boolean registration',()=>{
+    const source=boxSolid({min:[-10,-8,0],max:[10,8,12]})
+    const settings={...DEFAULT_MOLD_SETTINGS,mode:'silicone-box' as const,
+      parts:2 as const,keys:true,keyStyle:'v-seam' as const,
+      mountEnabled:true,mountPoint:[0,0,0] as [number,number,number],
+      mountNormal:[0,0,-1] as [number,number,number],
+      clampTabCount:0,topBottomTabs:false}
+    const plan=planMold(source,settings)
+    const k=planVSeamMountKeepout(settings,plan.outer)!
+    const z=plan.outer.min[2]+2,span=4*k.radius
+    const tongue=wasm.Manifold.cube([2,span,2]).translate([-1,-span/2,z])
+    const groove=wasm.Manifold.cube([3,span,3]).translate([-1.5,-span/2,z-.5])
+    const [maskedTongue,maskedGroove]=maskMountFromVSeam(
+      wasm,tongue,groove,settings,plan,x=>x)
+    const cylinder=wasm.Manifold.cylinder(
+      k.topZ-k.bottomZ,k.radius,k.radius,96,false,
+    ).translate([k.xy[0],k.xy[1],k.bottomZ])
+    const tongueInside=maskedTongue.intersect(cylinder)
+    const grooveInside=maskedGroove.intersect(cylinder)
+    try{
+      expect(maskedTongue.volume()).toBeGreaterThan(0)
+      expect(maskedGroove.volume()).toBeGreaterThan(0)
+      expect(tongueInside.volume()).toBeLessThan(.001)
+      expect(grooveInside.volume()).toBeLessThan(.001)
+      const [unchanged,unmaskedGroove]=maskMountFromVSeam(
+        wasm,tongue,groove,{...settings,mountEnabled:false},plan,x=>x)
+      expect(unchanged).toBe(tongue)
+      expect(unmaskedGroove).toBe(groove)
+    }finally{
+      tongueInside.delete();grooveInside.delete();cylinder.delete()
+      maskedTongue.delete();maskedGroove.delete();tongue.delete();groove.delete()
+    }
+  })
+  it('leaves an actual registration-free annulus around the hex passage in a silicone bucket',()=>{
+    const source=boxSolid({min:[-10,-8,0],max:[10,8,12]})
+    const settings={...DEFAULT_MOLD_SETTINGS,mode:'silicone-box' as const,
+      parts:2 as const,boxShape:'rectangular' as const,
+      splitAxis:'x' as const,keys:true,keyStyle:'v-seam' as const,
+      clampTabCount:0,topBottomTabs:false,mountEnabled:true,
+      mountPoint:[0,0,0] as [number,number,number],
+      mountNormal:[0,0,-1] as [number,number,number],
+      mountHeight:12}
+    // Match the V seam's backing to exclude size changes. Only positive
+    // registered material in the annulus is being measured, not the base.
+    const unregistered=buildMold(wasm,source,matchedBlank(source,settings))
+    const registered=buildMold(wasm,source,settings)
+    const plan=planMold(source,settings)
+    const mask=planVSeamMountKeepout(settings,plan.outer)!
+    const corridor=wasm.Manifold.cylinder(
+      mask.topZ-mask.bottomZ,mask.radius,mask.radius,96,false,
+    ).translate([mask.xy[0],mask.xy[1],mask.bottomZ])
+    let totalExtraOutside=0
+    try{
+      for(let i=0;i<2;i++){
+        const actual=meshSolid(registered.parts[i])
+        const plain=meshSolid(unregistered.parts[i])
+        const raised=actual.subtract(plain)
+        const blocking=raised.intersect(corridor)
+        try{
+          expect(blocking.volume()).toBeLessThan(.03)
+          totalExtraOutside+=raised.volume()
+        }finally{
+          blocking.delete();raised.delete();actual.delete();plain.delete()
+        }
+      }
+      // Keep usable registration elsewhere on the outside seam.
+      expect(totalExtraOutside).toBeGreaterThan(.1)
+      intact(registered.parts)
+    }finally{corridor.delete()}
   })
   it('cuts the keyed mounting socket through finished positive V-seam features',()=>{
     const master=boxSolid({min:[-10,-8,0],max:[10,8,12]})
