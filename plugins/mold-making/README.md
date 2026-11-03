@@ -166,12 +166,28 @@ a planar printing/fixturing land without beveling the cavity corners.
 Existing legacy one-piece impression projects remain loadable, but new
 one-sided impressions are no longer offered as a creation choice.
 
+### Workspace workflow subtabs and non-destructive CAD references
+
+The Mold Making left panel is organized into **four subtabs**:
+**Model & size** (source scan/STEP, mold type, dimensional controls),
+**Split & keys** (parting plane, matching registration, clamp hardware),
+**Pour & mount** (sprues/vents and glue-on support), and
+**Inspect & export** (assembly preview, draft/undercut report, material
+estimate, per-part export and editing). The **Generate tooling** action
+and generation errors/progress are always visible above the subtabs.
+After a successful generation the panel automatically opens Inspect.
+Changing a subtab does **not** reset or regenerate tooling, and
+keyboard Left/Right/Home/End navigate the tab strip. Offset quality
+is only shown for a positive direct cavity clearance; split fraction
+is shown beside the primary split axis rather than with material
+dimensions. This organization does not change mold settings or exports.
+
 The Mold Making result opens as an **exploded model**, with the original
 source shown inside. A separation slider is overlaid on the 3D viewport
 and can return to zero gap. The assembled button still uses ScanRuler's
 native section view. The generated-parts list now combines **Hide/Show,
-Isolate/Unisolate, Show all, per-part STL export, Edit copy, and CAD
-reference** controls in one place. An independent **Show original master**
+Isolate/Unisolate, Show all, per-part STL export, Edit copy, and Reference
+in CAD** controls in one place. An independent **Show original master**
 checkbox hides the imported scan/STEP source without hiding mold parts;
 the source draft heatmap remains controlled by its own viewport toolbar.
 These are viewport-only visibility masks and **do not regenerate or
@@ -185,12 +201,25 @@ Individual generated mold parts are offered through `src/app/solids.ts`,
 where Mesh Tools' Boolean panel can select them as operands while the
 original scan remains in place.
 
-For freeform mesh edits, **Edit copy** imports a selected mold part as
-a scan into Mesh Tools. **CAD reference** opens the selected part as the
-scan in Reverse engineer so sketches and modeled bodies can be built over
-it. Both explicit import actions **replace the previous scan**; the
-Boolean-solid handoff does not. This is a triangulated reference, not a
-parametric reconstruction of a molded part.
+**Reference in CAD** now opens Reverse Engineering **without replacing
+the active scan or STEP reference**. The Mold Making preview remains
+available as an assembled, translucent, view-only overlay with **every
+generated mold piece and separate post**; the chosen part is highlighted.
+The original master remains displayed and aligned with the tooling.
+The Reverse Engineering workspace continues using its original source
+for modeling, and returning to Mold Making restores the previous
+assembled/exploded preview. No geometry, scan version, or mold export
+is changed by this handoff. The overlay is **not** an editable B-rep
+and its facets cannot yet be picked as Reverse Engineering CAD faces.
+Creating separately editable CAD bodies and propagating edits back to
+mold components is a separate integration feature.
+
+**Edit copy** is still an explicitly destructive operation: it imports
+the selected mold part as a new scan in Mesh Tools, replacing the
+previous scan and invalidating source-dependent mold generation results.
+Save your project before using Edit copy, or use **Reference in CAD**
+to retain all existing context. The Boolean-solid handoff remains
+non-destructive as well.
 
 ## Threefold registration and material estimates (2026-11)
 
