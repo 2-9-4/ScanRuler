@@ -392,14 +392,17 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
       </p>:<p className="hint">No contact face selected. Use “Pick glue-on support face” in the 3D viewport first.</p>}
       <label className="kv"><span className="name">Include printed suspension pedestal</span>
         <input type="checkbox" data-test="mold-mount-enabled"
-          checked={mountEnabled} disabled={!mountPoint}
+          checked={mountEnabled} disabled={!mountPoint||(mode==='direct'&&clearance<=0)}
           onChange={e=>setMountEnabled(e.target.checked)}/></label>
+      {mode==='direct'&&clearance<=0&&<p className="hint mold-warning">
+        Set a positive cavity clearance to enable a removable glue-on post in a rigid mold.
+      </p>}
       {mountEnabled&&<>
         {mode==='silicone-box'&&fieldInput({key:'mountHeight',label:'Clearance below model (mm)',help:'Moves the inside bottom of a silicone containment box downward; the hexagonal post passes through its base.'})}
         {fieldInput({key:'mountPadDiameter',label:'Glue pad diameter (mm)',help:'Contact pad follows the selected face normal. Verify the entire pad stays on the intended feature.'})}
         {fieldInput({key:'mountStemDiameter',label:'Support stem diameter (mm)',help:'Cylindrical vertical connection between foot and contact pad.'})}
         {fieldInput({key:'mountFootDiameter',label:'Exterior stop diameter (mm)',help:'Hexagonal shoulder remains outside the mold base and prevents the post from sliding through.'})}
-        <p className="hint">The keyed bore has 0.25 mm nominal radial clearance. The source model is not rotated or modified; the hex post is printed separately. Test-fit and seal the penetration before casting.</p>
+        <p className="hint">The underside post has 0.25 mm nominal radial fit and a 1.2 mm-deep stepped hexagonal seat with 0.15 mm axial clearance to locate its height. The final bore is cut after V-seam registration, including positive ridges. Test-fit and seal the penetration before casting.</p>
       </>}
     </div>
     <div className="group">
