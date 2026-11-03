@@ -619,7 +619,7 @@ function drillClampPair(
  * Return the masked tongue/groove as separate registration solids; the
  * final keyed socket and post-envelope cuts happen after all splitting.
  */
-function maskMountFromVSeam(
+export function maskMountFromVSeam(
   wasm:ManifoldToplevel,tongue:Manifold,groove:Manifold,
   s:MoldSettings,plan:MoldPlan,keep:(m:Manifold)=>Manifold,
 ):[Manifold,Manifold] {
