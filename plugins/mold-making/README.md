@@ -442,7 +442,10 @@ The post is held vertically by **two opposing shoulders**:
   movement.
 
 The post is a separate export, not joined to the source, and remains
-stationary while mold sections are exploded. A translucent purple model
+stationary while mold sections are exploded. Because both inner and outer
+stops are larger than the shaft, **at least two mold sections** are required
+for installation around the post. The UI rejects a captured mounting
+post in a one-piece mold. A translucent purple model
 shows it before generation. The under-head clearance and shaft
 socket permit the mold halves to close around the already-glued post.
 **This is an assembly-around-the-post design:** a fully assembled tool
