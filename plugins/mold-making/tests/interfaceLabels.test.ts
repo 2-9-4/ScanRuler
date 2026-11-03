@@ -90,6 +90,19 @@ describe('Exterior mold interface engraving numbering',()=>{
     expect(locations.filter(p=>p.seamAxis==='z')).toHaveLength(4)
     expect(locations.filter(p=>p.seamAxis==='x')).toHaveLength(4)
   })
+  it('shows both sides of a round horizontal split together on the same outer wall',()=>{
+    const s={...DEFAULT_MOLD_SETTINGS,parts:2 as const,splitAxis:'z' as const}
+    const round:Limits={min:[-20,-20,-9],max:[20,20,11]}
+    const halves:Limits[]=[
+      {min:[-20,-20,-9],max:[20,20,1]},
+      {min:[-20,-20,1],max:[20,20,11]},
+    ]
+    const locations=planSeamNumberPlacements(round,source,s,halves,20)
+    expect(locations).toHaveLength(2)
+    expect(locations[0].angleRad).toBeCloseTo(locations[1].angleRad)
+    expect(locations[0].center[2]).toBeLessThan(1)
+    expect(locations[1].center[2]).toBeGreaterThan(1)
+  })
   it('keeps two-part seam numbers on opposite sides of a real parting line',()=>{
     const s={...DEFAULT_MOLD_SETTINGS,parts:2 as const,splitAxis:'x' as const}
     const b:Limits[]=[
