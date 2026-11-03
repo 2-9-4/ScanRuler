@@ -1131,6 +1131,7 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
     let nominalCastingCavityMm3:number|null=null
     let siliconeInterior:Manifold|null=null
     let supportDisplacementInsideMm3=0
+    let keyedPostSolid:Manifold|null=null
     onProgress?.('Constructing full-height tooling from the source solid…',0.13)
     if(s.mode==='silicone-box'){
       const out=plan.outer,inn=plan.innerBox!
@@ -1293,7 +1294,14 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
         head.pocketTopZ-head.pocketFloorZ,
         head.pocketRadius,head.pocketRadius,64,false,
       ).translate([p[0],p[1],head.pocketFloorZ]))
-      const cutter=keep(shaft.add(seat).add(padPocket))
+      // Include the EXACT printable post in the cutting envelope. This
+      // catches any residual V-ridge sliver from facet orientation,
+      // tilted pad edges, or unexpected Boolean seams. Extra shaft,
+      // shoulder and head pockets still supply the designed fit gaps.
+      const postMesh=masterMountMesh(extent,s,plan.outer)
+      if(!postMesh)throw new Error('Could not construct the keyed mounting post.')
+      keyedPostSolid=toManifold(wasm,postMesh,keep)
+      const cutter=keep(shaft.add(seat).add(padPocket).add(keyedPostSolid))
       let totalRemoved=0
       pieces=pieces.map((piece)=>{
         const before=piece.volume()
@@ -1317,14 +1325,12 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
     if(mainParts.length!==s.parts)throw new Error('Part count mismatch: a component disappeared during splitting.')
     const parts=[...mainParts,...loose]
     if(s.mountEnabled){
-      const mount=masterMountMesh(extentOf(targetMesh.positions),s,plan.outer)
-      if(!mount)throw new Error('Failed to construct master mounting pedestal.')
-      const pedestal=toManifold(wasm,mount,keep)
+      if(!keyedPostSolid)throw new Error('Missing keyed mounting post geometry.')
       if(siliconeInterior){
-        const inside=keep(pedestal.intersect(siliconeInterior))
+        const inside=keep(keyedPostSolid.intersect(siliconeInterior))
         supportDisplacementInsideMm3=inside.isEmpty()?0:Math.max(0,inside.volume())
       }
-      parts.push(toPart(pedestal,'Hex-keyed master mounting post',warnings))
+      parts.push(toPart(keyedPostSolid,'Hex-keyed master mounting post',warnings))
       warnings.push('A separate hex-keyed master mounting post was exported. Insert from outside through the base bore; glue the pad to the selected master underside, seal the through-wall penetration and check the exterior stop. The post is not part of the casting.')
     }
     const invalidOutput=warnings.some(w=>w.includes('excluded an invalid detached artifact'))
