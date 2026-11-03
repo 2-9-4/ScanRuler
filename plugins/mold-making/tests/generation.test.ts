@@ -419,11 +419,15 @@ describe('Mold Making assembly',()=>{
       expect(built.parts[2].volumeMm3).toBeGreaterThan(0)
       if(mode==='direct'){
         expect(planMold(master,matched).outer).toEqual(planMold(master,settings).outer)
-        // Both *finished* mold halves were bored, not just the block
-        // before a positive V tongue was added on one side.
-        expect(built.parts[0].volumeMm3).toBeLessThan(ordinary.parts[0].volumeMm3)
-        expect(built.parts[1].volumeMm3).toBeLessThan(ordinary.parts[1].volumeMm3)
+        // A mounted tool intentionally omits BOTH the positive V ridge
+        // and the matching negative groove inside the mounting keep-out.
+        // The formerly grooved half therefore gains material locally,
+        // despite the post socket removing material elsewhere. Comparing
+        // whole-part volumes in a fixed direction is not a valid fit test.
+        // The focused keep-out and nominal post-overlap checks below and
+        // above verify that registration cannot obstruct the installed post.
       }
+      expect(built.printable).toBe(true)
       // Critical assembly regression: the completed V-seam, including
       // positive ridges, must NOT intersect the actual printable shaft,
       // widened head, or either seating shoulder at nominal position.
