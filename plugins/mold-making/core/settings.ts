@@ -221,6 +221,8 @@ export function parseMoldSettings(value: unknown): MoldSettings {
   if(!validXYZ(parsed.mountNormal)||Math.hypot(...parsed.mountNormal)<0.95||
       Math.hypot(...parsed.mountNormal)>1.05)
     throw new Error('Master support normal must be a unit 3D direction.')
+  if(parsed.mountEnabled&&parsed.mode==='direct'&&parsed.clearance<=0)
+    throw new Error('A glue-on core mount in a rigid mold requires positive cavity clearance. Increase the cavity clearance above zero or disable the mount.')
   if(parsed.mountEnabled&&parsed.mountPoint===null)
     throw new Error('Pick a base face on the model before generating a glue-on support.')
   if(parsed.mountEnabled&&parsed.mountNormal[2]>-0.3)
