@@ -1284,7 +1284,16 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
       const seat=keep(wasm.Manifold.cylinder(MOUNT_HEX_SEAT_DEPTH_MM+0.4,
         s.mountFootDiameter/2+margin,s.mountFootDiameter/2+margin,6,false)
         .translate([p[0],p[1],floorZ-0.4]))
-      const cutter=keep(shaft.add(seat))
+      // The glue pad is WIDER than the anti-rotation shaft. Without this
+      // head pocket the mold's floor penetrates its underside, and its
+      // own shoulder has no mating surface to prevent downward travel.
+      // Carve above (never below) the planned pocket-floor datum.
+      const head=planMount.headSeat
+      const padPocket=keep(wasm.Manifold.cylinder(
+        head.pocketTopZ-head.pocketFloorZ,
+        head.pocketRadius,head.pocketRadius,64,false,
+      ).translate([p[0],p[1],head.pocketFloorZ]))
+      const cutter=keep(shaft.add(seat).add(padPocket))
       let totalRemoved=0
       pieces=pieces.map((piece)=>{
         const before=piece.volume()
@@ -1296,7 +1305,7 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
       })
       if(totalRemoved<0.001)
         throw new Error('The master mounting bore missed all tooling parts.')
-      warnings.push('The master post passes through male V-seam registration wherever it intersects the socket. A shallow outside hexagonal counterbore seats the post collar to a repeatable axial height. Verify the 0.25 mm radial and 0.15 mm axial fit clearances.')
+      warnings.push('The keyed mounting passage is cut after V-seam registration, including a separate wider head recess. Opposing head and exterior hex collar shoulders bound vertical travel (0.15 mm nominal clearance at each seat); the hex shaft prevents rotation. Assemble the split tooling around the already-glued pad, and seal the base penetration.')
     }
     if(s.interfaceLabels&&pieces.length>1)
       pieces=engraveInterfaceNumbers(wasm,pieces,plan,s,extent,keep,warnings)
