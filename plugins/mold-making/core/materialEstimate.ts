@@ -65,35 +65,67 @@ export function siliconeBatchByWeight(
     overageGrams:batchGrams-requiredGrams}
 }
 
-/** Select the material volume relevant to a two-part silicone mix.
- * Direct tooling is opt-in: only a positive cavity clearance enables
- * the calculator. For silicone containment, use the net fill when the
- * master has a trustworthy displacement estimate, otherwise explicitly
- * identify gross-to-rim capacity as an upper bound.
+/** Silicone quantity when the source master REMAINS inside the mold.
+ * The mold interior's total volume is not the silicone volume: the
+ * physical master displaces its own volume, in either tooling mode.
+ * Silicone boxes also lose pour volume to any installed support.
+ *
+ * If an open scan prevents measuring master displacement, only a
+ * clearly identified gross upper bound is available, never a net amount.
  */
-export type SiliconeMixVolumeBasis='direct-cavity'|'net-silicone'|'gross-silicone'
+export type SiliconeMixVolumeBasis='direct-clearance-gap'|'net-silicone'|'gross-silicone'
 export interface SiliconeMixVolume {
   volumeMm3:number
   basis:SiliconeMixVolumeBasis
+  toolInternalVolumeMm3:number
+  partVolumeMm3:number|null
+  supportDisplacementMm3:number
 }
 export function siliconeMixVolume(
   mode:'direct'|'silicone-box',
   cavityClearanceMm:number,
   estimates:{
     nominalCastingCavityMm3:number|null
+    masterDisplacementMm3:number|null
     netSiliconeMm3:number|null
     grossSiliconeCapacityMm3:number|null
+    supportDisplacementMm3?:number
   },
 ):SiliconeMixVolume|null{
-  const usable=(v:number|null):v is number=>v!==null&&Number.isFinite(v)&&v>=0
+  const usable=(v:number|null|undefined):v is number=>
+    v!==null&&v!==undefined&&Number.isFinite(v)&&v>=0
+  const part=estimates.masterDisplacementMm3
   if(mode==='direct'){
-    return cavityClearanceMm>0&&usable(estimates.nominalCastingCavityMm3)
-      ?{volumeMm3:estimates.nominalCastingCavityMm3,basis:'direct-cavity'}
-      :null
+    const cavity=estimates.nominalCastingCavityMm3
+    if(!(cavityClearanceMm>0)||!usable(cavity)||!usable(part)||
+       cavity+1e-3<part)return null
+    return {
+      volumeMm3:Math.max(0,cavity-part),
+      basis:'direct-clearance-gap',
+      toolInternalVolumeMm3:cavity,
+      partVolumeMm3:part,
+      supportDisplacementMm3:0,
+    }
   }
-  if(usable(estimates.netSiliconeMm3))
-    return {volumeMm3:estimates.netSiliconeMm3,basis:'net-silicone'}
-  if(usable(estimates.grossSiliconeCapacityMm3))
-    return {volumeMm3:estimates.grossSiliconeCapacityMm3,basis:'gross-silicone'}
+  const gross=estimates.grossSiliconeCapacityMm3
+  const support=usable(estimates.supportDisplacementMm3)
+    ?estimates.supportDisplacementMm3:0
+  if(usable(gross)&&usable(part)&&usable(estimates.netSiliconeMm3)){
+    return {
+      volumeMm3:estimates.netSiliconeMm3,
+      basis:'net-silicone',
+      toolInternalVolumeMm3:gross,
+      partVolumeMm3:part,
+      supportDisplacementMm3:support,
+    }
+  }
+  if(usable(gross))
+    return {
+      volumeMm3:gross,
+      basis:'gross-silicone',
+      toolInternalVolumeMm3:gross,
+      partVolumeMm3:null,
+      supportDisplacementMm3:support,
+    }
   return null
 }
