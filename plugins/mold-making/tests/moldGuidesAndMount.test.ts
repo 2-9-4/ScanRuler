@@ -7,6 +7,7 @@ import {
   masterMountMesh,planMasterMount,MOUNT_HEX_SEAT_DEPTH_MM,
   MOUNT_HEX_COLLAR_HEIGHT_MM,MOUNT_HEX_AXIAL_CLEARANCE_MM,
   MOUNT_PAD_AXIAL_CLEARANCE_MM,MOUNT_PAD_RADIAL_CLEARANCE_MM,
+  mountHexPrismMesh,
 } from '../core/masterMount'
 import {mountCenterCandidates} from '../viewer/moldGuides'
 import {closedness} from '../../mesh-tools/core/boolean'
@@ -28,6 +29,16 @@ describe('Pre-generation plane guides and glue-on master support',()=>{
     expect(samples.every(([x,y])=>x>=bounds.min[0]&&x<=bounds.max[0]&&
       y>=bounds.min[1]&&y<=bounds.max[1])).toBe(true)
     expect(new Set(samples.map(p=>p.join(','))).size).toBe(samples.length)
+  })
+  it('defines the hex cutter with exact absolute Z endpoints and matching 0-degree facets',()=>{
+    const prism=mountHexPrismMesh([2,-3],2.25,-6.5,4.25)
+    expect(closedness(prism.indices,prism.positions.length/3)).toEqual({open:0,bad:0})
+    expect(signedVolume(prism.positions,prism.indices)).toBeGreaterThan(0)
+    const zs=Array.from({length:prism.positions.length/3},(_,i)=>prism.positions[i*3+2])
+    expect(Math.min(...zs)).toBeCloseTo(-6.5)
+    expect(Math.max(...zs)).toBeCloseTo(4.25)
+    expect(prism.positions[0]).toBeCloseTo(4.25)
+    expect(prism.positions[1]).toBeCloseTo(-3)
   })
   it('draws an exact primary XY/YZ/XZ split rectangle at requested fraction',()=>{
     for(const axis of ['x','y','z'] as const){
