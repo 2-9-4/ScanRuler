@@ -233,6 +233,13 @@ export function parseMoldSettings(value: unknown): MoldSettings {
     throw new Error('Master support foot diameter must exceed the stem diameter.')
   if(parsed.mountEnabled&&parsed.mountPadDiameter<parsed.mountStemDiameter)
     throw new Error('Master support pad diameter must exceed the stem diameter.')
+  // The shoulders must have a nonzero annular bearing face; equal-width
+  // head/shaft or foot/shaft would create degenerate ring triangles and
+  // remove the axial mechanical stops.
+  if(parsed.mountEnabled&&
+      (parsed.mountFootDiameter<=parsed.mountStemDiameter+0.4||
+       parsed.mountPadDiameter<=parsed.mountStemDiameter+0.4))
+    throw new Error('Both master-post shoulders must be at least 0.4 mm wider in diameter than the shaft to provide real vertical seating faces.')
   if(typeof parsed.pourEnabled!=='boolean'||typeof parsed.ventsEnabled!=='boolean')
     throw new Error('Invalid casting channel enable setting.')
   const validPoint=(point:unknown):point is [number,number]=>Array.isArray(point)&&
