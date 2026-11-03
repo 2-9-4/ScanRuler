@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Explicit tooling choices and per-part export; no hidden mid-height cut.
 import { useState } from 'react'
-import { volumeMassCost,siliconeBatchByWeight,siliconeMixVolume } from '../core/materialEstimate'
+import {MoldMaterialEstimate,DEFAULT_MOLD_MATERIAL_INPUTS} from './MoldMaterialEstimate'
 import { SCAN_ACCEPT,REFERENCE_ACCEPT,REFERENCE_FORMATS } from '../../../src/core/formats'
 import { ModelSlot } from '../../../src/ui/ModelSlot'
 import { useStore } from '../../../src/state/store'
@@ -65,19 +65,9 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
   generating:boolean
   error:string|null
 }) {
-  // Estimate inputs are local to the readout: changing them never
-  // regenerates, reshapes or invalidates a working mold.
-  const [printDensity,setPrintDensity]=useState(1.24)
-  const [printCostKg,setPrintCostKg]=useState(25)
-  const [siliconeDensity,setSiliconeDensity]=useState(1.1)
-  const [siliconeCostKg,setSiliconeCostKg]=useState(35)
-  // Mix instructions are LOCAL to the calculator, not the mold recipe.
-  // Different products specify different A:B ratios by weight vs volume.
-  const [mixRatioA,setMixRatioA]=useState(1)
-  const [mixRatioB,setMixRatioB]=useState(1)
-  const [mixOveragePercent,setMixOveragePercent]=useState(10)
-  const [castingDensity,setCastingDensity]=useState(1.1)
-  const [castingCostKg,setCastingCostKg]=useState(25)
+  // Keep calculator assumptions across mold regeneration. They must not
+  // become geometry settings or invalidate a built mold.
+  const [materialInputs,setMaterialInputs]=useState({...DEFAULT_MOLD_MATERIAL_INPUTS})
   const scanName=useStore(s=>s.fileName)
   const tris=useStore(s=>s.triangleCount)
   const refName=useDeviation(s=>s.nominalName)
@@ -151,23 +141,6 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
   const setMountEnabled=useMold(s=>s.setMountEnabled)
   const setPourPoint=useMold(s=>s.setPourPoint)
   const setVentPoints=useMold(s=>s.setVentPoints)
-  // These read-only batch assumptions are independent of generation.
-  // In direct mode a positive clearance can define a silicone casting
-  // volume; in a silicone box the gross/net containment volume is used.
-  const mixVolume=generated
-    ?siliconeMixVolume(mode,clearance,generated.materialEstimate):null
-  const mixDensity=mode==='direct'?castingDensity:siliconeDensity
-  const mixCostKg=mode==='direct'?castingCostKg:siliconeCostKg
-  const canEstimateMix=Number.isFinite(mixDensity)&&mixDensity>0&&
-    Number.isFinite(mixCostKg)&&mixCostKg>=0&&
-    Number.isFinite(mixRatioA)&&mixRatioA>0&&
-    Number.isFinite(mixRatioB)&&mixRatioB>0&&
-    Number.isFinite(mixRatioA+mixRatioB)&&
-    Number.isFinite(mixOveragePercent)&&
-    mixOveragePercent>=0&&mixOveragePercent<=100
-  const mixBatch=mixVolume&&mixVolume.basis!=='gross-silicone'&&canEstimateMix
-    ?siliconeBatchByWeight(mixVolume.volumeMm3,mixDensity,
-      mixRatioA,mixRatioB,mixOveragePercent):null
   const active=source==='scan'?scanName:refName
   const multi=parts>1
   const usesV=keys&&multi&&keyStyle==='v-seam'
@@ -491,137 +464,9 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
             </div>)}
           <p className="hint">A reverse-facing triangle may signal a trapped undercut. Low draft includes near-parallel walls. This normal-based screening does not prove collision-free withdrawal, does not detect every obstruction, and does not alter or block the printable mold. Check material flexibility, release path, parting seams and mechanical clearance.</p>
         </details>}
-        <div className="kv"><span className="name">Total material</span><b>{(generated.volumeMm3/1000).toFixed(1)} cm³</b></div>
-        <details data-test="mold-material-estimate" open={mode==='direct'&&clearance>0}>
-          <summary>Material quantity &amp; cost estimates</summary>
-          <p className="hint">Informational estimates only. Tooling volume assumes fully solid printed material; slicer infill, supports, failed prints, resin loss and purge are excluded. Adjust local material assumptions below.</p>
-          <label className="kv"><span className="name">Printed material density (g/cm³)</span>
-            <input type="number" min={0.01} step={0.01} value={printDensity}
-              onChange={e=>setPrintDensity(Number(e.target.value))}/></label>
-          <label className="kv"><span className="name">Printed material price ($/kg)</span>
-            <input type="number" min={0} step={1} value={printCostKg}
-              onChange={e=>setPrintCostKg(Number(e.target.value))}/></label>
-          {printDensity>0&&printCostKg>=0&&(()=>{
-            const estimate=volumeMassCost(generated.volumeMm3,printDensity,printCostKg)
-            return <div className="kv" data-test="mold-print-estimate">
-              <span className="name">Fully-solid tooling · estimated mass/cost</span>
-              <b>{estimate.grams.toFixed(1)} g / ${estimate.cost.toFixed(2)}</b>
-            </div>
-          })()}
-          {generated.materialEstimate?.nominalCastingCavityMm3!==null&&
-            generated.materialEstimate?.nominalCastingCavityMm3!==undefined&&<>
-              <div className="kv"><span className="name">Nominal casting void</span>
-                <b>{(generated.materialEstimate.nominalCastingCavityMm3/1000).toFixed(2)} cm³</b></div>
-              <label className="kv"><span className="name">Cast material density (g/cm³)</span>
-                <input type="number" min={0.01} step={0.01} value={castingDensity}
-                  onChange={e=>setCastingDensity(Number(e.target.value))}/></label>
-              <label className="kv"><span className="name">Cast material price ($/kg)</span>
-                <input type="number" min={0} step={1} value={castingCostKg}
-                  onChange={e=>setCastingCostKg(Number(e.target.value))}/></label>
-              {(clearance===0||mixVolume?.basis==='direct-clearance-gap')&&
-                Number.isFinite(castingDensity)&&castingDensity>0&&
-                Number.isFinite(castingCostKg)&&castingCostKg>=0&&(()=>{
-                const gap=mode==='direct'&&mixVolume?.basis==='direct-clearance-gap'
-                const v=gap?mixVolume.volumeMm3:
-                  generated.materialEstimate.nominalCastingCavityMm3!
-                const estimate=volumeMassCost(v,castingDensity,castingCostKg)
-                return <div className="kv" data-test="mold-casting-estimate">
-                  <span className="name">{gap
-                    ?'Material in clearance gap around retained master'
-                    :'Nominal full-cavity casting mass/cost'}</span>
-                  <b>{estimate.grams.toFixed(1)} g / ${estimate.cost.toFixed(2)}</b>
-                </div>
-              })()}
-              <p className="hint">The full cavity volume includes the original master. When clearance is positive and the master remains inside the mold, the mix calculator subtracts the measured master volume first. Sprues, vents, shrinkage and process waste are excluded.</p>
-            </>}
-          {generated.materialEstimate?.grossSiliconeCapacityMm3!==null&&
-            generated.materialEstimate?.grossSiliconeCapacityMm3!==undefined&&<>
-              <div className="kv"><span className="name">Silicone box capacity to rim (gross)</span>
-                <b>{(generated.materialEstimate.grossSiliconeCapacityMm3/1000).toFixed(1)} cm³</b></div>
-              {mixVolume?.basis==='net-silicone'&&
-                <div className="kv" data-test="mold-silicone-net">
-                  <span className="name">Silicone fill (interior minus part and support)</span>
-                  <b>{(mixVolume.volumeMm3/1000).toFixed(2)} cm³</b>
-                </div>}
-              {mixVolume?.basis!=='net-silicone'&&
-                <p className="hint">Net silicone quantity unavailable: the master displacement cannot be measured reliably or exceeds the container's volume. Gross capacity is shown only as an upper bound, not as a mixing quantity.</p>}
-              <label className="kv"><span className="name">Silicone density (g/cm³)</span>
-                <input type="number" min={0.01} step={0.01} value={siliconeDensity}
-                  onChange={e=>setSiliconeDensity(Number(e.target.value))}/></label>
-              <label className="kv"><span className="name">Silicone price ($/kg)</span>
-                <input type="number" min={0} step={1} value={siliconeCostKg}
-                  onChange={e=>setSiliconeCostKg(Number(e.target.value))}/></label>
-              {mixVolume?.basis==='net-silicone'&&
-                Number.isFinite(siliconeDensity)&&siliconeDensity>0&&
-                Number.isFinite(siliconeCostKg)&&siliconeCostKg>=0&&(()=>{
-                const estimate=volumeMassCost(mixVolume.volumeMm3,
-                  siliconeDensity,siliconeCostKg)
-                return <div className="kv" data-test="mold-silicone-estimate">
-                  <span className="name">Net silicone mass/cost (before overage)</span>
-                  <b>{estimate.grams.toFixed(1)} g / ${estimate.cost.toFixed(2)}</b>
-                </div>
-              })()}
-              <p className="hint">Gross capacity assumes filling to the rim. Net silicone deducts the measured master and any support inside the container. Unknown master displacement prevents a reliable net quantity; neither estimate includes funnels, air pockets, overpour or process waste.</p>
-            </>}
-          {mixVolume&&<>
-            <div className="sec-head">Two-part silicone mixing (by weight)</div>
-            <p className="hint">Enter the A:B ratio BY WEIGHT specified by your silicone manufacturer. A ratio by volume is not interchangeable. The initial 1:1 ratio is illustrative only.</p>
-            <div className="kv" data-test="mold-silicone-mix-volume">
-              <span className="name">{mixVolume.basis==='direct-clearance-gap'
-                ?'Silicone clearance-gap volume'
-                :mixVolume.basis==='net-silicone'
-                  ?'Net silicone fill volume'
-                  :'Gross container volume (master volume unknown)'}</span>
-              <b>{(mixVolume.volumeMm3/1000).toFixed(2)} cm³ ({(mixVolume.volumeMm3/1000).toFixed(2)} mL)</b>
-            </div>
-            <div className="kv" data-test="mold-silicone-tool-volume">
-              <span className="name">Tool internal volume</span>
-              <b>{(mixVolume.toolInternalVolumeMm3/1000).toFixed(2)} cm³</b>
-            </div>
-            <div className="kv" data-test="mold-silicone-master-volume">
-              <span className="name">Original part displacement</span>
-              <b>{mixVolume.partVolumeMm3===null
-                ?'Unknown — net silicone cannot be calculated'
-                :`${(mixVolume.partVolumeMm3/1000).toFixed(2)} cm³`}</b>
-            </div>
-            {mixVolume.supportDisplacementMm3>0&&
-              <div className="kv" data-test="mold-silicone-support-volume">
-                <span className="name">Support displacement inside mold</span>
-                <b>{(mixVolume.supportDisplacementMm3/1000).toFixed(2)} cm³</b>
-              </div>}
-            <div className="kv" data-test="mold-silicone-mix-density">
-              <span className="name">Mixed silicone density</span>
-              <b>{Number.isFinite(mixDensity)?mixDensity.toFixed(3):'Invalid'} g/cm³</b>
-            </div>
-            <p className="hint">{mixVolume.basis==='direct-clearance-gap'
-              ?'Silicone needed = expanded cavity volume minus the original part volume. This assumes the part remains inside the direct mold while silicone fills its clearance gap.'
-              :mixVolume.basis==='net-silicone'
-                ?'Silicone needed = box internal volume minus original part displacement minus any support inside the box. This assumes filling to the rim.'
-                :'The original part volume cannot be measured from the open/invalid mesh. Gross capacity is an upper bound only; no A/B quantity is calculated until a valid part volume is available.'}
-              {' '}Change the {mode==='direct'?'Cast material':'Silicone'} density and price inputs above to match your product.</p>
-            <label className="kv"><span className="name">Part A weight ratio</span>
-              <input type="number" min={0.01} step={1} data-test="mold-silicone-ratio-a"
-                value={mixRatioA} onChange={e=>setMixRatioA(Number(e.target.value))}/></label>
-            <label className="kv"><span className="name">Part B weight ratio</span>
-              <input type="number" min={0.01} step={1} data-test="mold-silicone-ratio-b"
-                value={mixRatioB} onChange={e=>setMixRatioB(Number(e.target.value))}/></label>
-            <label className="kv"><span className="name">Extra mixed material allowance (%)</span>
-              <input type="number" min={0} max={100} step={1} data-test="mold-silicone-overage"
-                value={mixOveragePercent} onChange={e=>setMixOveragePercent(Number(e.target.value))}/></label>
-            {mixBatch&&<div data-test="mold-silicone-mix-plan">
-              <div className="kv"><span className="name">Base mixed silicone mass (before allowance)</span>
-                <b>{mixBatch.requiredGrams.toFixed(1)} g</b></div>
-              <div className="kv"><span className="name">Prepare Part A / Part B</span>
-                <b>{mixBatch.partAGrams.toFixed(1)} g / {mixBatch.partBGrams.toFixed(1)} g</b></div>
-              <div className="kv"><span className="name">Total batch including allowance</span>
-                <b>{mixBatch.batchGrams.toFixed(1)} g · ${(mixBatch.batchGrams*mixCostKg/1000).toFixed(2)}</b></div>
-              <p className="hint">Extra {mixBatch.overageGrams.toFixed(1)} g allocated for mixing losses and overpour. Confirm the product's mixing ratio, working time and density before preparing the batch.</p>
-            </div>}
-            {mixVolume.basis!=='gross-silicone'&&!canEstimateMix&&<p className="hint" role="alert">
-              Enter a positive mixed silicone density and A:B weight ratios, a nonnegative price, and an allowance from 0% to 100%.
-            </p>}
-          </>}
-        </details>
+        <MoldMaterialEstimate generated={generated} mode={mode} clearance={clearance}
+          inputs={materialInputs}
+          onInputChange={(key,value)=>setMaterialInputs(prev=>({...prev,[key]:value}))}/>
         {generated.parts.map((p,i)=><div key={i} className="kv">
           <span className="name">{p.name} · {Math.round(p.indices.length/3).toLocaleString('en-US')} faces</span>
           <button type="button" disabled={!generated.printable} data-test={`mold-export-part-${i+1}`}
