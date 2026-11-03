@@ -38,6 +38,8 @@ export interface MoldBuild {
     nominalCastingCavityMm3:number|null
     grossSiliconeCapacityMm3:number|null
     masterDisplacementMm3:number|null
+    /** Post/pedestal volume inside the pourable interior only. */
+    supportDisplacementMm3:number
     netSiliconeMm3:number|null
   }
   /** First component only. Never join touching parts into an invalid mesh. */
@@ -1403,7 +1405,7 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
       draftAnalysis,draftOverlay,
       volumeMm3:parts.reduce((v,p)=>v+p.volumeMm3,0),
       materialEstimate:{nominalCastingCavityMm3,grossSiliconeCapacityMm3,
-        masterDisplacementMm3,netSiliconeMm3},
+        masterDisplacementMm3,supportDisplacementMm3,netSiliconeMm3},
       positions:parts[0].positions,indices:parts[0].indices}
   }finally{
     fieldRef.current?.dispose()
