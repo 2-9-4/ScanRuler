@@ -61,6 +61,8 @@ export class MoldPreview {
   private group = new THREE.Group()
   private meshes:THREE.Mesh[]=[]
   private parts:THREE.Group[]=[]
+  /** User-selected viewport mask, independent of saved mold geometry. */
+  private partVisibility:boolean[]=[]
   private remove:()=>void
   private source:MoldSource='scan'
   private priorNominal:boolean|null=null
@@ -184,7 +186,8 @@ export class MoldPreview {
     // draft mode, make the shell translucent so the diagnostic survives
     // normal depth testing; the exploded view retains opaque solid surfaces.
     const xray=active&&this.viewMode==='section'
-    for(const part of this.parts)part.visible=true
+    for(let i=0;i<this.parts.length;i++)
+      this.parts[i].visible=this.partVisibility[i]??true
     for(const mesh of this.meshes){
       const mat=mesh.material as THREE.MeshStandardMaterial
       if(mat.transparent!==xray){
@@ -201,9 +204,9 @@ export class MoldPreview {
   }
   private refreshCaps():void {
     this.caps.update(this.group.visible?this.activeSection:null,
-      this.meshes.map((mesh,i)=>({
+      this.meshes.flatMap((mesh,i)=>this.parts[i]?.visible?[{
         mesh,slot:CAP_SLOT.layers+i,color:cutColor(CAP_SLOT.layers+i),
-      })),this.host.theme())
+      }]:[]),this.host.theme())
   }
   private createDraftMesh():void {
     if(this.draftData){
@@ -324,6 +327,16 @@ export class MoldPreview {
     this.setGap(active?0:this.explodeGap)
     this.setDraftOptions(this.draftOptions)
   }
+  /** Show/hide each generated part without changing any printable mesh.
+   * Reapply the mask whenever the draft overlay or exploded mode changes.
+   * Source model, guide geometry and independent pedestal are unaffected.
+   */
+  setPartVisibility(visible:readonly boolean[]):void {
+    this.partVisibility=this.parts.map((_,i)=>visible[i]??true)
+    this.parts.forEach((part,i)=>{part.visible=this.partVisibility[i]})
+    this.refreshCaps()
+    this.host.invalidate()
+  }
   setGap(gap:number):void {
     if(!Number.isFinite(gap)||gap<0)return
     if(gap>0||this.viewMode==='exploded')this.explodeGap=gap
@@ -369,6 +382,7 @@ export class MoldPreview {
     }
     this.meshes=[]
     this.parts=[]
+    this.partVisibility=[]
     this.group.clear()
     if(this.priorScan!==null){
       this.scene.setScanVisible(this.priorScan)
