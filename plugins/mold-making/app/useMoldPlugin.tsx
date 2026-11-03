@@ -182,9 +182,15 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
               setError('Pick an underside face pointing downward. The pedestal cannot attach reliably to an upward or nearly vertical face.')
               return
             }
-            useMold.getState().setMountContact(point,normal)
-            useMold.getState().setMountEnabled(true)
-            setError(null)
+            const state=useMold.getState()
+            state.setMountContact(point,normal)
+            if(state.mode==='direct'&&state.clearance<=0){
+              state.setMountEnabled(false)
+              setError('Mount contact selected. Set a positive cavity clearance for a removable support before enabling the mount.')
+            }else{
+              state.setMountEnabled(true)
+              setError(null)
+            }
           })
         guides.current.set(settings.source,data.targetBounds,settings,{
           positions:data.sourcePositions,indices:data.sourceIndices,
