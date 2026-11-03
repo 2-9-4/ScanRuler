@@ -170,14 +170,27 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
     if(mode==='silicone-box')return ['siliconeThickness','wallThickness','baseThickness'].includes(key)
     return false
   })
+  const tabOrder=['setup','parting','casting','review'] as const
   return <aside className="panel" data-test="mold-making-panel">
-    <nav className="kindrow featurekeys" role="tablist" aria-label="Mold Making workflow">
+    <nav className="kindrow featurekeys" role="tablist" aria-label="Mold Making workflow"
+      style={{display:'flex',flexWrap:'wrap',gap:4}}
+      onKeyDown={e=>{
+        if(!['ArrowRight','ArrowLeft','Home','End'].includes(e.key))return
+        e.preventDefault()
+        const i=tabOrder.indexOf(tab)
+        const next=e.key==='Home'?0:e.key==='End'?tabOrder.length-1:
+          (i+(e.key==='ArrowRight'?1:-1)+tabOrder.length)%tabOrder.length
+        const target=tabOrder[next]
+        if(!target)return
+        setTab(target)
+        e.currentTarget.querySelector<HTMLButtonElement>(`#mold-tab-${target}`)?.focus()
+      }}>
       {([
         ['setup','Model & size'],['parting','Split & keys'],
         ['casting','Pour & mount'],['review','Inspect & export'],
       ] as const).map(([value,label])=><button type="button" key={value}
         id={`mold-tab-${value}`} data-test={`mold-tab-${value}`}
-        role="tab" aria-selected={tab===value}
+        role="tab" aria-selected={tab===value} tabIndex={tab===value?0:-1}
         aria-controls={`mold-tab-panel-${value}`}
         className={tab===value?'on':undefined}
         onClick={()=>setTab(value)}>{label}</button>)}
