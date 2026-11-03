@@ -294,6 +294,30 @@ describe('Mold Making assembly',()=>{
     expect(keyed.printable).toBe(true)
     intact(keyed.parts)
   })
+  it('cuts the keyed mounting socket through finished positive V-seam features',()=>{
+    const master=boxSolid({min:[-10,-8,0],max:[10,8,12]})
+    for(const mode of ['direct','silicone-box'] as const){
+      const settings={...DEFAULT_MOLD_SETTINGS,mode,parts:2 as const,
+        splitAxis:'x' as const,keys:true,keyStyle:'v-seam' as const,
+        clampTabCount:0,topBottomTabs:false,clearance:mode==='direct'?0.4:0,
+        mountEnabled:true,mountPoint:[0,0,0] as [number,number,number],
+        mountNormal:[0,0,-1] as [number,number,number],
+        mountHeight:12}
+      const ordinary=buildMold(wasm,master,{...settings,mountEnabled:false})
+      const built=buildMold(wasm,master,settings)
+      expect(ordinary.parts).toHaveLength(2)
+      expect(built.parts).toHaveLength(3)
+      expect(built.warnings.join(' ')).toMatch(/passes through male V-seam registration/)
+      expect(built.warnings.join(' ')).toMatch(/shallow outside hexagonal counterbore/)
+      expect(built.parts[2].name).toBe('Hex-keyed master mounting post')
+      expect(built.parts[2].volumeMm3).toBeGreaterThan(0)
+      // Both *finished* mold halves were bored, not just the block before
+      // a positive V tongue was added on one side.
+      expect(built.parts[0].volumeMm3).toBeLessThan(ordinary.parts[0].volumeMm3)
+      expect(built.parts[1].volumeMm3).toBeLessThan(ordinary.parts[1].volumeMm3)
+      intact(built.parts)
+    }
+  })
   it('engraves paired exterior interface labels without modifying the source',()=>{
     const settings={...DEFAULT_MOLD_SETTINGS,parts:3 as const,
       keys:false,clampTabCount:0,interfaceLabels:true}
