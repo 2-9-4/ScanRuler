@@ -26,9 +26,24 @@ export const MOUNT_HEX_SEAT_DEPTH_MM=1.2
 export const MOUNT_HEX_AXIAL_CLEARANCE_MM=0.15
 /** The actual post collar protrudes into the counterbore. */
 export const MOUNT_HEX_COLLAR_HEIGHT_MM=MOUNT_HEX_SEAT_DEPTH_MM-MOUNT_HEX_AXIAL_CLEARANCE_MM
+/** Clearance pocket around the actual glue-pad head inside the rigid tooling. */
+export const MOUNT_PAD_RADIAL_CLEARANCE_MM=0.35
+/** How far the head may descend before its underside seats on the pocket floor. */
+export const MOUNT_PAD_AXIAL_CLEARANCE_MM=0.15
+export interface MountHeadSeat {
+  /** Underside of the glue-pad shoulder, in source Z. */
+  baseZ:number
+  /** Bottom of its matching clearance recess in the mold. */
+  pocketFloorZ:number
+  /** Top of the recess, past all tilted upper pad vertices. */
+  pocketTopZ:number
+  pocketRadius:number
+}
 /** The source contact pad stays inside the mold; a hex-keyed stem crosses
  * the bottom wall and an exterior shoulder prevents insertion past its stop. */
-export function planMasterMount(bounds:Bounds,s:MoldSettings,outer?:Bounds):{rings:Ring[];floorZ:number}|null{
+export function planMasterMount(bounds:Bounds,s:MoldSettings,outer?:Bounds):{
+  rings:Ring[];floorZ:number;headSeat:MountHeadSeat
+}|null{
   if(!s.mountEnabled)return null
   const p=s.mountPoint
   if(!p)throw new Error('Pick a model base face before building the mounting fixture.')
@@ -42,6 +57,19 @@ export function planMasterMount(bounds:Bounds,s:MoldSettings,outer?:Bounds):{rin
   if(s.mountFootDiameter<s.mountStemDiameter||s.mountPadDiameter<s.mountStemDiameter)
     throw new Error('Mount pad and foot must be at least the stem diameter.')
   const footR=s.mountFootDiameter/2,stemR=s.mountStemDiameter/2,padR=s.mountPadDiameter/2
+  // The head's upper surface follows the picked face's tangent plane.
+  // Its lower surface is a HORIZONTAL annular shoulder: this provides
+  // a second, opposing Z stop when seated against a counterbore floor.
+  // Reserve ≥1.2 mm of head thickness even at the low side of a tilt.
+  const tilt=Math.hypot(n[0],n[1])
+  const tiltedTopCenterZ=p[2]+n[2]*0.2
+  const headBaseZ=Math.min(p[2]-2,tiltedTopCenterZ-padR*tilt-1.2)
+  const headSeat:MountHeadSeat={
+    baseZ:headBaseZ,
+    pocketFloorZ:headBaseZ-MOUNT_PAD_AXIAL_CLEARANCE_MM,
+    pocketTopZ:tiltedTopCenterZ+padR*tilt+0.35,
+    pocketRadius:padR+MOUNT_PAD_RADIAL_CLEARANCE_MM+0.2*tilt,
+  }
   // The exterior foot must remain inside the actual tooling footprint.
   // Rectangular bounds conservatively check a cylindrical box as well.
   const shell=outer??bounds
@@ -64,13 +92,16 @@ export function planMasterMount(bounds:Bounds,s:MoldSettings,outer?:Bounds):{rin
     {center:[p[0],p[1],floorZ+MOUNT_HEX_COLLAR_HEIGHT_MM],radius:footR,up:[0,0,1],hex:true},
     {center:[p[0],p[1],floorZ+MOUNT_HEX_COLLAR_HEIGHT_MM],radius:stemR,up:[0,0,1],hex:true},
     {center:[p[0],p[1],floorZ+MOUNT_HEX_SEAT_DEPTH_MM+0.4],radius:stemR,up:[0,0,1],hex:true},
-    {center:[p[0],p[1],p[2]+n[2]*3],radius:stemR,up:[0,0,1],hex:true},
-    {center:add(p,scale(n,2)),radius:padR,up:scale(n,-1)},
+    {center:[p[0],p[1],headBaseZ],radius:stemR,up:[0,0,1],hex:true},
+    // A horizontal annular ledge prevents the head (and glued master)
+    // dropping further into the tool. The exterior collar's TOP ledge
+    // is the opposing stop and prevents upward over-insertion.
+    {center:[p[0],p[1],headBaseZ],radius:padR,up:[0,0,1]},
     {center:add(p,scale(n,0.2)),radius:padR,up:scale(n,-1)},
   ]
-  if(rings[4].center[2] < rings[3].center[2]+0.3)
-    throw new Error('Mount contact is too close to the bucket floor for this pad size.')
-  return {rings,floorZ}
+  if(headBaseZ < rings[3].center[2]+0.3)
+    throw new Error('Master mount has insufficient clearance between the glue-pad underside and keyed collar; increase the mold base or choose a lower contact.')
+  return {rings,floorZ,headSeat}
 }
 /** Winding is consistent along every circular cross section. The top cap
  * conforms to the picked face's tangent plane (not the bounding-box plane).
