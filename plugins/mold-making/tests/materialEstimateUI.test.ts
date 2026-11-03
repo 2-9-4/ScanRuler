@@ -55,7 +55,7 @@ describe('Mold material estimate organization',()=>{
     expect(html).toContain('250.00 cm³')
     expect(html.match(/data-test="mold-silicone-support-volume"/g)).toHaveLength(1)
     expect(html.match(/data-test="mold-silicone-mix-volume"/g)).toHaveLength(1)
-    expect(html).toContain('Net silicone')
+    expect(html).toContain('estimated net silicone fill')
   })
   it('does not suggest a batch when an open master has unknown volume',()=>{
     const html=markup('silicone-box',0,{
