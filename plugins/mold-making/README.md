@@ -384,18 +384,25 @@ requiring the **Generate tooling** operation:
 
 Optional **Engrave matching interface numbers** (under Parting and
 registration) subtracts shallow seven-segment glyphs from the **outside**
-of each multipart tool, never the mating face or cavity. Each physical
-interface is numbered consistently on both adjacent parts:
+of each multipart tool, never the mating face or cavity. **Each digit is
+placed individually beside its own mating seam**, not grouped at the
+center of the part. Both sides of a shared seam use the same number.
+For circular tools the numbers sit just inside either edge of each
+outer arc; for rectangular tools they sit alongside the projected split
+line on the adjoining exterior wall:
 
 - 2 parts: `1` / `1`
 - 3 sectors: `1-3`, `1-2`, `2-3`
 - 4 quadrants: `1-4`, `1-2`, `3-4`, `2-3`
 
 The setting defaults off to protect existing production geometry;
-enable it for new numbered tooling. Curved bodies use a shallow
-tangent-plane cut and flat bodies use an exterior side face. If a
-part is too small or a Boolean fails, the original valid part is
-preserved with a warning rather than losing the tooling.
+enable it for new numbered tooling. Each actual mating interface is
+mapped to its own two adjacent parts (including a Z-first four-part
+split). Small labels on curved bodies are placed near the radial seam
+and recessed on the outer tangent; flat bodies use an exterior side
+face with the digits close to the split, not the cavity. If a part is
+too small or a Boolean fails, the original valid part is preserved
+with a warning rather than losing the tooling.
 
 ### Keyed through-base master support (rigid and silicone molds)
 
@@ -407,16 +414,29 @@ outside stop/foot diameters. In silicone-box mode, optional interior
 clearance below the model extends the bucket downward. In direct
 mode the backing and outside clearance grow as required.
 
-At generation time a **hexagonal through-bore** is subtracted from
-the bottom tooling **before splitting**. The exported
-**Hex-keyed master mounting post** can be inserted from outside:
-its stem is regular hexagonal with **0.25 mm nominal radial clearance**,
-its larger exterior hexagonal stop cannot pass through the hole,
-and a tilted upper glue pad faces the chosen model surface. The
-transition from shoulder to stem is entirely outside the mold wall.
-The post is a separate export, not joined to the source, and remains
-at its original position while mold sections are exploded. A
-translucent purple model shows the post before generation.
+The mount is meaningful for rigid negative tooling only with
+**positive cavity clearance**. At zero direct-mold clearance the UI
+disables the support and the geometry validator rejects it. Silicone
+containment boxes remain supported with their nonzero interior space.
+
+At generation time the **keyed socket is subtracted from the final
+mold parts AFTER their V-seam registration geometry is added**. A male
+V-ridge crossing the socket is therefore cut away instead of bridging
+the post hole. The mating shaft is hexagonal with 0.25 mm nominal
+radial clearance. A **1.2 mm deep, wider hexagonal exterior counterbore**
+receives its collar: the step provides a positive axial insertion stop
+with **0.15 mm nominal height clearance**, while the six-sided shaft
+prevents rotation. The contact pad remains aligned with the selected
+source face. The post is a separate export, not joined to the source,
+and remains stationary while mold sections are exploded. A translucent
+purple model shows it before generation.
+
+For faster positioning, use **Center mounting post on model** in the
+3D toolbar or mounting section. The app tries the XY bounding-box
+center from BELOW and looks for a downward-facing source triangle,
+then samples nearby underside positions when the center is a hole.
+Use manual face picking to override the result. This does not rotate
+or change the imported master.
 
 The user must glue the contact pad to the master, physically seat
 the outer shoulder, and **seal the through-wall penetration against
