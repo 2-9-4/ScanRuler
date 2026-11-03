@@ -47,6 +47,16 @@ describe('Mold part visibility and unified per-part UI',()=>{
     expect(html).toContain('preserves the complete assembly and original model')
     expect(html).toContain('Edit copy replaces the active scan')
     expect(html).toContain('viewport')
+    // Every row gets an icon with a label, never an unlabeled glyph.
+    expect(html.match(/class="icon small"/g)?.length).toBeGreaterThanOrEqual(15)
+    const shown=html.match(/data-test="mold-part-visible-0"[^>]*>(.*?)<\/button>/)?.[1]
+    const hidden=html.match(/data-test="mold-part-visible-1"[^>]*>(.*?)<\/button>/)?.[1]
+    expect(shown).toContain('Hide')
+    expect(hidden).toContain('Show')
+    expect(shown).toContain('aria-hidden="true"')
+    expect(hidden).toContain('aria-hidden="true"')
+    expect(shown?.match(/<svg.*?<\/svg>/)?.[0])
+      .not.toBe(hidden?.match(/<svg.*?<\/svg>/)?.[0])
   })
   it('disables geometry export when the generated tool is not printable, but keeps viewport controls',()=>{
     const html=render([false,true,true],false)
