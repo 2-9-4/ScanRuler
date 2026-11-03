@@ -50,10 +50,11 @@ const NUT_FIELDS:readonly {key:MoldDimension;label:string;help:string}[]=[
   {key:'tabNutAcrossFlats',label:'Captured hex across flats (mm)',help:'Width between parallel flats of the nut, including fit allowance.'},
   {key:'tabNutDepth',label:'Captured nut pocket depth (mm)',help:'Recess depth from the outside face of the negative mold half.'},
 ]
-export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBoolean,onEditPart,generated,targetBounds,previewMode,onPreviewModeChange,generating,error}:{
+export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,onExport,onBoolean,onEditPart,generated,targetBounds,previewMode,onPreviewModeChange,generating,error}:{
   onOpenScan:(file:File)=>void
   onOpenReference:(file:File)=>void
   onGenerate:()=>void
+  onCenterMount:()=>void
   onExport:(format:'stl'|'3mf',index?:number)=>void
   onBoolean:()=>void
   onEditPart:(index:number,workspace:'mesh'|'reverse')=>void
@@ -385,6 +386,8 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onExport,onBool
     </div>}
     <div className="group" data-test="mold-master-mount">
       <div className="sec-head">Master suspension / glue-on base</div>
+      <button type="button" data-test="mold-center-mount-panel"
+        disabled={!active} onClick={onCenterMount}>Center mounting post on model</button>
       <p className="hint">Select a downward-facing surface of the master in the 3D viewport. The separate printable post enters from outside through a hexagonal hole in the mold base; the upper pad aligns to the selected surface and the larger exterior hexagonal shoulder sets insertion depth and rotation.</p>
       {mountPoint?<p className="hint">
         Contact: ({mountPoint.map(v=>v.toFixed(2)).join(', ')}) mm;
