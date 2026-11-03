@@ -33,6 +33,7 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [previewMode,setPreviewMode] = useState<MoldPreviewMode>('exploded')
+  const [visibleParts,setVisibleParts]=useState<boolean[]>([])
   // View-only controls; changing these never invalidates worker results.
   const [draftDisplay,setDraftDisplay]=useState<DraftDisplayOptions>({...DEFAULT_DRAFT_DISPLAY})
   const [draftHover,setDraftHover]=useState<DraftHover|null>(null)
@@ -56,6 +57,7 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
     }
     generation.current++
     setGenerated(null)
+    setVisibleParts([])
     generatedVersion.current = null
     setError(null)
     preview.current?.clear()
@@ -260,6 +262,10 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
       }
       setPreviewMode('exploded')
       preview.current?.set(made, settings.source, settings.previewGap,'exploded',settings.parts,settings.splitAxis)
+      // A regenerated tool resets view-only isolation, not the master.
+      const allVisible=made.parts.map(()=>true)
+      setVisibleParts(allVisible)
+      preview.current?.setPartVisibility(allVisible)
       const nextDisplay={...DEFAULT_DRAFT_DISPLAY,show:!!made.draftOverlay,
         thresholdDeg:settings.minimumDraftDeg}
       setDraftDisplay(nextDisplay)
@@ -292,6 +298,12 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
   const changePreviewMode=(next:MoldPreviewMode)=>{
     setPreviewMode(next)
     preview.current?.setMode(next)
+  }
+
+  const changePartVisibility=(next:boolean[])=>{
+    if(!generated||next.length!==generated.parts.length)return
+    setVisibleParts(next)
+    preview.current?.setPartVisibility(next)
   }
 
   const useForBoolean=()=>{
@@ -472,6 +484,8 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
         onExport={exportPart}
         onBoolean={useForBoolean}
         onEditPart={(index,workspace)=>void editPart(index,workspace)}
+        visibleParts={visibleParts}
+        onPartVisibilityChange={changePartVisibility}
         generated={generated}
         previewMode={previewMode}
         onPreviewModeChange={changePreviewMode}
