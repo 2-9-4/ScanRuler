@@ -303,7 +303,18 @@ describe('Mold Making assembly',()=>{
         mountEnabled:true,mountPoint:[0,0,0] as [number,number,number],
         mountNormal:[0,0,-1] as [number,number,number],
         mountHeight:12}
-      const ordinary=buildMold(wasm,master,{...settings,mountEnabled:false})
+      const plain={...settings,mountEnabled:false}
+      // Direct support automatically increases backing thickness and
+      // exterior land. Normalize the blank to the SAME outer dimensions
+      // before comparing removal by the keyed cutter.
+      const material=planMold(master,settings).material
+      const blankMaterial=planMold(master,plain).material
+      const matched=mode==='direct'?{
+        ...plain,
+        sideMargin:plain.sideMargin+material.side-blankMaterial.side,
+        baseThickness:plain.baseThickness+material.base-blankMaterial.base,
+      }:plain
+      const ordinary=buildMold(wasm,master,matched)
       const built=buildMold(wasm,master,settings)
       expect(ordinary.parts).toHaveLength(2)
       expect(built.parts).toHaveLength(3)
@@ -311,10 +322,13 @@ describe('Mold Making assembly',()=>{
       expect(built.warnings.join(' ')).toMatch(/shallow outside hexagonal counterbore/)
       expect(built.parts[2].name).toBe('Hex-keyed master mounting post')
       expect(built.parts[2].volumeMm3).toBeGreaterThan(0)
-      // Both *finished* mold halves were bored, not just the block before
-      // a positive V tongue was added on one side.
-      expect(built.parts[0].volumeMm3).toBeLessThan(ordinary.parts[0].volumeMm3)
-      expect(built.parts[1].volumeMm3).toBeLessThan(ordinary.parts[1].volumeMm3)
+      if(mode==='direct'){
+        expect(planMold(master,matched).outer).toEqual(planMold(master,settings).outer)
+        // Both *finished* mold halves were bored, not just the block
+        // before a positive V tongue was added on one side.
+        expect(built.parts[0].volumeMm3).toBeLessThan(ordinary.parts[0].volumeMm3)
+        expect(built.parts[1].volumeMm3).toBeLessThan(ordinary.parts[1].volumeMm3)
+      }
       intact(built.parts)
     }
   })
