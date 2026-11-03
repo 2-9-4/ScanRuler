@@ -10,7 +10,9 @@ import { createSphericalDistanceField, sphericalOffset, type SphericalDistanceFi
 import { parseMoldSettings, type MoldSettings, type SplitAxis } from './settings'
 import {siliconeBoxCapacityMm3} from './materialEstimate'
 import {planVerticalChannels} from './pourChannels'
-import {masterMountMesh,MOUNT_HEX_RADIAL_CLEARANCE_MM,planMasterMount} from './masterMount'
+import {
+  masterMountMesh,MOUNT_HEX_RADIAL_CLEARANCE_MM,MOUNT_HEX_SEAT_DEPTH_MM,planMasterMount,
+} from './masterMount'
 import {engraveInterfaceNumbers} from './interfaceLabels'
 import {analyzeMoldDraft,type DraftAnalysis} from './draftAnalysis'
 import {buildMoldDraftOverlay,type DraftOverlayData} from './draftOverlay'
@@ -1214,27 +1216,6 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
         warnings.push(`Cut ${channels.filter(c=>c.kind==='pour').length} vertical pour channel(s) and ${channels.filter(c=>c.kind==='vent').length} air vent(s), each connected to the casting void. Positions use normalized target XY coordinates; verify fill orientation and air-trap release. No automatic horizontal gates or risers yet.`)
       }
     }
-    if(s.mountEnabled){
-      // A keyed post enters from BELOW through real tooling, rather than
-      // appearing to be glued to an internal floor with no access hole.
-      const mountPlan=planMasterMount(extentOf(targetMesh.positions),s,plan.outer)
-      if(!mountPlan||!s.mountPoint)throw new Error('Select the contact face for the external mount.')
-      const stemR=s.mountStemDiameter/2
-      const bottom=plan.outer.min[2]-0.5
-      const top=s.mode==='silicone-box'
-        ?plan.innerBox!.min[2]+0.5
-        :s.mountPoint[2]+Math.max(0.5,s.clearance+0.25)
-      if(top<=bottom)throw new Error('Master mount bore has no depth through the tooling base.')
-      const keyedBore=keep(wasm.Manifold.cylinder(
-        top-bottom,stemR+MOUNT_HEX_RADIAL_CLEARANCE_MM,
-        stemR+MOUNT_HEX_RADIAL_CLEARANCE_MM,6,true,
-      ).translate([s.mountPoint[0],s.mountPoint[1],bottom]))
-      const before=solid.volume()
-      solid=keep(solid.subtract(keyedBore))
-      if(solid.isEmpty()||before-solid.volume()<1e-4)
-        throw new Error('The hexagonal master mounting bore missed the mold base. Pick another underside face.')
-      warnings.push('External glue-on master support uses a keyed hexagonal through-bore and a larger outside stop. Inspect the selected underside, insertion direction, fit and liquid seal before casting.')
-    }
     solid=chamferOuterCorners(solid,plan,s,keep)
     if(solid.isEmpty())throw new Error('The mold is empty. Increase the wall or margins.')
     let pieces:Manifold[]=[solid]
@@ -1279,6 +1260,43 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
           `${s.keyStyle==='tapered-key'?'Tapered':'Straight'} printed registration pins and matching clearance sockets.`)
       }
       warnings.push('Splits do not guarantee demoldability: inspect the target for trapped undercuts and add a sprue or vent before casting.')
+    }
+    if(s.mountEnabled){
+      // Registration may UNION positive V-tongues onto the already-split
+      // parts. Cut the keyed socket LAST, through every finished part,
+      // so even male V-ridges cannot bridge the shaft clearance.
+      if(!s.mountPoint)throw new Error('Pick a base face for the master post.')
+      const planMount=planMasterMount(extentOf(targetMesh.positions),s,plan.outer)
+      if(!planMount)throw new Error('The keyed master post has invalid dimensions.')
+      const p=s.mountPoint
+      const floorZ=plan.outer.min[2],stemR=s.mountStemDiameter/2
+      const margin=MOUNT_HEX_RADIAL_CLEARANCE_MM
+      // The small hex shaft reaches the model-side cavity and any
+      // protruding V-ridge. The larger blind hex recess accepts the
+      // collar only 1.2mm into the EXTERIOR base.
+      const top=s.mode==='silicone-box'
+        ?plan.innerBox!.min[2]+Math.max(1.2,s.vSeamHeight+s.vSeamClearance+0.8)
+        :p[2]+Math.max(2,s.clearance+s.vSeamHeight+s.vSeamClearance+1)
+      if(top<=floorZ+MOUNT_HEX_SEAT_DEPTH_MM+0.3)
+        throw new Error('Keyed mounting shaft is too short to penetrate the base and seat collar.')
+      const shaft=keep(wasm.Manifold.cylinder(top-(floorZ-0.3),
+        stemR+margin,stemR+margin,6,true).translate([p[0],p[1],floorZ-0.3]))
+      const seat=keep(wasm.Manifold.cylinder(MOUNT_HEX_SEAT_DEPTH_MM+0.4,
+        s.mountFootDiameter/2+margin,s.mountFootDiameter/2+margin,6,true)
+        .translate([p[0],p[1],floorZ-0.4]))
+      const cutter=keep(shaft.add(seat))
+      let totalRemoved=0
+      pieces=pieces.map((piece)=>{
+        const before=piece.volume()
+        const after=keep(piece.subtract(cutter))
+        if(after.isEmpty()||after.status()!=='NoError')
+          throw new Error('Keyed master mounting bore invalidated a tooling part.')
+        totalRemoved+=Math.max(0,before-after.volume())
+        return after
+      })
+      if(totalRemoved<0.001)
+        throw new Error('The master mounting bore missed all tooling parts.')
+      warnings.push('The master post passes through male V-seam registration wherever it intersects the socket. A shallow outside hexagonal counterbore seats the post collar to a repeatable axial height. Verify the 0.25 mm radial and 0.15 mm axial fit clearances.')
     }
     if(s.interfaceLabels&&pieces.length>1)
       pieces=engraveInterfaceNumbers(wasm,pieces,plan,s,keep,warnings)
