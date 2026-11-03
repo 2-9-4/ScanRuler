@@ -77,6 +77,10 @@ describe('Pre-generation plane guides and glue-on master support',()=>{
     expect(parseMoldSettings({...mounted,mode:'direct',clearance:0.4}).mountEnabled).toBe(true)
     expect(()=>parseMoldSettings({...mounted,mountNormal:[0,0,1]})).toThrow(/downward/)
     expect(()=>parseMoldSettings({...mounted,mountStemDiameter:50})).toThrow(/foot diameter/)
+    expect(()=>parseMoldSettings({...mounted,mountFootDiameter:mounted.mountStemDiameter}))
+      .toThrow(/foot diameter|shoulders/)
+    expect(()=>parseMoldSettings({...mounted,mountPadDiameter:mounted.mountStemDiameter}))
+      .toThrow(/shoulders/)
   })
   it('makes a watertight, oriented, printable multi-section support without modifying the target',()=>{
     const untouched=cube.positions.slice()
