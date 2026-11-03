@@ -110,9 +110,13 @@ export function siliconeMixVolume(
   const gross=estimates.grossSiliconeCapacityMm3
   const support=usable(estimates.supportDisplacementMm3)
     ?estimates.supportDisplacementMm3:0
-  if(usable(gross)&&usable(part)&&usable(estimates.netSiliconeMm3)){
+  if(usable(gross)&&usable(part)){
+    // Derive from the actual volumes in the same way as the direct
+    // clearance gap; a precomputed net field must never change that
+    // definition. Any in-container fixture also displaces silicone.
+    if(gross+1e-3<part+support)return null
     return {
-      volumeMm3:estimates.netSiliconeMm3,
+      volumeMm3:Math.max(0,gross-part-support),
       basis:'net-silicone',
       toolInternalVolumeMm3:gross,
       partVolumeMm3:part,
