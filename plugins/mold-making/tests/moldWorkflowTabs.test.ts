@@ -25,6 +25,15 @@ describe('Mold Making subtabs',()=>{
     expect(html.match(/tabindex="0"/gi)).toHaveLength(1)
     expect(html).toContain('Model &amp; size')
     expect(html).toContain('Inspect &amp; export')
+    // Native icon SVGs are decorative: the visible text, tab roles and
+    // keyboard focus rules remain the accessible controls.
+    expect(html.match(/class="icon"/g)).toHaveLength(4)
+    expect(html.match(/aria-hidden="true"/g)).toHaveLength(4)
+    const tabs=html.match(/<button[^>]+role="tab"[^>]*>.*?<\/button>/g)??[]
+    expect(tabs).toHaveLength(4)
+    const artwork=tabs.map(tab=>tab.match(/<svg[^>]*>(.*?)<\/svg>/)?.[1])
+    expect(artwork.every(Boolean)).toBe(true)
+    expect(new Set(artwork).size).toBe(4)
   })
   it('supports arrow and boundary keys without losing the active tab',()=>{
     expect(nextMoldWorkflowTab('setup','ArrowLeft')).toBe('review')
