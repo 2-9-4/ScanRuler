@@ -59,39 +59,96 @@ describe('Mold material calculator (MOLD-014)',()=>{
     expect(()=>siliconeBatchByWeight(1000,1.1,1,1,101)).toThrow(/0–100%/)
     expect(()=>siliconeBatchByWeight(1000,1.1,Infinity,1,10)).toThrow(/weight/)
   })
-  it('shows mixing quantities for positive-clearance rigid cavity but not zero-clearance tooling',()=>{
+  it('direct mode measures silicone in the clearance gap, NOT the whole expanded cavity',()=>{
     const estimates={
       nominalCastingCavityMm3:123_000,
+      masterDisplacementMm3:100_000,
+      supportDisplacementMm3:0,
       netSiliconeMm3:null,
       grossSiliconeCapacityMm3:null,
     }
     expect(siliconeMixVolume('direct',0,estimates)).toBeNull()
     expect(siliconeMixVolume('direct',-0.1,estimates)).toBeNull()
     expect(siliconeMixVolume('direct',0.25,estimates))
-      .toEqual({basis:'direct-cavity',volumeMm3:123_000})
+      .toEqual({
+        basis:'direct-clearance-gap',
+        volumeMm3:23_000,
+        toolInternalVolumeMm3:123_000,
+        partVolumeMm3:100_000,
+        supportDisplacementMm3:0,
+      })
     const selection=siliconeMixVolume('direct',0.25,estimates)!
     const batch=siliconeBatchByWeight(selection.volumeMm3,1.15,10,1,8)
-    expect(batch.requiredGrams).toBeCloseTo(141.45)
+    expect(batch.requiredGrams).toBeCloseTo(26.45)
     expect(batch.partAGrams+batch.partBGrams).toBeCloseTo(batch.batchGrams)
-    expect(siliconeMixVolume('direct',0.25,{...estimates,nominalCastingCavityMm3:null}))
-      .toBeNull()
+    expect(siliconeMixVolume('direct',0.25,{
+      ...estimates,nominalCastingCavityMm3:null,
+    })).toBeNull()
+    expect(siliconeMixVolume('direct',0.25,{
+      ...estimates,masterDisplacementMm3:null,
+    })).toBeNull()
+    expect(siliconeMixVolume('direct',0.25,{
+      ...estimates,nominalCastingCavityMm3:99_000,
+    })).toBeNull()
   })
-  it('uses net silicone volume first and explicitly falls back to gross capacity',()=>{
+  it('silicone-box mode subtracts BOTH master and in-box support displacement',()=>{
     const estimates={
       nominalCastingCavityMm3:500_000,
+      masterDisplacementMm3:40_000,
+      supportDisplacementMm3:10_000,
       netSiliconeMm3:250_000,
       grossSiliconeCapacityMm3:300_000,
     }
     expect(siliconeMixVolume('silicone-box',0,estimates))
-      .toEqual({basis:'net-silicone',volumeMm3:250_000})
-    expect(siliconeMixVolume('silicone-box',0,{...estimates,netSiliconeMm3:null}))
-      .toEqual({basis:'gross-silicone',volumeMm3:300_000})
+      .toEqual({
+        basis:'net-silicone',
+        volumeMm3:250_000,
+        toolInternalVolumeMm3:300_000,
+        partVolumeMm3:40_000,
+        supportDisplacementMm3:10_000,
+      })
+    // Recompute from actual internal and displaced volumes; cached
+    // net-silicone quantity must not override the physical subtraction.
     expect(siliconeMixVolume('silicone-box',0,{
-      ...estimates,netSiliconeMm3:null,grossSiliconeCapacityMm3:null,
+      ...estimates,netSiliconeMm3:null,
+    })?.volumeMm3).toBe(250_000)
+    expect(siliconeMixVolume('silicone-box',0,{
+      ...estimates,netSiliconeMm3:42,
+    })?.volumeMm3).toBe(250_000)
+    expect(siliconeMixVolume('silicone-box',0,{
+      ...estimates,masterDisplacementMm3:null,
+    })).toEqual({
+      basis:'gross-silicone',
+      volumeMm3:300_000,
+      toolInternalVolumeMm3:300_000,
+      partVolumeMm3:null,
+      supportDisplacementMm3:10_000,
+    })
+    expect(siliconeMixVolume('silicone-box',0,{
+      ...estimates,masterDisplacementMm3:null,grossSiliconeCapacityMm3:null,
     })).toBeNull()
     expect(siliconeMixVolume('silicone-box',0,{
-      ...estimates,netSiliconeMm3:Number.NaN,
-    })).toEqual({basis:'gross-silicone',volumeMm3:300_000})
+      ...estimates,masterDisplacementMm3:Number.NaN,
+    })?.basis).toBe('gross-silicone')
+    expect(siliconeMixVolume('silicone-box',0,{
+      ...estimates,masterDisplacementMm3:310_000,
+    })).toBeNull()
+  })
+  it('uses actual expanded cutter minus the original master for a generated rigid clearance mold',async()=>{
+    const wasm=await Module();wasm.setup()
+    const settings={...DEFAULT_MOLD_SETTINGS,keys:false,
+      clearance:0.5,offsetQuality:'fast' as const}
+    const result=buildMold(wasm,target,settings)
+    const estimates=result.materialEstimate
+    const mix=siliconeMixVolume(settings.mode,settings.clearance,estimates)
+    expect(estimates.masterDisplacementMm3).toBeCloseTo(800,3)
+    expect(estimates.nominalCastingCavityMm3).toBeGreaterThan(800)
+    expect(mix?.basis).toBe('direct-clearance-gap')
+    expect(mix!.toolInternalVolumeMm3).toBeCloseTo(estimates.nominalCastingCavityMm3!,3)
+    expect(mix!.partVolumeMm3).toBeCloseTo(800,3)
+    expect(mix!.volumeMm3).toBeCloseTo(
+      estimates.nominalCastingCavityMm3!-estimates.masterDisplacementMm3!,3)
+    expect(mix!.volumeMm3).toBeLessThan(mix!.toolInternalVolumeMm3)
   })
   it('subtracts a valid master but not a source with open mesh topology',async()=>{
     const wasm=await Module();wasm.setup()
