@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {describe,expect,it} from 'vitest'
 import {boxSolid,planMold,buildMold} from '../core/geometry'
-import {siliconeBoxCapacityMm3,volumeMassCost,siliconeBatchByWeight} from '../core/materialEstimate'
+import {
+  siliconeBoxCapacityMm3,volumeMassCost,siliconeBatchByWeight,siliconeMixVolume,
+} from '../core/materialEstimate'
 import {DEFAULT_MOLD_SETTINGS} from '../core/settings'
 import Module from 'manifold-3d'
 
@@ -56,6 +58,40 @@ describe('Mold material calculator (MOLD-014)',()=>{
     expect(()=>siliconeBatchByWeight(1000,1.1,1,1,-1)).toThrow(/0–100%/)
     expect(()=>siliconeBatchByWeight(1000,1.1,1,1,101)).toThrow(/0–100%/)
     expect(()=>siliconeBatchByWeight(1000,1.1,Infinity,1,10)).toThrow(/weight/)
+  })
+  it('shows mixing quantities for positive-clearance rigid cavity but not zero-clearance tooling',()=>{
+    const estimates={
+      nominalCastingCavityMm3:123_000,
+      netSiliconeMm3:null,
+      grossSiliconeCapacityMm3:null,
+    }
+    expect(siliconeMixVolume('direct',0,estimates)).toBeNull()
+    expect(siliconeMixVolume('direct',-0.1,estimates)).toBeNull()
+    expect(siliconeMixVolume('direct',0.25,estimates))
+      .toEqual({basis:'direct-cavity',volumeMm3:123_000})
+    const selection=siliconeMixVolume('direct',0.25,estimates)!
+    const batch=siliconeBatchByWeight(selection.volumeMm3,1.15,10,1,8)
+    expect(batch.requiredGrams).toBeCloseTo(141.45)
+    expect(batch.partAGrams+batch.partBGrams).toBeCloseTo(batch.batchGrams)
+    expect(siliconeMixVolume('direct',0.25,{...estimates,nominalCastingCavityMm3:null}))
+      .toBeNull()
+  })
+  it('uses net silicone volume first and explicitly falls back to gross capacity',()=>{
+    const estimates={
+      nominalCastingCavityMm3:500_000,
+      netSiliconeMm3:250_000,
+      grossSiliconeCapacityMm3:300_000,
+    }
+    expect(siliconeMixVolume('silicone-box',0,estimates))
+      .toEqual({basis:'net-silicone',volumeMm3:250_000})
+    expect(siliconeMixVolume('silicone-box',0,{...estimates,netSiliconeMm3:null}))
+      .toEqual({basis:'gross-silicone',volumeMm3:300_000})
+    expect(siliconeMixVolume('silicone-box',0,{
+      ...estimates,netSiliconeMm3:null,grossSiliconeCapacityMm3:null,
+    })).toBeNull()
+    expect(siliconeMixVolume('silicone-box',0,{
+      ...estimates,netSiliconeMm3:Number.NaN,
+    })).toEqual({basis:'gross-silicone',volumeMm3:300_000})
   })
   it('subtracts a valid master but not a source with open mesh topology',async()=>{
     const wasm=await Module();wasm.setup()
