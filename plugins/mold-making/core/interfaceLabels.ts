@@ -30,7 +30,7 @@ export function labelsForParts(parts:number):string[]{
   return result.map(ns=>ns.sort((a,b)=>a-b).join('-'))
 }
 const center=(a:number,b:number)=>(a+b)/2
-const axisIndex=(axis:Axis)=>axis==='x'?0:axis==='y'?1:2
+const axisIndex=(axis:Axis):0|1|2=>axis==='x'?0:axis==='y'?1:2
 const clamp=(v:number,a:number,b:number)=>Math.min(b,Math.max(a,v))
 const digitHeight=4
 export interface SeamNumberPlacement {
@@ -67,7 +67,9 @@ export function planSeamNumberPlacements(
       s.parts===2?axisPrimary:mark.number%2===1?axisSecondary:axisPrimary
     const seamAt=seamAxis==='radial'?((mark.number%3)*2*Math.PI/3):
       seamAxis===axisPrimary?splitPrimary:splitSecondary
-    const k=seamAxis==='radial'?-1:axisIndex(seamAxis)
+    // Radial seams do not have a Cartesian axis; the index is used only
+    // in X/Y/Z seam branches. Keep a valid tuple index for TypeScript.
+    const k:0|1|2=seamAxis==='radial'?0:axisIndex(seamAxis)
     for(const partIndex of mark.pair){
       const bounds=partBounds[partIndex]
       if(!bounds)continue
