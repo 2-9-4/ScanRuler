@@ -89,8 +89,9 @@ export function planSeamNumberPlacements(
           theta=seamAt+(partIndex===mark.number%3?offset:-offset)
         }else if(seamAxis==='z'){
           theta=Math.atan2(mid[1]-cy,mid[0]-cx)
-          if(Math.hypot(mid[0]-cx,mid[1]-cy)<1e-5)
-            theta=partIndex===0?Math.PI:0
+          // Two horizontal halves share the same circumferential seam;
+          // use the same visible side for their matching labels.
+          if(Math.hypot(mid[0]-cx,mid[1]-cy)<1e-5)theta=0
         }else{
           // Intersect the actual XY parting line with the outer circle,
           // then move one glyph width into the appropriate adjacent part.
