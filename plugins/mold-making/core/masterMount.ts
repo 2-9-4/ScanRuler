@@ -43,6 +43,8 @@ export interface MountHeadSeat {
  * the bottom wall and an exterior shoulder prevents insertion past its stop. */
 export function planMasterMount(bounds:Bounds,s:MoldSettings,outer?:Bounds):{
   rings:Ring[];floorZ:number;headSeat:MountHeadSeat
+  /** Inside-wall stop for hollow silicone boxes, absent in direct tooling. */
+  innerStop:{bottomZ:number;radius:number}|null
 }|null{
   if(!s.mountEnabled)return null
   const p=s.mountPoint
@@ -57,6 +59,7 @@ export function planMasterMount(bounds:Bounds,s:MoldSettings,outer?:Bounds):{
   if(s.mountFootDiameter<s.mountStemDiameter||s.mountPadDiameter<s.mountStemDiameter)
     throw new Error('Mount pad and foot must be at least the stem diameter.')
   const footR=s.mountFootDiameter/2,stemR=s.mountStemDiameter/2,padR=s.mountPadDiameter/2
+  const innerStopR=stemR+Math.max(0.85,(Math.min(footR,padR)-stemR)*0.7)
   // The head's upper surface follows the picked face's tangent plane.
   // Its lower surface is a HORIZONTAL annular shoulder: this provides
   // a second, opposing Z stop when seated against a counterbore floor.
@@ -75,33 +78,54 @@ export function planMasterMount(bounds:Bounds,s:MoldSettings,outer?:Bounds):{
   const shell=outer??bounds
   const available=Math.min(p[0]-shell.min[0],shell.max[0]-p[0],
     p[1]-shell.min[1],shell.max[1]-p[1])
-  if(Math.max(footR,padR)+0.5>available)
+  if(Math.max(footR,padR,innerStopR)+0.5>available)
     throw new Error('Master mounting foot or pad would intersect the tooling side wall. Move the contact point or reduce its diameter.')
   if(s.parts===3||(s.mode==='silicone-box'&&s.boxShape==='cylindrical')){
     const cx=(shell.min[0]+shell.max[0])/2
     const cy=(shell.min[1]+shell.max[1])/2
     const usable=(shell.max[0]-shell.min[0])/2-Math.hypot(p[0]-cx,p[1]-cy)
-    if(Math.max(footR,padR)+0.5>usable)
+    if(Math.max(footR,padR,innerStopR)+0.5>usable)
       throw new Error('Master mounting foot or pad extends beyond the circular tooling wall. Choose a more central contact point.')
   }
   const rings:Ring[]=[
-    // Hexagonal stop collar enters a short matching recess from BELOW.
-    // At the far end its annular step seats against the counterbore's
-    // ceiling, setting Z positively (within the stated clearance).
+    // Exterior hexagonal collar seats against the INSIDE ceiling of its
+    // shallow bottom counterbore, limiting upward insertion.
     {center:[p[0],p[1],floorZ-3],radius:footR,up:[0,0,1],hex:true},
     {center:[p[0],p[1],floorZ+MOUNT_HEX_COLLAR_HEIGHT_MM],radius:footR,up:[0,0,1],hex:true},
     {center:[p[0],p[1],floorZ+MOUNT_HEX_COLLAR_HEIGHT_MM],radius:stemR,up:[0,0,1],hex:true},
     {center:[p[0],p[1],floorZ+MOUNT_HEX_SEAT_DEPTH_MM+0.4],radius:stemR,up:[0,0,1],hex:true},
+  ]
+  let innerStop:{bottomZ:number;radius:number}|null=null
+  if(s.mode==='silicone-box'){
+    // The master floats above the silicone-bucket floor. Its glue pad
+    // cannot seat against that floor. A SECOND flange just inside the
+    // bucket bears on the interior floor and prevents the glued master
+    // from falling DOWN through the post hole. The exterior collar
+    // independently prevents it from moving UP. Both are part of the
+    // single watertight printable post.
+    const bottomZ=bounds.min[2]-s.mountHeight+MOUNT_PAD_AXIAL_CLEARANCE_MM
+    if(bottomZ<=rings[rings.length-1].center[2]+0.25)
+      throw new Error('Silicone master mount needs a thicker bucket base for its opposed axial stops.')
+    innerStop={bottomZ,radius:innerStopR}
+    rings.push(
+      {center:[p[0],p[1],bottomZ],radius:stemR,up:[0,0,1],hex:true},
+      {center:[p[0],p[1],bottomZ],radius:innerStopR,up:[0,0,1]},
+      {center:[p[0],p[1],bottomZ+1.2],radius:innerStopR,up:[0,0,1]},
+      {center:[p[0],p[1],bottomZ+1.2],radius:stemR,up:[0,0,1],hex:true},
+    )
+  }
+  const lastShaftZ=rings[rings.length-1].center[2]
+  if(headBaseZ<=lastShaftZ+0.3)
+    throw new Error('Master mount has insufficient room for its glue pad and opposed axial stops; increase the mold base or underside standoff.')
+  rings.push(
     {center:[p[0],p[1],headBaseZ],radius:stemR,up:[0,0,1],hex:true},
-    // A horizontal annular ledge prevents the head (and glued master)
-    // dropping further into the tool. The exterior collar's TOP ledge
-    // is the opposing stop and prevents upward over-insertion.
+    // In direct tooling this shoulder seats in the corresponding head
+    // pocket, constraining downward motion. In a silicone bucket the
+    // separate inner floor flange above already supplies that stop.
     {center:[p[0],p[1],headBaseZ],radius:padR,up:[0,0,1]},
     {center:add(p,scale(n,0.2)),radius:padR,up:scale(n,-1)},
-  ]
-  if(headBaseZ < rings[3].center[2]+0.3)
-    throw new Error('Master mount has insufficient clearance between the glue-pad underside and keyed collar; increase the mold base or choose a lower contact.')
-  return {rings,floorZ,headSeat}
+  )
+  return {rings,floorZ,headSeat,innerStop}
 }
 /** Winding is consistent along every circular cross section. The top cap
  * conforms to the picked face's tangent plane (not the bounding-box plane).
