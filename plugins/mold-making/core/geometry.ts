@@ -1313,12 +1313,17 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
         const after=keep(piece.subtract(cutter))
         if(after.isEmpty()||after.status()!=='NoError')
           throw new Error('Keyed master mounting bore invalidated a tooling part.')
+        // Boolean post-fit verification: never export a male V-tongue
+        // fragment that still occupies the post's nominal solid volume.
+        const obstruction=keep(after.intersect(keyedPostSolid!))
+        if(!obstruction.isEmpty()&&obstruction.volume()>0.01)
+          throw new Error('A residual mold/V-seam fragment still intersects the keyed mounting post. Increase registration relief or move the post along the parting seam.')
         totalRemoved+=Math.max(0,before-after.volume())
         return after
       })
       if(totalRemoved<0.001)
         throw new Error('The master mounting bore missed all tooling parts.')
-      warnings.push('The keyed mounting passage is cut after V-seam registration, including a separate wider head recess. Opposing head and exterior hex collar shoulders bound vertical travel (0.15 mm nominal clearance at each seat); the hex shaft prevents rotation. Assemble the split tooling around the already-glued pad, and seal the base penetration.')
+      warnings.push('The keyed mounting passage is cut after V-seam registration, including a separate wider head recess and a verified nominal no-overlap with the printed post. Opposing exterior and interior shoulders limit vertical travel (0.15 mm nominal clearance at each seat); the hex shaft prevents rotation. Assemble the split tooling around the already-glued pad; verify the assembly approach path and seal the base penetration.')
     }
     if(s.interfaceLabels&&pieces.length>1)
       pieces=engraveInterfaceNumbers(wasm,pieces,plan,s,extent,keep,warnings)
