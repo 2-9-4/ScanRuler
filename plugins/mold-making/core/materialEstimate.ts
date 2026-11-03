@@ -34,3 +34,33 @@ export function volumeMassCost(
   const cm3=volumeMm3/1000,grams=cm3*densityGcm3
   return {cm3,grams,cost:grams*costPerKg/1000}
 }
+
+/** Plan a two-component silicone batch using the product's MIX RATIO BY WEIGHT.
+ * Density is the mixed-product density, never Part A or Part B density.
+ * Overage applies to the total mixed mass and preserves the A:B ratio.
+ * Does not modify the geometry or pretend to account for trapped air.
+ */
+export function siliconeBatchByWeight(
+  siliconeVolumeMm3:number,mixedDensityGcm3:number,
+  partARatio:number,partBRatio:number,overagePercent:number,
+):{
+  requiredGrams:number;batchGrams:number;partAGrams:number
+  partBGrams:number;overageGrams:number
+}{
+  if(![siliconeVolumeMm3,mixedDensityGcm3,partARatio,partBRatio,overagePercent]
+      .every(Number.isFinite)||
+      siliconeVolumeMm3<0||mixedDensityGcm3<=0||
+      partARatio<=0||partBRatio<=0||overagePercent<0||overagePercent>100)
+    throw new Error('Silicone batch requires nonnegative volume, positive mixed density and A:B weight ratios, and 0–100% overage.')
+  const totalRatio=partARatio+partBRatio
+  if(!Number.isFinite(totalRatio)||totalRatio<=0)
+    throw new Error('Silicone A:B weight ratio is too large.')
+  const requiredGrams=siliconeVolumeMm3/1000*mixedDensityGcm3
+  const batchGrams=requiredGrams*(1+overagePercent/100)
+  if(!Number.isFinite(batchGrams))
+    throw new Error('Silicone batch mass is too large.')
+  const partAGrams=batchGrams*(partARatio/totalRatio)
+  const partBGrams=batchGrams-partAGrams
+  return {requiredGrams,batchGrams,partAGrams,partBGrams,
+    overageGrams:batchGrams-requiredGrams}
+}
