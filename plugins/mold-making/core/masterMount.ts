@@ -127,6 +127,39 @@ export function planMasterMount(bounds:Bounds,s:MoldSettings,outer?:Bounds):{
   )
   return {rings,floorZ,headSeat,innerStop}
 }
+/** Deliberate registration-free corridor around a captured mounting post.
+ * Mask the positive V tongue AND its female groove during construction,
+ * before they are Booleaned into the mold. The full final post socket is
+ * still drilled separately. This corridor is wider than the post so an
+ * outboard V ridge cannot form a lip across the assembly approach.
+ */
+export interface VSeamMountKeepout {
+  xy:[number,number]
+  radius:number
+  bottomZ:number
+  topZ:number
+}
+export function planVSeamMountKeepout(
+  s:MoldSettings,outer:Bounds,
+):VSeamMountKeepout|null{
+  if(!s.mountEnabled||!s.keys||s.keyStyle!=='v-seam'||!s.mountPoint)
+    return null
+  const largestPostR=Math.max(s.mountStemDiameter,s.mountFootDiameter,
+    s.mountPadDiameter)/2
+  const seamProjection=Math.max(s.vSeamWidth/2,s.vSeamHeight)
+  // A circular XY envelope is intentionally wider than the post's
+  // largest section: it removes the entire interrupted V profile,
+  // not just material touching the nominal shaft.
+  const radius=largestPostR+seamProjection+s.vSeamClearance+0.8
+  const verticalPad=Math.max(s.vSeamHeight,s.vSeamWidth/2)+1
+  return {
+    xy:[s.mountPoint[0],s.mountPoint[1]],
+    radius,
+    bottomZ:outer.min[2]-verticalPad,
+    topZ:outer.max[2]+verticalPad,
+  }
+}
+
 /** A socket cutter with EXACTLY the same hex orientation as the
  * printable post (vertices at 0°, 60°, ...). Using Manifold.cylinder(6)
  * independently can rotate the flats, losing the promised radial fit.
