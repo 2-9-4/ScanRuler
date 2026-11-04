@@ -173,7 +173,6 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
     return false
   })
   return <aside className="panel" data-test="mold-making-panel">
-    <MoldWorkflowTabs active={tab} onChange={setTab}/>
     <p className="hint">Configure the model, prepare its joints and casting features, then generate and inspect the parts. Settings remain saved when switching tabs.</p>
     <div className="kv">
       <span className="name">{generated?'Mold generated — inspect the result or adjust settings':'Ready to generate tooling when the source is loaded'}</span>
@@ -190,6 +189,9 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
       <p className="hint">Approximate progress; mesh Boolean and export stages may take additional time.</p>
     </div>}
     {error&&<p className="hint" role="alert" data-test="mold-error">{error}</p>}
+    <div className="mold-workflow-stack" data-test="mold-workflow-stack">
+    <MoldWorkflowTabs active={tab} onChange={setTab}/>
+    <div className="mold-workflow-content">
     <div role="tabpanel" id="mold-tab-panel-setup" aria-labelledby="mold-tab-setup"
       hidden={tab!=='setup'} style={{display:tab==='setup'?'block':'none'}}>
     <div className="group">
@@ -518,6 +520,8 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
         <p className="hint">Generated mold parts are available as independent Boolean operands in Mesh Tools. “Reference in CAD” opens a view-only assembled overlay in Reverse Engineering, retaining the original model and all other mold parts. Only “Edit copy” replaces the active scan; save your project before doing that.</p>
         {generated.warnings.map((w,i)=><p key={i} className="hint">{w}</p>)}
       </div>}
+    </div>
+    </div>
     </div>
     </div>
   </aside>
