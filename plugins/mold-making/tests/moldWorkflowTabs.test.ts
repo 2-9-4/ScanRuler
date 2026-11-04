@@ -41,7 +41,7 @@ describe('Mold Making subtabs',()=>{
         active:item.id,onChange:()=>{},
       }))
       expect(html).toContain('class="kindrow featurekeys mold-workflow-tabs"')
-      const tabs=html.match(/<button[^>]+role="tab"[^>]*>.*?<\\/button>/g)??[]
+      const tabs=html.match(/<button[^>]+role="tab"[^>]*>.*?<\/button>/g)??[]
       expect(tabs).toHaveLength(4)
       const selected=tabs.filter(markup=>markup.includes('aria-selected="true"'))
       expect(selected).toHaveLength(1)
