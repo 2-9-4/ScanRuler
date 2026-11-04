@@ -158,6 +158,13 @@ try{
     if(!(option instanceof HTMLButtonElement))throw new Error('Silicone box mode unavailable')
     option.click()
   })
+  // Wait until the previous rigid result is really invalidated. Otherwise
+  // waitForBuild could accidentally pass on the prior mold's DOM result.
+  await page.waitForFunction(async()=>{
+    const {useMold}=await import('/plugins/mold-making/state/moldStore.ts')
+    return useMold.getState().mode==='silicone-box'&&
+      !document.querySelector('[data-test="mold-result"]')
+  },{timeout:20_000})
   await page.click('[data-test="mold-generate"]')
   const box=await waitForBuild('two-part silicone containment')
   check(box.count>=2,'silicone box generates separate printable sections')
