@@ -7,12 +7,33 @@ saves carry the same number as `appVersion`. How a release is cut is in
 
 ## Unreleased
 
-- **Mold geometry fixes** (2026-10-31, fork only): Split all four tooling pieces before constructing registration features; prevent false zero-area rejection of extremely skinny nonzero-area Manifold triangles; reject cavity clearances that merge target vertices, reverse target volume growth, or break through exterior mold walls. Positive clearance enlarges the cavity. Robust feature-preserving offset remains open (#30).
-- **Mold registration options** (2026-10-31, fork only): tapered printed keys, straight printed pins, and paired blind sockets for user-supplied metal dowels; up to five automatically spaced key locations per long mating seam, with shorter seams reducing the count. Manual percentage-based add/remove/move positions, with fit/edge checks, project persistence and undo. Direct 3D drag placement and independent per-interface positions remain open (#12).
 
-- **Mold Making: multipart tooling and opaque preview** (2026-10-31, fork only). Direct rigid molds and silicone boxes now support one, two or four separate printable pieces with configurable axis-aligned splits and radial-clearance registration pins. Silicone boxes support circular outer walls and drafted containment walls. The opaque viewport and one-STL-per-component / plate-laid-out 3MF export replace the initial ghosted preview and merged-part behavior. Default cavity clearance is now 0 mm to avoid unrequested smoothing of thin details. True cavity draft, undercut-safe extraction, robust high-fidelity conformal offsets and gates/vents remain in development. See `plugins/mold-making/README.md`.
-
-- **Mold Making workspace (initial vertical slice, fork only)** (2026-10-31). A new plugin accepts STEP/STP models or scanned meshes through the existing importers and generates one-sided rigid negative molds, printable silicone containment boxes, and thin conformal negative shells. Preview and export to STL/3MF reuse the same validated mesh. It does not yet make two-part molds, add keys, gates or vents, or validate demolding; testing and first-slice limitations are in `plugins/mold-making/README.md`.
+- **Mold Making workspace — initial experimental tooling plugin** (fork only,
+  2026-11-03): Build separate printable tooling components around an imported
+  scan or STEP/STP reference without altering the original source. Supports
+  direct negative molds and rectangular/cylindrical silicone containment
+  boxes, two-part splits, three 120° radial sectors and four-part quadrants.
+  Adjustable seams, printed keys/pins or purchased dowel sockets, clamp
+  tabs with optional bolt/nut holes, external alignment marks, pouring and
+  vent channels, and a removable glue-on master support cover a practical
+  first set of mold-making workflows.
+- **Mold preview, inspection and export** (fork only, 2026-11-03):
+  Separate component visibility and isolation, exploded/assembled section
+  views, source-normal draft/undercut screening, combined STL/3MF exports
+  with invalid-mesh export blocking, and a net-silicone A/B batch calculator.
+  Reverse Engineering receives a **view-only** mold assembly reference
+  without replacing the original scan or dropping the other mold pieces.
+  Mold Making controls are organized into four connected workflow tabs.
+- **PR verification and limitations** (fork only, 2026-11-03):
+  Plugin-specific headless-browser coverage now exercises two real mesh
+  builds, downloads, component visibility and CAD reference preservation
+  through ScanRuler's shared CI harness. Positive cavity clearance uses an
+  approximate sampled spherical offset; thin-feature preservation is not
+  guaranteed, and true cavity draft / collision-free release are not
+  implemented. The source and generation defaults remain unchanged by
+  visual inspection. Full QA, slicer checks and physical print validation
+  remain necessary before treating tooling as production-ready. See
+  `plugins/mold-making/README.md` for supported operations and cautions.
 
 - **Ask your agent to update its connector** (2026-10-31). The banner that says
   your ScanRuler connector is out of date now starts with a sentence to copy and
