@@ -4399,16 +4399,83 @@ button.x:disabled {
   min-width: 0;
 }
 
-/* Mold Making uses the same icon key proportions and native 24-unit
-   SVG language as the rest of ScanRuler. Keep each tab legible in the
-   narrow panel; keep action icons inline with their labels. */
+/* Mold Making's navigation is a single CONNECTED tab strip, not another
+   row of raised feature/action buttons. The active tab shares its surface
+   with the content below it; the others are recessed into the chassis.
+   Override the generic .kindrow button.on blue-fill rule on purpose. */
+[data-test="mold-making-panel"] .mold-workflow-stack {
+  min-width: 0;
+  margin-top: 12px;
+}
 [data-test="mold-making-panel"] .kindrow.featurekeys.mold-workflow-tabs {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  border-radius: var(--r) var(--r) 0 0;
+  background: var(--well);
 }
-[data-test="mold-making-panel"] .mold-workflow-tabs button svg.icon {
+[data-test="mold-making-panel"] .kindrow.featurekeys.mold-workflow-tabs button {
+  position: relative;
+  min-width: 0;
+  width: 100%;
+  min-height: 64px;
+  padding: 8px 2px 7px;
+  border: 0;
+  border-right: 1px solid var(--line);
+  border-bottom: 2px solid var(--line);
+  border-radius: 0;
+  background: var(--well);
+  box-shadow: none;
+  color: var(--dim);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.1;
+  white-space: normal;
+  overflow-wrap: normal;
+  word-break: normal;
+  cursor: pointer;
+}
+[data-test="mold-making-panel"] .kindrow.featurekeys.mold-workflow-tabs button:last-child {
+  border-right: 0;
+}
+[data-test="mold-making-panel"] .kindrow.featurekeys.mold-workflow-tabs button:hover:not([aria-selected="true"]) {
+  background: var(--accent-soft);
+  color: var(--accent-d);
+  border-bottom-color: var(--accent);
+}
+[data-test="mold-making-panel"] .kindrow.featurekeys.mold-workflow-tabs button[aria-selected="true"],
+[data-test="mold-making-panel"] .kindrow.featurekeys.mold-workflow-tabs button[aria-selected="true"]:hover:not(:disabled) {
+  background: var(--panel);
+  color: var(--accent-d);
+  border-bottom-color: var(--panel);
+  box-shadow: inset 0 3px var(--accent);
+}
+[data-test="mold-making-panel"] .kindrow.featurekeys.mold-workflow-tabs button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -3px;
+  z-index: 1;
+}
+[data-test="mold-making-panel"] .kindrow.featurekeys.mold-workflow-tabs button svg.icon {
   flex: none;
+}
+[data-test="mold-making-panel"] .kindrow.featurekeys.mold-workflow-tabs button span {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+[data-test="mold-making-panel"] .mold-workflow-content {
+  min-width: 0;
+  padding: 12px 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-top: 0;
+  border-radius: 0 0 var(--r) var(--r);
+}
+[data-test="mold-making-panel"] .mold-workflow-content [role="tabpanel"] {
+  min-width: 0;
 }
 [data-test="mold-making-panel"] button.withicon,
 .mold-explode-overlay button.withicon {
@@ -4425,7 +4492,15 @@ button.x:disabled {
 }
 @media (max-width: 430px) {
   [data-test="mold-making-panel"] .kindrow.featurekeys.mold-workflow-tabs {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  [data-test="mold-making-panel"] .kindrow.featurekeys.mold-workflow-tabs button {
+    min-height: 62px;
+    padding: 7px 1px 6px;
+    font-size: 10px;
+  }
+  [data-test="mold-making-panel"] .mold-workflow-content {
+    padding: 10px 6px;
   }
 }
 
