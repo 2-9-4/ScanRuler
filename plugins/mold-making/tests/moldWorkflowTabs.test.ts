@@ -35,6 +35,23 @@ describe('Mold Making subtabs',()=>{
     expect(artwork.every(Boolean)).toBe(true)
     expect(new Set(artwork).size).toBe(4)
   })
+  it('marks exactly one tab as the selected, attached content page',()=>{
+    for(const item of MOLD_WORKFLOW_TABS){
+      const html=renderToStaticMarkup(createElement(MoldWorkflowTabs,{
+        active:item.id,onChange:()=>{},
+      }))
+      expect(html).toContain('class="kindrow featurekeys mold-workflow-tabs"')
+      const tabs=html.match(/<button[^>]+role="tab"[^>]*>.*?<\\/button>/g)??[]
+      expect(tabs).toHaveLength(4)
+      const selected=tabs.filter(markup=>markup.includes('aria-selected="true"'))
+      expect(selected).toHaveLength(1)
+      expect(selected[0]).toContain(`id="mold-tab-${item.id}"`)
+      expect(selected[0]).toContain(`aria-controls="mold-tab-panel-${item.id}"`)
+      expect(selected[0]).toContain('class="on"')
+      expect(selected[0]).toContain('tabindex="0"')
+      expect(tabs.filter(markup=>markup.includes('aria-selected="false"'))).toHaveLength(3)
+    }
+  })
   it('supports arrow and boundary keys without losing the active tab',()=>{
     expect(nextMoldWorkflowTab('setup','ArrowLeft')).toBe('review')
     expect(nextMoldWorkflowTab('review','ArrowRight')).toBe('setup')
