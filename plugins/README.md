@@ -9,6 +9,7 @@ not in this repository.
 |---|---|
 | [reverse/](reverse/) | The Reverse engineer workspace — scan to solid STEP body |
 | [mesh-tools/](mesh-tools/) | The Mesh Tools workspace — clean up and reduce a scan |
+| [mold-making/](mold-making/) | Experimental Mold Making workspace — split direct molds and silicone containment boxes, keyed assembly, casting channels, inspection and 3MF/STL export |
 
 ## The rules
 

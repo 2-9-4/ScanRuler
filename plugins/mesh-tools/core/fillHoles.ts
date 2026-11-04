@@ -35,6 +35,7 @@ import { buildAdjacency } from '../../../src/core/geometry/adjacency'
 import { orthoBasis } from '../../../src/core/fit/linalg'
 import type { Vec3 } from '../../../src/core/types'
 import { round125 } from './reduce'
+import { closedness } from './boolean'
 import { boundaryLoops, loopSize, type BoundaryLoop } from './boundary'
 import { compactEdit, type EditedMesh } from './edit'
 import { fillPlanarLoops, selfCrossing } from './planar'
@@ -53,6 +54,12 @@ export function defaultHoleSize(bboxDiagonal: number): number {
 export interface HoleSurvey {
   /** Rims in the scan — holes, and open borders. */
   rims: number
+  /** Boundary half-edges, including ones not forming complete closed loops. */
+  openEdges: number
+  /** Inconsistent/nonmanifold edges that hole filling cannot repair. */
+  nonmanifoldEdges: number
+  /** Open edges whose chains do not close into a patchable loop. */
+  strayEdges: number
   /** Of them, the ones smaller across than the size: the holes to fill. */
   holes: number
   /** Across the largest hole, and the smallest rim left open, mm. */
@@ -76,7 +83,8 @@ export function surveyHoles(
   vertexCount: number,
   maxSize: number,
 ): { survey: HoleSurvey; marks: HoleMarks } {
-  const { loops } = boundaryLoops(indices, vertexCount)
+  const { loops, stray } = boundaryLoops(indices, vertexCount)
+  const topology = closedness(indices, vertexCount)
   const holeSegments: number[] = []
   const openSegments: number[] = []
   const centres: number[] = []
@@ -102,7 +110,7 @@ export function surveyHoles(
     }
   }
   return {
-    survey: { rims: loops.length, holes, largestHole, smallestOpen },
+    survey: { rims: loops.length, openEdges: topology.open, nonmanifoldEdges: topology.bad, strayEdges: stray, holes, largestHole, smallestOpen },
     marks: {
       holes: new Float32Array(holeSegments),
       centres: new Float32Array(centres),

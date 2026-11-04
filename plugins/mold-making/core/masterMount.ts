@@ -1,0 +1,229 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Separate glue-on fixture for suspending a source part in a silicone bucket.
+// No geometry is added to (or subtracted from) the master itself.
+// Foot and stem support a tilted face-matched glue pad, as a single
+// watertight printable mesh; all distances are in the source model's mm.
+import type {Triangles} from '../../mesh-tools/core/boolean'
+import type {MoldSettings} from './settings'
+
+type V3=[number,number,number]
+type Bounds={min:V3;max:V3}
+const add=(a:V3,b:V3):V3=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]]
+const scale=(a:V3,k:number):V3=>[a[0]*k,a[1]*k,a[2]*k]
+const cross=(a:V3,b:V3):V3=>[
+  a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0],
+]
+const normalize=(a:V3):V3=>{
+  const m=Math.hypot(...a)
+  if(m<1e-9)throw new Error('Invalid mounting-face normal.')
+  return scale(a,1/m)
+}
+interface Ring {center:V3;radius:number;up:V3;hex?:boolean}
+export const MOUNT_HEX_RADIAL_CLEARANCE_MM=0.25
+/** Recess in the exterior tooling base for a positive axial locating shoulder. */
+export const MOUNT_HEX_SEAT_DEPTH_MM=1.2
+/** Clearance between the upper shoulder face and the back of its seat. */
+export const MOUNT_HEX_AXIAL_CLEARANCE_MM=0.15
+/** The actual post collar protrudes into the counterbore. */
+export const MOUNT_HEX_COLLAR_HEIGHT_MM=MOUNT_HEX_SEAT_DEPTH_MM-MOUNT_HEX_AXIAL_CLEARANCE_MM
+/** Clearance pocket around the actual glue-pad head inside the rigid tooling. */
+export const MOUNT_PAD_RADIAL_CLEARANCE_MM=0.35
+/** How far the head may descend before its underside seats on the pocket floor. */
+export const MOUNT_PAD_AXIAL_CLEARANCE_MM=0.15
+export interface MountHeadSeat {
+  /** Underside of the glue-pad shoulder, in source Z. */
+  baseZ:number
+  /** Bottom of its matching clearance recess in the mold. */
+  pocketFloorZ:number
+  /** Top of the recess, past all tilted upper pad vertices. */
+  pocketTopZ:number
+  pocketRadius:number
+}
+/** The source contact pad stays inside the mold; a hex-keyed stem crosses
+ * the bottom wall and an exterior shoulder prevents insertion past its stop. */
+export function planMasterMount(bounds:Bounds,s:MoldSettings,outer?:Bounds):{
+  rings:Ring[];floorZ:number;headSeat:MountHeadSeat
+  /** Inside-wall stop for hollow silicone boxes, absent in direct tooling. */
+  innerStop:{bottomZ:number;radius:number}|null
+}|null{
+  if(!s.mountEnabled)return null
+  const p=s.mountPoint
+  if(!p)throw new Error('Pick a model base face before building the mounting fixture.')
+  const n=normalize(s.mountNormal)
+  if(n[2]>-0.5)throw new Error('Pick a downward-facing, reasonably flat underside for a glue-on mounting pad.')
+  if(p.some((v,i)=>v<bounds.min[i]-1e-4||v>bounds.max[i]+1e-4))
+    throw new Error('The selected mounting point lies outside the source model bounds.')
+  const floorZ=outer?.min[2]??bounds.min[2]-s.mountHeight
+  const contactZ=p[2]+n[2]*0.2
+  if(contactZ-floorZ<4)throw new Error('Mount is too short for a foot, stem and glue pad. Increase support height or choose a lower face.')
+  if(s.mountFootDiameter<s.mountStemDiameter||s.mountPadDiameter<s.mountStemDiameter)
+    throw new Error('Mount pad and foot must be at least the stem diameter.')
+  const footR=s.mountFootDiameter/2,stemR=s.mountStemDiameter/2,padR=s.mountPadDiameter/2
+  const innerStopR=stemR+Math.max(0.85,(Math.min(footR,padR)-stemR)*0.7)
+  // The head's upper surface follows the picked face's tangent plane.
+  // Its lower surface is a HORIZONTAL annular shoulder: this provides
+  // a second, opposing Z stop when seated against a counterbore floor.
+  // Reserve ≥1.2 mm of head thickness even at the low side of a tilt.
+  const tilt=Math.hypot(n[0],n[1])
+  const tiltedTopCenterZ=p[2]+n[2]*0.2
+  const headBaseZ=Math.min(p[2]-2,tiltedTopCenterZ-padR*tilt-1.2)
+  const headSeat:MountHeadSeat={
+    baseZ:headBaseZ,
+    pocketFloorZ:headBaseZ-MOUNT_PAD_AXIAL_CLEARANCE_MM,
+    pocketTopZ:tiltedTopCenterZ+padR*tilt+0.35,
+    pocketRadius:padR+MOUNT_PAD_RADIAL_CLEARANCE_MM+0.2*tilt,
+  }
+  // The exterior foot must remain inside the actual tooling footprint.
+  // Rectangular bounds conservatively check a cylindrical box as well.
+  const shell=outer??bounds
+  const available=Math.min(p[0]-shell.min[0],shell.max[0]-p[0],
+    p[1]-shell.min[1],shell.max[1]-p[1])
+  if(Math.max(footR,padR,innerStopR)+0.5>available)
+    throw new Error('Master mounting foot or pad would intersect the tooling side wall. Move the contact point or reduce its diameter.')
+  if(s.parts===3||(s.mode==='silicone-box'&&s.boxShape==='cylindrical')){
+    const cx=(shell.min[0]+shell.max[0])/2
+    const cy=(shell.min[1]+shell.max[1])/2
+    const usable=(shell.max[0]-shell.min[0])/2-Math.hypot(p[0]-cx,p[1]-cy)
+    if(Math.max(footR,padR,innerStopR)+0.5>usable)
+      throw new Error('Master mounting foot or pad extends beyond the circular tooling wall. Choose a more central contact point.')
+  }
+  const rings:Ring[]=[
+    // Exterior hexagonal collar seats against the INSIDE ceiling of its
+    // shallow bottom counterbore, limiting upward insertion.
+    {center:[p[0],p[1],floorZ-3],radius:footR,up:[0,0,1],hex:true},
+    {center:[p[0],p[1],floorZ+MOUNT_HEX_COLLAR_HEIGHT_MM],radius:footR,up:[0,0,1],hex:true},
+    {center:[p[0],p[1],floorZ+MOUNT_HEX_COLLAR_HEIGHT_MM],radius:stemR,up:[0,0,1],hex:true},
+    {center:[p[0],p[1],floorZ+MOUNT_HEX_SEAT_DEPTH_MM+0.4],radius:stemR,up:[0,0,1],hex:true},
+  ]
+  let innerStop:{bottomZ:number;radius:number}|null=null
+  if(s.mode==='silicone-box'){
+    // The master floats above the silicone-bucket floor. Its glue pad
+    // cannot seat against that floor. A SECOND flange just inside the
+    // bucket bears on the interior floor and prevents the glued master
+    // from falling DOWN through the post hole. The exterior collar
+    // independently prevents it from moving UP. Both are part of the
+    // single watertight printable post.
+    const bottomZ=bounds.min[2]-s.mountHeight+MOUNT_PAD_AXIAL_CLEARANCE_MM
+    if(bottomZ<=rings[rings.length-1].center[2]+0.25)
+      throw new Error('Silicone master mount needs a thicker bucket base for its opposed axial stops.')
+    innerStop={bottomZ,radius:innerStopR}
+    rings.push(
+      {center:[p[0],p[1],bottomZ],radius:stemR,up:[0,0,1],hex:true},
+      {center:[p[0],p[1],bottomZ],radius:innerStopR,up:[0,0,1]},
+      {center:[p[0],p[1],bottomZ+1.2],radius:innerStopR,up:[0,0,1]},
+      {center:[p[0],p[1],bottomZ+1.2],radius:stemR,up:[0,0,1],hex:true},
+    )
+  }
+  const lastShaftZ=rings[rings.length-1].center[2]
+  if(headBaseZ<=lastShaftZ+0.3)
+    throw new Error('Master mount has insufficient room for its glue pad and opposed axial stops; increase the mold base or underside standoff.')
+  rings.push(
+    {center:[p[0],p[1],headBaseZ],radius:stemR,up:[0,0,1],hex:true},
+    // In direct tooling this shoulder seats in the corresponding head
+    // pocket, constraining downward motion. In a silicone bucket the
+    // separate inner floor flange above already supplies that stop.
+    {center:[p[0],p[1],headBaseZ],radius:padR,up:[0,0,1]},
+    {center:add(p,scale(n,0.2)),radius:padR,up:scale(n,-1)},
+  )
+  return {rings,floorZ,headSeat,innerStop}
+}
+/** Deliberate registration-free corridor around a captured mounting post.
+ * Mask the positive V tongue AND its female groove during construction,
+ * before they are Booleaned into the mold. The full final post socket is
+ * still drilled separately. This corridor is wider than the post so an
+ * outboard V ridge cannot form a lip across the assembly approach.
+ */
+export interface VSeamMountKeepout {
+  xy:[number,number]
+  radius:number
+  bottomZ:number
+  topZ:number
+}
+export function planVSeamMountKeepout(
+  s:MoldSettings,outer:Bounds,
+):VSeamMountKeepout|null{
+  if(!s.mountEnabled||!s.keys||s.keyStyle!=='v-seam'||!s.mountPoint)
+    return null
+  const largestPostR=Math.max(s.mountStemDiameter,s.mountFootDiameter,
+    s.mountPadDiameter)/2
+  const seamProjection=Math.max(s.vSeamWidth/2,s.vSeamHeight)
+  // A circular XY envelope is intentionally wider than the post's
+  // largest section: it removes the entire interrupted V profile,
+  // not just material touching the nominal shaft.
+  const radius=largestPostR+seamProjection+s.vSeamClearance+0.8
+  const verticalPad=Math.max(s.vSeamHeight,s.vSeamWidth/2)+1
+  return {
+    xy:[s.mountPoint[0],s.mountPoint[1]],
+    radius,
+    bottomZ:outer.min[2]-verticalPad,
+    topZ:outer.max[2]+verticalPad,
+  }
+}
+
+/** A socket cutter with EXACTLY the same hex orientation as the
+ * printable post (vertices at 0°, 60°, ...). Using Manifold.cylinder(6)
+ * independently can rotate the flats, losing the promised radial fit.
+ * Bounds are absolute; its bottom is NEVER automatically Z-centered.
+ */
+export function mountHexPrismMesh(
+  xy:[number,number],radius:number,bottomZ:number,topZ:number,
+):Triangles{
+  if(![...xy,radius,bottomZ,topZ].every(Number.isFinite)||
+     radius<=0||topZ<=bottomZ)
+    throw new Error('Invalid hexagonal mounting cutter dimensions.')
+  const vertices:number[]=[],indices:number[]=[]
+  for(const z of [bottomZ,topZ])for(let i=0;i<6;i++){
+    const a=i*Math.PI/3
+    vertices.push(xy[0]+radius*Math.cos(a),xy[1]+radius*Math.sin(a),z)
+  }
+  vertices.push(xy[0],xy[1],bottomZ,xy[0],xy[1],topZ)
+  for(let i=0;i<6;i++){
+    const next=(i+1)%6
+    indices.push(i,next,6+next,i,6+next,6+i)
+    indices.push(12,next,i)
+    indices.push(13,6+i,6+next)
+  }
+  return {positions:Float32Array.from(vertices),indices:Uint32Array.from(indices)}
+}
+
+/** Winding is consistent along every circular cross section. The top cap
+ * conforms to the picked face's tangent plane (not the bounding-box plane).
+ */
+export function masterMountMesh(bounds:Bounds,s:MoldSettings,outer?:Bounds):Triangles|null{
+  const plan=planMasterMount(bounds,s,outer)
+  if(!plan)return null
+  const sides=48,vertices:number[]=[],indices:number[]=[]
+  for(const ring of plan.rings){
+    const up=normalize(ring.up)
+    const u=normalize(cross(Math.abs(up[1])<0.9?[0,1,0]:[1,0,0],up))
+    const v=cross(up,u)
+    for(let j=0;j<sides;j++){
+      const theta=j*2*Math.PI/sides
+      // 48 subdivision vertices preserve the regular hex outline while
+      // allowing a smooth transition into the circular contact pad.
+      const t=theta%(Math.PI/3)-Math.PI/6
+      const shape=ring.hex?Math.cos(Math.PI/6)/Math.cos(t):1
+      const point=add(ring.center,add(scale(u,ring.radius*shape*Math.cos(theta)),
+        scale(v,ring.radius*shape*Math.sin(theta))))
+      vertices.push(...point)
+    }
+  }
+  for(let ring=0;ring<plan.rings.length-1;ring++){
+    const from=ring*sides,to=(ring+1)*sides
+    for(let j=0;j<sides;j++){
+      const next=(j+1)%sides
+      indices.push(from+j,from+next,to+next,from+j,to+next,to+j)
+    }
+  }
+  const bottom=vertices.length/3
+  vertices.push(...plan.rings[0].center)
+  const top=vertices.length/3
+  vertices.push(...plan.rings[plan.rings.length-1].center)
+  const last=(plan.rings.length-1)*sides
+  for(let j=0;j<sides;j++){
+    const next=(j+1)%sides
+    indices.push(bottom,next,j)
+    indices.push(top,last+j,last+next)
+  }
+  return {positions:Float32Array.from(vertices),indices:Uint32Array.from(indices)}
+}

@@ -1,0 +1,5 @@
+{
+  "e2e": [
+    "scripts/e2e-mold-making.mjs"
+  ]
+}

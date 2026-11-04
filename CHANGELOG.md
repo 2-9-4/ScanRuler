@@ -7,6 +7,33 @@ saves carry the same number as `appVersion`. How a release is cut is in
 
 ## Unreleased
 
+- **Mold Making workspace — initial experimental tooling plugin** (2026-11-03): Build separate printable tooling components around an imported
+  scan or STEP/STP reference without altering the original source. Supports
+  direct negative molds and rectangular/cylindrical silicone containment
+  boxes, two-part splits, three 120° radial sectors and four-part quadrants.
+  Adjustable seams, printed keys/pins or purchased dowel sockets, clamp
+  tabs with optional bolt/nut holes, external alignment marks, pouring and
+  vent channels, and a removable glue-on master support cover a practical
+  first set of mold-making workflows.
+- **Mold preview, inspection and export** (2026-11-03):
+  Separate component visibility and isolation, exploded/assembled section
+  views, source-normal draft/undercut screening, combined STL/3MF exports
+  with invalid-mesh export blocking, and a net-silicone A/B batch calculator.
+  Reverse Engineering receives a **view-only** mold assembly reference
+  without replacing the original scan or dropping the other mold pieces.
+  Mold Making controls are organized into four connected workflow tabs.
+- **Verification and limitations** (2026-11-03):
+  A plugin-specific headless-browser test is registered to exercise two
+  real mesh builds, STL/3MF downloads, component visibility and CAD
+  reference preservation through ScanRuler's shared CI harness. The
+  test suite must pass before merging. Positive cavity clearance uses an
+  approximate sampled spherical offset; thin-feature preservation is not
+  guaranteed, and true cavity draft / collision-free release are not
+  implemented. The source and generation defaults remain unchanged by
+  visual inspection. Full QA, slicer checks and physical print validation
+  remain necessary before treating tooling as production-ready. See
+  `plugins/mold-making/README.md` for supported operations and cautions.
+
 - **Contributors are credited** (2026-11-01). Each publish to this repository now
   names the people whose work it brings as co-authors, starting with Jozkah and
   Starzrng. CONTRIBUTING.md says how it works.
