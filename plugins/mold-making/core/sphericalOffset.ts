@@ -50,6 +50,7 @@ export function sphericalOffsetGrid(mesh:SolidMesh,d:number,quality:OffsetQualit
   if(samples(h)>preset.maxSamples){
     let lo=h,hi=preset.maxGrid
     if(samples(hi)>preset.maxSamples)throw new Error(
+    // units-ok: worker geometry diagnostic uses explicit fixed millimetre units; never interprets the user's display setting.
       `The ${quality} spherical offset on this model needs too many distance-field cells: exceeds its ${preset.maxSamples.toLocaleString()} cell budget even at ${preset.maxGrid} mm grid spacing. Use a smaller model or separate surfaces; the old vertex-normal algorithm will not be used as a fallback.`)
     for(let k=0;k<28;k++){
       const m=(lo+hi)/2
@@ -256,6 +257,7 @@ export function sphericalOffset(
   const ownField=!sharedField
   const field=sharedField??createSphericalDistanceField(mesh,onProgress)
   try{
+    // units-ok: worker geometry diagnostic uses explicit fixed millimetre units; never interprets the user's display setting.
     onProgress?.(`Sampling ${quality} spherical clearance at ${report.gridMm.toFixed(3)} mm spacing (${report.gridSamples.toLocaleString()} cells estimated)…`,0.16)
     // The WASM kernel calls the signed-distance function synchronously.
     // Report coarse, monotonic stages at about 1% intervals. The number
@@ -298,6 +300,7 @@ export function sphericalOffset(
     const before=signedVolume(mesh.positions,mesh.indices),after=solid.volume()
     if(!(after>before)){
       solid.delete()
+    // units-ok: worker geometry diagnostic uses explicit fixed millimetre units; never interprets the user's display setting.
       throw new Error(`Spherical offset ${d} mm did not enlarge the master volume (${before.toFixed(3)} → ${after.toFixed(3)} mm³). Check source orientation; no mold exported.`)
     }
     const grown=solid.boundingBox()

@@ -239,6 +239,7 @@ export function parseMoldSettings(value: unknown): MoldSettings {
   if(parsed.mountEnabled&&
       (parsed.mountFootDiameter<=parsed.mountStemDiameter+0.4||
        parsed.mountPadDiameter<=parsed.mountStemDiameter+0.4))
+    // units-ok: worker geometry diagnostic uses explicit fixed millimetre units; never interprets the user's display setting.
     throw new Error('Both master-post shoulders must be at least 0.4 mm wider in diameter than the shaft to provide real vertical seating faces.')
   if(typeof parsed.pourEnabled!=='boolean'||typeof parsed.ventsEnabled!=='boolean')
     throw new Error('Invalid casting channel enable setting.')

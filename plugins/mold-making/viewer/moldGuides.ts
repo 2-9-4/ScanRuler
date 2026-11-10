@@ -3,6 +3,8 @@
 // channel handles. Attached to the SAME coordinate frame as the source.
 // Deliberately not part of any manifold/printable mold geometry.
 import * as THREE from 'three'
+import {fmtLen} from '../../../src/core/units'
+import {usePrefs} from '../../../src/state/prefsStore'
 import type {SceneManager} from '../../../src/viewer/SceneManager'
 import type {SceneLayer,SceneLayerHost} from '../../../src/viewer/sceneLayers'
 import type {MoldSettings,MoldSource} from '../core/settings'
@@ -210,7 +212,7 @@ export class MoldGuides {
         ctx.fillStyle='#ffffff';ctx.font='bold 32px sans-serif'
         ctx.textAlign='center';ctx.textBaseline='middle'
         ctx.fillText(!hasSurface?`${kind==='pour'?'SPRUE':'VENT '+(index+1)} — NO SURFACE`:
-          kind==='pour'?`SPRUE Ø${diameter}mm`:`VENT ${index+1} Ø${diameter}mm`,192,44)
+          kind==='pour'?`SPRUE Ø${fmtLen(diameter,usePrefs.getState().units,1)}`:`VENT ${index+1} Ø${fmtLen(diameter,usePrefs.getState().units,1)}`,192,44)
       }
       const texture=new THREE.CanvasTexture(canvas)
       const sprite=new THREE.Sprite(new THREE.SpriteMaterial({

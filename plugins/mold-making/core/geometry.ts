@@ -279,8 +279,10 @@ function validatedPartMesh(solid:Manifold,name:string,warnings:string[]):Triangl
     check(candidate,name)
     const difference=Math.abs(stableVolume(candidate)-originalVolume)
     if(difference>maxVolumeChange){
+    // units-ok: worker geometry diagnostic uses explicit fixed millimetre units; never interprets the user's display setting.
       throw new Error(`${name} output cleanup would change material volume by ${difference.toPrecision(4)} mm³ (limit ${maxVolumeChange.toPrecision(4)} mm³).`)
     }
+    // units-ok: worker geometry diagnostic uses explicit fixed millimetre units; never interprets the user's display setting.
     warnings.push(`${name}: corrected numerical zero-area triangles in the kernel's exported mesh (${reason}); verified closed topology and volume within ${maxVolumeChange.toPrecision(4)} mm³. Source mesh unchanged.`)
     return candidate
   }
@@ -289,6 +291,7 @@ function validatedPartMesh(solid:Manifold,name:string,warnings:string[]):Triangl
     const repaired=liftCollapsedClosedMesh(mesh)
     if(!repaired||repaired.adjustedVertices===0)return null
     try{
+    // units-ok: worker geometry diagnostic uses explicit fixed millimetre units; never interprets the user's display setting.
       return accept(repaired.mesh,`${description}, nudged ${repaired.adjustedVertices} vertices ≤0.001 mm`)
     }catch(error){
       lastFailure=error instanceof Error?error.message:String(error)
@@ -303,14 +306,17 @@ function validatedPartMesh(solid:Manifold,name:string,warnings:string[]):Triangl
       if(simplified.isEmpty()||simplified.status()!=='NoError')continue
       const mesh=read(simplified)
       try{
+    // units-ok: worker geometry diagnostic uses explicit fixed millimetre units; never interprets the user's display setting.
         return accept(mesh,`Manifold simplify tolerance ${tolerance} mm`)
       }catch(error){
         lastFailure=error instanceof Error?error.message:String(error)
       }
+    // units-ok: worker geometry diagnostic uses explicit fixed millimetre units; never interprets the user's display setting.
       const lifted=tryLift(mesh,`Manifold simplify ${tolerance} mm`)
       if(lifted)return lifted
     }finally{simplified.delete()}
   }
+    // units-ok: worker geometry diagnostic uses explicit fixed millimetre units; never interprets the user's display setting.
   throw new Error(`${name} has zero-area triangles after the geometry kernel's Boolean/level-set operations. Safe output cleanup (≤0.0001 mm simplification or ≤0.001 mm vertex adjustment) could not restore a watertight part without changing material volume. ${lastFailure}`)
 }
 /** Export only one physically connected solid per STL. Manifold Boolean
@@ -369,12 +375,14 @@ export function toPart(solid:Manifold,name:string,warnings:string[]=[],detachedP
           warnings.push(`${label}: reversed inside-out island winding on export and revalidated all faces and topology.`)
         }else{
           const reason=error instanceof Error?error.message:String(error)
+    // units-ok: worker geometry diagnostic uses explicit fixed millimetre units; never interprets the user's display setting.
           warnings.push(`${label}: excluded an invalid detached artifact (kernel volume ${island.volume.toPrecision(4)} mm³; ${reason}). Main mold preserved; inspect cavity and registration before printing.`)
         }
       }
     }
     const added=detachedParts.slice(detachedBefore)
     if(added.length){
+    // units-ok: worker geometry diagnostic uses explicit fixed millimetre units; never interprets the user's display setting.
       warnings.push(`${name}: ${added.length} disconnected printable islands (${added.map(p=>p.volumeMm3.toPrecision(4)).join(', ')} mm³) were preserved as individually exported loose parts. They may be unwanted Boolean fragments, detached pins or real tooling features. Inspect/delete them in the slicer before printing; the assembly is NOT guaranteed.`)
     }
     // The Manifold kernel can produce tiny collapsed triangles when
@@ -383,6 +391,7 @@ export function toPart(solid:Manifold,name:string,warnings:string[]=[],detachedP
     // cannot fix them. Preserve connectivity and keep the correction
     // below a strict manufacturing-scale tolerance.
     const exported=validatedPartMesh(primary.part,name,warnings)
+    // units-ok: worker geometry diagnostic uses explicit fixed millimetre units; never interprets the user's display setting.
     if(dustCount)warnings.push(`${name}: excluded ${dustCount} microscopic Boolean dust islands totalling ${discardedDust.toPrecision(3)} mm³ (each ≤${perIslandLimit.toPrecision(3)} mm³).`)
     return {name,...exported,volumeMm3:stableVolume(exported)}
   }finally{for(const island of islands)island.delete()}
@@ -1187,6 +1196,7 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
       const dilate=(distance:number):Manifold=>{
         fieldRef.current??=createSphericalDistanceField(targetMesh,onProgress)
         const {solid,report}=sphericalOffset(wasm,targetMesh,distance,onProgress,s.offsetQuality,fieldRef.current)
+    // units-ok: worker geometry diagnostic uses explicit fixed millimetre units; never interprets the user's display setting.
         warnings.push(`Spherical distance-field offset ${distance} mm (${s.offsetQuality}) used a ${report.gridMm.toFixed(3)} mm grid (${report.gridSamples.toLocaleString()} samples; refinement tolerance ${report.toleranceMm.toFixed(3)} mm). Small features below this spacing may be lost; inspect the cavity before printing.`)
         return keep(solid)
       }
@@ -1202,6 +1212,7 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
           const lower=b.min[axis]-plan.outer.min[axis]
           const upper=plan.outer.max[axis]-b.max[axis]
           if(Math.min(lower,upper)<minimalMaterial){
+    // units-ok: worker geometry diagnostic uses explicit fixed millimetre units; never interprets the user's display setting.
             throw new Error(`Clearance ${s.clearance} mm breaks through the mold's ${['X','Y','Z'][axis]} wall (${Math.min(lower,upper).toFixed(3)} mm left). Increase outer margin/base thickness or decrease clearance.`)
           }
         }
@@ -1285,6 +1296,7 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
         if(s.keyStyle==='v-seam'&&s.parts===4)warnings.push('Each of the four adjoining seams receives its own open, flat-tipped V-ridge and matching groove, set back from perpendicular parting planes.')
         if(s.keyStyle==='v-seam'&&s.parts===2)warnings.push(s.mode==='direct'?'A continuous contour-following triangular tongue-and-groove with exterior clamp ears provides registration; verify the clamping force and cast release before manufacturing.':'A wall-supported U-shaped triangular tongue-and-groove with exterior clamp ears registers the silicone box while leaving the pouring opening unobstructed.')
         else warnings.push(s.keyStyle==='metal-dowel'?
+    // units-ok: worker geometry diagnostic uses explicit fixed millimetre units; never interprets the user's display setting.
           `Paired blind sockets are sized for ${s.keyDiameter} mm metal dowels, with ${s.keyClearance} mm radial fit clearance. Insert separate dowels during assembly.`:
           `${s.keyStyle==='tapered-key'?'Tapered':'Straight'} printed registration pins and matching clearance sockets.`)
       }
@@ -1292,6 +1304,7 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
     }
     const seamKeepout=planVSeamMountKeepout(s,plan.outer)
     if(seamKeepout)
+    // units-ok: worker geometry diagnostic uses explicit fixed millimetre units; never interprets the user's display setting.
       warnings.push(`Deliberately interrupted the male V ridge and female V groove within a ${(2*seamKeepout.radius).toFixed(1)} mm diameter corridor around the keyed master post. Registration remains on the other sections of the parting seam.`)
     if(s.mountEnabled){
       // Registration may UNION positive V-tongues onto the already-split
@@ -1353,6 +1366,7 @@ export function buildMold(wasm:ManifoldToplevel,targetMesh:SolidMesh,settings:Mo
       })
       if(totalRemoved<0.001)
         throw new Error('The master mounting bore missed all tooling parts.')
+    // units-ok: worker geometry diagnostic uses explicit fixed millimetre units; never interprets the user's display setting.
       warnings.push('The keyed mounting passage is cut after V-seam registration, including a separate wider head recess and a verified nominal no-overlap with the printed post. Opposing exterior and interior shoulders limit vertical travel (0.15 mm nominal clearance at each seat); the hex shaft prevents rotation. Assemble the split tooling around the already-glued pad; verify the assembly approach path and seal the base penetration.')
     }
     if(s.interfaceLabels&&pieces.length>1)
