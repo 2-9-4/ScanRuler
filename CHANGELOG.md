@@ -7,6 +7,9 @@ saves carry the same number as `appVersion`. How a release is cut is in
 
 ## Unreleased
 
+- **Experimental Mold Making workspace** (2026-11-10): A standalone plugin for split direct-negative molds and printable silicone containment boxes, with registration, printable clamp hardware, non-destructive CAD reference, source draft screening, STL/3MF export, and an approximate SDF cavity offset. Includes geometry/unit/browser regression coverage. See `plugins/mold-making/README.md` for unsupported workflows and manufacturing cautions.
+
+
 - **Right-click menus on list rows** (2026-11-10, pull request 131). A
   right click on an element, dimension or tolerance row opens a menu with
   Edit, Hide or Show in viewport and Delete, and on a dimension or

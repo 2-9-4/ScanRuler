@@ -4495,3 +4495,373 @@ button.x:disabled {
   color: var(--faint);
   cursor: default;
 }
+
+
+
+/* Mold Making: three tooling choices in the full panel width, not four narrow
+   picture keys. Scope these overrides to this workspace so no other panel's
+   measuring controls or key rows change. */
+[data-test="mold-making-panel"] {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+[data-test="mold-making-panel"] .kindrow.featurekeys {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+}
+[data-test="mold-making-panel"] .kindrow.featurekeys button {
+  min-width: 0;
+  width: 100%;
+  min-height: 54px;
+  padding: 8px 6px;
+  white-space: normal;
+  overflow-wrap: break-word;
+  line-height: 1.25;
+  font-size: 12px;
+  text-align: center;
+  justify-content: center;
+}
+[data-test="mold-making-panel"] .kv {
+  min-width: 0;
+  align-items: center;
+  flex-wrap: wrap;
+}
+[data-test="mold-making-panel"] .kv .name {
+  min-width: 90px;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.3;
+}
+[data-test="mold-making-panel"] .kv > input:not([type="checkbox"]),
+[data-test="mold-making-panel"] .kv > select {
+  min-width: 100px;
+  width: min(100%, 175px);
+  max-width: 100%;
+  flex: 0 1 175px;
+}
+[data-test="mold-making-panel"] .kv > input[type="checkbox"] {
+  flex: none;
+  min-width: 16px;
+  min-height: 16px;
+}
+[data-test="mold-making-panel"] .kv > button {
+  min-width: 44px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+[data-test="mold-making-panel"] [data-test^="mold-export-part-"] {
+  flex: 0 0 auto;
+}
+[data-test="mold-making-panel"] [data-test="mold-generate"],
+[data-test="mold-making-panel"] [data-test="mold-export-3mf"] {
+  width: 100%;
+  min-height: 38px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+[data-test="mold-making-panel"] [data-test="mold-error"] {
+  padding: 9px 10px;
+  border: 1px solid var(--red);
+  border-radius: var(--r);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+@media (max-width: 430px) {
+  [data-test="mold-making-panel"] .kindrow.featurekeys {
+    grid-template-columns: 1fr;
+  }
+  [data-test="mold-making-panel"] .kindrow.featurekeys button {
+    min-height: 38px;
+  }
+}
+
+
+/* Mold Making's schematic registration editor and per-worker progress. */
+[data-test="mold-making-panel"] .kindrow.featurekeys {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+[data-test="mold-making-panel"] .mold-key-editor {
+  min-width: 0;
+  padding: 9px 10px;
+  margin: 9px 0;
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+}
+[data-test="mold-making-panel"] .mold-key-editor-title {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+[data-test="mold-making-panel"] .mold-key-editor svg {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  overflow: visible;
+  touch-action: none;
+  user-select: none;
+}
+[data-test="mold-making-panel"] .mold-key-editor svg circle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+[data-test="mold-making-panel"] .mold-key-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+[data-test="mold-making-panel"] .mold-key-chips button {
+  padding: 4px 8px;
+  font: 11px var(--mono);
+}
+[data-test="mold-making-panel"] .mold-progress {
+  margin-top: 10px;
+  padding: 10px;
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+}
+[data-test="mold-making-panel"] .mold-progress-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  overflow-wrap: anywhere;
+  line-height: 1.3;
+}
+[data-test="mold-making-panel"] .mold-progress-label b {
+  font: 600 12px var(--mono);
+  flex: none;
+}
+[data-test="mold-making-panel"] .mold-progress progress {
+  display: block;
+  width: 100%;
+  height: 12px;
+  margin: 8px 0;
+  accent-color: var(--accent);
+}
+[data-test="mold-making-panel"] .mold-warning {
+  padding: 8px 10px;
+  border: 1px solid var(--amber);
+  border-radius: var(--r);
+}
+
+@media (max-width: 430px) {
+  [data-test="mold-making-panel"] .kindrow.featurekeys {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* True two-axis registration editor: measured seam and target envelope. */
+[data-test="mold-making-panel"] .mold-plane-editor {
+  margin: 10px 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--well);
+  padding: 10px;
+  min-width: 0;
+}
+[data-test="mold-making-panel"] .mold-plane-head {
+  font-size: 12px;
+  font-weight: 650;
+  margin: 0 0 8px;
+}
+[data-test="mold-making-panel"] .mold-plane-editor svg {
+  display: block;
+  max-width: 100%;
+  width: 100%;
+  height: auto;
+  touch-action: none;
+  user-select: none;
+}
+[data-test="mold-making-panel"] .mold-plane-editor svg circle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+[data-test="mold-making-panel"] .mold-plane-points {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+[data-test="mold-making-panel"] .mold-plane-point {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  font-size: 11px;
+  min-width: 0;
+}
+[data-test="mold-making-panel"] .mold-plane-point label {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+[data-test="mold-making-panel"] .mold-plane-point input {
+  width: 55px;
+  min-width: 0;
+  box-sizing: border-box;
+}
+[data-test="mold-making-panel"] .mold-plane-point button {
+  min-width: 26px;
+  padding: 3px 6px;
+}
+
+/* Mold Making: mutually exclusive, clearly separated registration controls. */
+[data-test="mold-making-panel"] .mold-feature-section {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  margin: 8px 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--well);
+}
+[data-test="mold-making-panel"] .mold-feature-section .sec-head {
+  margin-top: 5px;
+  padding-top: 2px;
+}
+[data-test="mold-making-panel"] .mold-feature-section .sec-head:not(:first-child) {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  margin-top: 8px;
+}
+[data-test="mold-making-panel"] .mold-feature-section .kv {
+  min-width: 0;
+}
+
+/* Mold Making's navigation is a single CONNECTED tab strip, not another
+   row of raised feature/action buttons. The active tab shares its surface
+   with the content below it; the others are recessed into the chassis.
+   Override the generic .kindrow button.on blue-fill rule on purpose. */
+[data-test="mold-making-panel"] .mold-workflow-stack {
+  min-width: 0;
+  margin-top: 12px;
+}
+[data-test="mold-making-panel"] .kindrow.featurekeys.mold-workflow-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  border-radius: var(--r) var(--r) 0 0;
+  background: var(--well);
+}
+[data-test="mold-making-panel"] .kindrow.featurekeys.mold-workflow-tabs button {
+  position: relative;
+  min-width: 0;
+  width: 100%;
+  min-height: 64px;
+  padding: 8px 2px 7px;
+  border: 0;
+  border-right: 1px solid var(--line);
+  border-bottom: 2px solid var(--line);
+  border-radius: 0;
+  background: var(--well);
+  box-shadow: none;
+  color: var(--dim);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.1;
+  white-space: normal;
+  overflow-wrap: normal;
+  word-break: normal;
+  cursor: pointer;
+}
+[data-test="mold-making-panel"] .kindrow.featurekeys.mold-workflow-tabs button:last-child {
+  border-right: 0;
+}
+[data-test="mold-making-panel"] .kindrow.featurekeys.mold-workflow-tabs button:hover:not([aria-selected="true"]) {
+  background: var(--accent-soft);
+  color: var(--accent-d);
+  border-bottom-color: var(--accent);
+}
+[data-test="mold-making-panel"] .kindrow.featurekeys.mold-workflow-tabs button[aria-selected="true"],
+[data-test="mold-making-panel"] .kindrow.featurekeys.mold-workflow-tabs button[aria-selected="true"]:hover:not(:disabled) {
+  background: var(--panel);
+  color: var(--accent-d);
+  border-bottom-color: var(--panel);
+  box-shadow: inset 0 3px var(--accent);
+}
+[data-test="mold-making-panel"] .kindrow.featurekeys.mold-workflow-tabs button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -3px;
+  z-index: 1;
+}
+[data-test="mold-making-panel"] .kindrow.featurekeys.mold-workflow-tabs button svg.icon {
+  flex: none;
+}
+[data-test="mold-making-panel"] .kindrow.featurekeys.mold-workflow-tabs button span {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+[data-test="mold-making-panel"] .mold-workflow-content {
+  min-width: 0;
+  padding: 12px 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-top: 0;
+  border-radius: 0 0 var(--r) var(--r);
+}
+[data-test="mold-making-panel"] .mold-workflow-content [role="tabpanel"] {
+  min-width: 0;
+}
+[data-test="mold-making-panel"] button.withicon,
+.mold-explode-overlay button.withicon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: normal;
+  text-align: center;
+}
+[data-test="mold-making-panel"] button.withicon svg.icon,
+.mold-explode-overlay button.withicon svg.icon {
+  flex: 0 0 auto;
+}
+@media (max-width: 430px) {
+  [data-test="mold-making-panel"] .kindrow.featurekeys.mold-workflow-tabs {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  [data-test="mold-making-panel"] .kindrow.featurekeys.mold-workflow-tabs button {
+    min-height: 62px;
+    padding: 7px 1px 6px;
+    font-size: 10px;
+  }
+  [data-test="mold-making-panel"] .mold-workflow-content {
+    padding: 10px 6px;
+  }
+}
+
+/* In-viewport exploded mold adjustment; never steals ordinary orbit/pan
+   events outside this small control. */
+.mold-explode-overlay {
+  position: absolute;
+  z-index: 30;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--ink);
+  background: var(--panel);
+  box-shadow: 0 5px 20px #0003;
+  pointer-events: auto;
+}
+.mold-explode-overlay label,.mold-explode-overlay output {
+  white-space: nowrap;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.mold-explode-overlay input[type="range"] { width: clamp(130px, 25vw, 320px); }
