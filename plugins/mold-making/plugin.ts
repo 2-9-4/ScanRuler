@@ -7,6 +7,15 @@ import { moldSection } from './app/projectSection'
 import { useMoldPlugin } from './app/useMoldPlugin'
 import { useMold } from './state/moldStore'
 
+export const MOLD_HISTORY_ACTIONS = [
+  'setRepairTarget','setOffsetQuality','setSource','setMode','setParts',
+  'setSplitAxis','setBoxShape','setKeys','setKeyStyle','setKeyPlacement',
+  'setKeyPositions','setKeyPoints','setDimension','setAnalyzeDraft',
+  'setPourEnabled','setVentsEnabled','setPourPoint','setVentPoints',
+  'setMountEnabled','setMountContact','setTopBottomTabs','setTabBoltHoles',
+  'setTabCapturedNuts','setInterfaceLabels',
+] as const
+
 const plugin: ScanRulerPlugin = {
   id:'mold-making',
   name:'Mold Making',
@@ -26,9 +35,7 @@ const plugin: ScanRulerPlugin = {
       }],
       actions:[{
         store:useMold,label:'Mold Making',
-        names:['setRepairTarget','setOffsetQuality','setSource','setMode','setParts','setSplitAxis','setBoxShape','setKeys','setKeyStyle','setKeyPlacement','setKeyPositions','setKeyPoints','setDimension',
-          'setAnalyzeDraft','setPourEnabled','setVentsEnabled','setPourPoint','setVentPoints',
-          'setMountEnabled','setMountContact'],
+        names:MOLD_HISTORY_ACTIONS,
       }],
     })
   },

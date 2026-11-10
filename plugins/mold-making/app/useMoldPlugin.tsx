@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PluginHost, PluginRuntime } from '../../../src/plugins/api'
 import { useShell } from '../../../src/state/shellStore'
+import { useLength } from '../../../src/app/useUnits'
 import { useSectionView } from '../../../src/state/sectionViewStore'
 import { useStore } from '../../../src/state/store'
 import { useDeviation } from '../../../src/state/deviationStore'
@@ -26,6 +27,7 @@ import {showMoldInCadReference} from './cadReferenceHandoff'
 const NO_CREASE = { mode: 'off' as const, angleDeg: 30 }
 
 export function useMoldPlugin(host: PluginHost): PluginRuntime {
+  const len=useLength()
   const workspace=useShell(s=>s.workspace)
   const inWorkspace = workspace==='mold-making'
   const source = useMold((s) => s.source)
@@ -506,7 +508,7 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
           min={0} max={Math.max(60,...generated.targetBounds.max.map((v,i)=>
             (v-generated.targetBounds.min[i])*3))} step={0.5} value={previewGap}
           onChange={e=>useMold.getState().setDimension('previewGap',Number(e.target.value))}/>
-        <output>{previewGap.toFixed(1)} mm</output>
+        <output>{len.fmt(previewGap,1)}</output>
         </div>}
       </div>
     ):null,

@@ -6,12 +6,12 @@ import type {MoldBuild} from '../core/geometry'
 import type {MoldMode} from '../core/settings'
 import {MoldMaterialEstimate,DEFAULT_MOLD_MATERIAL_INPUTS} from '../ui/MoldMaterialEstimate'
 
-function markup(mode:MoldMode,clearance:number,estimate:MoldBuild['materialEstimate']){
+function markup(mode:MoldMode,clearance:number,estimate:MoldBuild['materialEstimate'], inputs={...DEFAULT_MOLD_MATERIAL_INPUTS}){
   // Only the two material properties are read by this independent,
   // presentational widget. No WebGL scene or Manifold worker is needed.
   const generated={volumeMm3:80_000,materialEstimate:estimate} as MoldBuild
   return renderToStaticMarkup(createElement(MoldMaterialEstimate,{
-    generated,mode,clearance,inputs:{...DEFAULT_MOLD_MATERIAL_INPUTS},
+    generated,mode,clearance,inputs,
     onInputChange:()=>{},
   }))
 }
@@ -30,6 +30,18 @@ const box={
   netSiliconeMm3:250_000,
 }
 describe('Mold material estimate organization',()=>{
+  it('uses silicone properties rather than casting resin properties for direct-mold gap',()=>{
+    const html=markup('direct',0.4,direct,{
+      ...DEFAULT_MOLD_MATERIAL_INPUTS,
+      siliconeDensity:1.5,siliconeCostKg:100,
+      castingDensity:8,castingCostKg:1000,
+    })
+    expect(html).toContain('30.0 g')
+    expect(html).toContain('33.0 g')
+    expect(html).toContain('16.5 g')
+    expect(html).toContain('$3.30')
+    expect(html).not.toContain('160.0 g')
+  })
   it('shows each input once, one direct-mold net fill and one total A/B batch',()=>{
     const html=markup('direct',0.4,direct)
     expect(html).toContain('120.00 cm³')
