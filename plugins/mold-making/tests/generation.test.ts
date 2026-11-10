@@ -1,0 +1,932 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Regression tests for complete-height cavities, separately manifold parts,
+// registration, cylindrical boxes and preservation of sub-mm geometry.
+import {beforeAll,describe,expect,it} from 'vitest'
+import Module,{type ManifoldToplevel,type Manifold} from 'manifold-3d'
+import {DEFAULT_MOLD_SETTINGS} from '../core/settings'
+import {boxSolid,buildMold,planMold,seamPositions,registrationSites,toPart,maskMountFromVSeam} from '../core/geometry'
+import {planVSeamMountKeepout} from '../core/masterMount'
+import type {MoldSettings} from '../core/settings'
+import {closedness} from '../../mesh-tools/core/boolean'
+import {signedVolume} from '../../mesh-tools/core/hollow'
+
+let wasm:ManifoldToplevel
+beforeAll(async()=>{wasm=await Module();wasm.setup()})
+const master=boxSolid({min:[-5,-4,0],max:[5,4,10]})
+const noKeys={...DEFAULT_MOLD_SETTINGS,keys:false} as const
+/** Compare physical features against an otherwise identical unkeyed block,
+ * not a much smaller block built with only the minimum no-key backing. */
+const matchedBlank=(target:typeof master,settings:MoldSettings):MoldSettings=>{
+  const keyed=planMold(target,settings).material
+  const blank=planMold(target,{...settings,keys:false}).material
+  return {...settings,keys:false,
+    sideMargin:settings.sideMargin+keyed.side-blank.side,
+    baseThickness:settings.baseThickness+keyed.base-blank.base,
+    wallThickness:settings.wallThickness+keyed.wall-blank.wall}
+}
+/** Quantify *physical* overlap between the actual printable mount and
+ * finished exported mold parts, not just whether a cutter removed volume.
+ * Also test forced axial displacement to prove real opposing stops exist.
+ */
+const meshSolid=(part:ReturnType<typeof buildMold>['parts'][number]):Manifold=>{
+  const mesh=new wasm.Mesh({numProp:3,vertProperties:part.positions,triVerts:part.indices})
+  mesh.merge()
+  return new wasm.Manifold(mesh)
+}
+const postOverlap=(parts:ReturnType<typeof buildMold>['parts'],
+  partCount:number,zOffset=0):number=>{
+  const post=meshSolid(parts.find(p=>p.name==='Hex-keyed master mounting post')!)
+  const shifted=zOffset===0?post:post.translate([0,0,zOffset])
+  let intersection=0
+  for(let i=0;i<partCount;i++){
+    const mold=meshSolid(parts[i])
+    const shared=mold.intersect(shifted)
+    intersection+=shared.volume()
+    shared.delete();mold.delete()
+  }
+  if(shifted!==post)shifted.delete()
+  post.delete()
+  return intersection
+}
+const intact=(parts:ReturnType<typeof buildMold>['parts'])=>{
+  for(const p of parts){
+    expect(p.volumeMm3).toBeGreaterThan(0)
+    expect(closedness(p.indices,p.positions.length/3)).toEqual({open:0,bad:0})
+  }
+}
+describe('Mold Making assembly',()=>{
+  it('auto-repairs a collapsed input face before a manifold mold build',()=>{
+    const malformed={positions:master.positions,
+      indices:Uint32Array.from([...master.indices,0,1,1])}
+    const before=malformed.indices.slice()
+    const result=buildMold(wasm,malformed,noKeys)
+    intact(result.parts)
+    expect(result.warnings.join(' ')).toMatch(/removed 1 exactly zero-area/)
+    expect(malformed.indices).toEqual(before)
+    // This triangle repeats vertex 1, so the validator correctly rejects
+    // its *indices* before checking geometric area.
+    expect(()=>buildMold(wasm,malformed,{...noKeys,repairTarget:false}))
+      .toThrow(/degenerate triangle indices/)
+  })
+  it('diagnoses a zero-area face with three distinct, collinear vertex indices',()=>{
+    // The extra point is exactly on edge 0→1. No repeated indices:
+    // this exercises the area test, unlike the preceding test.
+    const malformed={
+      positions:Float32Array.from([...master.positions,0,-4,0]),
+      indices:Uint32Array.from([...master.indices,0,1,8]),
+    }
+    expect(()=>buildMold(wasm,malformed,{...noKeys,repairTarget:false}))
+      .toThrow(/zero-area triangle at face 12/)
+    const repaired=buildMold(wasm,malformed,noKeys)
+    intact(repaired.parts)
+    expect(repaired.warnings.join(' ')).toMatch(/removed 1 exactly zero-area/)
+    expect(malformed.indices.length).toBe(master.indices.length+3)
+  })
+  it('reports and removes only microscopic disconnected Boolean dust',()=>{
+    const base=wasm.Manifold.cube([8,8,8])
+    const fleck=wasm.Manifold.cube([0.05,0.05,0.05]).translate([15,0,0])
+    const combined=base.add(fleck)
+    try{
+      const warnings:string[]=[]
+      const part=toPart(combined,'Mold part 1',warnings)
+      intact([part])
+      expect(part.volumeMm3).toBeCloseTo(512,2)
+      expect(warnings.join(' ')).toMatch(/microscopic Boolean dust islands/)
+    }finally{combined.delete();fleck.delete();base.delete()}
+  })
+  it('preserves nontrivial disconnected mold islands as distinct printable components',()=>{
+    const base=wasm.Manifold.cube([8,8,8])
+    const island=wasm.Manifold.cube([1,1,1]).translate([15,0,0])
+    const combined=base.add(island)
+    try{
+      const warnings:string[]=[],detached:ReturnType<typeof toPart>[]=[]
+      const primary=toPart(combined,'Mold part 1',warnings,detached)
+      intact([primary,...detached])
+      expect(primary.volumeMm3).toBeCloseTo(512,2)
+      expect(detached).toHaveLength(1)
+      expect(detached[0].volumeMm3).toBeCloseTo(1,3)
+      expect(detached[0].name).toMatch(/detached/)
+      expect(warnings.join(' ')).toMatch(/individually exported loose parts/)
+    }finally{combined.delete();island.delete();base.delete()}
+  })
+  it('defaults to two widely spaced alignment keys and safely falls back to one for a short seam',()=>{
+    const settings={...DEFAULT_MOLD_SETTINGS,keyPlacement:'auto' as const}
+    const normal=seamPositions(0,50,settings)
+    expect(normal).toHaveLength(2)
+    expect(normal[0]).toBeLessThan(15)
+    expect(normal[1]).toBeGreaterThan(35)
+    const short=seamPositions(0,9,settings)
+    expect(short).toHaveLength(1)
+    expect(short[0]).toBeCloseTo(4.5)
+  })
+  it('does not fail the main mold because a detached artifact exports as zero-volume',()=>{
+    const main=wasm.Manifold.cube([8,8,8])
+    // A generated Boolean island may have a nonzero kernel volume, but
+    // collapse entirely when written into Float32 mesh coordinates.
+    const emptySimplified={isEmpty:()=>true,status:()=> 'NoError',delete:()=>{}}
+    const invalid={
+      volume:()=>45.1,
+      getMesh:()=>({
+        vertProperties:new Float32Array([0,0,0,1,0,0,0,1,0]),
+        triVerts:new Uint32Array([0,1,2]),
+      }),
+      simplify:()=>emptySimplified,
+      delete:()=>{},
+    } as unknown as Manifold
+    const composite={
+      isEmpty:()=>false,status:()=> 'NoError',
+      decompose:()=>[main,invalid],
+    } as unknown as Manifold
+    const warnings:string[]=[],detached:ReturnType<typeof toPart>[]=[]
+    const part=toPart(composite,'Mold part 1',warnings,detached)
+    expect(part.volumeMm3).toBeCloseTo(512)
+    intact([part])
+    expect(detached).toHaveLength(0)
+    expect(warnings.join(' ')).toMatch(/excluded an invalid detached artifact/)
+    expect(warnings.join(' ')).toMatch(/45\.1/)
+  })
+  it('distributes registration across both tangent axes, including above the cavity',()=>{
+    const plan=planMold(master,DEFAULT_MOLD_SETTINGS)
+    const sites=registrationSites('x',0,DEFAULT_MOLD_SETTINGS,plan)
+    expect(sites).toHaveLength(4)
+    expect(new Set(sites.map(p=>p[1].toFixed(3))).size).toBe(2)
+    expect(new Set(sites.map(p=>p[2].toFixed(3))).size).toBe(2)
+    expect(sites.some(p=>p[2]<0)).toBe(true)
+    expect(sites.some(p=>p[2]>10)).toBe(true)
+    const ySites=registrationSites('y',0,DEFAULT_MOLD_SETTINGS,plan)
+    expect(new Set(ySites.map(p=>p[0].toFixed(3))).size).toBe(2)
+    expect(new Set(ySites.map(p=>p[2].toFixed(3))).size).toBe(2)
+    const zSites=registrationSites('z',5,DEFAULT_MOLD_SETTINGS,plan)
+    expect(new Set(zSites.map(p=>p[0].toFixed(3))).size).toBe(2)
+    expect(new Set(zSites.map(p=>p[1].toFixed(3))).size).toBe(2)
+  })
+  it('rejects manual pin locations inside the projected cavity and accepts outer corners',()=>{
+    // The direct-mold V-seam doesn't use manual pin coordinates. Size the
+    // test's backing using the pin mode it actually exercises.
+    const pinSettings={...DEFAULT_MOLD_SETTINGS,keyStyle:'tapered-key' as const}
+    const plan=planMold(master,pinSettings)
+    const manual={...pinSettings,keyPlacement:'manual' as const,
+      keyPoints:[[0.5,0.5]] as [number,number][]}
+    expect(()=>registrationSites('x',0,manual,plan)).toThrow(/projected casting cavity/)
+    const okay={...manual,keyPoints:[[0.2,0.15],[0.8,0.85]] as [number,number][]}
+    expect(registrationSites('x',0,okay,plan)).toHaveLength(2)
+    // On a shortened four-part interface, pin sites still span both
+    // available parting-plane coordinates (two lateral × two vertical).
+    // With enough backing to fit all four, none should be discarded.
+    const four=registrationSites('x',0,pinSettings,plan,[-12,0])
+    expect(four).toHaveLength(4)
+    expect(new Set(four.map(p=>p[1].toFixed(3))).size).toBe(2)
+    expect(new Set(four.map(p=>p[2].toFixed(3))).size).toBe(2)
+    expect(four.every(p=>p[1]>=-12&&p[1]<=0)).toBe(true)
+  })
+  it('retains every millimeter of the target in two distinct full-height rigid pieces',()=>{
+    const m=buildMold(wasm,master,noKeys)
+    expect(m.parts).toHaveLength(2)
+    expect(m.openingZ).toBeNull()
+    const outer=planMold(master,noKeys).outer
+    const expected=(outer.max[0]-outer.min[0])*
+      (outer.max[1]-outer.min[1])*(outer.max[2]-outer.min[2])-10*8*10
+    expect(m.volumeMm3).toBeCloseTo(expected,2)
+    intact(m.parts)
+  })
+  it('cuts connected optional pour, funnel and vent bores without changing default tooling',()=>{
+    const base={...DEFAULT_MOLD_SETTINGS,keys:false}
+    const settings={...base,pourEnabled:true,ventsEnabled:true}
+    // Compare identical exterior blocks; enabling a funnel automatically
+    // increases roof thickness instead of hollowing through the top face.
+    const withChannelPlan=planMold(master,settings)
+    const withoutPlan=planMold(master,base)
+    const matched={...base,
+      baseThickness:withChannelPlan.material.base-withoutPlan.material.base}
+    const plain=buildMold(wasm,master,matched)
+    const drilled=buildMold(wasm,master,settings)
+    expect(drilled.printable).toBe(true)
+    expect(drilled.parts).toHaveLength(2)
+    intact(drilled.parts)
+    expect(drilled.volumeMm3).toBeLessThan(plain.volumeMm3-20)
+    expect(drilled.warnings.join(' ')).toMatch(/1 vertical pour channel\(s\) and 1 air vent\(s\)/)
+    expect(plain.warnings.join(' ')).not.toMatch(/vertical pour channel/)
+    // Shared geometry is not mutated by optional channel generation.
+    expect(buildMold(wasm,master,matched).volumeMm3).toBeCloseTo(plain.volumeMm3,3)
+  })
+  it('rejects pouring through a parting interface or oversized funnel rather than corrupting keys',()=>{
+    const common={...DEFAULT_MOLD_SETTINGS,keys:false,pourEnabled:true}
+    expect(()=>buildMold(wasm,master,{...common,pourPoint:[0.5,0.5]}))
+      .toThrow(/parting plane/)
+    expect(()=>buildMold(wasm,master,{...common,pourFunnelDiameter:100}))
+      .toThrow(/side wall/)
+  })
+  it('keeps optional channel openings in a single sector of both threefold and quartered tooling',()=>{
+    const target=boxSolid({min:[-5,-5,0],max:[5,5,10]})
+    for(const parts of [3,4] as const){
+      const placement=parts===3?[0.05,0.5]:[0.08,0.08]
+      const settings={...DEFAULT_MOLD_SETTINGS,keys:false,parts,
+        pourEnabled:true,pourPoint:placement as [number,number]}
+      const result=buildMold(wasm,target,settings)
+      expect(result.parts).toHaveLength(parts)
+      expect(result.printable).toBe(true)
+      intact(result.parts)
+      expect(result.warnings.join(' ')).toMatch(/1 vertical pour channel/)
+    }
+  })
+  it('screens two-piece mold source normals without changing the generated tooling',()=>{
+    const settings={...DEFAULT_MOLD_SETTINGS,keys:false}
+    const ordinary=buildMold(wasm,master,settings)
+    const assessed=buildMold(wasm,master,{...settings,analyzeDraft:true,
+      minimumDraftDeg:3})
+    expect(ordinary.draftAnalysis).toBeNull()
+    expect(ordinary.draftOverlay).toBeNull()
+    expect(assessed.draftAnalysis).not.toBeNull()
+    expect(assessed.draftOverlay).not.toBeNull()
+    expect(assessed.draftOverlay!.positions.length).toBe(
+      assessed.draftOverlay!.angleDeg.length*9)
+    expect(assessed.draftOverlay!.half).toContain(0)
+    expect(assessed.draftOverlay!.half).toContain(1)
+    expect(assessed.draftOverlay!.angleDeg.length).toBeGreaterThan(0)
+    expect(assessed.draftAnalysis!.axis).toBe('x')
+    expect(assessed.draftAnalysis!.reverseFacingMm2).toBeCloseTo(0,5)
+    expect(assessed.draftAnalysis!.lowDraftMm2).toBeGreaterThan(0)
+    expect(assessed.parts).toHaveLength(ordinary.parts.length)
+    expect(assessed.volumeMm3).toBeCloseTo(ordinary.volumeMm3,5)
+    intact(assessed.parts)
+  })
+  it('keeps 1/3/4-piece direct tooling unchanged with release overlays enabled',()=>{
+    const target=boxSolid({min:[-5,-5,0],max:[5,5,10]})
+    for(const parts of [1,3,4] as const){
+      const base={...DEFAULT_MOLD_SETTINGS,parts,keys:false}
+      const normal=buildMold(wasm,target,base)
+      const diagnosed=buildMold(wasm,target,{...base,analyzeDraft:true})
+      expect(normal.draftOverlay).toBeNull()
+      expect(normal.draftAnalysis).toBeNull()
+      expect(diagnosed.draftAnalysis?.regions).toHaveLength(parts)
+      expect(diagnosed.draftOverlay?.angleDeg.length).toBeGreaterThan(0)
+      expect(new Set(diagnosed.draftOverlay!.half).size).toBe(parts)
+      expect(diagnosed.parts).toHaveLength(normal.parts.length)
+      expect(diagnosed.printable).toBe(normal.printable)
+      expect(diagnosed.volumeMm3).toBeCloseTo(normal.volumeMm3,5)
+      for(let i=0;i<parts;i++)
+        expect(diagnosed.parts[i].volumeMm3).toBeCloseTo(normal.parts[i].volumeMm3,5)
+      intact(diagnosed.parts)
+    }
+  })
+  it('adds an opt-in, separately exported glue-on support to a deeper silicone box',()=>{
+    const settings={...DEFAULT_MOLD_SETTINGS,mode:'silicone-box' as const,
+      keys:false,parts:2 as const,
+      mountEnabled:true,mountPoint:[0,0,0] as [number,number,number],
+      mountNormal:[0,0,-1] as [number,number,number],
+      mountHeight:12}
+    const base=buildMold(wasm,master,{...settings,mountEnabled:false})
+    const result=buildMold(wasm,master,settings)
+    expect(base.parts).toHaveLength(2)
+    expect(result.parts).toHaveLength(3)
+    expect(result.parts[2].name).toBe('Hex-keyed master mounting post')
+    expect(result.parts[2].volumeMm3).toBeGreaterThan(0)
+    expect(result.printable).toBe(true)
+    intact(result.parts)
+    expect(result.warnings.join(' ')).toMatch(/separate hex-keyed master mounting post/)
+    expect(planMold(master,settings).innerBox!.min[2])
+      .toBeLessThan(planMold(master,{...settings,mountEnabled:false}).innerBox!.min[2])
+  })
+  it('anchors top and bottom silicone bucket clamp ears in the actual outer walls',()=>{
+    const target=boxSolid({min:[-20,-20,0],max:[20,20,20]})
+    for(const boxShape of ['rectangular','cylindrical'] as const){
+      const s={...DEFAULT_MOLD_SETTINGS,mode:'silicone-box' as const,
+        parts:2 as const,boxShape,splitAxis:'x' as const,
+        keys:true,keyStyle:'v-seam' as const,
+        clampTabCount:0,topBottomTabs:true,topBottomTabCount:3,
+        tabBoltHoles:false}
+      const result=buildMold(wasm,target,s)
+      // Tabs floating in the open bucket cause detached islands and
+      // previously made export unavailable or manufactured loose ears.
+      expect(result.parts).toHaveLength(2)
+      expect(result.printable).toBe(true)
+      expect(result.warnings.join(' ')).not.toMatch(/detached|fragmented/)
+      intact(result.parts)
+    }
+  })
+  it('creates a bottom through-hole and a keyed external master post on rigid direct tooling',()=>{
+    const settings={...DEFAULT_MOLD_SETTINGS,keys:false,parts:2 as const,
+      mountEnabled:true,mountPoint:[0,0,0] as [number,number,number],
+      mountNormal:[0,0,-1] as [number,number,number],
+      clearance:0.4}
+    const ordinary=buildMold(wasm,master,{...settings,mountEnabled:false})
+    const keyed=buildMold(wasm,master,settings)
+    expect(keyed.parts).toHaveLength(3)
+    expect(keyed.parts[2].name).toMatch(/mounting post/)
+    expect(keyed.parts[2].volumeMm3).toBeGreaterThan(0)
+    expect(keyed.volumeMm3).not.toBeCloseTo(ordinary.volumeMm3,3)
+    expect(keyed.warnings.join(' ')).toMatch(/Opposing exterior and interior shoulders/)
+    expect(keyed.printable).toBe(true)
+    intact(keyed.parts)
+  })
+  it('masks the V tongue AND its mating groove across the mounting corridor before Boolean registration',()=>{
+    const source=boxSolid({min:[-10,-8,0],max:[10,8,12]})
+    const settings={...DEFAULT_MOLD_SETTINGS,mode:'silicone-box' as const,
+      parts:2 as const,keys:true,keyStyle:'v-seam' as const,
+      mountEnabled:true,mountPoint:[0,0,0] as [number,number,number],
+      mountNormal:[0,0,-1] as [number,number,number],
+      clampTabCount:0,topBottomTabs:false}
+    const plan=planMold(source,settings)
+    const k=planVSeamMountKeepout(settings,plan.outer)!
+    const z=plan.outer.min[2]+2,span=4*k.radius
+    const tongue=wasm.Manifold.cube([2,span,2]).translate([-1,-span/2,z])
+    const groove=wasm.Manifold.cube([3,span,3]).translate([-1.5,-span/2,z-.5])
+    const [maskedTongue,maskedGroove]=maskMountFromVSeam(
+      wasm,tongue,groove,settings,plan,x=>x)
+    const cylinder=wasm.Manifold.cylinder(
+      k.topZ-k.bottomZ,k.radius,k.radius,96,false,
+    ).translate([k.xy[0],k.xy[1],k.bottomZ])
+    const tongueInside=maskedTongue.intersect(cylinder)
+    const grooveInside=maskedGroove.intersect(cylinder)
+    try{
+      expect(maskedTongue.volume()).toBeGreaterThan(0)
+      expect(maskedGroove.volume()).toBeGreaterThan(0)
+      expect(tongueInside.volume()).toBeLessThan(.001)
+      expect(grooveInside.volume()).toBeLessThan(.001)
+      const [unchanged,unmaskedGroove]=maskMountFromVSeam(
+        wasm,tongue,groove,{...settings,mountEnabled:false},plan,x=>x)
+      expect(unchanged).toBe(tongue)
+      expect(unmaskedGroove).toBe(groove)
+    }finally{
+      tongueInside.delete();grooveInside.delete();cylinder.delete()
+      maskedTongue.delete();maskedGroove.delete();tongue.delete();groove.delete()
+    }
+  })
+  it('leaves an actual registration-free annulus around the hex passage in a silicone bucket',()=>{
+    const source=boxSolid({min:[-10,-8,0],max:[10,8,12]})
+    const settings={...DEFAULT_MOLD_SETTINGS,mode:'silicone-box' as const,
+      parts:2 as const,boxShape:'rectangular' as const,
+      splitAxis:'x' as const,keys:true,keyStyle:'v-seam' as const,
+      clampTabCount:0,topBottomTabs:false,mountEnabled:true,
+      mountPoint:[0,0,0] as [number,number,number],
+      mountNormal:[0,0,-1] as [number,number,number],
+      mountHeight:12}
+    // Match the V seam's backing to exclude size changes. Only positive
+    // registered material in the annulus is being measured, not the base.
+    const unregistered=buildMold(wasm,source,matchedBlank(source,settings))
+    const registered=buildMold(wasm,source,settings)
+    const plan=planMold(source,settings)
+    const mask=planVSeamMountKeepout(settings,plan.outer)!
+    const corridor=wasm.Manifold.cylinder(
+      mask.topZ-mask.bottomZ,mask.radius,mask.radius,96,false,
+    ).translate([mask.xy[0],mask.xy[1],mask.bottomZ])
+    let totalExtraOutside=0
+    try{
+      for(let i=0;i<2;i++){
+        const actual=meshSolid(registered.parts[i])
+        const plain=meshSolid(unregistered.parts[i])
+        const raised=actual.subtract(plain)
+        const blocking=raised.intersect(corridor)
+        try{
+          expect(blocking.volume()).toBeLessThan(.03)
+          totalExtraOutside+=raised.volume()
+        }finally{
+          blocking.delete();raised.delete();actual.delete();plain.delete()
+        }
+      }
+      // Keep usable registration elsewhere on the outside seam.
+      expect(totalExtraOutside).toBeGreaterThan(.1)
+      intact(registered.parts)
+    }finally{corridor.delete()}
+  })
+  it('cuts the keyed mounting socket through finished positive V-seam features',()=>{
+    const master=boxSolid({min:[-10,-8,0],max:[10,8,12]})
+    for(const mode of ['direct','silicone-box'] as const){
+      const settings={...DEFAULT_MOLD_SETTINGS,mode,parts:2 as const,
+        splitAxis:'x' as const,keys:true,keyStyle:'v-seam' as const,
+        clampTabCount:0,topBottomTabs:false,clearance:mode==='direct'?0.4:0,
+        mountEnabled:true,mountPoint:[0,0,0] as [number,number,number],
+        mountNormal:[0,0,-1] as [number,number,number],
+        mountHeight:12}
+      const plain={...settings,mountEnabled:false}
+      // Direct support automatically increases backing thickness and
+      // exterior land. Normalize the blank to the SAME outer dimensions
+      // before comparing removal by the keyed cutter.
+      const material=planMold(master,settings).material
+      const blankMaterial=planMold(master,plain).material
+      const matched=mode==='direct'?{
+        ...plain,
+        sideMargin:plain.sideMargin+material.side-blankMaterial.side,
+        baseThickness:plain.baseThickness+material.base-blankMaterial.base,
+      }:plain
+      const ordinary=buildMold(wasm,master,matched)
+      const built=buildMold(wasm,master,settings)
+      expect(ordinary.parts).toHaveLength(2)
+      expect(built.parts).toHaveLength(3)
+      expect(built.warnings.join(' ')).toMatch(/keyed mounting passage is cut after V-seam registration/)
+      expect(built.warnings.join(' ')).toMatch(/Opposing exterior and interior shoulders/)
+      expect(built.parts[2].name).toBe('Hex-keyed master mounting post')
+      expect(built.parts[2].volumeMm3).toBeGreaterThan(0)
+      if(mode==='direct'){
+        expect(planMold(master,matched).outer).toEqual(planMold(master,settings).outer)
+        // A mounted tool intentionally omits BOTH the positive V ridge
+        // and the matching negative groove inside the mounting keep-out.
+        // The formerly grooved half therefore gains material locally,
+        // despite the post socket removing material elsewhere. Comparing
+        // whole-part volumes in a fixed direction is not a valid fit test.
+        // The focused keep-out and nominal post-overlap checks below and
+        // above verify that registration cannot obstruct the installed post.
+      }
+      expect(built.printable).toBe(true)
+      // Critical assembly regression: the completed V-seam, including
+      // positive ridges, must NOT intersect the actual printable shaft,
+      // widened head, or either seating shoulder at nominal position.
+      expect(postOverlap(built.parts,2)).toBeLessThan(0.05)
+      // Both insertion directions must encounter hard geometry stops:
+      // positive Z: exterior collar/seat; negative Z: head or inner flange.
+      expect(postOverlap(built.parts,2,0.65)).toBeGreaterThan(0.1)
+      expect(postOverlap(built.parts,2,-0.65)).toBeGreaterThan(0.1)
+      intact(built.parts)
+    }
+  })
+  it('engraves paired exterior interface labels without modifying the source',()=>{
+    const settings={...DEFAULT_MOLD_SETTINGS,parts:3 as const,
+      keys:false,clampTabCount:0,interfaceLabels:true}
+    const target=boxSolid({min:[-16,-16,-10],max:[16,16,10]})
+    const original=target.positions.slice()
+    const unmarked=buildMold(wasm,target,{...settings,interfaceLabels:false})
+    const engraved=buildMold(wasm,target,settings)
+    expect(engraved.parts).toHaveLength(3)
+    expect(engraved.printable).toBe(true)
+    expect(engraved.volumeMm3).toBeLessThan(unmarked.volumeMm3)
+    expect(target.positions).toEqual(original)
+    intact(engraved.parts)
+  })
+  it('builds a silicone containment box from an OPEN scan without any mesh repair',()=>{
+    // Two triangles removed from a face: four boundary edges.
+    const open={positions:master.positions,
+      indices:Uint32Array.from([...master.indices.slice(0,6),...master.indices.slice(12)])}
+    expect(closedness(open.indices,open.positions.length/3).open).toBe(4)
+    for(const boxShape of ['rectangular','cylindrical'] as const){
+      const made=buildMold(wasm,open,{...DEFAULT_MOLD_SETTINGS,
+        mode:'silicone-box',boxShape,repairTarget:false})
+      expect(made.parts).toHaveLength(2)
+      intact(made.parts)
+      expect(made.warnings.join(' ')).not.toMatch(/Temporary target mesh repair/)
+    }
+  })
+  it('does not inspect degenerate triangles when sizing a silicone box',()=>{
+    const broken={positions:master.positions,
+      indices:Uint32Array.from([...master.indices,0,1,1])}
+    const original=broken.indices.slice()
+    const made=buildMold(wasm,broken,{...DEFAULT_MOLD_SETTINGS,
+      mode:'silicone-box',parts:1,repairTarget:true})
+    intact(made.parts)
+    expect(made.parts).toHaveLength(1)
+    expect(broken.indices).toEqual(original)
+  })
+  it('allows a silicone box around a vertex cloud with no triangle connectivity',()=>{
+    const points={positions:master.positions,indices:new Uint32Array(0)}
+    const made=buildMold(wasm,points,{...DEFAULT_MOLD_SETTINGS,
+      mode:'silicone-box',parts:1,keys:false})
+    expect(made.parts).toHaveLength(1)
+    intact(made.parts)
+  })
+  it('still rejects open targets for actual cast-negative cavities',()=>{
+    const open={positions:master.positions,
+      indices:Uint32Array.from([...master.indices.slice(0,6),...master.indices.slice(12)])}
+    expect(()=>buildMold(wasm,open,{...noKeys,repairTarget:false}))
+      .toThrow(/not watertight/)
+  })
+  it('generates four separate rigid blocks with no coincident combined STL',()=>{
+    const m=buildMold(wasm,master,{...noKeys,parts:4})
+    expect(m.parts).toHaveLength(4)
+    const outer=planMold(master,{...noKeys,parts:4}).outer
+    const unchamfered=(outer.max[0]-outer.min[0])*
+      (outer.max[1]-outer.min[1])*(outer.max[2]-outer.min[2])-800
+    // Four exterior vertical corners have a flat, printable chamfer face.
+    expect(m.volumeMm3).toBeLessThan(unchamfered)
+    expect(m.volumeMm3).toBeGreaterThan(unchamfered*0.90)
+    intact(m.parts)
+  })
+  it('registers tall rectangular and cylindrical buckets using external wall bosses',()=>{
+    const solid=boxSolid({min:[-5,-4,0],max:[5,4,10]})
+    for(const shape of ['rectangular','cylindrical'] as const){
+      for(const keyStyle of ['tapered-key','metal-dowel'] as const){
+        const settings={...DEFAULT_MOLD_SETTINGS,mode:'silicone-box' as const,
+          boxShape:shape,keyStyle,parts:2 as const}
+        const made=buildMold(wasm,solid,settings)
+        expect(made.parts).toHaveLength(2)
+        intact(made.parts)
+        expect(made.warnings.join(' ')).toMatch(/external wall bosses/)
+        const b=planMold(solid,settings).outer
+        // Exterior bosses should be visible OUTSIDE the nominal bucket,
+        // including above the master height. Keys solely in the bottom
+        // plate would fail this test.
+        for(const part of made.parts){
+          let upperExterior=false
+          for(let i=0;i<part.positions.length;i+=3){
+            const y=part.positions[i+1],z=part.positions[i+2]
+            if(z>12 &&
+              (y<b.min[1]-0.1||y>b.max[1]+0.1))upperExterior=true
+          }
+          expect(upperExterior).toBe(true)
+        }
+      }
+    }
+  })
+  it('places registration at two heights on each exterior quadrant of a four-piece box',()=>{
+    for(const boxShape of ['rectangular','cylindrical'] as const){
+      const s={...DEFAULT_MOLD_SETTINGS,mode:'silicone-box' as const,
+        boxShape,parts:4 as const,keyStyle:'metal-dowel' as const}
+      const result=buildMold(wasm,master,s)
+      expect(result.parts).toHaveLength(4)
+      intact(result.parts)
+      const outer=planMold(master,s).outer
+      // The two parting axes should each have boss material exterior to
+      // their corresponding walls. Every quadrant receives two height pairs.
+      for(const part of result.parts){
+        let wallBoss=false
+        for(let i=0;i<part.positions.length;i+=3){
+          const x=part.positions[i],y=part.positions[i+1],z=part.positions[i+2]
+          if(z>12 &&
+            (x<outer.min[0]-0.15||x>outer.max[0]+0.15||
+             y<outer.min[1]-0.15||y>outer.max[1]+0.15)){
+            wallBoss=true;break
+          }
+        }
+        expect(wallBoss).toBe(true)
+      }
+    }
+  })
+  it('uses manual bucket registration positions as heights and rejects vertical overlaps',()=>{
+    // Silicone V-seams intentionally ignore pin heights; this tests the
+    // separate metal-dowel/boss registration mode.
+    const common={...DEFAULT_MOLD_SETTINGS,mode:'silicone-box' as const,
+      keyStyle:'metal-dowel' as const,
+      keyPlacement:'manual' as const,keyPositions:[0.25,0.75]}
+    const made=buildMold(wasm,master,common)
+    expect(made.parts).toHaveLength(2)
+    intact(made.parts)
+    expect(()=>buildMold(wasm,master,{...common,keyPositions:[0.25,0.26]}))
+      .toThrow(/Registration height.*too close/)
+  })
+  it('creates four keyed halves without splitting through a pre-existing registration pin',()=>{
+    const settings={...DEFAULT_MOLD_SETTINGS,parts:4 as const,keyStyle:'tapered-key' as const}
+    const plain=buildMold(wasm,master,matchedBlank(master,settings))
+    const keyed=buildMold(wasm,master,settings)
+    expect(keyed.parts).toHaveLength(4)
+    intact(keyed.parts)
+    const netMaterialDelta=Math.abs(keyed.volumeMm3-plain.volumeMm3)
+    // Four mating interfaces contribute multiple actual pins and sockets.
+    // Keep the registration effect below 2% of the matched bulk tooling
+    // volume, rather than a hardcoded 100 mm³ that depends on the old layout.
+    expect(netMaterialDelta).toBeLessThan(plain.volumeMm3*0.02)
+  })
+  it('generates a four-part circular silicone box, with separate closed pieces',()=>{
+    const made=buildMold(wasm,master,{...DEFAULT_MOLD_SETTINGS,mode:'silicone-box',
+      boxShape:'cylindrical',parts:4})
+    expect(made.parts).toHaveLength(4)
+    intact(made.parts)
+  })
+  it('increases cavity volume (reduces printed block volume) for positive clearance',()=>{
+    const common={...DEFAULT_MOLD_SETTINGS,keys:false}
+    const grown={...common,clearance:0.1}
+    const zeroPlan=planMold(master,common)
+    const expanded=planMold(master,grown)
+    // The new automatic mold material enlarges the block WITH the cavity;
+    // compare two cavity sizes only after making the external blocks equal.
+    const zero=buildMold(wasm,master,{...common,
+      sideMargin:expanded.material.side-zeroPlan.material.side,
+      baseThickness:expanded.material.base-zeroPlan.material.base})
+    const clearance=buildMold(wasm,master,grown)
+    expect(clearance.volumeMm3).toBeLessThan(zero.volumeMm3)
+    expect(clearance.openingZ).toBeNull()
+    intact(clearance.parts)
+  })
+  it('exports clean, connected positive-clearance parts even with source repair off',()=>{
+    // Numerical degenerates are produced by the SDF/CSG kernel AFTER the
+    // master has been checked. The source repair checkbox must not control
+    // whether output mesh cleanup is applied.
+    const made=buildMold(wasm,master,{...noKeys,repairTarget:false,
+      clearance:0.1,offsetQuality:'balanced'})
+    expect(made.parts).toHaveLength(2)
+    intact(made.parts)
+    for(const part of made.parts){
+      expect(part.volumeMm3).toBeGreaterThan(0)
+      for(let i=0;i<part.indices.length;i+=3){
+        const {positions:p,indices:idx}=part
+        const a=idx[i]*3,b=idx[i+1]*3,c=idx[i+2]*3
+        const ux=p[b]-p[a],uy=p[b+1]-p[a+1],uz=p[b+2]-p[a+2]
+        const vx=p[c]-p[a],vy=p[c+1]-p[a+1],vz=p[c+2]-p[a+2]
+        expect(Math.hypot(uy*vz-uz*vy,uz*vx-ux*vz,ux*vy-uy*vx)).toBeGreaterThan(0)
+      }
+    }
+    expect(made.warnings.join(' ')).not.toMatch(/source repair was OFF/i)
+  })
+  it('builds a continuous V-ridge and matching groove around the projected outline with external clamping ears',()=>{
+    const settings={...DEFAULT_MOLD_SETTINGS,keyStyle:'v-seam' as const}
+    const without=buildMold(wasm,master,matchedBlank(master,settings))
+    const withSeam=buildMold(wasm,master,settings)
+    expect(withSeam.parts).toHaveLength(2)
+    expect(withSeam.printable).toBe(true)
+    intact(withSeam.parts)
+    expect(withSeam.warnings.join(' ')).toMatch(/continuous contour-following triangular/)
+    expect(withSeam.volumeMm3).toBeGreaterThan(without.volumeMm3)
+    // Ears must extend outside the unkeyed mold's Y bounds.
+    const bounds=(a:typeof withSeam.parts)=>a.flatMap(p=>{
+      const ys:number[]=[]
+      for(let i=1;i<p.positions.length;i+=3)ys.push(p.positions[i])
+      return [Math.min(...ys),Math.max(...ys)]
+    })
+    const before=bounds(without.parts),after=bounds(withSeam.parts)
+    expect(Math.min(...after)).toBeLessThan(Math.min(...before)-1)
+    expect(Math.max(...after)).toBeGreaterThan(Math.max(...before)+1)
+  })
+  it('uses the requested V-seam width, offset and larger clamp tab count without rejecting zero extra margins',()=>{
+    const settings={...DEFAULT_MOLD_SETTINGS,sideMargin:0,baseThickness:0,
+      vSeamWidth:4,vSeamHeight:3.5,vSeamSpacing:2.5,
+      clampTabCount:4,clampTabWidth:10,clampTabProjection:16,clampTabThickness:9}
+    const plan=planMold(master,settings)
+    expect(plan.material.side).toBeGreaterThan(settings.vSeamSpacing+settings.vSeamWidth)
+    expect(plan.material.base).toBeGreaterThan(settings.vSeamWidth)
+    const generated=buildMold(wasm,master,settings)
+    expect(generated.parts).toHaveLength(2)
+    expect(generated.printable).toBe(true)
+    intact(generated.parts)
+  })
+  it.each(['rectangular','cylindrical'] as const)(
+    'makes an attached U-shaped V-seam on a %s silicone box, keeping the pouring opening',
+    (boxShape)=>{
+      const settings={...DEFAULT_MOLD_SETTINGS,mode:'silicone-box' as const,
+        boxShape,splitAxis:'x' as const,keys:true,keyStyle:'v-seam' as const,
+        wallThickness:0,baseThickness:0,clampTabCount:2,clampTabWidth:8}
+      const result=buildMold(wasm,master,settings)
+      expect(result.parts).toHaveLength(2)
+      intact(result.parts)
+      expect(result.printable).toBe(true)
+      expect(result.warnings.join(' ')).toMatch(/wall-supported U-shaped/)
+      const plan=planMold(master,settings)
+      expect(plan.material.wall).toBeGreaterThan(settings.vSeamWidth)
+    })
+  it('supports a closed V-seam on a silicone-box horizontal Z split',()=>{
+    const settings={...DEFAULT_MOLD_SETTINGS,mode:'silicone-box' as const,
+      keys:true,keyStyle:'v-seam' as const,splitAxis:'z' as const,
+      clampTabCount:2,clampTabWidth:8}
+    const result=buildMold(wasm,master,settings)
+    expect(result.parts).toHaveLength(2)
+    expect(result.printable).toBe(true)
+    intact(result.parts)
+  })
+  it('adds optional upper/lower external clamp ears without requiring side tabs',()=>{
+    const base={...DEFAULT_MOLD_SETTINGS,keyStyle:'v-seam' as const,
+      clampTabCount:0,topBottomTabs:false,topBottomTabCount:2}
+    const none=buildMold(wasm,master,base)
+    const extra=buildMold(wasm,master,{...base,topBottomTabs:true})
+    expect(extra.parts).toHaveLength(2)
+    expect(extra.printable).toBe(true)
+    intact(extra.parts)
+    const outside=planMold(master,{...base,topBottomTabs:true}).outer
+    expect(extra.parts.some(p=>p.positions.some((v,i)=>i%3===2&&v>outside.max[2]+2))).toBe(true)
+    expect(extra.parts.some(p=>p.positions.some((v,i)=>i%3===2&&v<outside.min[2]-2))).toBe(true)
+    expect(extra.volumeMm3).toBeGreaterThan(none.volumeMm3)
+  })
+  it('subtracts concentric through holes and an optional six-sided nut recess from clamp tabs',()=>{
+    const base={...DEFAULT_MOLD_SETTINGS,keyStyle:'v-seam' as const,
+      clampTabCount:1,clampTabWidth:10,tabBoltHoles:false,
+      topBottomTabs:true,topBottomTabCount:1}
+    const solid=buildMold(wasm,master,base)
+    const drilled=buildMold(wasm,master,{...base,tabBoltHoles:true})
+    const nuts=buildMold(wasm,master,{...base,tabBoltHoles:true,tabCapturedNuts:true})
+    for(const m of [solid,drilled,nuts]){
+      expect(m.parts).toHaveLength(2)
+      expect(m.printable).toBe(true)
+      intact(m.parts)
+    }
+    // Hardware relief subtracts material from otherwise identical ears.
+    // The nut option may cause automatic growth of the ears, so compare
+    // only to a blank using matching hardware-dependent dimensions.
+    expect(drilled.volumeMm3).toBeLessThan(solid.volumeMm3)
+    const sameSizeNoPocket=buildMold(wasm,master,{
+      ...base,tabBoltHoles:true,tabNutAcrossFlats:base.tabNutAcrossFlats,
+      tabNutDepth:base.tabNutDepth,tabCapturedNuts:false,
+      clampTabWidth:Math.max(base.clampTabWidth,base.tabNutAcrossFlats+4),
+      clampTabProjection:Math.max(base.clampTabProjection,base.tabNutAcrossFlats+5),
+      clampTabThickness:Math.max(base.clampTabThickness,base.tabNutDepth+2),
+    })
+    expect(nuts.volumeMm3).toBeLessThan(sameSizeNoPocket.volumeMm3)
+  })
+  it.each(['x','z'] as const)(
+    'keeps additional top/bottom bolted tabs attached on a %s-first four-piece mold',
+    splitAxis=>{
+      const options={...DEFAULT_MOLD_SETTINGS,parts:4 as const,
+        splitAxis,keyStyle:'v-seam' as const,clampTabCount:0,
+        topBottomTabs:true,topBottomTabCount:1,
+        tabBoltHoles:true,tabCapturedNuts:true}
+      const result=buildMold(wasm,master,options)
+      expect(result.parts).toHaveLength(4)
+      expect(result.printable).toBe(true)
+      intact(result.parts)
+    })
+  it('builds three independently closed silicone-box wedges with supported L seams',()=>{
+    const target=boxSolid({min:[-5,-5,-5],max:[5,5,5]})
+    for(const count of [0,2]){
+      const settings={...DEFAULT_MOLD_SETTINGS,mode:'silicone-box' as const,
+        boxShape:'cylindrical' as const,parts:3 as const,keys:true,
+        keyStyle:'v-seam' as const,clampTabCount:count}
+      const made=buildMold(wasm,target,settings)
+      expect(made.printable).toBe(true)
+      expect(made.parts).toHaveLength(3)
+      intact(made.parts)
+      const plan=planMold(target,settings)
+      // The L groove runs on the solid bucket floor, inside the cylindrical
+      // wall; neither mesh may occupy the empty silicone volume there.
+      const floor=plan.outer.min[2]+settings.vSeamWidth/2+
+        settings.vSeamClearance+0.8
+      expect(floor).toBeLessThan(plan.innerBox!.min[2])
+      expect(made.warnings.join(' ')).toMatch(/mating registration on all three radial interfaces/)
+    }
+  })
+  it('adds radial clamp ears to all three mating interfaces',()=>{
+    const target=boxSolid({min:[-5,-5,-5],max:[5,5,5]})
+    const noEars=buildMold(wasm,target,{...DEFAULT_MOLD_SETTINGS,
+      parts:3,keys:true,clampTabCount:0})
+    const withEars=buildMold(wasm,target,{...DEFAULT_MOLD_SETTINGS,
+      parts:3,keys:true,clampTabCount:2})
+    expect(withEars.parts).toHaveLength(3)
+    expect(withEars.printable).toBe(true)
+    intact(withEars.parts)
+    expect(noEars.warnings.join(' ')).toMatch(/no exterior clamp tabs/)
+    expect(withEars.warnings.join(' ')).toMatch(/2 paired exterior clamp tabs per radial interface/)
+    expect(withEars.volumeMm3).toBeGreaterThan(noEars.volumeMm3)
+    const outer=planMold(target,{...DEFAULT_MOLD_SETTINGS,parts:3}).radialOuter!.radius
+    expect(withEars.parts.some(p=>{
+      for(let i=0;i<p.positions.length;i+=3)
+        if(Math.hypot(p.positions[i],p.positions[i+1])>outer+2)return true
+      return false
+    })).toBe(true)
+  })
+  it('cuts three 120-degree radial sectors of cylindrical tooling',()=>{
+    const target=boxSolid({min:[-5,-5,-5],max:[5,5,5]})
+    // Measure only the cylindrical tooling and radial registration here.
+    // Exterior clamp ears add substantial *intentional* material; those
+    // are covered independently by the radial clamp-tab regression.
+    const settings={...DEFAULT_MOLD_SETTINGS,
+      parts:3 as const,keyStyle:'v-seam' as const,keys:true,
+      clearance:0,clampTabCount:0}
+    const made=buildMold(wasm,target,settings)
+    expect(made.parts).toHaveLength(3)
+    expect(made.printable).toBe(true)
+    intact(made.parts)
+    const planned=planMold(target,settings)
+    const r=Math.hypot(5,5)+planned.material.side
+    const height=10+2*planned.material.base
+    const targetVolume=1000
+    const expectedVolume=Math.PI*r*r*height-targetVolume
+    expect(made.volumeMm3).toBeGreaterThan(expectedVolume*0.96)
+    expect(made.volumeMm3).toBeLessThan(expectedVolume*1.04)
+    expect(made.warnings.join(' ')).toMatch(/mating registration on all three radial interfaces/)
+  })
+  it.each(['x','y','z'] as const)(
+    'registers four quarter mold interfaces with open V-ridges for a %s-first split',
+    splitAxis=>{
+      const settings={...DEFAULT_MOLD_SETTINGS,parts:4 as const,
+        splitAxis,keyStyle:'v-seam' as const,clampTabCount:0}
+      const blank=buildMold(wasm,master,matchedBlank(master,settings))
+      const made=buildMold(wasm,master,settings)
+      expect(made.parts).toHaveLength(4)
+      expect(made.printable).toBe(true)
+      intact(made.parts)
+      expect(made.warnings.join(' ')).toMatch(/open, flat-tipped V-ridge/)
+      expect(Math.abs(made.volumeMm3-blank.volumeMm3)).toBeLessThan(blank.volumeMm3*0.08)
+    })
+  it.each(['v-seam','printed-pin','tapered-key','metal-dowel'] as const)(
+    'registers all three radial mating interfaces using %s',keyStyle=>{
+      const target=boxSolid({min:[-5,-5,-5],max:[5,5,5]})
+      const settings={...DEFAULT_MOLD_SETTINGS,parts:3 as const,
+        keyStyle,keys:true,clampTabCount:0}
+      const made=buildMold(wasm,target,settings)
+      expect(made.parts).toHaveLength(3)
+      expect(made.printable).toBe(true)
+      intact(made.parts)
+      expect(made.warnings.join(' ')).toMatch(/mating registration on all three radial interfaces/)
+    })
+  it('keeps the V-groove clear even where exterior clamp ears approach it',()=>{
+    const settings={...DEFAULT_MOLD_SETTINGS,parts:2 as const,
+      clampTabCount:4,clampTabWidth:8,clampTabProjection:16,
+      clampTabThickness:9,keyStyle:'v-seam' as const}
+    const made=buildMold(wasm,master,settings)
+    expect(made.parts).toHaveLength(2)
+    expect(made.printable).toBe(true)
+    intact(made.parts)
+  })
+  it('does not silently export fragmented parts from an offset with registration',()=>{
+    const created=buildMold(wasm,master,{
+      ...DEFAULT_MOLD_SETTINGS,clearance:0.5,offsetQuality:'balanced',
+    })
+    expect(created.parts).toHaveLength(2)
+    expect(created.printable).toBe(true)
+    intact(created.parts)
+    expect(created.warnings.join(' ')).not.toMatch(/NOT PRINTABLE|disconnected printable islands/)
+  })
+  it('marks sound zero-clearance tooling as printable',()=>{
+    const created=buildMold(wasm,master,noKeys)
+    expect(created.printable).toBe(true)
+    expect(created.parts).toHaveLength(2)
+  })
+  it('automatically expands the mold backing to fit a large requested cavity clearance',()=>{
+    const settings={...noKeys,clearance:4.2,sideMargin:0,baseThickness:0}
+    const plan=planMold(master,settings)
+    expect(plan.material.side).toBeGreaterThan(4.2)
+    expect(plan.material.base).toBeGreaterThan(4.2)
+    const made=buildMold(wasm,master,settings)
+    expect(made.parts).toHaveLength(2)
+    expect(made.printable).toBe(true)
+    intact(made.parts)
+  })
+  it('rejects invalid geometry without relying on an arbitrary triangle aspect ratio',()=>{
+    // Extremely skinny but nonzero-area triangles are valid. Ordinary
+    // intersections routinely create sliver triangles on shared planes.
+    const p=boxSolid({min:[-5,-4,0],max:[5,4,10]})
+    const build=buildMold(wasm,p,{...noKeys,parts:4,splitPosition:0.123456})
+    expect(build.parts.length).toBe(4)
+    intact(build.parts)
+  })
+  it('places two well-separated automatic keys within the usable seam',()=>{
+    const full=seamPositions(-12,12,DEFAULT_MOLD_SETTINGS)
+    expect(full).toHaveLength(2)
+    expect(full[0]).toBeCloseTo(-full[1])
+    expect(full[1]-full[0]).toBeGreaterThan(
+      DEFAULT_MOLD_SETTINGS.keyDiameter+2*DEFAULT_MOLD_SETTINGS.keyClearance,
+    )
+    // Four-part interfaces use a shorter seam but retain both keys when
+    // sufficient material remains for their diameter and minimum spacing.
+    const half=seamPositions(-12,0,DEFAULT_MOLD_SETTINGS)
+    expect(half).toHaveLength(2)
+    expect(half[0]).toBeGreaterThan(-12)
+    expect(half[1]).toBeLessThan(0)
+  })
+  it('respects manually edited positions or reports collisions',()=>{
+    const keys={...DEFAULT_MOLD_SETTINGS,keyPlacement:'manual' as const,keyPositions:[0.25,0.75]}
+    expect(seamPositions(-12,0,keys)).toEqual([-9,-3])
+    expect(()=>seamPositions(-12,0,{...keys,keyPositions:[0.24,0.25]}))
+      .toThrow(/overlaps/)
+  })
+  it('cuts matching blind metal-dowel sockets in both mating halves',()=>{
+    const settings={...DEFAULT_MOLD_SETTINGS,keyStyle:'metal-dowel' as const}
+    const plain=buildMold(wasm,master,matchedBlank(master,settings))
+    const sockets=buildMold(wasm,master,settings)
+    expect(sockets.parts).toHaveLength(2)
+    intact(sockets.parts)
+    expect(sockets.parts[0].volumeMm3).toBeLessThan(plain.parts[0].volumeMm3)
+    expect(sockets.parts[1].volumeMm3).toBeLessThan(plain.parts[1].volumeMm3)
+    expect(sockets.warnings.join(' ')).toMatch(/metal dowels/)
+  })
+  it('makes tapered printed male keys and clearance-fit female cavities',()=>{
+    const settings={...DEFAULT_MOLD_SETTINGS,keyStyle:'tapered-key' as const}
+    const plain=buildMold(wasm,master,matchedBlank(master,settings))
+    const m=buildMold(wasm,master,settings)
+    expect(m.parts).toHaveLength(2)
+    intact(m.parts)
+    expect(m.parts[0].volumeMm3).toBeGreaterThan(plain.parts[0].volumeMm3)
+    expect(m.parts[1].volumeMm3).toBeLessThan(plain.parts[1].volumeMm3)
+  })
+  it('handles four-part rigid tooling with blind holes instead of printed pins',()=>{
+    const m=buildMold(wasm,master,{...DEFAULT_MOLD_SETTINGS,parts:4,keyStyle:'metal-dowel'})
+    expect(m.parts).toHaveLength(4)
+    intact(m.parts)
+  })
+  it('adds physical pins and corresponding negative pockets',()=>{
+    const settings={...DEFAULT_MOLD_SETTINGS,keyStyle:'tapered-key' as const}
+    const plain=buildMold(wasm,master,matchedBlank(master,settings))
+    const keyed=buildMold(wasm,master,settings)
+    expect(keyed.parts).toHaveLength(2)
+    intact(keyed.parts)
+    expect(keyed.parts[0].volumeMm3).toBeGreaterThan(plain.parts[0].volumeMm3)
+    expect(keyed.parts[1].volumeMm3).toBeLessThan(plain.parts[1].volumeMm3)
+  })
+  it('builds a real open-top round silicone box in two mating solids',()=>{
+    const s={...noKeys,mode:'silicone-box' as const,boxShape:'cylindrical' as const,boxDraftDeg:2}
+    const m=buildMold(wasm,master,s)
+    expect(m.parts).toHaveLength(2)
+    intact(m.parts)
+    const p=planMold(master,s)
+    expect(p.cylinder).not.toBeNull()
+    expect(m.volumeMm3).toBeGreaterThan(0)
+  })
+  it('preserves a thin positive fin without hidden default smoothing',()=>{
+    // Fin only 0.2 mm thick: it adds real target volume to a block.
+    const base=new wasm.Manifold(new wasm.Mesh({numProp:3,vertProperties:master.positions,triVerts:master.indices}))
+    const fin=wasm.Manifold.cube([0.2,2,8],true).translate([5,0,5])
+    const joined=base.add(fin)
+    const mesh=joined.getMesh()
+    const shape={positions:new Float32Array(mesh.vertProperties),indices:new Uint32Array(mesh.triVerts)}
+    const s={...noKeys,sideMargin:8}
+    const mold=buildMold(wasm,shape,s)
+    const p=planMold(shape,s)
+    const v=(p.outer.max[0]-p.outer.min[0])*(p.outer.max[1]-p.outer.min[1])*(p.outer.max[2]-p.outer.min[2])
+    expect(mold.volumeMm3).toBeCloseTo(v-signedVolume(shape.positions,shape.indices),1)
+    intact(mold.parts)
+    joined.delete();fin.delete();base.delete()
+  })
+  it('never accepts nonwatertight or inside-out scan geometry',()=>{
+    const bad={positions:master.positions,indices:master.indices.slice(3)}
+    expect(()=>buildMold(wasm,bad,DEFAULT_MOLD_SETTINGS)).toThrow(/not watertight/)
+  })
+  it('keeps legacy one-piece impression explicitly truncated',()=>{
+    const single=buildMold(wasm,master,{...noKeys,parts:1})
+    expect(single.parts).toHaveLength(1)
+    expect(single.openingZ).toBe(5)
+    expect(single.warnings.join(' ')).toMatch(/bottom half/)
+  })
+})

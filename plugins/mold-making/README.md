@@ -1,0 +1,623 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+# Mold Making workspace
+
+**Current tooling modes are Direct-print mold and Silicone mold box.** The experimental thin negative shell mode was removed; previously saved shell recipes migrate to Direct, preserving their other settings. New mold runs show a progress bar with sampling updates. Fast preview sampling now caps the SDF at 80,000 cells; use Balanced or Fine for detail-sensitive final printing. Significant disconnected Boolean islands are preserved for inspection, but prevent export of the resulting assembly until the geometry is corrected.
+
+Native ScanRuler workspace for manufacturing mold tooling from imported STL, OBJ, PLY, 3MF and CAD STEP/STP solids. Target import, project persistence, the mesh worker, Manifold booleans, mesh offsets, and STL/3MF export use existing ScanRuler infrastructure.
+
+## Workflows
+
+- **Direct-print rigid molds:** The default makes **two full-height, separate manifold pieces** divided at an adjustable plane (X, Y or Z; plane fraction 0.1–0.9). The three-part arrangement divides the mold into 120° radial sectors around Z; four parts use a second perpendicular split. The source cavity is subtracted **before** splitting so each part retains its full-height cavity. Legacy one-piece impressions remain supported for older projects.
+- **Silicone containment boxes:** rectangular or **cylindrical**, with printed base, wall thickness, silicone space, and **interior box-wall draft** (0–12°). Supports two, three, and four-piece tooling; legacy one-piece containers remain loadable. A master must be held in place and sealed before pouring silicone. External wall bosses carry registration, and an optional glue-on post supports the master through a keyed floor opening. Three-part containers use a cylindrical envelope.
+- **Mating features:** choose **V seams** (default), tapered printed keys, straight printed pins, or **paired blind clearance sockets for purchased metal dowels** (no printed pins). Registration diameter, depth and radial clearance are configurable. Default automatic placement distributes **two widely spaced keys per seam**, reducing the count when smaller split interfaces cannot safely accommodate them. Alternatively, manual placement exposes editable key positions as percentages of the shared seam span, with add/remove controls and a draggable seam editor (click to add, drag to move, double-click/Delete to remove). Coordinates are applied to every applicable split interface, not yet independently per interface; direct dragging in the viewport remains planned under #12. Direct-print mold keys are placed in the solid backing below the cavity. Silicone buckets instead add solid **exterior wall bosses** at the ends of each parting seam, at two different heights by default, then form printed pins or blind dowel sockets in those bosses. Manual key percentages on silicone buckets adjust boss **heights**, not the old bottom-of-box seam positions. Four-part buckets assign bosses to each quadrant's exterior edge. Too-thin or narrow seams are rejected rather than silently omitted. Four-part Z-first splitting supports V-seam registration; other key styles have layout restrictions.
+- **Inspection:** each mold section and separately printed support can be hidden or isolated. An adjustable exploded view keeps the original master in place, and assembled section mode exposes interior geometry. A non-destructive **Reference in CAD** opens a translucent, non-pickable assembly overlay in Reverse Engineering without replacing the imported master or discarding other pieces. It is not yet an editable CAD B-rep.
+- **Export:** a **separate STL for each part** or a **single 3MF with separately positioned parts** on a printable plate. Never concatenate coincident mating planes into one STL. Materials/triangles and per-part warnings are shown before exporting. Fragmented/invalid main tooling is **preview only** and cannot be exported; no geometry is silently certified as printable.
+
+## Fidelity and draft notes
+
+Default cavity clearance is **0 mm**, retaining the source facets exactly. Positive clearance now uses a **sampled spherical Minkowski dilation**: the solid's signed Euclidean distance is evaluated against its original triangles (using an accelerated triangle BVH) and fed to Manifold 3.2.1's `levelSet` mesher at a negative iso-level. This rounds sharp corners instead of moving individual vertices along averaged normals, and is used for the direct mold cutter. The reported grid spacing and refinement tolerance are important: this is **not an exact analytic CAD offset** and may lose sub-grid features. To avoid excessive browser memory usage and slow sampling, **Balanced** (default) caps sampling at approximately **850,000 cells** (previously 8 million); **Fast** targets 80,000 cells for previews, while **Fine** allows up to 6 million for higher detail. The actual grid spacing depends on model dimensions and is printed in generated warnings. Each setting also scales the level-set refinement tolerance. Models exceeding the chosen budget and maximum grid spacing fail explicitly rather than silently returning the old jagged normal-offset geometry. The synchronous Manifold level-set callback reports approximate progress from the mesh Web Worker, and uses previous-face BVH bounds to accelerate nearby distance queries. It is not parallelized, and multithreading would require a separate SDF sampling/data-flow design rather than simply spawning more UI workers. The source is never modified. OpenCascade's B-rep offset algorithm is not used here because the mold worker receives a tessellated mesh even when the source originally came from STEP. Native Manifold Minkowski sums arrived after the project's pinned Manifold 3.2.1, and the newer implementation is still computationally expensive for very dense, nonconvex inputs. High-fidelity preservation for extremely small features still needs a production CAD/SDF offset implementation. 
+
+
+Generated CSG/level-set mold parts are checked separately from the imported master. If Manifold's mesh export creates a zero-area triangle (even when the master is valid and source repair is enabled), the export stage first tries a topology-preserving vertex adjustment of at most 0.001 mm, then native Manifold simplification at 0.00001 and 0.0001 mm. It accepts only a closed, positive-volume mesh with material-volume change below a strict tolerance; otherwise the output is rejected with an output-specific error. The source-repair toggle does not control this generated-mesh cleanup.
+
+Four-piece molds are now partitioned completely **before** their registration features are added, so a second split does not shear pins installed on the first seam. Extremely skinny but nonzero-area triangles on parting faces are accepted. Mold Making now offers **Repair small mesh defects** (enabled by default): it works only on a temporary target copy, preserves closed source topology by lifting collapsed triangle vertices by at most **0.001 mm** (no dropped faces), and, on open targets, also attempts the same connectivity-preserving lift before any face removal; only if lifting is impossible does it remove **exactly zero-area triangles** and join **exactly coincident** vertices if that improves watertightness, and tries Mesh Tools' flat then curved hole-filling algorithms and validates the patched triangles for zero area to patch only complete boundary loops smaller than the **Max repair hole size (mm)** control (default 2 mm). A full report of what changed appears in generated warnings; **the scan, imported file, and STEP reference are not altered**. Larger rims, broken edge chains, nonmanifold edges and failed patches still block generation for **direct-print molds**; the **silicone containment box only uses the model's bounding coordinates** and requires no manifold/watertight target or repair pass. Do not increase the hole limit blindly: any patch is a guess at missing source material. For deliberate edits, use **Mesh Tools → Fill holes → Use for analysis**, or repair the mesh externally. When a split produces multiple disconnected solids, each substantial island is preserved as a separate named exportable component, with explicit loose-part warnings. Only microscopic Boolean dust is discarded under a strict volume budget. Manually inspect detached components before printing; they are not guaranteed usable mold features. The Mold Making panel wraps tool-choice button labels, long setting names and errors within the panel width. See #32 for regression coverage on production models.
+
+The **box draft** angle applies only to the containment box's *inner walls*, not the master cavity. **True rigid-cavity draft and undercut-safe extraction are not implemented.** The optional source-normal draft overlay is a warning, not a mechanical release simulation. Multipart direct molds offer adjustable pour sprues/funnels and vents; their routing is not yet automatically validated for uninterrupted liquid flow, and the casting may require manual review. Pins, split seams, clamp tabs, and bolts do **not** by themselves make a liquid-tight mold.
+
+## Local verification
+
+```sh
+npm ci
+npm run build
+npm test
+node scripts/check-plugin-boundary.mjs
+npm run e2e:ci  # after npm run build; includes Mold Making's browser smoke test
+npm run dev
+```
+
+Open the local build (not scanruler.com), select **Mold Making**, and import [cube-10mm.stl](fixtures/cube-10mm.stl). Generate a two-part direct mold with **0 clearance**; both STL files should be closed solids and cover the full 10 mm target height. Generate four parts and inspect each. Compare tapered and straight printed pins, then select metal dowel sockets and verify that both halves have holes (not pins). Try manual key fractions 25% and 75%, and verify the cavity is unchanged. For the four-piece test, check that each interface has registration without keys cutting across the other split. Then change to a circular silicone box, set 2° draft and 2 parts, and inspect the bottom, open top and matching split. Open the 3MF in a slicer and check that all its parts are spaced apart. Repeat with a watertight STEP part and a model with slender features.
+
+The plugin-specific smoke test is `plugins/mold-making/scripts/e2e-mold-making.mjs`, registered in `ci.json` and run by the app's normal `npm run e2e:ci` command. It imports the committed cube, generates direct and silicone tooling, validates STL/3MF browser exports, exercises part isolation, and checks that the Reverse Engineering reference handoff preserves the original scan and all generated pieces. Unit and browser tests **do not replace slicer validation, fit tests, leak checks, or physical printing**. CI must pass on the final upstream-synchronized PR branch before marking the PR ready.
+
+## Known limitations
+
+Known advanced gaps include non-planar/freeform seam placement, independently positioned keys on every interface, automatic verification of inlet/vent flow paths, shape-adaptive/reusable jackets, hollow-core molds, genuinely editable CAD references, and detail-preserving high-fidelity positive cavity offset. We supply printable-tool topology checks and a *source-normal* draft screening overlay, but **not** a guarantee of demolding, release, sealing, chemical compatibility, or material strength. Use slicer checks and physical test fits; consult the open issues for feature tracking.
+
+Full feature tracking: [docs/mold-making-issues.md](../../docs/mold-making-issues.md). In particular, #6, #7, #8, #10, #11, #12, #13, #14, and #25.
+
+
+**Direct mold mating features use the complete 2D parting plane**, not the lowest backing Z level. On an X seam the editable coordinates are Y/Z; Y seams use X/Z; Z seams use X/Y. Automatic placement searches up to four safe locations around the part's conservative projected bounding rectangle, at both top and bottom and along both lateral edges when room permits. Pins and sockets that would overlap the projected casting envelope are rejected before any Boolean. The direct mold panel includes a genuine 2D parting-plane editor with draggable pins, arrow-key adjustments and per-axis numeric coordinates; after the first successful generation it displays a dimensionally accurate projected target rectangle based on source geometry and current margins. Four-part seams repeat normalized positions across their individual seam spans. The silicone-box exterior boss editor remains a separate height/end editor.
+
+**Disconnected output artifacts are not equivalent to malformed imported sources.** Manifold may report a positive-volume detached component whose Float32 exported mesh has negligible or negative signed volume. Export checking now uses an origin-relative volume calculation to avoid catastrophic cancellation on small parts far from the coordinate origin; fully valid detached islands are exported separately, reversible-winding islands are corrected and revalidated, and truly invalid detached pieces are omitted with a highlighted warning of the kernel-reported volume. Main mold pieces remain strictly validated, and no invalid island is included in printable export. If significant detached material was omitted, review all cavities and mating features before manufacturing.
+
+
+
+### Spherical clearance integrity
+
+The signed-distance field uses angle-weighted vertex pseudonormals and
+two-face edge pseudonormals to classify interior/exterior points at sharp
+features. Using a single nearest triangle normal at those locations can
+invert the distance sign, produce disconnected SDF islands, and corrupt molds
+even with Fine sampling. Increasing resolution alone does **not** fix a
+wrong sign. The offset generator now rejects a result that contains more
+connected components than the source (a true outward dilation cannot split
+source components).
+
+Output meshes with nontrivial disconnected solids, or excluded invalid
+Boolean fragments, are explicitly **preview-only**. Exporting their STL or
+3MF is blocked rather than implying the largest resulting piece is a valid
+mold. Tiny numerical dust below the existing strict budget may still be
+filtered. If the tool remains preview-only, inspect the model and provide a
+reproduction mesh; do not print the fragmented output.
+
+## Contour registration and preview (2026-10)
+
+The default **two-piece direct mold** now uses a continuous V-profile
+tongue-and-groove. It follows a convex rough silhouette projected into the
+parting plane with rounded corners rather than placing isolated pins in block
+corners. This is deliberately an **outer approximation** of the target's
+projected geometry; small concavities are not followed, so the registration
+does not enter the cast cavity. The ridge is backed by solid material and the
+socket includes radial fit clearance. Multiple user-sized exterior ears on each
+mating half permit applying external clamps (no automatic holes or clamp
+hardware specification). The minimum necessary backing is now automatically calculated from the
+seam dimensions, so zero extra margins are valid.
+
+This contour method is implemented for **two-part direct molds**,
+including X/Y/Z splits. Two-part **silicone containment boxes** also have a
+V-seam: a **capped U-profile** follows the two outer sidewalls and solid base
+for an X/Y split, leaving the top pour opening unobstructed; a horizontal Z
+split uses a **closed ring** supported by the printed walls. Round boxes
+follow a circular wall profile. **Four-part molds now use four separate open
+V-ridge/groove pairs**: each is trimmed back from the perpendicular
+parting plane to avoid crossing another seam, with clamp ears on the
+appropriate exterior quadrant. For threefold radial tooling, all three
+120-degree radial interfaces support a vertical, capped V-profile,
+printed pins, or matching blind metal-dowel sockets.
+
+The V seam has its own **width, height, offset/spacing from the target or
+outer walls, and groove fit clearance**. These dimensions do not depend on
+the pin diameter or pin fit. The male V-ridge now has a **flattened tip**
+(24% of its half-width) for easier insertion, while the corresponding
+female groove remains open and clearance-fit. Exterior clamp ears are
+united into each mold half **before** cutting the female groove, so a tab
+cannot accidentally refill a nearby socket. Clamping tabs have independent
+**count per outside edge, width along that edge, projection from the
+mold exterior, and thickness per half**. Increasing their count/width
+may increase the generated backing to fit distinct tabs.
+
+**Dimension fields called "extra" default to zero**. The generator first
+calculates the minimum solid wall/backing necessary for the selected cavity
+clearance, registration feature, and tab layout, then adds the user's extra
+side/base/wall material. Entering zero does not turn off necessary
+structural walls. Silicone space remains an explicit physical distance.
+Old saved project dimensions named sideMargin/baseThickness/wallThickness are
+still accepted and now represent additional material, so legacy projects
+with positive values can generate larger molds than previously.
+
+The default 3D result view is the **assembled mold with the original
+source model visible and a section plane perpendicular to the primary
+parting plane**. Toggle to an exploded preview in the mold panel; only
+the separate mold pieces are included in STL/3MF export. The assembled preview opens the application’s native section-view store,
+including its existing interactive plane gizmo and ViewBar controls. The
+mold meshes use ScanRuler's native `CapSet` to close the sectioned faces
+with the same stencil caps as other scene layers, rather than just clipping
+open surface shells. Exploded preview moves two parts along the chosen split
+axis, four parts diagonally along both split axes, and threefold sectors
+radially along their 120-degree sector bisectors. The previous section-view state is restored on exit.
+
+**Threefold** splits use three vertical 120-degree radial sectors around the
+target's XY bounds center, with a cylindrical outside for direct mold
+tooling. This is a threefold **mold layout**; it does not duplicate or
+symmetrize an asymmetric input model. Check radial demoldability. The
+threefold layout supports registration, but does not currently generate
+external clamp ears.
+
+**Voxelization:** positive clearance already uses a sampled signed
+distance field (a voxel-like scalar grid) before a Manifold isosurface.
+The primary cavity and all split, key and box Booleans remain
+surface/Manifold operations. Coarse voxel Booleans may accelerate
+operations but introduce quantization and higher memory usage; this
+change does not replace the exact split planes or final export geometry
+with raw occupied voxels.
+
+## Mold hardware and downstream editing
+
+Clamping ears can now be placed on the **top and bottom exterior edges**
+of X/Y parting faces as well as the previously supported side edges. These
+are optional and have their own count, hidden until enabled. Threefold
+radial tooling receives clamping ears along all three 120-degree interfaces,
+distributed along Z; it uses the same ear dimensions/count as other layouts.
+Threefold V registration now returns inward from the outer rim toward the
+projected cavity contour (with a fixed safety clearance) rather than using
+only a short ridge at the outside.
+
+The tab hardware settings are optional and conditional: enabling **through
+bolt holes** drills a clearance bore through both registered ears, with
+independently specified diameter; enabling **captured nuts** adds a
+six-sided recess to the outside of the negative half using an
+across-flats dimension and pocket depth. The generator automatically grows
+ear thickness, width and projection as required by the requested hardware.
+These are modeled holes, not supplied nuts/bolts, and must be checked
+against the actual fastener dimensions and torque requirements.
+
+Four-part rectangular tooling now has small vertical **exterior corner
+chamfers**, cut before the four-way split. This gives each outside corner
+a planar printing/fixturing land without beveling the cavity corners.
+Existing legacy one-piece impression projects remain loadable, but new
+one-sided impressions are no longer offered as a creation choice.
+
+### Workspace workflow subtabs and non-destructive CAD references
+
+The Mold Making left panel is organized into **four subtabs**:
+**Model & size** (source scan/STEP, mold type, dimensional controls),
+**Split & keys** (parting plane, matching registration, clamp hardware),
+**Pour & mount** (sprues/vents and glue-on support), and
+**Inspect & export** (assembly preview, draft/undercut report, material
+estimate, per-part export and editing). The **Generate tooling** action
+and generation errors/progress are always visible above the subtabs.
+After a successful generation the panel automatically opens Inspect.
+Changing a subtab does **not** reset or regenerate tooling, and
+keyboard Left/Right/Home/End navigate the tab strip. Offset quality
+is only shown for a positive direct cavity clearance; split fraction
+is shown beside the primary split axis rather than with material
+dimensions. This organization does not change mold settings or exports.
+
+Mold Making now gives workflow tabs and the main part/view/export operations
+distinct icons in ScanRuler's **native 24-unit line-art system**. Common
+actions reuse `src/ui/icons.tsx` (scan, split, visibility, editing,
+Boolean operations); the small set of mold-specific icons in
+`ui/MoldIcons.tsx` illustrates the mold cavity, pour, vent, glue-on
+post, isolated piece, assembled/exploded parts and mesh export. Icon
+outlines show the object, the existing blue accent shows the operation,
+and dashed contours identify removed or referenced geometry.
+**Icons are decorative**, not replacements for visible button labels
+or accessible names. The four tabs now form a **single connected strip**, directly attached
+to the active settings panel. Inactive tabs have a recessed finish; the
+selected tab shares the panel surface, with an accent edge across its top.
+Icons and labels remain visible even in the narrow sidebar, and action
+buttons stay visually separate above and inside the tab content.
+
+The Mold Making result opens as an **exploded model**, with the original
+source shown inside. A separation slider is overlaid on the 3D viewport
+and can return to zero gap. The assembled button still uses ScanRuler's
+native section view. The generated-parts list now combines **Hide/Show,
+Isolate/Unisolate, Show all, per-part STL export, Edit copy, and Reference
+in CAD** controls in one place. An independent **Show original master**
+checkbox hides the imported scan/STEP source without hiding mold parts;
+the source draft heatmap remains controlled by its own viewport toolbar.
+These are viewport-only visibility masks and **do not regenerate or
+modify part meshes, invalidate the mold, or affect STL/3MF exports**.
+An exported master support/pedestal is listed and can be isolated just
+like a mold half. Hiding a component also excludes its section-view caps,
+so invisible components cannot leave misleading cut-face overlays. All
+parts and the source become visible again after generating a new mold.
+
+Individual generated mold parts are offered through `src/app/solids.ts`,
+where Mesh Tools' Boolean panel can select them as operands while the
+original scan remains in place.
+
+**Reference in CAD** now opens Reverse Engineering **without replacing
+the active scan or STEP reference**. The Mold Making preview remains
+available as an assembled, translucent, view-only overlay with **every
+generated mold piece and separate post**; the chosen part is highlighted.
+The original master remains displayed and aligned with the tooling.
+The Reverse Engineering workspace continues using its original source
+for modeling, and returning to Mold Making restores the previous
+assembled/exploded preview. No geometry, scan version, or mold export
+is changed by this handoff. The overlay is **not** an editable B-rep
+and its facets cannot yet be picked as Reverse Engineering CAD faces.
+Creating separately editable CAD bodies and propagating edits back to
+mold components is a separate integration feature.
+
+**Edit copy** is still an explicitly destructive operation: it imports
+the selected mold part as a new scan in Mesh Tools, replacing the
+previous scan and invalidating source-dependent mold generation results.
+Save your project before using Edit copy, or use **Reference in CAD**
+to retain all existing context. The Boolean-solid handoff remains
+non-destructive as well.
+
+## Threefold registration and material estimates (2026-11)
+
+- The default V-profile is now **4.8 mm wide × 2.4 mm high** (nominal
+  45° sloping sides), with independent groove fit clearance. Existing saved
+  projects retain their explicitly configured width/height.
+- Threefold **direct molds** use an open, rounded **C** registration contour
+  wrapping the master in each radial parting plane. Threefold **silicone
+  containment boxes** use an **L**: down the supported cylindrical outer
+  wall, then inward across the solid bottom plate. Both end short of the
+  shared central hub. They are not interchangeable: an open-top silicone box
+  cannot support the upper bar of a C seam.
+- Open V-profile ends are chamfered by short, positive-width lead-in
+  transitions, avoiding square 90° endcaps and zero-width knife edges.
+  The direct-mold seam remains outside the source silhouette; the silicone
+  L requires enough floor and side-wall backing. Failed geometry validation
+  must block export rather than create disconnected ribbon fragments.
+- **Material quantity & cost estimates** are available in a collapsed
+  section of generated results, with editable density and $/kg assumptions.
+  Printed part material is the exact closed mesh volume, but reported
+  fully-solid mass/cost is **not a slicer print time, infill, supports or
+  purge calculation**. Direct casting void volume is the actual Boolean
+  cutter volume, including deliberately requested clearance. For silicone
+  boxes, capacity to the rim is integrated from the designed interior wall
+  taper. The master's volume is subtracted only when its source triangles
+  form a closed, positive-volume mesh. For open scans/vertex clouds, only
+  gross capacity is reported and is not a usable net pour estimate. Neither
+  estimate includes overpour, fittings, headspace, trapped air, or waste.
+  No geometry, build settings, preview or export path is changed by editing
+  material assumptions.
+- **Two-component silicone mixing** is available in silicone
+  containment boxes and generated **direct molds with positive cavity
+  clearance** (not with zero clearance). In BOTH modes, the silicone
+  quantity assumes the physical master is still inside the mold:
+  **silicone fill = tool interior volume − original master volume**,
+  additionally minus any support volume inside a silicone box.
+  - Direct: actual expanded cavity cutter volume minus measured *original*
+    master volume. The full cavity remains available separately as the
+    amount of material for casting after removing the master, but it is
+    **not** the silicone clearance-gap requirement.
+  - Containment box: calculated gross internal box capacity to the rim
+    minus measured master displacement minus any in-container support
+    displacement. Open/invalid scans without a trustworthy master
+    volume show the gross upper bound but **do not calculate A/B mix
+    quantities** from it.
+  The readout shows internal volume, the original part's displacement,
+  any mounting support displacement, the **net silicone volume in cm³
+  / mL**, mixed density in g/cm³, base mass, separate Part A and Part B
+  masses, overage-adjusted batch total and estimated cost. Direct molds
+  use the editable **Cast material density** and price; silicone boxes
+  use **Silicone density** and price. The material-estimate section
+  opens automatically for a generated direct mold with positive clearance.
+  Enter your material's **A:B ratio by WEIGHT** and optional overage
+  percentage (default 10%). **By-volume and by-weight mixing ratios are
+  not interchangeable** and must be checked against the specific
+  product's technical data sheet. The 1:1 starting value is illustrative.
+  The allowance applies after volume-to-mass conversion; it cannot
+  compensate for unmodeled voids, top-off height or trapped air.
+  Editing ratio, density, cost and overage does not invalidate or
+  regenerate the mold.
+
+### Organized material readout
+The generated-results material calculator now uses a single task-based
+breakdown (extracted into `ui/MoldMaterialEstimate.tsx`):
+1. **Silicone volume — master remains inside:** one displayed value for
+   gross tool interior, one for original model displacement, one optional
+   mounting-post displacement, and **one net silicone quantity**.
+   In direct tooling the gross interior is the expanded cavity; in
+   containment boxes it is the container's to-rim capacity. A valid net
+   amount is never guessed from an open mesh's bounding box.
+2. **Silicone product & mixing:** one editable density and price, A:B
+   weight ratio and mixing-loss allowance, followed by base mass,
+   additional mass, final total, the Part A/B weigh-out and batch cost.
+   Density is an input, not a second redundant read-only number.
+3. **Printed tooling — separate material:** a collapsed sub-section
+   reports only the generated solid tool volume, its independently
+   editable material density/price and fully solid mass/cost. **Printed
+   solid material is not silicone fill.**
+
+Each computed value is shown once in its relevant section, rather than
+repeated as casting, silicone, gross, net and total material readouts.
+`1 cm³ = 1 mL`; all material volumes are displayed in cm³.
+The product assumptions are kept locally in the panel so a regenerated
+mold doesn't reset the mixing recipe. React server-rendered UI
+regressions in `tests/materialEstimateUI.test.ts` cover direct and
+silicone-box net volume explanations, gross-only unavailable masters,
+and zero-clearance direct tooling.
+
+These changes are regression-covered in `contourSeam.test.ts`,
+`generation.test.ts`, `settings.test.ts` and `materialEstimate.test.ts`.
+The complete browser build/Manifold suite and physical print still require
+local verification.
+
+## Optional direct-mold pour sprues and air vents (MOLD-012, 2026-11)
+
+The Mold Making panel provides an **opt-in** casting-channel section for
+multipart **direct-print** molds (2, 3 or 4 pieces). Both the pour channel and
+vents default to **off**, so existing saved molds and newly created molds
+generate unchanged until the user explicitly enables one.
+
+- The pour sprue is a vertical circular channel from the exterior top face
+  to the real casting void, with a tapered circular funnel mouth. Set bore
+  diameter, funnel mouth diameter, funnel depth (zero gives straight-only)
+  and an XY position as fractions of the **target bounding box**.
+- Optional air vents are smaller vertical circular bores, each with an
+  independently editable XY position and shared diameter. Up to eight
+  positions are supported. These are **manual** rather than automatically
+  identified at trapped high points.
+- A triangle-ray check locates the top casting surface beneath each XY
+  point. Geometry generation refuses locations outside the actual projected
+  model, collisions between channels, cuts through the outer mold sidewall,
+  and bores/funnels that cross a nominal parting plane. Tooling material
+  above the model is automatically increased when needed for the funnel.
+- Channels are subtracted **before** the mold is partitioned into pieces,
+  and their cutter must demonstrably intersect the actual Boolean casting
+  solid, not just its bounding box. Each separately exported mold piece is
+  still validated for manifold geometry and fragmentation. Existing
+  registration/key generation is otherwise unchanged.
+
+**Limitations:** vertical only; no automatic air-trap analysis, side gates,
+horizontal branched ducts, separate risers, or channels in silicone
+containment boxes. A channel connected to the cavity does not guarantee
+complete filling, venting, airtight sealing or safe release for every
+casting process. Inspect the assembled seam, pour orientation and any
+interference in a slicer before manufacturing.
+
+Tests: `pourChannels.test.ts`, `generation.test.ts`,
+`settings.test.ts`. Run locally with `npm run build` and
+`npx vitest run plugins/mold-making/tests`; remote source changes do not
+by themselves establish that the geometry suite passes.
+
+## Source draft and possible undercut screening (MOLD-013, 2026-11)
+
+For **all direct-print mold layouts (1, 2, 3, or 4 parts)**, toggle
+**Draft / overhangs** in the **3D viewport**. This opt-in analysis is
+disabled by default and can be turned on before or after generation.
+Turning it on after generation loads only the source diagnostic overlay,
+**retaining the already-generated printable mold parts and exports**.
+The configurable positive draft threshold defaults to
+2° (allowed range: 0–30°).
+
+The analyzer mirrors the actual part partition: the lower half of a
+one-piece impression is measured along −Z; two opposing halves move
+along ± the selected parting axis; three radial sectors use the outward
+60°/180°/300° bisectors; four orthogonal quadrants use the normalized
+diagonal combination of their two split-axis directions. Source triangles
+crossing **any** parting plane are geometrically clipped to each
+participating part so the overlay and area report agree.
+Using area-weighted outward face normals, it separately reports:
+
+- **Reverse-facing area**: source faces pointing *against* that half's
+  withdrawal direction, a warning of potential undercuts.
+- **Low-draft area**: near-parallel faces failing the requested positive
+  angle, *excluding* those classified reverse-facing.
+- Surface area and worst local draft angle for each half.
+
+The analysis is a **surface-normal diagnostic**, not a collision-free mold
+extraction proof, draft operation, or guarantee of demoldability. It cannot
+fully detect occlusion by other geometry along the release path, moving
+cores, deformation, shrinkage, bridges or inaccessible fasteners. It measures
+the source mesh rather than any positive-clearance SDF-offset cutter; as
+such the report does not account for altered edges following offset.
+It applies to one-piece impressions, two-piece, threefold and four-part
+**direct** molds. It is not a silicone containment-box release analysis:
+the workflow for demolding flexible silicone from its printed box has
+different mechanics and master mount constraints. For four-part molds,
+diagonal simultaneous part withdrawal is an **assumed screening direction**,
+not a validated removal sequence. For single-piece impressions the
+source geometry above the mid-height opening is deliberately excluded.
+The geometry is unchanged even when the report flags a problem.
+
+Tests in `draftAnalysis.test.ts` cover a closed convex cube, synthetic
+opposing reverse-facing facets, a triangle clipped at the split plane and
+minimum-draft validation. The generation/settings suites separately confirm
+the opt-in diagnostic does not alter tooling volume or break legacy project
+persistence. Full local TypeScript/Manifold/Vitest verification is still
+required.
+
+## Visual draft and undercut overlay on the source model (2026-11-01)
+
+When the optional **direct-mold** draft diagnostic is enabled,
+generating the tooling now also returns a **separate display-only source
+surface**. The overlay is displayed by default in the Mold Making 3D viewport,
+not baked into any mold part, CAD Boolean operand, or exported STL/3MF.
+
+- The actual analyzed source triangles are clipped at the split plane, and
+  each clipped face receives the signed draft angle for its **actual
+  part/sector's assumed release vector** (up to four parts).
+- **Red** is reverse-facing/potential undercut; **amber** is below the
+  chosen positive-draft threshold; **green** satisfies the threshold.
+  Continuous signed-angle heatmap coloring is also available.
+- Toggle all parts, or one specific half/sector; optionally show
+  **only problematic faces**, leaving the original source mesh visible
+  as a backdrop. Control opacity and the on-screen angle threshold
+  interactively without rerunning Boolean mold generation or invalidating
+  printable output.
+- Hover a colored face in the 3D scene to inspect its original triangle
+  number, part/sector, signed draft angle and classification. Changing a view
+  or switching to exploded/section views does not alter the source mesh.
+- The numerical area report remains tied to the **generation-time**
+  draft threshold; the on-screen threshold changes only the colors
+  and visibility of faces. To obtain new measured aggregate statistics,
+  modify the persisted minimum draft setting and regenerate.
+
+Data flows from `core/draftOverlay.ts` through the existing mold worker
+as transferrable typed arrays into the existing `MoldPreview` plugin
+scene layer. Scan-source overlays follow the scan's alignment group;
+reference/STEP overlays use reference world coordinates. The scene layer
+restores the original scan/reference visibility on exit or dismissal,
+and disposes all GPU overlay buffers when cleared.
+
+This is **not** a swept-volume / collision proof of demoldability.
+Per-face normal screening can flag false positives and overlook
+interlocking shapes. The exact analyzed model is used for colors;
+when automatic mesh repair is enabled it is the repaired temporary
+copy, not an edit to the original imported model.
+
+Regression coverage: `tests/draftOverlay.test.ts` and
+`tests/draftPartitions.test.ts` verify per-part assignment,
+triangle clipping across the split plane, per-face source indices,
+live threshold classifications and face filtering. The suite still
+needs a local TypeScript/React/Manifold/WebGL run.
+
+## Live viewport setup and picked master mounting (2026-11-01)
+
+The Mold Making viewport now offers **live pre-generation** overlays, without
+requiring the **Generate tooling** operation:
+
+- **Cut planes** shows translucent cyan outlines spanning the **planned
+  outside mold bounds**, not just the imported model. The display mirrors
+  the one-piece mid-height impression plane, the configurable primary
+  two-part split, the three radial 120° parting interfaces, or the primary
+  and perpendicular secondary planes used in four-part tooling.
+- **Draft / overhangs** toggles the existing per-source-triangle color
+  diagnostic in the 3D viewport before generation. Pick a sector and
+  adjust the displayed minimum angle there. The source mesh is analyzed
+  by the worker's lightweight **preview** operation (no Manifold
+  instantiation, remeshing or mold Boolean).
+- **Sprue / vent holes** are visible on the **actual source surface**,
+  rather than floating above its bounding box: orange annular **SPRUE Ø…**
+  and teal **VENT N Ø…** markers have camera-facing labels, short leaders
+  and a large transparent picking disk. Click **Add sprue** or **Add vent**
+  in the viewport, then drag a ring in the XY plane. Its Z coordinate
+  follows the first actual source-mesh intersection along the vertical
+  bore direction. An off-model point is shown red and labelled **NO
+  SURFACE**, and a drag to a location without source triangles is rejected.
+  Positions are saved on pointer release, not on every move. The bores
+  remain vertical, and the existing geometry preflight still checks
+  intersection with the actual cavity, seams, and mold outer walls.
+- **Draft / overhangs** no longer needs an entire left-panel setup
+  section. In the 3D viewport it supports classifications, continuous
+  heatmap, per-part filters, hide adequate faces, live angle threshold,
+  opacity and hover readouts both **before and after** generation.
+  The generated mold is never hidden just because the overlay is on:
+  exploded pieces retain their normal solid appearance, while an
+  assembled mold can be viewed with a translucent shell around the
+  colored source.
+
+### Matched exterior seam labels
+
+Optional **Engrave matching interface numbers** (under Parting and
+registration) subtracts shallow seven-segment glyphs from the **outside**
+of each multipart tool, never the mating face or cavity. **Each digit is
+placed individually beside its own mating seam**, not grouped at the
+center of the part. Both sides of a shared seam use the same number.
+For circular tools the numbers sit just inside either edge of each
+outer arc; for rectangular tools they sit alongside the projected split
+line on the adjoining exterior wall:
+
+- 2 parts: `1` / `1`
+- 3 sectors: `1-3`, `1-2`, `2-3`
+- 4 quadrants: `1-4`, `1-2`, `3-4`, `2-3`
+
+The setting defaults off to protect existing production geometry;
+enable it for new numbered tooling. Each actual mating interface is
+mapped to its own two adjacent parts (including a Z-first four-part
+split). Small labels on curved bodies are placed near the radial seam
+and recessed on the outer tangent; flat bodies use an exterior side
+face with the digits close to the split, not the cavity. If a part is
+too small or a Boolean fails, the original valid part is preserved
+with a warning rather than losing the tooling.
+
+### Keyed through-base master support (rigid and silicone molds)
+
+In either **direct-print** or **silicone-box** mode, click
+**Pick glue-on support face** in the 3D viewport, then choose an
+actual substantially downward-facing source triangle. Enable the
+separately printable support and set the glue pad, keyed stem, and
+outside stop/foot diameters. In silicone-box mode, optional interior
+clearance below the model extends the bucket downward. In direct
+mode the backing and outside clearance grow as required.
+
+The mount is meaningful for rigid negative tooling only with
+**positive cavity clearance**. At zero direct-mold clearance the UI
+disables the support and the geometry validator rejects it. Silicone
+containment boxes remain supported with their nonzero interior space.
+
+Before V-seam registration is added to the mold, the generator
+creates a **circular keep-out corridor around the selected master post**.
+This mask is larger than the widest post feature by at least the
+V-profile's half-width/projection plus fit clearance. It is subtracted
+from both the **positive V-ridge and matching female groove BEFORE**
+unioning the tongue with its mold half. The profile therefore stops
+cleanly on either side of the hex opening, with a short ordinary
+planar mating interface across the gap. The same mask also applies
+to three-sector radial V-seams.
+
+At generation time the keyed socket is additionally subtracted from
+the finished mold parts AFTER all registration geometry is added.
+The hexagonal shaft cutter has the same facet orientation as the
+printable shaft and explicitly defined absolute Z endpoints, with
+0.25 mm nominal radial clearance. The complete physical post mesh
+is also included in the final cut, and finished parts are checked
+for residual post overlap. The final cut is a second safeguard,
+**not** the primary V-seam exclusion mechanism.
+
+The post is held vertically by **two opposing shoulders**:
+- A **1.2 mm-deep exterior hexagonal counterbore** receives the matching
+  collar and prevents excessive upward insertion (0.15 mm nominal gap
+  to the counterbore ceiling).
+- For **direct rigid molds**, a wider cylindrical head recess clears
+  the entire glue-pad head and its tilt. The glue pad has a horizontal
+  underside shoulder 0.15 mm above the pocket floor; this prevents
+  the glued master dropping farther into the bore.
+- For **silicone containment boxes**, the glue pad is suspended above
+  the interior floor, so its shoulder cannot support the model there.
+  Instead, a second integral flange on the post rests just above the
+  interior floor, with 0.15 mm nominal clearance, preventing downward
+  movement.
+
+The post is a separate export, not joined to the source, and remains
+stationary while mold sections are exploded. Because both inner and outer
+stops are larger than the shaft, **at least two mold sections** are required
+for installation around the post. The UI rejects a captured mounting
+post in a one-piece mold. A translucent purple model
+shows it before generation. The under-head clearance and shaft
+socket permit the mold halves to close around the already-glued post.
+**This is an assembly-around-the-post design:** a fully assembled tool
+with both head and external collar larger than the shaft cannot have
+that post pushed endwise through its narrow hexagonal hole.
+
+For faster positioning, use **Center mounting post on model** in the
+3D toolbar or mounting section. The app tries the XY bounding-box
+center from BELOW and looks for a downward-facing source triangle,
+then samples nearby underside positions when the center is a hole.
+Use manual face picking to override the result. This does not rotate
+or change the imported master.
+
+The user must glue the contact pad to the master, seat the inner
+and outer locating shoulders by closing the appropriate mold sections,
+and **seal the through-wall penetration against casting fluid**. The feature does not rotate the imported master,
+automatically verify that the post misses other parts of a complex
+source geometry, or support near-horizontal/sideways attachment
+directions. A curved contact surface may not fully mate with the
+flat pad. Test-fit the printable stop/hex before pouring. For silicone
+estimates, only the post volume **inside the cavity** (not its
+external shoulder or the volume inside the printed base) is
+subtracted from the estimated pour.
+
+### Silicone bucket clamp-tab anchoring
+
+For V-seam cylindrical and rectangular silicone containment
+buckets, top and bottom clamp tabs are no longer placed at evenly
+spaced unsupported points over the empty opening. Instead they are
+anchored to the two **actual exterior wall intersections** of each
+parting plane, including slightly inward-of-tangent intersections
+for round bucket walls. At most two such wall locations are
+available on one exterior rim; additional requested tabs are
+not duplicated in free space.
+
+The fast preview returns source mesh buffers and parting guides through
+`worker.ts`. The independent `viewer/moldGuides.ts` scene layer handles
+raycastable source picking and constrained horizontal dragging; the
+ordinary Mold Preview layer remains responsible for diagnostic colors
+and generated mold parts. Both layers follow the selected source's
+scan alignment or reference frame, and clean up their GPU geometry
+when the workspace closes or source changes.
+
+Tests: `tests/moldGuidesAndMount.test.ts` covers planned split guides,
+support bounds/normal validations and the closed oriented hexagonal
+mounting post. `tests/interfaceLabels.test.ts` checks matching seam
+numbers. `tests/generation.test.ts` includes a silicone-box and
+rigid-mold through-post build, exterior interface engraving, and attached
+upper/lower bucket clamp tabs. Full browser interaction, TypeScript,
+Vitest, and geometry-engine validation are still required.
