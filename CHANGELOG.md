@@ -7,6 +7,9 @@ saves carry the same number as `appVersion`. How a release is cut is in
 
 ## Unreleased
 
+- **Experimental Mold Making workspace**: direct-print negative molds and silicone containment boxes, 2-/3-/4-part tooling, registration, clamps, master support, channels, inspection, material estimates and STL/3MF export. Source meshes remain unchanged; SDF clearance is approximate and tooling requires physical inspection. See [Mold Making](plugins/mold-making/README.md).
+
+
 - **Right-click menus on list rows** (2026-11-10, pull request 131). A
   right click on an element, dimension or tolerance row opens a menu with
   Edit, Hide or Show in viewport and Delete, and on a dimension or
