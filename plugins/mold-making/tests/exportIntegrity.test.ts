@@ -47,8 +47,8 @@ function expectExportableParts(settings:MoldSettings){
   expect(model).toBeDefined()
   const xml=new TextDecoder().decode(model)
   expect(xml).toContain('unit="millimeter"')
-  expect((xml.match(/<object id="\\d+" type="model"/g)??[])).toHaveLength(mold.parts.length)
-  expect((xml.match(/<item objectid="\\d+"\\/>/g)??[])).toHaveLength(mold.parts.length)
+  expect((xml.match(/<object id="\d+" type="model"/g)??[])).toHaveLength(mold.parts.length)
+  expect((xml.match(/<item objectid="\d+"\/>/g)??[])).toHaveLength(mold.parts.length)
   expect((xml.match(/<triangle v1=/g)??[]).length).toBeGreaterThan(20)
   expect(archive.triangles).toBeGreaterThan(20)
   // Neither build nor export may rewrite the imported master.
