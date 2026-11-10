@@ -110,16 +110,16 @@ try{
   })
   await page.waitForFunction(()=>document.querySelector('[data-test="mold-making-panel"]')
     ?.textContent?.includes('Tool dimensions (in)'),{timeout:10_000})
-  const inchWidth=await page.$eval('[data-test="mold-clampTabWidth"]',e=>Number(e.value))
-  check(Math.abs(inchWidth-16/25.4)<0.00001,'clamp dimensions convert to inches')
+  const inchWidth=await page.$eval('[data-test="mold-repair-hole-size"]',e=>Number(e.value))
+  check(Math.abs(inchWidth-2/25.4)<0.00001,'mesh repair length input converts to inches')
   await page.evaluate(async()=>{
     const {usePrefs}=await import('/src/state/prefsStore.ts')
     usePrefs.getState().setUnits('mm')
   })
   await page.waitForFunction(()=>document.querySelector('[data-test="mold-making-panel"]')
     ?.textContent?.includes('Tool dimensions (mm)'),{timeout:10_000})
-  const metricWidth=await page.$eval('[data-test="mold-clampTabWidth"]',e=>Number(e.value))
-  check(Math.abs(metricWidth-16)<1e-8,'clamp dimensions return to millimetres')
+  const metricWidth=await page.$eval('[data-test="mold-repair-hole-size"]',e=>Number(e.value))
+  check(Math.abs(metricWidth-2)<1e-8,'mesh repair input returns to millimetres')
 
 
   await page.click('[data-test="mold-generate"]')
