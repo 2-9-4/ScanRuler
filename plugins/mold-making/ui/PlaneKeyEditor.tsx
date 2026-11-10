@@ -31,6 +31,7 @@ const coords=(clientX:number,clientY:number,el:SVGSVGElement):Point=>{
 }
 export function PlaneKeyEditor({points,axis,manual,onChange,onManual,bounds,sideMargin,baseThickness,diameter,clearance,cavityClearance}:Props){
   const len=useLength()
+  const fmtCoord=(v:number|null)=>v===null?'—':len.fmt(v,2)
   const drag=useRef<number|null>(null)
   const canvas=useRef<SVGSVGElement|null>(null)
   const dimensions:readonly [number,number]=axis==='x'?[1,2]:axis==='y'?[0,2]:[0,1]
@@ -122,7 +123,7 @@ export function PlaneKeyEditor({points,axis,manual,onChange,onManual,bounds,side
           <text x={x} y={y+4} textAnchor="middle" fill="#fff" fontSize="11" pointerEvents="none">{i+1}</text>
         </g>
       })}
-      <text x={(LX+RX)/2} y={H-12} textAnchor="middle" fill="var(--ink)" fontSize="13">{axisLabels[0]} → {ext?`${len.fmt(ext[0][0],2)} to ${len.fmt(ext[0][1],2)}`:'seam width'}</text>
+      <text x={(LX+RX)/2} y={H-12} textAnchor="middle" fill="var(--ink)" fontSize="13">{axisLabels[0]} → {ext?`${fmtCoord(ext[0][0])} to ${fmtCoord(ext[0][1])}`:'seam width'}</text>
       <text x={18} y={(TY+BY)/2} textAnchor="middle" fill="var(--ink)" fontSize="13"
         transform={`rotate(-90,18,${(TY+BY)/2})`}>{axisLabels[1]} ↑</text>
     </svg>
@@ -136,7 +137,7 @@ export function PlaneKeyEditor({points,axis,manual,onChange,onManual,bounds,side
           <input type="number" step="1" min="1" max="99" value={Math.round(p[k]*100)}
             onChange={e=>{const n=Number(e.target.value);if(Number.isFinite(n))replace(i,[...p.slice(0,k),round(n/100),...p.slice(k+1)] as Point)}}/>
         </label>)}
-        <span className="hint">{len.fmt(uv(0,p[0])!,2)}, {len.fmt(uv(1,p[1])!,2)}</span>
+        <span className="hint">{fmtCoord(uv(0,p[0]))}, {fmtCoord(uv(1,p[1]))}</span>
         <button type="button" disabled={points.length<=1} aria-label={`Remove pin ${i+1}`}
           onClick={()=>onChange(points.filter((_,j)=>j!==i))}>×</button>
       </div>)}
