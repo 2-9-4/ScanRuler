@@ -6,6 +6,7 @@ import { MOLD_SETTING_KEYS } from './core/settings'
 import { moldSection } from './app/projectSection'
 import { useMoldPlugin } from './app/useMoldPlugin'
 import { useMold } from './state/moldStore'
+import './ui/mold-making.css'
 
 const plugin: ScanRulerPlugin = {
   id:'mold-making',
