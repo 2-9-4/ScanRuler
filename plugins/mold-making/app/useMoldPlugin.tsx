@@ -159,7 +159,7 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
         let sourceKind:'scan'|'staged'='scan'
         if(settings.source==='reference'){
           const staged=await client.prepareScan(target.name,
-            target.bytes.slice().buffer as ArrayBuffer,NO_CREASE,undefined,target.units)
+            await target.file.arrayBuffer(),NO_CREASE,undefined,target.units)
           stagedId=staged.id
           sourceKind='staged'
         }
@@ -258,7 +258,7 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
         // Staging is not committing: neither the displayed scan nor its
         // reference is replaced. The worker consumes this copy by id.
         const staged = await client.prepareScan(
-          target.name, target.bytes.slice().buffer as ArrayBuffer,
+          target.name, await target.file.arrayBuffer(),
           NO_CREASE, undefined, target.units,
         )
         stagedId = staged.id
