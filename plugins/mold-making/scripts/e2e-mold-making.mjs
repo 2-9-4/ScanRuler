@@ -107,7 +107,7 @@ try{
   },{timeout:10_000})
   check(true,'switching display units preserves the original mold dimensions')
 
-  check((await page.$('[role="tab"][data-test^="mold-tab-"]')).length===4,
+  check((await page.$$('[role="tab"][data-test^="mold-tab-"]')).length===4,
     'four workflow destinations render as real tabs')
   const visual=await page.evaluate(()=>{
     const strip=document.querySelector('[data-test="mold-workflow-tabs"]')
