@@ -8,7 +8,7 @@ const store=readFileSync(new URL('../state/moldStore.ts',import.meta.url),'utf8'
 const plugin=readFileSync(new URL('../plugin.ts',import.meta.url),'utf8')
 describe('Mold Making history action registration',()=>{
   it('registers every user-facing store setter for the undo history',()=>{
-    const actions=[...store.matchAll(/^\\s+(set[A-Z]\\w+)\\([^)]*\\)\\s*:\\s*void/gm)].map(x=>x[1])
+    const actions=[...store.matchAll(/^\s+(set[A-Z]\w+)\([^)]*\)\s*:\s*void/gm)].map(x=>x[1])
     expect(actions.length).toBeGreaterThan(15)
     for(const name of actions)expect(plugin, name+' is missing from plugin history').toContain("'"+name+"'")
   })
