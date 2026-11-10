@@ -83,7 +83,31 @@ try{
 
   await page.click('[data-test="workspace-mold-making"]')
   await page.waitForSelector('[data-test="mold-making-panel"]')
-  check((await page.$$('[role="tab"][data-test^="mold-tab-"]')).length===4,
+  // Exercise real display-unit switching without changing the millimetre
+  // values persisted in the mold recipe or passed to the geometry worker.
+  await page.evaluate(async()=>{
+    const {usePrefs}=await import('/src/state/prefsStore.ts')
+    usePrefs.getState().setUnits('in')
+  })
+  await page.waitForFunction(()=>{
+    const input=document.querySelector('[data-test="mold-repair-hole-size"]')
+    return input instanceof HTMLInputElement &&
+      input.closest('label')?.textContent?.includes('(in)')
+  },{timeout:10_000})
+  const repairIn=await page.$eval('[data-test="mold-repair-hole-size"]',el=>Number(el.value))
+  check(Math.abs(repairIn-2/25.4)<0.00001,
+    'Mold Making inputs convert from stored millimetres to inches')
+  await page.evaluate(async()=>{
+    const {usePrefs}=await import('/src/state/prefsStore.ts')
+    usePrefs.getState().setUnits('mm')
+  })
+  await page.waitForFunction(()=>{
+    const input=document.querySelector('[data-test="mold-repair-hole-size"]')
+    return input instanceof HTMLInputElement && Math.abs(Number(input.value)-2)<1e-7
+  },{timeout:10_000})
+  check(true,'switching display units preserves the original mold dimensions')
+
+  check((await page.$('[role="tab"][data-test^="mold-tab-"]')).length===4,
     'four workflow destinations render as real tabs')
   const visual=await page.evaluate(()=>{
     const strip=document.querySelector('[data-test="mold-workflow-tabs"]')
