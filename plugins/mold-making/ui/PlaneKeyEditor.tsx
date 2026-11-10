@@ -2,6 +2,7 @@
 // Planar mating-feature editor for direct molds. Both local seam coordinates
 // are editable, not just a scalar position on the bottom-Z backing.
 import {useRef,type PointerEvent} from 'react'
+import {useLength} from '../../../src/app/useUnits'
 import type {Limits} from '../core/geometry'
 import type {SplitAxis} from '../core/settings'
 
@@ -29,6 +30,7 @@ const coords=(clientX:number,clientY:number,el:SVGSVGElement):Point=>{
   return [round((x-LX)/(RX-LX)),round((BY-y)/(BY-TY))]
 }
 export function PlaneKeyEditor({points,axis,manual,onChange,onManual,bounds,sideMargin,baseThickness,diameter,clearance,cavityClearance}:Props){
+  const len=useLength()
   const drag=useRef<number|null>(null)
   const canvas=useRef<SVGSVGElement|null>(null)
   const dimensions:readonly [number,number]=axis==='x'?[1,2]:axis==='y'?[0,2]:[0,1]
@@ -60,7 +62,7 @@ export function PlaneKeyEditor({points,axis,manual,onChange,onManual,bounds,side
     onChange([...points,p])
   }
   const radius=Math.max(8,Math.min(15,diameter*2.2))
-  const fmt=(v:number|null)=>v===null?'—':v.toFixed(2)
+  const fmt=(v:number|null)=>v===null?'—':len.fmt(v,2)
   const collision=(p:Point)=>{
     if(!target||!ext)return false
     const x=uv(0,p[0])!,y=uv(1,p[1])!
@@ -121,7 +123,7 @@ export function PlaneKeyEditor({points,axis,manual,onChange,onManual,bounds,side
           <text x={x} y={y+4} textAnchor="middle" fill="#fff" fontSize="11" pointerEvents="none">{i+1}</text>
         </g>
       })}
-      <text x={(LX+RX)/2} y={H-12} textAnchor="middle" fill="var(--ink)" fontSize="13">{axisLabels[0]} → {ext?`${fmt(ext[0][0])} to ${fmt(ext[0][1])} mm`:'seam width'}</text>
+      <text x={(LX+RX)/2} y={H-12} textAnchor="middle" fill="var(--ink)" fontSize="13">{axisLabels[0]} → {ext?`${fmt(ext[0][0])} to ${fmt(ext[0][1])}`:'seam width'}</text>
       <text x={18} y={(TY+BY)/2} textAnchor="middle" fill="var(--ink)" fontSize="13"
         transform={`rotate(-90,18,${(TY+BY)/2})`}>{axisLabels[1]} ↑</text>
     </svg>
@@ -135,7 +137,7 @@ export function PlaneKeyEditor({points,axis,manual,onChange,onManual,bounds,side
           <input type="number" step="1" min="1" max="99" value={Math.round(p[k]*100)}
             onChange={e=>{const n=Number(e.target.value);if(Number.isFinite(n))replace(i,[...p.slice(0,k),round(n/100),...p.slice(k+1)] as Point)}}/>
         </label>)}
-        <span className="hint">{fmt(uv(0,p[0]))}, {fmt(uv(1,p[1]))} mm</span>
+        <span className="hint">{fmt(uv(0,p[0]))}, {fmt(uv(1,p[1]))}</span>
         <button type="button" disabled={points.length<=1} aria-label={`Remove pin ${i+1}`}
           onClick={()=>onChange(points.filter((_,j)=>j!==i))}>×</button>
       </div>)}

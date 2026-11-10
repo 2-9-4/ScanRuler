@@ -47,6 +47,18 @@ describe('Mold material estimate organization',()=>{
     expect(html).not.toContain('Total material')
     expect(html).toContain('Printed tooling — separate material')
   })
+  it('uses silicone inputs, not casting inputs, for the direct clearance gap',()=>{
+    const generated={volumeMm3:80_000,materialEstimate:direct} as MoldBuild
+    const html=renderToStaticMarkup(createElement(MoldMaterialEstimate,{
+      generated,mode:'direct',clearance:0.4,
+      inputs:{...DEFAULT_MOLD_MATERIAL_INPUTS,castingDensity:5,castingCostKg:500,siliconeDensity:1.5,siliconeCostKg:40},
+      onInputChange:()=>{},
+    }))
+    expect(html).toContain('30.0 g')
+    expect(html).toContain('33.0 g')
+    expect(html).toContain('$1.32')
+    expect(html).not.toContain('100.0 g')
+  })
   it('separates silicone box, original part and post displacement',()=>{
     const html=markup('silicone-box',0,box)
     expect(html).toContain('300.00 cm³')

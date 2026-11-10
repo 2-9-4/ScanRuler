@@ -3,6 +3,7 @@
 // and scan meshes. Preview and exported bytes refer to exactly the same
 // worker result, discarded as soon as its source or parameters change.
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useLength } from '../../../src/app/useUnits'
 import type { PluginHost, PluginRuntime } from '../../../src/plugins/api'
 import { useShell } from '../../../src/state/shellStore'
 import { useSectionView } from '../../../src/state/sectionViewStore'
@@ -49,6 +50,7 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
   const [pickingBase,setPickingBase]=useState(false)
   const guides=useRef<MoldGuides|null>(null)
   const previewTicket=useRef(0)
+  const len=useLength()
   const previewGap = useMold(s=>s.previewGap)
   const preview = useRef<MoldPreview | null>(null)
   const priorSection=useRef<ReturnType<typeof useSectionView.getState>|null>(null)
@@ -506,7 +508,7 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
           min={0} max={Math.max(60,...generated.targetBounds.max.map((v,i)=>
             (v-generated.targetBounds.min[i])*3))} step={0.5} value={previewGap}
           onChange={e=>useMold.getState().setDimension('previewGap',Number(e.target.value))}/>
-        <output>{previewGap.toFixed(1)} mm</output>
+        <output>{len.fmt(previewGap,1)}</output>
         </div>}
       </div>
     ):null,

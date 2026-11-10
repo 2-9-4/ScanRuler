@@ -2,6 +2,7 @@
 // Read-only tooling and silicone quantities, with independent material
 // assumptions. UI-only changes never regenerate or mutate a mold.
 import type {ChangeEvent} from 'react'
+import {useLength} from '../../../src/app/useUnits'
 import type {MoldBuild} from '../core/geometry'
 import type {MoldMode} from '../core/settings'
 import {siliconeBatchByWeight,siliconeMixVolume,volumeMassCost} from '../core/materialEstimate'
@@ -39,10 +40,11 @@ export function MoldMaterialEstimate({
   inputs:MoldMaterialInputs
   onInputChange:(key:keyof MoldMaterialInputs,value:number)=>void
 }){
+  const len=useLength()
   const mix=siliconeMixVolume(mode,clearance,generated.materialEstimate)
   const netAvailable=mix!==null&&mix.basis!=='gross-silicone'
-  const densityKey=mode==='direct'?'castingDensity':'siliconeDensity'
-  const priceKey=mode==='direct'?'castingCostKg':'siliconeCostKg'
+  const densityKey='siliconeDensity' as const
+  const priceKey='siliconeCostKg' as const
   const density=inputs[densityKey],price=inputs[priceKey]
   const validProduct=validDensity(density)&&validCost(price)
   const validRatio=Number.isFinite(inputs.mixRatioA)&&inputs.mixRatioA>0&&
@@ -105,7 +107,7 @@ export function MoldMaterialEstimate({
       {mode==='direct'&&<p className="hint">The expanded cavity also contains the original part's volume. Only the clearance gap needs silicone while the master is installed; after removing the master, the full cavity would be available for a separate casting. The requested clearance is a distance, not the liquid volume.</p>}
       {mode==='silicone-box'&&<p className="hint">The box estimate assumes fill to its rim. Actual fill height, trapped air and unmodeled channels may change the required amount.</p>}
     </>:mode==='direct'&&clearance<=0?
-      <p className="hint">Cavity clearance is 0 mm, so no silicone gap has been specified around the original master. Set a positive clearance and generate the mold to calculate a mix.</p>:
+      <p className="hint">Cavity clearance is {len.fmt(0,0)}, so no silicone gap has been specified around the original master. Set a positive clearance and generate the mold to calculate a mix.</p>:
       <p className="hint mold-warning" role="status">Net silicone volume is unavailable: check the source model's closed-volume measurement and mold geometry.</p>}
 
     {mix&&<div data-test="mold-silicone-mix-settings">

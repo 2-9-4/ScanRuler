@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Explicit tooling choices and per-part export; no hidden mid-height cut.
 import { useEffect,useState } from 'react'
+import { useLength } from '../../../src/app/useUnits'
 import {MoldMaterialEstimate,DEFAULT_MOLD_MATERIAL_INPUTS} from './MoldMaterialEstimate'
 import {MoldPartList} from './MoldPartList'
 import {MoldWorkflowTabs,type MoldWorkflowTab} from './MoldWorkflowTabs'
@@ -18,40 +19,41 @@ import type { MoldPreviewMode } from '../viewer/moldPreview'
 
 const FIELDS:readonly {key:MoldDimension;label:string;help:string}[]=[
   {key:'clearance',label:'Cavity clearance (+ enlarges)',help:'Positive means a spherical dilation of the target solid, enlarging the casting cavity. A signed-distance field is sampled to generate a closed offset; small features may be lost at the chosen grid resolution.'},
-  {key:'sideMargin',label:'Extra side material (mm)',help:'Additional solid material beyond the automatically calculated necessary side margin; zero is valid.'},
-  {key:'baseThickness',label:'Extra base / top material (mm)',help:'Additional material beyond the automatically calculated structural backing. Zero is valid.'},
-  {key:'wallThickness',label:'Extra silicone-box wall (mm)',help:'Added to the minimum safe printed wall; zero is valid.'},
+  {key:'sideMargin',label:'Extra side material',help:'Additional solid material beyond the automatically calculated necessary side margin; zero is valid.'},
+  {key:'baseThickness',label:'Extra base / top material',help:'Additional material beyond the automatically calculated structural backing. Zero is valid.'},
+  {key:'wallThickness',label:'Extra silicone-box wall',help:'Added to the minimum safe printed wall; zero is valid.'},
   {key:'siliconeThickness',label:'Silicone space',help:'Distance between master and containment walls'},
   {key:'splitPosition',label:'Split location (0–1)',help:'Fraction of model bounds along selected X/Y/Z axis'},
   {key:'boxDraftDeg',label:'Interior wall draft (°)',help:'Silicone containment-box wall taper; does not change the master cavity'},
   {key:'previewGap',label:'Exploded view gap',help:'Spacing between parts in the viewport. Zero shows assembled geometry.'},
 ]
 const PIN_FIELDS:readonly {key:MoldDimension;label:string;help:string}[]=[
-  {key:'keyDiameter',label:'Pin / dowel diameter (mm)',help:'Printed pin diameter, or the nominal size of a separate steel dowel.'},
-  {key:'keyDepth',label:'Pin engagement / socket depth (mm)',help:'Length of the printed pin or the dowel socket.'},
-  {key:'keyClearance',label:'Pin / socket radial fit clearance (mm)',help:'Extra socket radius, separate from the V-seam groove clearance.'},
+  {key:'keyDiameter',label:'Pin / dowel diameter',help:'Printed pin diameter, or the nominal size of a separate steel dowel.'},
+  {key:'keyDepth',label:'Pin engagement / socket depth',help:'Length of the printed pin or the dowel socket.'},
+  {key:'keyClearance',label:'Pin / socket radial fit clearance',help:'Extra socket radius, separate from the V-seam groove clearance.'},
 ]
 const V_FIELDS:readonly {key:MoldDimension;label:string;help:string}[]=[
-  {key:'vSeamWidth',label:'V-ridge base width (mm)',help:'Full width of the triangular ridge, measured along the parting face.'},
-  {key:'vSeamHeight',label:'V-ridge height (mm)',help:'How far the ridge projects into the matching half.'},
-  {key:'vSeamSpacing',label:'V-seam spacing from surface (mm)',help:'On direct molds, distance from the expanded cavity outline to the ridge inner side; on silicone boxes, additional inset from the outer wall.'},
-  {key:'vSeamClearance',label:'V-groove fit clearance (mm)',help:'Extra width/depth for the female V-groove, independent of pin/dowel clearance.'},
+  {key:'vSeamWidth',label:'V-ridge base width',help:'Full width of the triangular ridge, measured along the parting face.'},
+  {key:'vSeamHeight',label:'V-ridge height',help:'How far the ridge projects into the matching half.'},
+  {key:'vSeamSpacing',label:'V-seam spacing from surface',help:'On direct molds, distance from the expanded cavity outline to the ridge inner side; on silicone boxes, additional inset from the outer wall.'},
+  {key:'vSeamClearance',label:'V-groove fit clearance',help:'Extra width/depth for the female V-groove, independent of pin/dowel clearance.'},
 ]
 const TAB_FIELDS:readonly {key:MoldDimension;label:string;help:string}[]=[
   {key:'clampTabCount',label:'Side / radial tabs per edge',help:'Number of clamping ears along each exterior seam. For threefold molds these sit on the radial parting faces.'},
-  {key:'clampTabWidth',label:'Tab width / height (mm)',help:'Size of each tab along its distributing edge.'},
-  {key:'clampTabProjection',label:'Tab outside projection (mm)',help:'Distance tabs extend beyond the mold boundary for a clamp to grip.'},
-  {key:'clampTabThickness',label:'Tab thickness per half (mm)',help:'Thickness of each tab in the mold opening direction.'},
+  {key:'clampTabWidth',label:'Tab width / height',help:'Size of each tab along its distributing edge.'},
+  {key:'clampTabProjection',label:'Tab outside projection',help:'Distance tabs extend beyond the mold boundary for a clamp to grip.'},
+  {key:'clampTabThickness',label:'Tab thickness per half',help:'Thickness of each tab in the mold opening direction.'},
 ]
 const EXTRA_TAB_FIELDS:readonly {key:MoldDimension;label:string;help:string}[]=[
   {key:'topBottomTabCount',label:'Tabs along each top/bottom edge',help:'Number of paired ears on the top and bottom exterior edges (X/Y parting planes).'},
 ]
 const BOLT_FIELDS:readonly {key:MoldDimension;label:string;help:string}[]=[
-  {key:'tabBoltDiameter',label:'Through-hole diameter (mm)',help:'Diameter of the unthreaded bolt clearance hole through both mating clamp ears.'},
+  {key:'tabBoltDiameter',label:'Through-hole diameter',help:'Diameter of the unthreaded bolt clearance hole through both mating clamp ears.'},
 ]
+const isLengthDimension=(key:MoldDimension)=>!(['splitPosition','boxDraftDeg','minimumDraftDeg','clampTabCount','topBottomTabCount'] as MoldDimension[]).includes(key)
 const NUT_FIELDS:readonly {key:MoldDimension;label:string;help:string}[]=[
-  {key:'tabNutAcrossFlats',label:'Captured hex across flats (mm)',help:'Width between parallel flats of the nut, including fit allowance.'},
-  {key:'tabNutDepth',label:'Captured nut pocket depth (mm)',help:'Recess depth from the outside face of the negative mold half.'},
+  {key:'tabNutAcrossFlats',label:'Captured hex across flats',help:'Width between parallel flats of the nut, including fit allowance.'},
+  {key:'tabNutDepth',label:'Captured nut pocket depth',help:'Recess depth from the outside face of the negative mold half.'},
 ]
 export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,onExport,onBoolean,onEditPart,visibleParts,onPartVisibilityChange,masterVisible,onMasterVisibilityChange,generated,targetBounds,previewMode,onPreviewModeChange,generating,error}:{
   onOpenScan:(file:File)=>void
@@ -72,6 +74,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
   generating:boolean
   error:string|null
 }) {
+  const len=useLength()
   const [tab,setTab]=useState<MoldWorkflowTab>('setup')
   // Once geometry finishes generating, open its inspection results.
   useEffect(()=>{if(generated)setTab('review')},[generated])
@@ -157,13 +160,17 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
   const usesPins=keys&&multi&&!usesV
   const material=moldMaterial(moldSettings(),targetBounds?targetBounds.max[2]-targetBounds.min[2]:undefined,
     targetBounds?Math.min(targetBounds.max[0]-targetBounds.min[0],targetBounds.max[1]-targetBounds.min[1]):undefined)
-  const fieldInput=({key,label,help}:{key:MoldDimension;label:string;help:string})=><label key={key} className="kv" title={help}>
-    <span className="name">{label}</span>
+  const fieldInput=({key,label,help}:{key:MoldDimension;label:string;help:string})=>{
+    const metric=isLengthDimension(key)
+    return <label key={key} className="kv" title={help}>
+    <span className="name">{label}{metric?` (${len.word()})`:''}</span>
     <input type="number" data-test={`mold-${key}`} min={key==='splitPosition'?0.1:0}
-      max={key==='splitPosition'?0.9:key==='boxDraftDeg'?12:key==='minimumDraftDeg'?30:(key==='clampTabCount'||key==='topBottomTabCount')?12:100000}
-      step={key==='splitPosition'?0.05:(key==='clampTabCount'||key==='topBottomTabCount')?1:0.1} value={values[key]}
-      onChange={e=>{if(e.target.value!=='')setDimension(key,Number(e.target.value))}}/>
+      max={key==='splitPosition'?0.9:key==='boxDraftDeg'?12:key==='minimumDraftDeg'?30:(key==='clampTabCount'||key==='topBottomTabCount')?12:len.toDisplay(100000)}
+      step={key==='splitPosition'?0.05:(key==='clampTabCount'||key==='topBottomTabCount')?1:metric?len.step(0.1):0.1}
+      value={metric?Number(len.toDisplay(values[key]).toFixed(6)):values[key]}
+      onChange={e=>{if(e.target.value!=='')setDimension(key,metric?len.fromDisplay(Number(e.target.value)):Number(e.target.value))}}/>
   </label>
+  }
   const fields=FIELDS.filter(({key})=>{
     if(key==='previewGap')return false // An in-viewport slider controls the layout.
     if(key==='splitPosition')return false // Belongs with split axis, not outer dimensions.
@@ -219,10 +226,10 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
             checked={repairTarget} onChange={e=>setRepairTarget(e.target.checked)}/>
         </label>
         {repairTarget&&<label className="kv" title="Only complete holes smaller than this across are patched. Large or ambiguous missing areas cause an error, not an automatic edit.">
-          <span className="name">Max repair hole size (mm)</span>
-          <input type="number" min={0.001} step={0.1} data-test="mold-repair-hole-size"
-            value={repairHoleSize}
-            onChange={e=>{if(e.target.value!=='')setDimension('repairHoleSize',Number(e.target.value))}}/>
+          <span className="name">Max repair hole size ({len.word()})</span>
+          <input type="number" min={len.toDisplay(0.001)} step={len.step(0.1)} data-test="mold-repair-hole-size"
+            value={Number(len.toDisplay(repairHoleSize).toFixed(6))}
+            onChange={e=>{if(e.target.value!=='')setDimension('repairHoleSize',len.fromDisplay(Number(e.target.value)))}}/>
         </label>}
         <p className="hint">Before generating, remove exactly zero-area faces, weld identical duplicate vertices and fill small closed holes on a temporary copy. The original scan/STEP remains unchanged. Repairs appear in output warnings; inspect them before printing.</p>
         </>
@@ -245,7 +252,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
           </select></label>}
     </div>
     <div className="group">
-      <div className="sec-head">Tool dimensions (mm)</div>
+      <div className="sec-head">Tool dimensions ({len.word()})</div>
       {mode!=='silicone-box'&&clearance>0&&<label className="kv">
         <span className="name">Spherical offset detail</span>
         <select data-test="mold-offset-quality" value={offsetQuality}
@@ -264,8 +271,8 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
       </p>}
       {fields.map(fieldInput)}
       <p className="hint">Automatically required solid material: {mode==='direct'
-        ?`${material.side.toFixed(2)} mm at sides, ${material.base.toFixed(2)} mm above/below the model`
-        :`${material.wall.toFixed(2)} mm walls, ${material.base.toFixed(2)} mm base`}.
+        ?`${len.fmt(material.side,2)} at sides, ${len.fmt(material.base,2)} above/below the model`
+        :`${len.fmt(material.wall,2)} walls, ${len.fmt(material.base,2)} base`}.
         Extra margins add material on top of these calculated requirements and may be zero.</p>
     </div>
     </div>
@@ -387,9 +394,9 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
         <input type="checkbox" data-test="mold-pour-enabled" checked={pourEnabled}
           onChange={e=>setPourEnabled(e.target.checked)}/></label>
       {pourEnabled&&<>
-        {fieldInput({key:'pourDiameter',label:'Pour bore diameter (mm)',help:'Diameter of the vertical channel that enters the casting cavity.'})}
-        {fieldInput({key:'pourFunnelDiameter',label:'Pour funnel mouth diameter (mm)',help:'Diameter at the top surface. Must not be smaller than the bore.'})}
-        {fieldInput({key:'pourFunnelDepth',label:'Pour funnel depth (mm)',help:'Depth of the conical mouth below the top surface. Must fit the roof.'})}
+        {fieldInput({key:'pourDiameter',label:'Pour bore diameter',help:'Diameter of the vertical channel that enters the casting cavity.'})}
+        {fieldInput({key:'pourFunnelDiameter',label:'Pour funnel mouth diameter',help:'Diameter at the top surface. Must not be smaller than the bore.'})}
+        {fieldInput({key:'pourFunnelDepth',label:'Pour funnel depth',help:'Depth of the conical mouth below the top surface. Must fit the roof.'})}
         <div className="kv"><span className="name">Pour XY position (fraction 0–1)</span>
           <span>
             <input aria-label="Pour X" data-test="mold-pour-x" type="number" min={0.01} max={0.99} step={0.05}
@@ -403,7 +410,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
         <input type="checkbox" data-test="mold-vents-enabled" checked={ventsEnabled}
           onChange={e=>setVentsEnabled(e.target.checked)}/></label>
       {ventsEnabled&&<>
-        {fieldInput({key:'ventDiameter',label:'Air vent bore diameter (mm)',help:'Each vent must reach the actual casting cavity without cutting a parting seam.'})}
+        {fieldInput({key:'ventDiameter',label:'Air vent bore diameter',help:'Each vent must reach the actual casting cavity without cutting a parting seam.'})}
         {ventPoints.map(([x,y],i)=><div className="kv" key={i}>
           <span className="name">Air vent {i+1} XY (fraction 0–1)</span>
           <span>
@@ -429,7 +436,7 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
         <MoldIcon name="moldMount" size={16}/>Center mounting post on model</button>
       <p className="hint">Select a downward-facing surface of the master in the 3D viewport. The separate printable post enters from outside through a hexagonal hole in the mold base; the upper pad aligns to the selected surface and the larger exterior hexagonal shoulder sets insertion depth and rotation.</p>
       {mountPoint?<p className="hint">
-        Contact: ({mountPoint.map(v=>v.toFixed(2)).join(', ')}) mm;
+        Contact: ({mountPoint.map(v=>len.fmt(v,2)).join(', ')});
         surface direction: ({mountNormal.map(v=>v.toFixed(2)).join(', ')}).
       </p>:<p className="hint">No contact face selected. Use “Pick glue-on support face” in the 3D viewport first.</p>}
       <label className="kv"><span className="name">Include printed suspension pedestal</span>
@@ -441,11 +448,11 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
         Set a positive cavity clearance to enable a removable glue-on post in a rigid mold.
       </p>}
       {mountEnabled&&<>
-        {mode==='silicone-box'&&fieldInput({key:'mountHeight',label:'Clearance below model (mm)',help:'Moves the inside bottom of a silicone containment box downward; the hexagonal post passes through its base.'})}
-        {fieldInput({key:'mountPadDiameter',label:'Glue pad diameter (mm)',help:'Contact pad follows the selected face normal. Verify the entire pad stays on the intended feature.'})}
-        {fieldInput({key:'mountStemDiameter',label:'Support stem diameter (mm)',help:'Cylindrical vertical connection between foot and contact pad.'})}
-        {fieldInput({key:'mountFootDiameter',label:'Exterior stop diameter (mm)',help:'Hexagonal shoulder remains outside the mold base and prevents the post from sliding through.'})}
-        <p className="hint">The post has a 0.25 mm nominal radial fit and a 1.2 mm-deep exterior hex counterbore. For rigid molds, the glue-pad underside also seats in a relieved head pocket; for silicone buckets, a separate inner-floor flange serves as that stop. The opposing shoulders limit Z travel to approximately 0.15 mm each way. The entire post envelope is cleared after V-groove registration, including positive ridges. Assemble split tooling around the already-glued post, test-fit, and seal the penetration before casting.</p>
+        {mode==='silicone-box'&&fieldInput({key:'mountHeight',label:'Clearance below model',help:'Moves the inside bottom of a silicone containment box downward; the hexagonal post passes through its base.'})}
+        {fieldInput({key:'mountPadDiameter',label:'Glue pad diameter',help:'Contact pad follows the selected face normal. Verify the entire pad stays on the intended feature.'})}
+        {fieldInput({key:'mountStemDiameter',label:'Support stem diameter',help:'Cylindrical vertical connection between foot and contact pad.'})}
+        {fieldInput({key:'mountFootDiameter',label:'Exterior stop diameter',help:'Hexagonal shoulder remains outside the mold base and prevents the post from sliding through.'})}
+        <p className="hint">The post has a {len.fmt(0.25,2)} nominal radial fit and a {len.fmt(1.2,1)}-deep exterior hex counterbore. For rigid molds, the glue-pad underside also seats in a relieved head pocket; for silicone buckets, a separate inner-floor flange serves as that stop. The opposing shoulders limit Z travel to approximately {len.fmt(0.15,2)} each way. The entire post envelope is cleared after V-groove registration, including positive ridges. Assemble split tooling around the already-glued post, test-fit, and seal the penetration before casting.</p>
       </>}
     </div>
     </div>
@@ -491,16 +498,16 @@ export function MoldPanel({onOpenScan,onOpenReference,onGenerate,onCenterMount,o
             ?'Four quadrants withdraw diagonally along both parting axes.'
             :generated.draftAnalysis.layout==='impression'
             ?'The lower half of the target is screened relative to −Z withdrawal.'
-            :`Two opposing halves withdraw along ±${generated.draftAnalysis.axis.toUpperCase()}, split at ${generated.draftAnalysis.splitAtMm.toFixed(2)} mm.`}
+            :`Two opposing halves withdraw along ±${generated.draftAnalysis.axis.toUpperCase()}, split at ${len.fmt(generated.draftAnalysis.splitAtMm,2)}.`}
             {' '}Faces crossing parting planes are clipped. Target positive draft: {generated.draftAnalysis.minimumDraftDeg}°.</p>
           <div className="kv"><span className="name">Potential reverse-facing (undercut) surface</span>
-            <b>{generated.draftAnalysis.reverseFacingMm2.toFixed(1)} mm² ({(100*generated.draftAnalysis.reverseFacingMm2/Math.max(1e-9,generated.draftAnalysis.totalAreaMm2)).toFixed(1)}%)</b></div>
+            <b>{len.area(generated.draftAnalysis.reverseFacingMm2,1)} ({(100*generated.draftAnalysis.reverseFacingMm2/Math.max(1e-9,generated.draftAnalysis.totalAreaMm2)).toFixed(1)}%)</b></div>
           <div className="kv"><span className="name">Additional insufficient-draft area</span>
-            <b>{generated.draftAnalysis.lowDraftMm2.toFixed(1)} mm² ({(100*generated.draftAnalysis.lowDraftMm2/Math.max(1e-9,generated.draftAnalysis.totalAreaMm2)).toFixed(1)}%)</b></div>
+            <b>{len.area(generated.draftAnalysis.lowDraftMm2,1)} ({(100*generated.draftAnalysis.lowDraftMm2/Math.max(1e-9,generated.draftAnalysis.totalAreaMm2)).toFixed(1)}%)</b></div>
           {generated.draftAnalysis.regions.map((region,i)=>
             <div className="kv" key={i}>
               <span className="name">{region.label} · reverse / low draft</span>
-              <b>{region.reverseFacingMm2.toFixed(1)} / {region.lowDraftMm2.toFixed(1)} mm²</b>
+              <b>{len.area(region.reverseFacingMm2,1)} / {len.area(region.lowDraftMm2,1)}</b>
             </div>)}
           <p className="hint">A reverse-facing triangle may signal a trapped undercut. Low draft includes near-parallel walls. This normal-based screening does not prove collision-free withdrawal, does not detect every obstruction, and does not alter or block the printable mold. Check material flexibility, release path, parting seams and mechanical clearance.</p>
         </details>}
