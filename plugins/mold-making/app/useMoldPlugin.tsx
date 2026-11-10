@@ -368,6 +368,7 @@ export function useMoldPlugin(host: PluginHost): PluginRuntime {
       if(!built)throw new Error('No triangles could be exported.')
       const file=new File([new Uint8Array(built.bytes)],`${fileSafe(part.name)||'mold-part'}.stl`,
         {type:built.mimeType})
+      // units-ok: generated STL has explicit millimetre mesh units on import.
       await host.openScan(file,'mm')
       useShell.getState().setWorkspace(workspace)
       useStore.getState().setStatus(`${part.name} loaded as a modeling scan in ${workspace==='mesh'?'Mesh Tools':'Reverse engineer'}. The former scan was replaced; mold STL remains independent.`)
