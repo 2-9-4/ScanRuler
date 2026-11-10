@@ -284,9 +284,11 @@ export function repairMoldTarget(
     const border=topology.bad===0?boundaryLoops(mesh.indices,mesh.positions.length/3):null
     const sizes=border?.loops.map(loop=>loopSize(mesh.positions,loop.vertices))??[]
     const largest=sizes.length?Math.max(...sizes):null
+  // units-ok: worker diagnostic reports canonical millimetres for numerical reproducibility.
     const detail=largest===null?'':` Largest open rim: ${largest.toPrecision(3)} mm across.`
     const reason=topology.bad>0?' Nonmanifold edges require manual repair.':
       border&&border.stray>0?` ${border.stray} unmatched boundary edges do not form complete, fillable loops.`:
+  // units-ok: worker diagnostic reports canonical millimetres for numerical reproducibility.
       sizes.some(size=>size>=maxHoleMm)?` At least one boundary rim exceeds the configured ${maxHoleMm} mm patch limit.`:
       patchFailure?` Patch solver failed: ${patchFailure}.`:
       ' These edges could not be filled safely.'
@@ -305,6 +307,7 @@ export function repairMoldTarget(
   }
   const warnings:string[]=[]
   if(removedFaces||adjustedVertices||weldedVertices||filledHoles){
+  // units-ok: worker diagnostic reports canonical millimetres for numerical reproducibility.
     warnings.push(`Temporary target mesh repair: adjusted ${adjustedVertices} collapsed vertices (≤0.001 mm), removed ${removedFaces} exactly zero-area faces, welded ${weldedVertices} coincident vertices, patched ${filledHoles} small holes. Original source unchanged; inspect repaired cavity surfaces.`)
   }
   return {mesh,warnings,removedFaces,adjustedVertices,weldedVertices,filledHoles}
