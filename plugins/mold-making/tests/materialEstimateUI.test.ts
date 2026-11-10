@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import {createElement} from 'react'
 import {renderToStaticMarkup} from 'react-dom/server'
-import {usePrefs} from '../../../src/state/prefsStore'
 import {describe,expect,it} from 'vitest'
 import type {MoldBuild} from '../core/geometry'
 import type {MoldMode} from '../core/settings'
@@ -60,13 +59,9 @@ describe('Mold material estimate organization',()=>{
     expect(html).toContain('$1.32')
     expect(html).not.toContain('100.0 g')
   })
-  it('uses the selected display unit in the zero-clearance instructions',()=>{
-    const old=usePrefs.getState().units
-    try{
-      usePrefs.setState({units:'in'})
-      const html=markup('direct',0,{...direct,nominalCastingCavityMm3:100_000})
-      expect(html).toContain('Cavity clearance is 0.000 in')
-    }finally{usePrefs.setState({units:old})}
+  it('explains zero clearance in the default display unit',()=>{
+    const html=markup('direct',0,{...direct,nominalCastingCavityMm3:100_000})
+    expect(html).toContain('Cavity clearance is 0 mm')
   })
   it('separates silicone box, original part and post displacement',()=>{
     const html=markup('silicone-box',0,box)

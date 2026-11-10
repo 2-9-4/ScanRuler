@@ -101,6 +101,26 @@ try{
     'connected tab strip starts on Model & size')
   check(visual.selectedBackground!==visual.restBackground,
     'selected tab is visibly distinct from inactive navigation')
+  // Live preference changes must convert BOTH text labels and length field values.
+  // Server-side static markup uses Zustand's initial snapshot, so this belongs
+  // in the browser smoke test rather than a server-rendered component test.
+  await page.evaluate(async()=>{
+    const {usePrefs}=await import('/src/state/prefsStore.ts')
+    usePrefs.getState().setUnits('in')
+  })
+  await page.waitForFunction(()=>document.querySelector('[data-test="mold-making-panel"]')
+    ?.textContent?.includes('Tool dimensions (in)'),{timeout:10_000})
+  const inchWidth=await page.$eval('[data-test="mold-clampTabWidth"]',e=>Number(e.value))
+  check(Math.abs(inchWidth-16/25.4)<0.00001,'clamp dimensions convert to inches')
+  await page.evaluate(async()=>{
+    const {usePrefs}=await import('/src/state/prefsStore.ts')
+    usePrefs.getState().setUnits('mm')
+  })
+  await page.waitForFunction(()=>document.querySelector('[data-test="mold-making-panel"]')
+    ?.textContent?.includes('Tool dimensions (mm)'),{timeout:10_000})
+  const metricWidth=await page.$eval('[data-test="mold-clampTabWidth"]',e=>Number(e.value))
+  check(Math.abs(metricWidth-16)<1e-8,'clamp dimensions return to millimetres')
+
 
   await page.click('[data-test="mold-generate"]')
   const rigid=await waitForBuild('two-part direct rigid mold')
